@@ -175,8 +175,8 @@ class ResolverInvokerTest {
     @Test
     void aNullKeyInTheListIsInvalidOutput() {
         KeyResolver nullKey = resolver(() -> new KeyResolver.Resolution(java.util.Arrays.asList("a", null), false));
-        // List.copyOf rejects null inside Resolution, so the resolver itself fails: that is UNAVAILABLE, never a pass.
-        assertThat(invoke(nullKey, 5)).isInstanceOf(ResolverOutcome.Failed.class);
+        assertThat(invoke(nullKey, 5))
+                .isEqualTo(new ResolverOutcome.Failed(ResolverOutcome.Reason.INVALID_OUTPUT));
     }
 
     @Test

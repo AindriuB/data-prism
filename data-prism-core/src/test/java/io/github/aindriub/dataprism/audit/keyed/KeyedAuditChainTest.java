@@ -300,13 +300,19 @@ class KeyedAuditChainTest {
 
         assertThat(code).isEqualTo(AuditChainVerifierCli.EXIT_INTACT);
         assertThat(text).contains("LIMITATION: this verifier detects an edit or a deletion of a record already written");
-        assertThat(text).contains("resisting that needs a keyed MAC, which this release does not build");
+        assertThat(text).doesNotContain("keyed MAC").doesNotContain("does not build")
+                .doesNotContain("unkeyed SHA-256");
         assertThat(text).contains("a keyed chain resists a writer who lacks the key, not anyone who holds it, "
                 + "including the operator and the process that writes the file");
         assertThat(text).contains("verified under key id: key-a");
         assertThat(text).doesNotContain(Base64.getEncoder().encodeToString(MATERIAL_A));
 
         Path unkeyed = keyedFile("u.log", AuditChainMode.unkeyed(), 2);
+        ByteArrayOutputStream plain = new ByteArrayOutputStream();
+        cli(plain, new ByteArrayOutputStream(), unkeyed.toString());
+        assertThat(plain.toString(StandardCharsets.UTF_8))
+                .contains("resisting that needs a keyed MAC")
+                .doesNotContain("KEYED CHAIN: a keyed chain resists");
         ByteArrayOutputStream out2 = new ByteArrayOutputStream();
         int code2 = cli(out2, new ByteArrayOutputStream(), unkeyed.toString(), "--hmac-key-file", kf.toString(),
                 "--allow-unkeyed-writers");

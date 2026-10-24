@@ -54,7 +54,7 @@ public final class AuditChainVerifierCli {
      */
     public static final int EXIT_CHECKPOINT_MISMATCH = 5;
 
-    private static final String LIMITATION =
+    private static final String LIMITATION_HEAD =
             "LIMITATION: this verifier detects an edit or a deletion of a record already written, replayed "
                     + "independently per writer -- but ONLY for the fields joined into AuditEventHash's "
                     + "chained hash: eventId, timestamp, instanceId, sequence, principalId, clientId, tool, "
@@ -68,14 +68,27 @@ public final class AuditChainVerifierCli {
                     + "remain undetectable if deleted, and a checkpoint only helps if whoever can edit the "
                     + "audit file cannot also edit the checkpoint file. Neither file resists tampering by anyone who can write to it. This "
                     + "check also "
-                    + "cannot resist an adversary who can write to this file directly: AuditEventHash is "
+                    + "cannot resist an adversary who can write to this file directly";
+
+    /** Unkeyed runs only: the chain is plain SHA-256, so a writer can recompute it. */
+    private static final String UNKEYED_RESISTANCE =
+            ": AuditEventHash is "
                     + "unkeyed SHA-256 over the joined record body, so anyone able to delete or alter a record "
                     + "can simply recompute every hash after it and the resulting chain verifies perfectly; "
-                    + "resisting that needs a keyed MAC, which this release does not build, or a checkpoint "
-                    + "file the adversary cannot also rewrite. Read nothing above as a guarantee that this file is whole, that every "
+                    + "resisting that needs a keyed MAC, which this run was not given a key for, or a checkpoint "
+                    + "file the adversary cannot also rewrite.";
+
+    private static final String LIMITATION_TAIL =
+            " Read nothing above as a guarantee that this file is whole, that every "
                     + "field of every record is unaltered, or that it can never be altered without this check "
                     + "noticing -- only that no edit or deletion of a hashed field was found within the records "
                     + "this check could see, by someone who did not also recompute the chain that follows it.";
+
+    /** Printed on unkeyed runs only (no {@code --hmac-key-file}). */
+    private static final String LIMITATION = LIMITATION_HEAD + UNKEYED_RESISTANCE + LIMITATION_TAIL;
+
+    /** Printed instead of {@link #LIMITATION} on keyed runs: the scope caveats, without the unkeyed claim. */
+    private static final String KEYED_SCOPE = LIMITATION_HEAD + "." + LIMITATION_TAIL;
 
     /** Printed on every run given a key: what a keyed chain does and does not resist. */
     public static final String KEYED_LIMITATION =
@@ -83,6 +96,10 @@ public final class AuditChainVerifierCli {
                     + "the operator and the process that writes the file.";
     /** Prefix of the line printed, with their count, when {@code --allow-unkeyed-writers} was given. */
     public static final String UNKEYED_WRITERS_PREFIX = "UNKEYED WRITERS ALLOWED: ";
+
+    private static String limitation(boolean keyed) {
+        return keyed ? KEYED_SCOPE : LIMITATION;
+    }
 
     private AuditChainVerifierCli() {
     }
@@ -128,7 +145,7 @@ public final class AuditChainVerifierCli {
             err.println("Usage: AuditChainVerifierCli <audit-log-file> [--checkpoints <checkpoint-file>] "
                     + "[--min-retention <ISO-8601 period>] [--hmac-key-file <path>]... [--allow-unkeyed-writers]  "
                     + "(or --help for exit codes)");
-            out.println(LIMITATION);
+            out.println(limitation(!keyFiles.isEmpty()));
             return EXIT_UNREADABLE_INPUT;
         }
         List<AuditChainKey> keys = new ArrayList<>();
@@ -138,12 +155,12 @@ public final class AuditChainVerifierCli {
                 err.println("UNREADABLE INPUT: --hmac-key-file could not be read or is malformed; expected two "
                         + "lines, the key id then the base64 key (at least " + AuditChainKey.MIN_KEY_BYTES
                         + " bytes), and ids must be distinct");
-                out.println(LIMITATION);
+                out.println(limitation(!keyFiles.isEmpty()));
                 return EXIT_UNREADABLE_INPUT;
             }
             if (keys.stream().anyMatch(k -> k.id().equals(key.id()))) {
                 err.println("UNREADABLE INPUT: --hmac-key-file gave two keys with the same id");
-                out.println(LIMITATION);
+                out.println(limitation(!keyFiles.isEmpty()));
                 return EXIT_UNREADABLE_INPUT;
             }
             keys.add(key);
@@ -158,12 +175,12 @@ public final class AuditChainVerifierCli {
                             : AuditChainVerifier.verify(path, checkpoints, minimumRetention);
         } catch (IOException e) {
             err.println("UNREADABLE INPUT: could not read " + path + ": " + e.getMessage());
-            out.println(LIMITATION);
+            out.println(limitation(!keyFiles.isEmpty()));
             return EXIT_UNREADABLE_INPUT;
         }
 
         printReport(out, report);
-        out.println(LIMITATION);
+        out.println(limitation(!keys.isEmpty()));
         if (!keys.isEmpty()) {
             out.println(KEYED_LIMITATION);
         }
