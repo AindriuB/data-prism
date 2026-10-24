@@ -43,6 +43,16 @@ class ScopeKeysPrefixTest {
     }
 
     @Test
+    void aDotInThePrefixIsNotAWildcardAndWhatFollowsThePrefixIsUnrestricted() {
+        IMap<String, String> entries = map();
+        for (String key : new String[]{"a_b.\n1", "a_bX1", "a_b.\u00001"}) {
+            entries.put(key, "v");
+        }
+
+        assertThat(ScopeKeys.keysWithPrefix(entries, "a_b.")).containsExactlyInAnyOrder("a_b.\n1", "a_b.\u00001");
+    }
+
+    @Test
     void aPrefixWithABackslashIsRefused() {
         IMap<String, String> entries = map();
 

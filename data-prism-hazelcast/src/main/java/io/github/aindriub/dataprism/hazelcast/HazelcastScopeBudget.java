@@ -108,6 +108,14 @@ public final class HazelcastScopeBudget implements ScopeBudget {
         return counts().getOrDefault(cluster.scopeKeys().budget(scopeId, subjectId), 0);
     }
 
+    /**
+     * Deletes the scope's counts, each under its key's bounded lock. {@link ScopeIdentityIndex#endScope} does not
+     * call this: it deletes the budget keys itself, under the one deadline it shares across all its maps. Because
+     * {@code forget} can be called on its own, with no caller's deadline, it takes a lock timeout of its own per
+     * key.
+     *
+     * @throws ClusterLockTimeoutException if the lock of a key timed out; that count is left in place
+     */
     @Override
     public void forget(String scopeId) {
         String prefix = cluster.scopeKeys().scopePrefix(scopeId);
