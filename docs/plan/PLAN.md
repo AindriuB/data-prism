@@ -264,6 +264,10 @@ Second external review round on PR #163 (Lows and Nits; none scheduled, each fol
 - `AuditChainVerifier`:316: broken writers are marked "unkeyed allowed".
 - The legacy watch runs only on member joins.
 
+Third, fourth and fifth external review rounds on PR #163 are fixed in full except one item (round 5, 2026-10-24):
+
+- 163-15: `AuditChainVerifier.verifyWithKeys` pairs writers by list index; look them up by instance id. Belongs to the next edit of `AuditChainVerifier` (206's successors).
+
 Follow-ups from 245 (found in its review and verify, 2026-10-21, none scheduled; fold into the next edit of the operator controller):
 
 - The operator read endpoints write `ALLOW` before the read, so a read that then fails leaves an `ALLOW` for a read that did not happen. Same shape as the `resume` bug 245 fixed; OD-08-14 decides it for `resume` only.

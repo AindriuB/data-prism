@@ -347,3 +347,5 @@ PIT: `excludedMethods` gains `authenticatedOnlyIfHeld`, the defence-in-depth gua
 Decisions. The Hazelcast exemption is narrowed to `lockState` and `recordFailure` only, and `LinkCodec.open` is never exempt (new fixture `HzLimiterOpensTokens`). The sealed-links.md reason count is corrected to sixteen. The drain test runs A and B via `whileHeld` (stricter).
 
 Notes. For 264: nested classes inside a Hazelcast limiter are not exempt (it fails closed). The lone-surrogate UTF-8 encoding in `AttemptSubject` is pre-existing.
+
+**Review round 5 (PR #163; reviewer ids 163-1 to 163-15).** The Hazelcast exemption covers self-calls only, with the new fixture `HzLimiterDelegatesToAnother`. The concurrency tests now assert that no outcome is UNAVAILABLE.
