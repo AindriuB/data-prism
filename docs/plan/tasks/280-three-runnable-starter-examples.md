@@ -32,6 +32,7 @@ Give a developer three tiny applications to copy, each one protected endpoint an
   - `starter-http-interface`: one interface with `@DataPrismSource` and a `@PostExchange` lookup.
   - Each `application.yaml` sets only the still-required settings (spec section 1) plus the source's base URL and timeout. It sets no defaulted property, and it marks every setting `# required` or `# optional` in a comment.
 - Each example's test starts the application against an in-test upstream HTTP server and an in-test JWT issuer (JWKS over loopback, as the existing local fixtures allow). It calls `get_entity_context` over the real MCP HTTP transport, and asserts that the response is scrubbed and that no raw upstream value appears in the response or the captured log. The test may not replace any Data Prism bean: the point is that the auto-configuration does the work.
+- Key material (found in the external review of PR #162): the HMAC key and the JWT signing key the examples' tests use are generated at test start (`SecureRandom`, and an in-memory RSA or EC key pair). They are handed to the application through the environment-variable reference or a temporary directory that the test deletes. No key, keystore, PEM or JWK is committed. 282's template shows key references only, never key material.
 - 282 writes the getting-started guide around `starter-yaml`, and 283 generates the public template repository from it. Keep it free of anything that only works inside the reactor, apart from the parent pom.
 - Never read `~/.m2/settings.xml`, `~/.m2/settings-security.xml`, `~/.gnupg` or any other credential file. Do not run `mvn install`.
 
@@ -42,6 +43,7 @@ Give a developer three tiny applications to copy, each one protected endpoint an
 - [ ] `./mvnw -B -Prelease -DskipTests -Dgpg.skip package` stages no example artifact. The Outcome shows the staged artifact list, and the published count is unchanged from before this task.
 - [ ] `ArchitectureCoverageTest` and `ArchitectureTest` pass with the three modules included in the imported graph.
 - [ ] Each example's dependencies are the starter (plus the connector only if OD-277-1 is (b)) and test-scoped test libraries. `./mvnw -B -pl examples/starter-yaml dependency:tree` in the Outcome shows this.
+- [ ] No key material is committed. Each example has a `KeyMaterialNotCommittedTest` that walks the whole `examples/` directory and fails on any file with a `.pem`, `.key`, `.p12`, `.jks` or `.jwk` extension, or whose content matches `-----BEGIN` or a JWK `"d":` private member. That scope covers `examples/starter-application-template.yaml` once 282 adds it. The test is shown to fail once with a planted PEM header in a recorded run.
 - [ ] `./mvnw -B verify` passes.
 
 ## Out of scope

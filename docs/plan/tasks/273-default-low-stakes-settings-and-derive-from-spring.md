@@ -3,9 +3,9 @@
 **Repo:** `.`
 **Release:** 0.9.0 (changes the starter's public contract; must land before the 0.9.0 freeze)
 **Base branch:** `origin/main` once every 0.8 brief has merged
-**Depends on:** 260 (creates `freeze/codes.txt`, which this task may edit), 210 (case authorisation stays required; 210 also owns `validatePolicy`), 211, 230, 254 and 255 (the last 0.8 editors of `DataPrismPropertiesValidator.java`, `frozen-property-names.txt`, `additional-spring-configuration-metadata.json`, the bean inventories and `docs/configuration.md`)
+**Depends on:** 260 (creates `freeze/codes.txt`, which this task may edit), 210 (case authorisation stays required; 210 also owns `validatePolicy`), 211, 254, 255, 284 and 286 (PR #164; 284 and 286 replace the deferred 230; these are the last 0.8 editors of `DataPrismPropertiesValidator.java`, `frozen-property-names.txt`, `additional-spring-configuration-metadata.json`, the bean inventories and `docs/configuration.md`)
 **Wave:** 15 (0.9 starter onboarding; filed 2026-10-23 from `docs/plan/specs/2026-10-23-starter-onboarding.md`)
-**Decisions:** OD-273-1 and OD-273-2 are open (below). The settings to default and derive, and the ones that stay required, are owner decisions already made in the spec, section 1.
+**Decisions:** OD-273-1 and OD-273-2 are open (below). OD-273-3 was decided (a) by the owner on 2026-10-24 (below). The settings to default and derive, and the ones that stay required, are owner decisions already made in the spec, section 1.
 **Owns:**
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PrivacyProperties.java *(the `profile` and `scope-lifetime` defaults only)*
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/IdentityProperties.java *(the `resolver` default only)*
@@ -50,7 +50,7 @@ A Spring Boot developer should set only what is a security decision. Default the
 - Defaults to set (each visible in `spring-configuration-metadata.json` so that `ConfigurationMetadataDocumentedTest` compares it with `docs/configuration.md`):
   - `dataprism.privacy.profile`: `DEFAULT`.
   - `dataprism.privacy.scope-lifetime`: OD-273-1.
-  - `dataprism.identity.resolver`: `pass-through` (`IdentityResolverSelection`, `Preflights.java:30-45`).
+  - `dataprism.identity.resolver`: `pass-through`, but only when exactly one source is configured (OD-273-3, decided (a) 2026-10-24). `IdentityResolverSelection.java` (its `@ConditionalOnProperty(prefix = "dataprism.identity", name = "resolver", havingValue = "pass-through")`) and `Preflights.java:25-45` (`dataPrismIdentityResolverPreflight`).
   - `dataprism.hazelcast.topology`: `single-node`.
   - `dataprism.transport.mode`: already `http` (`TransportProperties.java:7`); list it in the report only.
   - `dataprism.metrics.sink` is **not** this task's; 276 defaults it with the Micrometer bean.
@@ -70,6 +70,16 @@ A Spring Boot developer should set only what is a security decision. Default the
 - Note: `ScopeResolver` extends a scope on each request (PLAN.md, 263's follow-ups), so this is an idle limit in practice. The docs must say so.
 - Alternatives: a shorter `PT1H`, which rotates pseudonyms more often within a working day; or keep it required.
 
+## OD-273-3: decided (a) by the owner, 2026-10-24: when the identity resolver defaults to pass-through
+A pass-through resolver uses the requested subject id as every source's key. With one source that is harmless. With two or more, a default would silently join records from sources that key the same person differently, which today's `MISSING_IDENTITY_RESOLVER` refusal stops. Found in the external review of PR #162.
+- **Decided (a):** default to pass-through only when exactly one source is configured. With two or more sources and no resolver configured, startup refuses as today. This was the coordinator's recommendation.
+- **Required shape:**
+  - `IdentityResolverSelection`'s bean condition gains `matchIfMissing = true`, so the pass-through bean is defined when the property is unset. `@ConditionalOnMissingBean(IdentityResolver.class)` stays, so an application resolver always wins.
+  - The count cannot be a bean condition, because configured JSON adapters (`ConfiguredJsonSourcesInitializer`) and 278's generated adapters are registered by other means. `dataPrismIdentityResolverPreflight`, a `BeanFactoryPostProcessor` that runs after every bean definition is registered, counts the `DataSourceAdapter` bean definitions. When `dataprism.identity.resolver` is unset, the only `IdentityResolver` is the defaulted pass-through bean, and the count is two or more, it refuses `MISSING_IDENTITY_RESOLVER`. The message names `dataprism.identity.resolver` and says that two or more sources need a resolver or an explicit `pass-through`.
+  - An explicit `dataprism.identity.resolver: pass-through` is still accepted with any number of sources, because the operator has stated it.
+  - The startup report lists the defaulted resolver with the origin "default: one source configured".
+- **Rejected:** (b) default to pass-through regardless of the source count, as the spec's list reads; this removes a refusal that prevents silent joins. (c) no default; the resolver stays required.
+
 ## OD-273-2 (open, owner): what happens to `dataprism.security.jwt.*`
 - **(a), recommended: Spring's keys become the only source.** If any `dataprism.security.jwt.*` key is set, startup refuses with a new code, `JWT_SETTINGS_MOVED`, naming the Spring key to use instead. Why: one name for a security setting before the freeze, and 0.9 is the last window for breaking changes. Cost: breaking for every standalone-server operator. The sweep covers the docker and compose files, `server.json` (the MCP registry's environment-variable names), the quickstart, the load test and four doc pages, all listed under Owns with "only under OD-273-2 (a)".
 - **(b):** both are accepted. Startup refuses with a new code, `JWT_SETTINGS_CONFLICT`, when both are set and differ. There is no sweep and no break, but two names for one setting are frozen into 1.x.
@@ -77,8 +87,23 @@ A Spring Boot developer should set only what is a security decision. Default the
 
 ## Acceptance
 - [ ] Tests are written first and fail on the base commit; the Outcome names them.
-- [ ] `DefaultedSettingsConfigurationTest`: a context with none of the six defaulted keys set, and every still-required key set, starts. The effective values are `DEFAULT`, the OD-273-1 value, `pass-through`, `single-node` and `http`. Setting each key explicitly overrides its default.
-- [ ] For each still-required setting (HMAC key reference, caller-claim mappings, security policy, audit sink, case authorisation from 210), removing it alone still refuses with its existing code. One parameterised test, one row each.
+- [ ] `DefaultedSettingsConfigurationTest`: a context with one source, none of the six defaulted keys set, and every still-required key set, starts. The effective values are `DEFAULT`, the OD-273-1 value, `pass-through`, `single-node` and `http`. Setting each key explicitly overrides its default.
+- [ ] For each still-required setting, removing it alone still refuses with its existing code. One parameterised test, one row each:
+  - the HMAC key reference;
+  - the caller-claim mappings;
+  - the security policy;
+  - the audit sink;
+  - case authorisation (210);
+  - the JWT issuer (Spring's `issuer-uri`, `MISSING_JWT_ISSUER`);
+  - the JWT audience (Spring's `audiences`, `MISSING_JWT_AUDIENCE`);
+  - the writer id, with both `dataprism.audit.writer-id` and `spring.application.name` unset (`MISSING_AUDIT_WRITER`).
+  281 maps its mandatory rows to these.
+- [ ] OD-273-3 (a):
+  - One configured source with no resolver set starts, using pass-through.
+  - Two sources with no resolver set refuse `MISSING_IDENTITY_RESOLVER`. This is tested twice: with two Java adapters, and with one Java adapter and one configured JSON source.
+  - Two sources with explicit `pass-through` start.
+  - An application `IdentityResolver` bean with two sources starts and is the only resolver.
+  - Mutants killed: removing `matchIfMissing`, and counting `>= 1` instead of `>= 2`.
 - [ ] `SpringDerivedSettingsTest`: with only `spring.security.oauth2.resourceserver.jwt.issuer-uri`, `jwk-set-uri` and `audiences` set, the context's single `JwtDecoder` accepts a token signed by the fixture key with a listed audience, and rejects one with an unlisted audience and one from another issuer. With `jwk-set-uri` unset it uses issuer discovery. A plain-HTTP non-local `issuer-uri` refuses with the existing location code.
 - [ ] `spring.application.name: library-loans` with no `dataprism.audit.writer-id` gives writer id `library-loans`. An explicit `writer-id` wins. Neither set refuses `MISSING_AUDIT_WRITER`. `spring.application.name: a/b` refuses `INVALID_AUDIT_WRITER`.
 - [ ] OD-273-2 is implemented as decided. Under (a): any `dataprism.security.jwt.*` key refuses `JWT_SETTINGS_MOVED`, and the message names the Spring key and no configured value; `frozen-property-names.txt` loses the removed names; the register and `freeze/codes.txt` change in the same commit; `git grep -n 'dataprism.security.jwt\|DATAPRISM_SECURITY_JWT'` outside `docs/plan/` and `CHANGELOG.md` returns nothing. Under (b): the conflict refusal is tested both ways and both names are documented.

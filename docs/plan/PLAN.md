@@ -144,8 +144,9 @@ Order by wave (briefs in a wave can run in parallel when their owned files do no
 | 16 (0.9) | 275, 276, 277 |
 | 17 (0.9) | 278 |
 | 18 (0.9) | 279 |
-| 19 (0.9) | 280, 281 |
-| 20 (0.9) | 282 |
+| 19 (0.9) | 280 |
+| 20 (0.9) | 281 (moved from 19 on 2026-10-24: it cites 280's Outcome) |
+| 21 (0.9) | 282 (moved from 20 with 281) |
 | after the 0.9.0 publication | 283 (external template repository; OD-283-1) |
 
 Obligations for the 0.8.0 release cut (no brief filed yet; whoever files it copies these into its Acceptance):
@@ -244,7 +245,7 @@ Owner decisions that change behaviour and belong in `docs/migration-0.8.md`: the
 
 #### 0.9 starter onboarding plan (filed 2026-10-23)
 
-Goal: adopting Data Prism should feel like adopting any Spring Boot starter. Spec: `specs/2026-10-23-starter-onboarding.md` (owner-agreed design). Eleven briefs, 273 to 283, in waves 15 to 20 above. They change the starter's public contract, so they must land before the 0.9.0 freeze. Every 0.8 brief precedes wave 15, and none of these runs alongside wave 4.
+Goal: adopting Data Prism should feel like adopting any Spring Boot starter. Spec: `specs/2026-10-23-starter-onboarding.md` (owner-agreed design). Eleven briefs, 273 to 283, in waves 15 to 21 above. They change the starter's public contract, so they must land before the 0.9.0 freeze. Every 0.8 brief precedes wave 15, and none of these runs alongside wave 4.
 
 - 273 defaults the low-stakes settings and derives the JWT settings and writer id from Spring. 274 adds the restricted JSONPath library. 275 keys `json-sources:` fields by restricted JSONPath. 276 auto-configures the security chain, the caller-context extractor and Micrometer metrics. 277 makes configured JSON sources work in an embedded starter application. 278 adds `@DataPrismSource`. 279 makes startup refusals name the property, an example and the doc anchor. 280 adds three runnable examples, built in the reactor and never published. 281 updates the reference docs. 282 writes the getting-started guide and the `application.yaml` template. 283 is the public template repository.
 - The order is mostly serial because 273, 275, 278 and 279 all add refusal codes, so each edits 260's `freeze/codes.txt` and the contract register. 273, 276, 279 and 281 all edit `docs/configuration.md`.
@@ -254,6 +255,7 @@ Goal: adopting Data Prism should feel like adopting any Spring Boot starter. Spe
 Open owner decisions (each brief carries options and a recommendation):
 
 - OD-273-1: the default `dataprism.privacy.scope-lifetime`. Recommended: `PT8H`.
+- OD-273-3: **decided (a) by the owner, 2026-10-24.** `dataprism.identity.resolver` defaults to pass-through only when exactly one source is configured. With two or more sources and no resolver configured, startup refuses `MISSING_IDENTITY_RESOLVER`, as today. Found in the external review of PR #162.
 - OD-273-2: what happens to `dataprism.security.jwt.*` now that Spring's keys are read. Recommended (a): Spring's keys only, with a coded migration refusal. This is breaking for server operators and touches `server.json`, docker, compose and the quickstart. (b) accepts both and refuses on conflict.
 - OD-275-1: existing catalogues. Recommended (a): bare names keep working as `$.<name>`, and `nested-catalogues:` is retired with a coded refusal and a migration note.
 - OD-276-1: what the auto-configured chain protects when the host application has none. Recommended (a): every request needs a JWT except the health probe, so the host application fails closed.

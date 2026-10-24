@@ -42,13 +42,13 @@ Today every embedding application writes the same three beans by hand: a `Securi
 
 ## OD-276-1 (open, owner): what the auto-configured chain protects
 When the application defines no `SecurityFilterChain`, Spring Boot's default chain backs off as soon as ours exists. So the scope of our chain decides how the rest of the host application is protected.
-- **(a), recommended:** every request needs a valid bearer JWT, except the health probe (the server's `/health`, and Actuator `health` when Actuator is present). Fail closed for the whole host application. An application that wants anything else defines its own chain, and ours backs off.
+- **(a), recommended:** every request needs a valid bearer JWT, except the health probe. That is the server's `/health` and, when Actuator is present, only the Actuator health status (`/actuator/health`) and its `liveness` and `readiness` groups (`/actuator/health/liveness`, `/actuator/health/readiness`). Any other Actuator endpoint and any other health group or component path, such as `/actuator/health/db`, needs the JWT. Fail closed for the whole host application. An application that wants anything else defines its own chain, and ours backs off.
 - **(b):** only the MCP path (`dataprism.transport.http.path`) is matched. Every other path of the host application is left with no chain, so it is open. This fails open for the host application.
 - **(c):** the MCP path needs the JWT, and every other path is denied. This is safe, but it breaks any host endpoint the developer already has.
 
 ## Acceptance
 - [ ] Tests are written first and fail on the base commit; the Outcome names them.
-- [ ] `McpSecurityAutoConfigurationTest`, with no application security beans, as OD-276-1 decides. Under (a): a request to the MCP path with no token gets 401, with a valid token reaches the transport, and with a token for the wrong audience gets 401; an arbitrary application path with no token gets 401; the health path gets 200 with no token.
+- [ ] `McpSecurityAutoConfigurationTest`, with no application security beans, as OD-276-1 decides. Under (a): a request to the MCP path with no token gets 401, with a valid token reaches the transport, and with a token for the wrong audience gets 401; an arbitrary application path with no token gets 401; the health status and the `liveness` and `readiness` groups get 200 with no token; `/actuator/health/<component>`, another health group and every other Actuator endpoint get 401 with no token. Each path is a test row.
 - [ ] Back-off: with an application `SecurityFilterChain` bean, ours is absent, and the application's chain alone decides. With an application `McpTransportContextExtractor<HttpServletRequest>`, ours is absent. With an application `PrivacyMetrics`, ours is absent. One test each.
 - [ ] With the application's chain replaced by one that permits everything, an MCP tool call with no token is refused by the tool, not answered.
 - [ ] `MicrometerMetricsAutoConfigurationTest`:

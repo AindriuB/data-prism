@@ -4,7 +4,7 @@
 **Release:** 0.9.0
 **Base branch:** `origin/main` once 280 and 281 have merged
 **Depends on:** 280 (the guide walks through `examples/starter-yaml`), 281 (both edit `mkdocs.yml`; the guide links to 281's mandatory-settings paragraph and grammar section)
-**Wave:** 20 (0.9 starter onboarding; filed 2026-10-23 from `docs/plan/specs/2026-10-23-starter-onboarding.md`)
+**Wave:** 21 (moved from 20 on 2026-10-24 with 281; 0.9 starter onboarding; filed 2026-10-23 from `docs/plan/specs/2026-10-23-starter-onboarding.md`)
 **Decisions:** the guide, its 15-minute target and the template are owner decisions already made in the spec, section 4. The page name and the template's location are decided at filing (below).
 **Owns:**
 - docs/getting-started-starter.md *(new)*
