@@ -37,20 +37,20 @@
     <dependency><groupId>org.springframework</groupId><artifactId>spring-web</artifactId><scope>test</scope></dependency>
   </dependencies>
   <build>
-    <testResources>
-      <!-- Only the version stamp is filtered; filtering the rest could corrupt fixtures containing ${...}. -->
-      <testResource>
-        <directory>src/test/resources</directory>
-        <filtering>false</filtering>
-        <excludes><exclude>project-version.properties</exclude></excludes>
-      </testResource>
-      <testResource>
-        <directory>src/test/resources</directory>
-        <filtering>true</filtering>
-        <includes><include>project-version.properties</include></includes>
-      </testResource>
-    </testResources>
     <plugins>
+      <plugin>
+        <!-- Writes Implementation-Version into this jar's manifest. SecurityWiring reads it at
+             runtime to refuse the token-trusted case-authorizer fallback in a release (0.8.0 on). -->
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <configuration>
+          <archive>
+            <manifest>
+              <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+            </manifest>
+          </archive>
+        </configuration>
+      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>

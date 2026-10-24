@@ -25,6 +25,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.ParameterizedTest;
 import org.slf4j.LoggerFactory;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -119,6 +121,48 @@ class SecurityWiringTest {
             assertThat(warnings()).filteredOn(w -> w.contains("CaseAuthorizer")).hasSize(1)
                     .allMatch(w -> w.contains("without assignment checks"));
         });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"0.8.0", "0.8.0-RC1", "1.0.0"})
+    void the_fallback_is_refused_at_runtime_in_a_release(String version) {
+        withVersion(version).withUserConfiguration(Base.class).run(result -> {
+            assertRefusal(result.getStartupFailure(), "MISSING_CASE_AUTHORIZER");
+            assertThat(result.getStartupFailure()).rootCause()
+                    .hasMessageContaining("a CaseAuthorizer bean is required from 0.8.0");
+            if (!version.equals("0.8.0")) {
+                assertThat(result.getStartupFailure()).rootCause().hasMessageNotContaining(version);
+            }
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"0.8.0-SNAPSHOT", "0.7.1"})
+    void the_fallback_starts_with_a_warning_before_a_release(String version) {
+        withVersion(version).withUserConfiguration(Base.class).run(result -> {
+            assertThat(result).hasNotFailed();
+            assertThat(warnings()).filteredOn(w -> w.contains("CaseAuthorizer")).hasSize(1);
+        });
+    }
+
+    @Test
+    void the_fallback_starts_with_a_warning_when_the_version_is_unknown() {
+        context.withBean(SecurityWiring.LibraryVersion.class, () -> () -> null)
+                .withUserConfiguration(Base.class).run(result -> {
+                    assertThat(result).hasNotFailed();
+                    assertThat(warnings()).filteredOn(w -> w.contains("CaseAuthorizer")).hasSize(1);
+                });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"0.8.0", "0.8.0-RC1", "1.0.0", "0.8.0-SNAPSHOT", "0.7.1"})
+    void with_a_case_authorizer_bean_every_version_starts(String version) {
+        withVersion(version).withUserConfiguration(Base.class, RefusingCaseAuthorizer.class)
+                .run(result -> assertThat(result).hasNotFailed());
+    }
+
+    private WebApplicationContextRunner withVersion(String version) {
+        return context.withBean(SecurityWiring.LibraryVersion.class, () -> () -> version);
     }
 
     @Test
