@@ -196,7 +196,8 @@ class SecurityWiringTest {
 
     /*
      * ScopeResolver and AuthorizationService are final, so neither CGLIB nor a JDK proxy can wrap them and an
-     * end-to-end proxied-default context cannot be built; the unwrapping the guard relies on is tested directly.
+     * end-to-end proxied-default context cannot be built; this is an accepted limitation. The unwrapping the guard
+     * relies on is tested directly, and the context test below covers a proxied deployer-side CaseAuthorizer.
      */
     @Test
     void unwrapping_sees_through_one_proxy_to_the_target() {
@@ -229,8 +230,54 @@ class SecurityWiringTest {
 
     @Test
     void an_application_bean_shadowing_the_bypass_check_refuses_startup() {
-        context.withUserConfiguration(Base.class, ShadowingBypassCheck.class)
-                .run(result -> assertThat(result).hasFailed());
+        context.withUserConfiguration(Base.class, ShadowingBypassCheck.class).run(result -> {
+            assertThat(result).hasFailed();
+            // the shadowing bean is not a BypassCheck, so the auto-configuration's injection point cannot be met
+            assertThat(result.getStartupFailure()).hasRootCauseInstanceOf(
+                    org.springframework.beans.factory.NoSuchBeanDefinitionException.class);
+            assertThat(rootCause(result.getStartupFailure()).getMessage()).contains("BypassCheck");
+        });
+    }
+
+    /*
+     * Real proxying of ScopeResolver and AuthorizationService is impossible (both final), so a post-processor
+     * that wraps the deployer-side CaseAuthorizer (an interface, so JDK-proxyable) is the closest end-to-end
+     * stand-in: the wired resolver must still use it and the bypass guard must not misread it as a replacement.
+     */
+    @Test
+    void a_proxied_case_authorizer_is_still_consulted_and_does_not_trip_the_bypass_guard() {
+        context.withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, ProxyingPostProcessor.class)
+                .run(result -> {
+                    assertThat(result).hasNotFailed();
+                    assertThat(java.lang.reflect.Proxy.isProxyClass(result.getBean(CaseAuthorizer.class).getClass()))
+                            .isTrue();
+                    ScopeResolver resolver = result.getBean(ScopeResolver.class);
+                    AuthorizationDecision decision = result.getBean(AuthorizationService.class)
+                            .authorize(CALLER, new ToolInvocation("get_entity_context", "GET_ENTITY_CONTEXT"));
+                    assertThatThrownBy(() -> resolver.resolve(CALLER, decision, CLOCK))
+                            .isInstanceOfSatisfying(SecurityRefusedException.class,
+                                    e -> assertThat(e.code()).isEqualTo(ScopeResolver.CASE_NOT_AUTHORISED));
+                });
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class ProxyingPostProcessor {
+        @Bean
+        static org.springframework.beans.factory.config.BeanPostProcessor proxyCaseAuthorizers() {
+            return new org.springframework.beans.factory.config.BeanPostProcessor() {
+                @Override
+                public Object postProcessAfterInitialization(Object bean, String name) {
+                    return bean instanceof CaseAuthorizer ? new ProxyFactory(bean).getProxy() : bean;
+                }
+            };
+        }
+    }
+
+    private static Throwable rootCause(Throwable t) {
+        while (t.getCause() != null) {
+            t = t.getCause();
+        }
+        return t;
     }
 
     @Configuration(proxyBeanMethods = false)

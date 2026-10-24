@@ -79,6 +79,11 @@ class SecurityWiring {
         return instances.stream().anyMatch(instance -> unwrap(instance) != ours);
     }
 
+    /**
+     * Follows singleton AOP targets to the innermost object. Defensive: {@link ScopeResolver} and
+     * {@link AuthorizationService} are final, so no proxy can currently wrap them and only a non-proxy
+     * replacement can reach {@link #replaced}; this keeps the check correct if either stops being final.
+     */
     static Object unwrap(Object bean) {
         Object current = bean;
         while (true) {
