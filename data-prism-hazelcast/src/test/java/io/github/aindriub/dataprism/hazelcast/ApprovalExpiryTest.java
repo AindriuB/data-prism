@@ -43,7 +43,7 @@ class ApprovalExpiryTest {
 
     private void assertExpiresAt(String id, ApprovalRequest request) {
         IMap<String, String> map = cluster.instance().getMap(PrivacyCluster.APPROVAL_MAP);
-        long expiration = map.getEntryView(ScopeKeys.approval(request.scopeId(), id)).getExpirationTime();
+        long expiration = map.getEntryView(TestMembers.SCOPE_KEYS.approval(request.scopeId(), id)).getExpirationTime();
         assertThat(expiration).isBetween(request.expiresAt().toEpochMilli() - 1000,
                 request.expiresAt().toEpochMilli() + 1000);
     }

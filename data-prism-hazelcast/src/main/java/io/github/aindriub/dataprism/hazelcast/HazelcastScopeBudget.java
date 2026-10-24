@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -57,7 +58,7 @@ public final class HazelcastScopeBudget implements ScopeBudget {
      */
     @Override
     public boolean tryRead(String scopeId, String subjectId, int budget) {
-        String key = ScopeKeys.budget(scopeId, subjectId);
+        String key = cluster.scopeKeys().budget(scopeId, subjectId);
         IMap<String, Integer> counts;
         // Obtaining the map and taking the lock are themselves cluster calls and
         // throw when the member is gone. They belong inside the guard: leaving
@@ -104,16 +105,33 @@ public final class HazelcastScopeBudget implements ScopeBudget {
 
     @Override
     public int reads(String scopeId, String subjectId) {
-        return counts().getOrDefault(ScopeKeys.budget(scopeId, subjectId), 0);
+        return counts().getOrDefault(cluster.scopeKeys().budget(scopeId, subjectId), 0);
     }
 
+    /**
+     * Deletes the scope's counts, each under its key's bounded lock. {@link ScopeIdentityIndex#endScope} does not
+     * call this: it deletes the budget keys itself, under the one deadline it shares across all its maps. Because
+     * {@code forget} can be called on its own, with no caller's deadline, it takes a lock timeout of its own per
+     * key.
+     *
+     * @throws ClusterLockTimeoutException if the lock of a key timed out; that count is left in place
+     */
     @Override
     public void forget(String scopeId) {
-        String prefix = ScopeKeys.scopePrefix(scopeId);
-        IMap<String, Integer> counts = counts();
-        counts.keySet().stream()
-                .filter(key -> key.startsWith(prefix))
-                .forEach(counts::delete);
+        String prefix = cluster.scopeKeys().scopePrefix(scopeId);
+        IMap<String, Integer> counts;
+        List<String> keys;
+        try {
+            counts = counts();
+            keys = ScopeKeys.keysWithPrefix(counts, prefix);
+        } catch (RuntimeException failed) {
+            throw ClusterRefusals.mapped(failed);
+        }
+        // Each delete runs under its key's bounded lock, so a key another member holds cannot make this wait.
+        int skipped = ClusterLocks.deleteAll(counts, keys, lockTimeout);
+        if (skipped > 0) {
+            throw new ClusterLockTimeoutException();
+        }
     }
 
     private IMap<String, Integer> counts() {

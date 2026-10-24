@@ -1,8 +1,11 @@
 package io.github.aindriub.dataprism.core.spi;
 
+import io.github.aindriub.dataprism.core.model.ModelDescription;
 import io.github.aindriub.dataprism.core.model.PrivacyContext;
 import io.github.aindriub.dataprism.core.model.ScrubResult;
 import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
+
+import java.util.Optional;
 
 /**
  * Turns a source object into a tree that is safe to show a model.
@@ -23,4 +26,17 @@ public interface ScrubbingEngine {
      *                                 case nothing is returned to the caller at all
      */
     ScrubResult scrub(Object source, PrivacyContext context);
+
+    /**
+     * How each field of {@code model} is protected under this engine, computed from the plan the
+     * scrubber applies (annotations, descriptors and the profile of {@code context}), with no data.
+     *
+     * <p>The default cannot describe anything and says so; a caller treats an empty result as a
+     * refusal (fail closed).
+     *
+     * @param linksEnabled whether chainable fields are reported with their key namespace
+     */
+    default Optional<ModelDescription> describe(Class<?> model, PrivacyContext context, boolean linksEnabled) {
+        return Optional.empty();
+    }
 }

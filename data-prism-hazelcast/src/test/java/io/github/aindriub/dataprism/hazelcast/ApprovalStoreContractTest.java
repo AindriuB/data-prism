@@ -41,7 +41,10 @@ class ApprovalStoreContractTest {
     void shutDown() {
         for (PrivacyCluster c : new PrivacyCluster[]{cluster, second}) {
             if (c != null) {
+                com.hazelcast.core.HazelcastInstance started = c.instance();
                 c.close();
+                // close() leaves an instance it did not start, and this test started it.
+                started.getLifecycleService().terminate();
             }
         }
     }
@@ -310,13 +313,13 @@ class ApprovalStoreContractTest {
 
     @Test
     void thePendingKeyDistinguishesKindAndRequester() {
-        assertThat(HazelcastApprovalStore.pendingKey(Kind.TOOL_CALL, "alice"))
-                .isNotEqualTo(HazelcastApprovalStore.pendingKey(Kind.REIDENTIFICATION, "alice"))
-                .isNotEqualTo(HazelcastApprovalStore.pendingKey(Kind.TOOL_CALL, "bob"))
-                .isNotEqualTo(HazelcastApprovalStore.pendingKey(Kind.TOOL_CALL, null))
-                .isNotEqualTo(HazelcastApprovalStore.pendingKey(Kind.TOOL_CALL, "~"));
-        assertThat(HazelcastApprovalStore.pendingKey(Kind.TOOL_CALL, null))
-                .isNotEqualTo(HazelcastApprovalStore.pendingKey(Kind.TOOL_CALL, ""));
+        assertThat(TestMembers.SCOPE_KEYS.pending(Kind.TOOL_CALL, "alice"))
+                .isNotEqualTo(TestMembers.SCOPE_KEYS.pending(Kind.REIDENTIFICATION, "alice"))
+                .isNotEqualTo(TestMembers.SCOPE_KEYS.pending(Kind.TOOL_CALL, "bob"))
+                .isNotEqualTo(TestMembers.SCOPE_KEYS.pending(Kind.TOOL_CALL, null))
+                .isNotEqualTo(TestMembers.SCOPE_KEYS.pending(Kind.TOOL_CALL, "~"));
+        assertThat(TestMembers.SCOPE_KEYS.pending(Kind.TOOL_CALL, null))
+                .isNotEqualTo(TestMembers.SCOPE_KEYS.pending(Kind.TOOL_CALL, ""));
     }
 
     @Test

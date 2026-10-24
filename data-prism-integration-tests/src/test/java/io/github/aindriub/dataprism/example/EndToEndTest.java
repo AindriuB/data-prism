@@ -10,6 +10,8 @@ import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
 import io.github.aindriub.dataprism.mcp.ToolOptions;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
+import io.github.aindriub.dataprism.security.CaseAuthorizer;
+import io.github.aindriub.dataprism.security.ClientAllowlist;
 import io.github.aindriub.dataprism.security.PurposeValidator;
 import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.SecurityPolicy;
@@ -60,7 +62,7 @@ class EndToEndTest {
 
     private static AuthorizationService authorizationService(String privacyProfile) {
         SecurityPolicy policy = new SecurityPolicy(Set.of(PURPOSE), Map.of(ROLE, Set.of("GET_ENTITY_CONTEXT")));
-        return new AuthorizationService(policy, privacyProfile, PrivacyScopeType.INVESTIGATION);
+        return new AuthorizationService(policy, privacyProfile, PrivacyScopeType.INVESTIGATION, ClientAllowlist.unrestricted());
     }
 
     private static McpSyncServerExchange exchangeFor(AuthenticatedCaller caller) {
@@ -75,7 +77,7 @@ class EndToEndTest {
     private McpSchema.CallToolResult call(DataPrismAssembly assembly, String privacyProfile,
                                           AuthenticatedCaller caller, Map<String, Object> arguments) {
         ScopeResolver scopeResolver = new ScopeResolver(assembly.pseudonymisationVersion(), Duration.ofHours(8),
-                new PurposeValidator(Set.of(PURPOSE)));
+                new PurposeValidator(Set.of(PURPOSE)), CaseAuthorizer.tokenTrusted());
         var tool = new GetEntityContextTool(assembly.orchestrator(), authorizationService(privacyProfile),
                 scopeResolver, PrivacyMetrics.none(), toolAudit, FIXED, null, ToolOptions.defaults().noAdmission().build());
         return tool.specification().callHandler()

@@ -44,7 +44,22 @@ public enum Metric {
     CLUSTER_SEAL_ENTRIES_UNDER_PREVIOUS("dataprism.cluster.seal.entries_under_previous"),
     CLUSTER_LOCK_TIMEOUT("dataprism.cluster.lock.timeout"),
     CLUSTER_FLOOR_REFUSAL("dataprism.cluster.floor.refusal"),
-    CLUSTER_LEGACY_ENTRIES("dataprism.cluster.legacy.entries");
+    CLUSTER_LEGACY_ENTRIES("dataprism.cluster.legacy.entries"),
+    // Key resolvers, links, paging and catalog (0.8 core constants, one per outcome, OD-200-15).
+    RESOLVER_UNAVAILABLE("dataprism.resolver.unavailable"),
+    RESOLVER_TIMEOUT("dataprism.resolver.timeout"),
+    RESOLVER_REJECTED("dataprism.resolver.rejected"),
+    RESOLVER_TOO_MANY("dataprism.resolver.too_many"),
+    RESOLVER_INVALID_OUTPUT("dataprism.resolver.invalid_output"),
+    RESOLVER_LATENCY("dataprism.resolver.latency"),
+    LINKS_ISSUED("dataprism.links.issued"),
+    LINKS_OMITTED("dataprism.links.omitted"),
+    LINKS_REFUSED("dataprism.links.refused"),
+    LINKS_ATTEMPTS_EXHAUSTED("dataprism.links.attempts_exhausted"),
+    LINK_KEYS_LOADED("dataprism.links.keys.loaded"),
+    PAGING_PAGES("dataprism.paging.pages"),
+    CATALOG_DESCRIPTIONS_GENERATED("dataprism.catalog.descriptions.generated"),
+    CATALOG_SOURCE_NAMES_NONCONFORMING("dataprism.catalog.source_names.nonconforming");
 
     private final String metricName;
 

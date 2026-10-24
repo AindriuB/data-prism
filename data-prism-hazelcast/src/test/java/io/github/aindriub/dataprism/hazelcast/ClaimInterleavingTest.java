@@ -27,8 +27,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ClaimInterleavingTest {
 
     private static final String ID = "inter-1";
-    private static final String KEY_A = ScopeKeys.approval("scope-a", ID);
-    private static final String KEY_B = ScopeKeys.approval("scope-b", ID);
+    private static final String KEY_A = TestMembers.SCOPE_KEYS.approval("scope-a", ID);
+    private static final String KEY_B = TestMembers.SCOPE_KEYS.approval("scope-b", ID);
     private static final String TOKEN_A = "00000000-0000-0000-0000-00000000000a";
     private static final String TOKEN_B = "00000000-0000-0000-0000-00000000000b";
     private static final String CLAIM_A = ClaimEntries.value(KEY_A, TOKEN_A);
@@ -67,7 +67,7 @@ class ClaimInterleavingTest {
     }
 
     private void ownerClaimsButHasNotInserted() {
-        assertThat(claims.putIfAbsent(ID, CLAIM_A)).isNull();
+        assertThat(claims.putIfAbsent(TestMembers.SCOPE_KEYS.claim(ID), CLAIM_A)).isNull();
     }
 
     @Test
@@ -77,14 +77,14 @@ class ClaimInterleavingTest {
         IMap<String, String> seenByTaker = approvalsThatRun(() -> {
             // The owner inserts, then reads its claim: it is marked, so the owner withdraws.
             approvals.put(KEY_A, "owner-entry");
-            ownerKept[0] = CLAIM_A.equals(claims.get(ID));
+            ownerKept[0] = CLAIM_A.equals(claims.get(TestMembers.SCOPE_KEYS.claim(ID)));
             if (!ownerKept[0]) approvals.remove(KEY_A, "owner-entry");
         });
 
-        assertThat(ClaimEntries.claim(claims, seenByTaker, ID, KEY_B, TOKEN_B)).isTrue();
+        assertThat(ClaimEntries.claim(claims, seenByTaker, TestMembers.SCOPE_KEYS.claim(ID), KEY_B, TOKEN_B)).isTrue();
 
         assertThat(ownerKept[0]).isFalse();
-        assertThat(claims.get(ID)).isEqualTo(CLAIM_B);
+        assertThat(claims.get(TestMembers.SCOPE_KEYS.claim(ID))).isEqualTo(CLAIM_B);
         assertThat(approvals.containsKey(KEY_A)).isFalse();
     }
 
@@ -94,10 +94,10 @@ class ClaimInterleavingTest {
         IMap<String, String> seenByTaker = approvalsThatRun(() -> approvals.put(KEY_A, "owner-entry"));
 
         // The taker marked the claim, then finds the owner's entry, puts the claim back and refuses.
-        assertThat(ClaimEntries.claim(claims, seenByTaker, ID, KEY_B, TOKEN_B)).isFalse();
+        assertThat(ClaimEntries.claim(claims, seenByTaker, TestMembers.SCOPE_KEYS.claim(ID), KEY_B, TOKEN_B)).isFalse();
 
         // The owner's read of its claim now succeeds, so its entry stays.
-        assertThat(claims.get(ID)).isEqualTo(CLAIM_A);
+        assertThat(claims.get(TestMembers.SCOPE_KEYS.claim(ID))).isEqualTo(CLAIM_A);
         assertThat(approvals.containsKey(KEY_A)).isTrue();
         assertThat(approvals.containsKey(KEY_B)).isFalse();
     }
@@ -115,9 +115,9 @@ class ClaimInterleavingTest {
             try {
                 assertThat(stall.reached.await(10, TimeUnit.SECONDS)).isTrue();
                 // Its entry is inserted; wait for the locks it still holds to run out, then the taker runs.
-                StalledInsert.awaitFree(members[1], PrivacyCluster.APPROVAL_ID_MAP, ID);
+                StalledInsert.awaitFree(members[1], PrivacyCluster.APPROVAL_ID_MAP, TestMembers.SCOPE_KEYS.claim(ID));
                 StalledInsert.awaitFree(members[1], PrivacyCluster.APPROVAL_PENDING_MAP,
-                        HazelcastApprovalStore.pendingKey(a.kind(), a.requesterPrincipalId()));
+                        TestMembers.SCOPE_KEYS.pending(a.kind(), a.requesterPrincipalId()));
                 StalledInsert.awaitFree(members[1], PrivacyCluster.APPROVAL_MAP, KEY_A);
                 assertThatThrownBy(() -> taker.create(b)).isExactlyInstanceOf(IllegalArgumentException.class)
                         .hasMessage("duplicate approval id");
@@ -126,9 +126,9 @@ class ClaimInterleavingTest {
                 assertThat(stalled.get(10, TimeUnit.SECONDS)).isEqualTo(a);
                 IMap<String, String> claimMap = members[1].instance().getMap(PrivacyCluster.APPROVAL_ID_MAP);
                 IMap<String, String> entries = members[1].instance().getMap(PrivacyCluster.APPROVAL_MAP);
-                assertThat(ClaimEntries.read(claimMap.get(ID))).hasValueSatisfying(
+                assertThat(ClaimEntries.read(claimMap.get(TestMembers.SCOPE_KEYS.claim(ID)))).hasValueSatisfying(
                         named -> assertThat(named.entryKey()).isEqualTo(KEY_A));
-                assertThat(entries.keySet().stream().filter(key -> ScopeKeys.approvalId(key).equals(ID)))
+                assertThat(TestMembers.keysOfApproval(entries, ID))
                         .containsExactly(KEY_A);
             } finally {
                 stall.resume();

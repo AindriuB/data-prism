@@ -64,3 +64,18 @@ byte-identical, and the existing disclaimers must not be softened.
 - Collapsing the existing `verify` overloads. That is a roadmap API-cleanup item; doing it here would touch test files owned by tasks 203 and 211.
 - The JSON projection, which is not hash-chained.
 - `docs/audit.md`, the rotation procedure and `docs/architecture.md` (task 213).
+
+## Outcome (2026-10-23, 0.8)
+An opt-in HMAC-SHA256 keyed audit chain: `AuditChainKey`, `AuditChainMode`, `verify(..., List<AuditChainKey>, boolean)` and the CLI flags `--hmac-key-file` and `--allow-unkeyed-writers`. Retention never deletes a keyed segment without its key. A second public overload, `verifySegments(segments, starts, keys, allowUnkeyedWriters)`, is kept for retention, as task 157 did.
+
+Mutation proof: `compute(event, key)` returning the unkeyed hash fails 10 of 17 `KeyedAuditChainTest` tests.
+
+Review round 1 fixed the unkeyed-writer count when no key is given, the furthest-replay break with several keys, and the key label (printed only when a record was recomputed).
+
+Follow-ups. With only `--allow-unkeyed-writers`, a broken writer is still counted as "unkeyed allowed" (Low). For 213's docs: `KEYED_LIMITATION` is not printed when the audit path is unreadable, and a lone non-GENESIS writer carries no key label.
+
+**Review round (PR #163).** Keyed runs no longer print the "needs a keyed MAC" sentence; they keep the shared scope caveats.
+
+**Review round 6 (PR #163; reviewer ids 163-1 to 163-19).** With no keys, broken writers are not marked unkeyed-allowed. A checkpoint mismatch reports the replay with the most hashed records.
+
+**Review round 7 (PR #163; reviewer ids 163-1 to 163-12).** A checkpoint mismatch is detected per key, and the writer is labelled with the furthest key.

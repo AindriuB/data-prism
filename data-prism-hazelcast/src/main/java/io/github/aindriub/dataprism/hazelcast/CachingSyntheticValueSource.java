@@ -51,6 +51,7 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
     private final SyntheticValueSource generator;
     private final PrivacyCluster cluster;
     private final PrivacyMetrics metrics;
+    private final Duration lockTimeout;
 
     private final AtomicLong hits = new AtomicLong();
     private final AtomicLong misses = new AtomicLong();
@@ -63,6 +64,18 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
 
     public CachingSyntheticValueSource(SyntheticValueSource generator, PrivacyCluster cluster,
                                         PrivacyMetrics metrics) {
+        this(generator, cluster, metrics, ClusterLocks.DEFAULT_TIMEOUT);
+    }
+
+    /**
+     * @param lockTimeout how long a write waits for the lock of its key before it gives up, {@code PT100MS} to
+     *                    {@code PT30S}. A write that gives up is a cache failure like any other: the generator's
+     *                    answer is returned and nothing is stored.
+     * @throws IllegalArgumentException if the timeout is outside that range
+     */
+    public CachingSyntheticValueSource(SyntheticValueSource generator, PrivacyCluster cluster,
+                                        PrivacyMetrics metrics, java.time.Duration lockTimeout) {
+        this.lockTimeout = ClusterLocks.checked(lockTimeout);
         this.generator = Objects.requireNonNull(generator, "generator");
         this.cluster = Objects.requireNonNull(cluster, "cluster");
         // Wrapped once, here, so nothing below has to guard a metrics call: none
@@ -76,7 +89,7 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
         boolean lookupOutcomeRecorded = false;
         try {
             IMap<String, String> identities = cluster.instance().getMap(PrivacyCluster.IDENTITY_MAP);
-            String key = ScopeKeys.identity(context.scopeId(), subjectId, namespace);
+            String key = cluster.scopeKeys().identity(context.scopeId(), subjectId, namespace);
 
             String cached = identities.get(key);
             if (cached != null) {
@@ -100,7 +113,7 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
                     cacheFailure.getClass().getSimpleName());
             // lookupOutcomeRecorded is set once a hit or a miss has already been
             // emitted above. When it is false, neither ran — the cluster call
-            // itself threw, including ScopeKeys.identity — so nothing above has
+            // itself threw, including the key derivation — so nothing above has
             // recorded an outcome and no computation was saved either; emit a
             // miss here instead.
             if (!lookupOutcomeRecorded) {
@@ -115,7 +128,7 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
     private void store(IMap<String, String> identities, String key, String generated,
                        String subjectId, PrivacyNamespace namespace, PrivacyContext context) {
         long ttlMillis = ttlMillis(context);
-        String existing = identities.putIfAbsent(key, generated, ttlMillis, TimeUnit.MILLISECONDS);
+        String existing = ClusterLocks.putIfAbsent(identities, key, generated, ttlMillis, lockTimeout);
 
         if (existing != null && !existing.equals(generated)) {
             // Not a race: two threads deriving the same key derive the same value.
@@ -125,13 +138,13 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
             LOG.warn("cached identity for a live scope disagrees with the generator; "
                     + "the key, algorithm version or vocabulary changed mid-scope. "
                     + "Overwriting so output stays a function of the generator, not the cache.");
-            identities.set(key, generated, ttlMillis, TimeUnit.MILLISECONDS);
+            ClusterLocks.set(identities, key, generated, ttlMillis, lockTimeout);
         }
 
         if (cluster.reidentificationEnabled()) {
-            cluster.instance().<String, String>getMap(PrivacyCluster.REIDENTIFICATION_MAP)
-                    .set(ScopeKeys.reidentification(context.scopeId(), namespace, generated),
-                            subjectId, ttlMillis, TimeUnit.MILLISECONDS);
+            ClusterLocks.set(cluster.instance().<String, String>getMap(PrivacyCluster.REIDENTIFICATION_MAP),
+                    cluster.scopeKeys().reidentification(context.scopeId(), namespace, generated),
+                    subjectId, ttlMillis, lockTimeout);
         }
     }
 

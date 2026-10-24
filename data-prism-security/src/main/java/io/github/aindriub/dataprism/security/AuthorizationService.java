@@ -19,16 +19,23 @@ public final class AuthorizationService {
     private final SecurityPolicy policy;
     private final String privacyProfile;
     private final PrivacyScopeType scopeType;
+    private final ClientAllowlist clientAllowlist;
 
-    public AuthorizationService(SecurityPolicy policy, String privacyProfile, PrivacyScopeType scopeType) {
+    public AuthorizationService(
+            SecurityPolicy policy, String privacyProfile, PrivacyScopeType scopeType, ClientAllowlist clientAllowlist) {
         this.policy = Objects.requireNonNull(policy, "policy");
         this.privacyProfile = Objects.requireNonNull(privacyProfile, "privacyProfile");
         this.scopeType = Objects.requireNonNull(scopeType, "scopeType");
+        this.clientAllowlist = Objects.requireNonNull(clientAllowlist, "clientAllowlist");
     }
 
     public AuthorizationDecision authorize(AuthenticatedCaller caller, ToolInvocation invocation) {
         Objects.requireNonNull(caller, "caller");
         Objects.requireNonNull(invocation, "invocation");
+
+        if (!clientAllowlist.permits(caller.clientId())) {
+            return AuthorizationDecision.denied("CLIENT_NOT_ALLOWED");
+        }
 
         Set<String> capabilities = policy.capabilitiesFor(caller.roles());
         if (capabilities.isEmpty()) {

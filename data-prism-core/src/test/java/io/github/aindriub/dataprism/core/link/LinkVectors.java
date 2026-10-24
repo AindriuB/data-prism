@@ -72,11 +72,9 @@ final class LinkVectors {
         return Arrays.copyOf(hmac(key, message.toByteArray()), 16);
     }
 
-    /** Hex of HMAC(fingerprint key, prefixed(label) || prefixed(scope) || prefixed(principal)), first 16 bytes. */
-    static String counterKey(byte[] master, String scope, String principal) throws Exception {
-        byte[] key = derive(master, "dataprism/link/v1/fingerprint", scope);
-        byte[] mac = hmac(key, prefixedAll(ascii("dataprism/link/v1/attempt"), utf8(scope), utf8(principal)));
-        return java.util.HexFormat.of().formatHex(mac, 0, 16);
+    /** prefixed(label) || prefixed(scope) || prefixed(principal), built independently of the main code. */
+    static byte[] attemptSubject(String scope, String principal) throws Exception {
+        return prefixedAll(ascii("dataprism/link/v1/attempt"), utf8(scope), utf8(principal));
     }
 
     /**

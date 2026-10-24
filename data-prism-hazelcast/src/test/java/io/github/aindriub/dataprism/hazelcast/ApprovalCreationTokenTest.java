@@ -64,18 +64,18 @@ class ApprovalCreationTokenTest {
     }
 
     private static String pendingKey(String requester) {
-        return HazelcastApprovalStore.pendingKey(Kind.TOOL_CALL, requester);
+        return TestMembers.SCOPE_KEYS.pending(Kind.TOOL_CALL, requester);
     }
 
     /** Waits until the locks a stopped creator took have run out their lease, so another creator can run. */
     private void awaitFree(String scope, String id, String requester) throws InterruptedException {
-        StalledInsert.awaitFree(members[1], PrivacyCluster.APPROVAL_ID_MAP, id);
+        StalledInsert.awaitFree(members[1], PrivacyCluster.APPROVAL_ID_MAP, TestMembers.SCOPE_KEYS.claim(id));
         StalledInsert.awaitFree(members[1], PrivacyCluster.APPROVAL_PENDING_MAP, pendingKey(requester));
-        StalledInsert.awaitFree(members[1], PrivacyCluster.APPROVAL_MAP, ScopeKeys.approval(scope, id));
+        StalledInsert.awaitFree(members[1], PrivacyCluster.APPROVAL_MAP, TestMembers.SCOPE_KEYS.approval(scope, id));
     }
 
     private String tokenOfEntry(String scope, String id) {
-        return HazelcastApprovalStore.Codec.tokenOf(approvals.get(ScopeKeys.approval(scope, id)));
+        return HazelcastApprovalStore.Codec.tokenOf(approvals.get(TestMembers.SCOPE_KEYS.approval(scope, id)));
     }
 
     private static void assertDuplicate(Future<?> creation) {
@@ -106,12 +106,12 @@ class ApprovalCreationTokenTest {
         } finally {
             stall.resume();
         }
-        assertThat(claims.get("x-1")).isEqualTo(
-                ClaimEntries.value(ScopeKeys.approval("scope-a", "x-1"), tokenOfEntry("scope-a", "x-1")));
+        assertThat(claims.get(TestMembers.SCOPE_KEYS.claim("x-1"))).isEqualTo(
+                ClaimEntries.value(TestMembers.SCOPE_KEYS.approval("scope-a", "x-1"), tokenOfEntry("scope-a", "x-1")));
         assertThat(PendingSet.decode(slots.get(pendingKey("carol")))).containsOnlyKeys("x-1");
         assertThatThrownBy(() -> other.create(request("x-1", "scope-b", "dave"), 5))
                 .isExactlyInstanceOf(IllegalArgumentException.class).hasMessage("duplicate approval id");
-        assertThat(approvals.keySet().stream().filter(k -> ScopeKeys.approvalId(k).equals("x-1"))).hasSize(1);
+        assertThat(TestMembers.keysOfApproval(approvals, "x-1")).hasSize(1);
     }
 
     @Test
@@ -124,7 +124,7 @@ class ApprovalCreationTokenTest {
             assertThat(stall.reached.await(10, TimeUnit.SECONDS)).isTrue();
             awaitFree("scope-a", "x-1", "alice");
             other.create(request("x-1", "scope-a", "alice"), 5);
-            String key = ScopeKeys.approval("scope-a", "x-1");
+            String key = TestMembers.SCOPE_KEYS.approval("scope-a", "x-1");
             String token = tokenOfEntry("scope-a", "x-1");
             // The re-creation's entry is gone (for example it expired) while its claim and slot remain.
             approvals.delete(key);
@@ -132,7 +132,7 @@ class ApprovalCreationTokenTest {
             // The paused insert fails; the entry is absent, so the undo runs, and it is not the re-creation's.
             assertThatThrownBy(() -> stalled.get(10, TimeUnit.SECONDS)).isInstanceOf(ExecutionException.class)
                     .hasCauseInstanceOf(ClusterOperationRefusedException.class);
-            assertThat(claims.get("x-1")).isEqualTo(ClaimEntries.value(key, token));
+            assertThat(claims.get(TestMembers.SCOPE_KEYS.claim("x-1"))).isEqualTo(ClaimEntries.value(key, token));
             assertThat(PendingSet.decode(slots.get(pendingKey("alice"))).get("x-1").owner())
                     .isEqualTo(PendingSet.ownerOf("scope-a", token));
         } finally {
@@ -150,7 +150,7 @@ class ApprovalCreationTokenTest {
         try {
             assertThat(stall.reached.await(10, TimeUnit.SECONDS)).isTrue();
             awaitFree("scope-a", "x-1", "alice");
-            String key = ScopeKeys.approval("scope-a", "x-1");
+            String key = TestMembers.SCOPE_KEYS.approval("scope-a", "x-1");
             // The first creation's entry is gone (it expired, or its scope ended), so the same request is created
             // again in the same scope and has an identical encoding apart from its token.
             approvals.delete(key);
@@ -161,8 +161,8 @@ class ApprovalCreationTokenTest {
             stall.resume();
         }
         assertThat(other.find("x-1")).contains(same);
-        assertThat(claims.get("x-1")).isEqualTo(
-                ClaimEntries.value(ScopeKeys.approval("scope-a", "x-1"), tokenOfEntry("scope-a", "x-1")));
+        assertThat(claims.get(TestMembers.SCOPE_KEYS.claim("x-1"))).isEqualTo(
+                ClaimEntries.value(TestMembers.SCOPE_KEYS.approval("scope-a", "x-1"), tokenOfEntry("scope-a", "x-1")));
     }
 
     // ----- the claim cannot be read back after the insert
@@ -176,7 +176,7 @@ class ApprovalCreationTokenTest {
         stall.resume();
         assertThatThrownBy(() -> creating.get(10, TimeUnit.SECONDS)).isInstanceOf(ExecutionException.class)
                 .hasCauseInstanceOf(ClusterOperationRefusedException.class);
-        assertThat(approvals.keySet().stream().filter(k -> ScopeKeys.approvalId(k).equals("x-1"))).isEmpty();
+        assertThat(TestMembers.keysOfApproval(approvals, "x-1")).isEmpty();
     }
 
     @Test
@@ -194,14 +194,14 @@ class ApprovalCreationTokenTest {
                 .hasCauseInstanceOf(ClusterOperationRefusedException.class);
 
         // The entry stayed. Its claim still names it, so it is a PENDING approval and the id cannot be reused.
-        String key = ScopeKeys.approval("scope-a", "x-1");
+        String key = TestMembers.SCOPE_KEYS.approval("scope-a", "x-1");
         assertThat(approvals.containsKey(key)).isTrue();
         assertThat(other.find("x-1")).get().extracting(ApprovalRequest::status).isEqualTo(Status.PENDING);
         assertThatThrownBy(() -> other.create(request("x-1", "scope-b", "dave"), 5))
                 .isExactlyInstanceOf(IllegalArgumentException.class).hasMessage("duplicate approval id");
 
         // Once the claim does not name its token, the entry is unknown.
-        claims.put("x-1", ClaimEntries.value(key, TestMembers.token(7)));
+        claims.put(TestMembers.SCOPE_KEYS.claim("x-1"), ClaimEntries.value(key, TestMembers.token(7)));
         assertThat(other.find("x-1")).isEmpty();
         assertThatThrownBy(() -> other.approve("x-1", "bob", NOW.plusSeconds(1)))
                 .isInstanceOf(ApprovalRefusedException.class)
@@ -215,17 +215,17 @@ class ApprovalCreationTokenTest {
     void anEntryWhoseClaimIsGoneOrIsAnotherCreationsIsUnknownToEveryRead() {
         var store = new HazelcastApprovalStore(members[0], TIMEOUT);
         store.create(request("v-1", "scope-a", "alice"), 5);
-        String key = ScopeKeys.approval("scope-a", "v-1");
+        String key = TestMembers.SCOPE_KEYS.approval("scope-a", "v-1");
         assertThat(store.find("v-1")).isPresent();
         assertThat(store.findPending(Kind.TOOL_CALL, "alice", "scope-a", "search", "fp-v-1", NOW)).isPresent();
         assertThat(store.pending(NOW)).hasSize(1);
 
         for (String claim : new String[]{null, ClaimEntries.value(key, TestMembers.token(5)),
-                ClaimEntries.value(ScopeKeys.approval("scope-b", "v-1"), tokenOfEntry("scope-a", "v-1")), "garbage"}) {
+                ClaimEntries.value(TestMembers.SCOPE_KEYS.approval("scope-b", "v-1"), tokenOfEntry("scope-a", "v-1")), "garbage"}) {
             if (claim == null) {
-                claims.remove("v-1");
+                claims.remove(TestMembers.SCOPE_KEYS.claim("v-1"));
             } else {
-                claims.put("v-1", claim);
+                claims.put(TestMembers.SCOPE_KEYS.claim("v-1"), claim);
             }
             assertThat(store.find("v-1")).isEmpty();
             assertThat(store.findPending(Kind.TOOL_CALL, "alice", "scope-a", "search", "fp-v-1", NOW)).isEmpty();
@@ -245,10 +245,10 @@ class ApprovalCreationTokenTest {
         var store = new HazelcastApprovalStore(members[0], TIMEOUT);
         store.create(request("v-2", "scope-a", "alice"), 5);
         store.approve("v-2", "bob", NOW.plusSeconds(1));
-        claims.put("v-2", ClaimEntries.value(ScopeKeys.approval("scope-a", "v-2"), TestMembers.token(5)));
+        claims.put(TestMembers.SCOPE_KEYS.claim("v-2"), ClaimEntries.value(TestMembers.SCOPE_KEYS.approval("scope-a", "v-2"), TestMembers.token(5)));
         assertThat(store.consumeApproved(Kind.TOOL_CALL, "alice", "scope-a", "search", "fp-v-2",
                 NOW.plusSeconds(2))).isEmpty();
-        assertThat(HazelcastApprovalStore.Codec.decode(approvals.get(ScopeKeys.approval("scope-a", "v-2"))).status())
+        assertThat(HazelcastApprovalStore.Codec.decode(approvals.get(TestMembers.SCOPE_KEYS.approval("scope-a", "v-2"))).status())
                 .isEqualTo(Status.APPROVED);
     }
 
@@ -256,7 +256,7 @@ class ApprovalCreationTokenTest {
     @SuppressWarnings({"rawtypes", "unchecked"})
     void aHealThatPairsAnEntryWithAnotherCreationsClaimLeavesItUnusable() throws Exception {
         // Two sides each hold their own creation of x-1 in one scope.
-        String key = ScopeKeys.approval("scope-a", "x-1");
+        String key = TestMembers.SCOPE_KEYS.approval("scope-a", "x-1");
         ApprovalRequest request = request("x-1", "scope-a", "alice");
         String sideA = HazelcastApprovalStore.Codec.encode(request, TestMembers.token(1));
         String sideB = HazelcastApprovalStore.Codec.encode(request, TestMembers.token(2));
@@ -267,7 +267,7 @@ class ApprovalCreationTokenTest {
         Object keptClaim = claimPolicy.merge(entry(ClaimEntries.value(key, TestMembers.token(1))),
                 entry(ClaimEntries.value(key, TestMembers.token(2))));
         approvals.put(key, (String) keptEntry);
-        claims.put("x-1", (String) keptClaim);
+        claims.put(TestMembers.SCOPE_KEYS.claim("x-1"), (String) keptClaim);
         slots.put(pendingKey("alice"), "x-1\0" + request.expiresAt() + "\0" + TestMembers.owner("scope-a", 1));
 
         var store = new HazelcastApprovalStore(members[0], TIMEOUT);
@@ -299,14 +299,14 @@ class ApprovalCreationTokenTest {
     @Test
     void valuesInTheOldFormsAreUnreadableAndRefused() {
         var store = new HazelcastApprovalStore(members[0], TIMEOUT);
-        String key = ScopeKeys.approval("scope-a", "old-1");
+        String key = TestMembers.SCOPE_KEYS.approval("scope-a", "old-1");
         ApprovalRequest request = request("old-1", "scope-a", "alice");
         String sixteen = HazelcastApprovalStore.Codec.encode(request, TestMembers.token(1));
         sixteen = sixteen.substring(0, sixteen.lastIndexOf('\0'));
 
         // An entry with 16 fields, even with a bare claim naming its key, is unknown.
         approvals.put(key, sixteen);
-        claims.put("old-1", key);
+        claims.put(TestMembers.SCOPE_KEYS.claim("old-1"), key);
         assertThat(store.find("old-1")).isEmpty();
         assertThatThrownBy(() -> store.approve("old-1", "bob", NOW.plusSeconds(1)))
                 .isInstanceOf(ApprovalRefusedException.class);
@@ -327,7 +327,7 @@ class ApprovalCreationTokenTest {
         var store = new HazelcastApprovalStore(members[0], TIMEOUT);
         store.create(request("r-1", "scope-a", "alice"), 5);
         String first = tokenOfEntry("scope-a", "r-1");
-        approvals.delete(ScopeKeys.approval("scope-a", "r-1"));
+        approvals.delete(TestMembers.SCOPE_KEYS.approval("scope-a", "r-1"));
         store.create(request("r-1", "scope-a", "alice"), 5);
         String second = tokenOfEntry("scope-a", "r-1");
         assertThat(first).isNotEqualTo(second);
@@ -337,17 +337,17 @@ class ApprovalCreationTokenTest {
 
     @Test
     void theClaimSweepRemovesOldFormClaimsOnceTheirEntryIsAbsentAndLeavesOtherUnreadableOnes() {
-        String present = ScopeKeys.approval("scope-a", "p-1");
+        String present = TestMembers.SCOPE_KEYS.approval("scope-a", "p-1");
         approvals.put(present, "old entry");
-        claims.put("p-1", present);
-        claims.put("a-1", ScopeKeys.approval("scope-a", "a-1"));
-        claims.put("a-2", ScopeKeys.approval("scope-a", "a-2") + "\0~\0" + ScopeKeys.approval("scope-b", "a-2"));
-        claims.put("a-3", "garbage");
+        claims.put(TestMembers.SCOPE_KEYS.claim("p-1"), present);
+        claims.put(TestMembers.SCOPE_KEYS.claim("a-1"), TestMembers.SCOPE_KEYS.approval("scope-a", "a-1"));
+        claims.put(TestMembers.SCOPE_KEYS.claim("a-2"), TestMembers.SCOPE_KEYS.approval("scope-a", "a-2") + "\0~\0" + TestMembers.SCOPE_KEYS.approval("scope-b", "a-2"));
+        claims.put(TestMembers.SCOPE_KEYS.claim("a-3"), "garbage");
         int removed = members[0].sweepStaleClaims() + members[1].sweepStaleClaims();
         assertThat(removed).isEqualTo(2);
-        assertThat(claims.containsKey("a-1")).isFalse();
-        assertThat(claims.containsKey("a-2")).isFalse();
-        assertThat(claims.containsKey("p-1")).isTrue();
-        assertThat(claims.containsKey("a-3")).isTrue();
+        assertThat(claims.containsKey(TestMembers.SCOPE_KEYS.claim("a-1"))).isFalse();
+        assertThat(claims.containsKey(TestMembers.SCOPE_KEYS.claim("a-2"))).isFalse();
+        assertThat(claims.containsKey(TestMembers.SCOPE_KEYS.claim("p-1"))).isTrue();
+        assertThat(claims.containsKey(TestMembers.SCOPE_KEYS.claim("a-3"))).isTrue();
     }
 }

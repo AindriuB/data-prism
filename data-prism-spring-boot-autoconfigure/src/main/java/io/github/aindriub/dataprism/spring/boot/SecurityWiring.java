@@ -1,26 +1,181 @@
 package io.github.aindriub.dataprism.spring.boot;
 
+import io.github.aindriub.dataprism.core.model.PrivacyScopeType;
 import io.github.aindriub.dataprism.core.model.PseudonymisationVersion;
 import io.github.aindriub.dataprism.security.AuthorizationService;
+import io.github.aindriub.dataprism.security.CaseAuthorizer;
+import io.github.aindriub.dataprism.security.ClientAllowlist;
 import io.github.aindriub.dataprism.security.PurposeValidator;
 import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.SecurityPolicy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.aop.framework.AopProxyUtils;
+import org.springframework.beans.factory.ListableBeanFactory;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
-/** Authorization, purpose and scope resolution. */
+/**
+ * Authorization, purpose and scope resolution. A deployer's own {@link CaseAuthorizer} and
+ * {@link ClientAllowlist} bean is used when present; more than one of either refuses startup. An
+ * application that replaces {@link ScopeResolver} while a {@link CaseAuthorizer} bean exists, or
+ * {@link AuthorizationService} while a {@link ClientAllowlist} bean exists, would silently bypass
+ * the deployer's check, so startup refuses ({@code CASE_AUTHORIZER_BYPASSED},
+ * {@code CLIENT_ALLOWLIST_BYPASSED}).
+ *
+ * <p>The token-trusted {@link CaseAuthorizer} fallback (no bean) is for development only. From version
+ * 0.8.0 on, a non-SNAPSHOT build refuses to start with it ({@code MISSING_CASE_AUTHORIZER}). The version is
+ * the jar manifest's {@code Implementation-Version}; it is absent when classes run unpackaged (an IDE), and
+ * then the fallback is kept with its WARN.
+ */
 @Configuration(proxyBeanMethods = false)
 class SecurityWiring {
-    @Bean @ConditionalOnMissingBean
-    SecurityPolicy dataPrismSecurityPolicy(DataPrismProperties properties) {
-        return new SecurityPolicy(Set.copyOf(properties.getSecurityPolicy().getPurposes()), properties.getSecurityPolicy().getRoles().entrySet().stream().collect(java.util.stream.Collectors.toMap(Map.Entry::getKey, entry -> Set.copyOf(entry.getValue()))));
+    private static final Logger LOG = LoggerFactory.getLogger(SecurityWiring.class);
+    private static final Pattern VERSION = Pattern.compile("^(\\d+)\\.(\\d+)\\.(\\d+)(-.+)?$");
+
+    /** Where the running library's version comes from; a bean of this package-private type lets a test drive it. */
+    @FunctionalInterface
+    interface LibraryVersion {
+        /** The version, or null when unknown. */
+        String get();
     }
-    @Bean @ConditionalOnMissingBean
-    AuthorizationService dataPrismAuthorizationService(SecurityPolicy policy, DataPrismProperties properties) { return new AuthorizationService(policy, properties.getPrivacy().getProfile(), io.github.aindriub.dataprism.core.model.PrivacyScopeType.INVESTIGATION); }
-    @Bean @ConditionalOnMissingBean
-    ScopeResolver dataPrismScopeResolver(PseudonymisationVersion version, DataPrismProperties properties) { return new ScopeResolver(version, properties.getPrivacy().getScopeLifetime(), new PurposeValidator(Set.copyOf(properties.getSecurityPolicy().getPurposes()))); }
+
+    private static String manifestVersion() {
+        return SecurityWiring.class.getPackage().getImplementationVersion();
+    }
+
+    /**
+     * True for a non-SNAPSHOT version at or above 0.8.0 (a release candidate included). An unparseable
+     * non-null version counts as a release: fail closed.
+     */
+    static boolean fallbackForbidden(String version) {
+        if (version == null) {
+            return false;
+        }
+        Matcher m = VERSION.matcher(version);
+        if (!m.matches()) {
+            return true;
+        }
+        if ("-SNAPSHOT".equals(m.group(4))) {
+            return false;
+        }
+        return Long.parseLong(m.group(1)) > 0 || Long.parseLong(m.group(2)) >= 8;
+    }
+
+    /**
+     * Remembers the instances this auto-configuration built and, once every singleton exists,
+     * compares instances rather than names, so a same-named or FactoryBean-produced replacement
+     * is seen as itself.
+     */
+    static final class BypassCheck implements SmartInitializingSingleton {
+        private final ListableBeanFactory beanFactory;
+        private volatile ScopeResolver scopeResolver;
+        private volatile AuthorizationService authorizationService;
+
+        BypassCheck(ListableBeanFactory beanFactory) {
+            this.beanFactory = beanFactory;
+        }
+
+        @Override
+        public void afterSingletonsInstantiated() {
+            if (replaced(beanFactory.getBeansOfType(ScopeResolver.class, true, true).values(), scopeResolver)
+                    && !beanFactory.getBeansOfType(CaseAuthorizer.class, true, true).isEmpty()) {
+                throw new DataPrismConfigurationException("CASE_AUTHORIZER_BYPASSED",
+                        "a ScopeResolver bean replaces the default, so the CaseAuthorizer bean would never be "
+                                + "consulted; call the CaseAuthorizer from your ScopeResolver and remove the bean, "
+                                + "or remove your ScopeResolver");
+            }
+            if (replaced(beanFactory.getBeansOfType(AuthorizationService.class, true, true).values(),
+                    authorizationService)
+                    && !beanFactory.getBeansOfType(ClientAllowlist.class, true, true).isEmpty()) {
+                throw new DataPrismConfigurationException("CLIENT_ALLOWLIST_BYPASSED",
+                        "an AuthorizationService bean replaces the default, so the ClientAllowlist bean would never "
+                                + "be consulted; apply the ClientAllowlist in your AuthorizationService and remove "
+                                + "the bean, or remove your AuthorizationService");
+            }
+        }
+    }
+
+    @Bean
+    static BypassCheck dataPrismSecurityBypassCheck(ListableBeanFactory beanFactory) {
+        return new BypassCheck(beanFactory);
+    }
+
+    /** True when any instance is not our default, looking through AOP proxies (nested ones too) to the target. */
+    private static boolean replaced(Collection<?> instances, Object ours) {
+        return instances.stream().anyMatch(instance -> unwrap(instance) != ours);
+    }
+
+    /**
+     * Follows singleton AOP targets to the innermost object. Defensive: {@link ScopeResolver} and
+     * {@link AuthorizationService} are final, so no proxy can currently wrap them and only a non-proxy
+     * replacement can reach {@link #replaced}; this keeps the check correct if either stops being final.
+     */
+    static Object unwrap(Object bean) {
+        Object current = bean;
+        while (true) {
+            Object target = AopProxyUtils.getSingletonTarget(current);
+            if (target == null || target == current) {
+                return current;
+            }
+            current = target;
+        }
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    SecurityPolicy dataPrismSecurityPolicy(DataPrismProperties properties) {
+        Set<String> purposes = Set.copyOf(properties.getSecurityPolicy().getPurposes());
+        Map<String, Set<String>> roles = properties.getSecurityPolicy().getRoles().entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, entry -> Set.copyOf(entry.getValue())));
+        return new SecurityPolicy(purposes, roles);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    AuthorizationService dataPrismAuthorizationService(SecurityPolicy policy, DataPrismProperties properties,
+            ObjectProvider<ClientAllowlist> allowlist, BypassCheck built) {
+        ClientAllowlist clients = allowlist.getIfAvailable();
+        if (clients == null) {
+            LOG.warn("No ClientAllowlist bean is defined: every client is allowed. Supply a ClientAllowlist bean.");
+            clients = ClientAllowlist.unrestricted();
+        }
+        AuthorizationService service = new AuthorizationService(policy, properties.getPrivacy().getProfile(),
+                PrivacyScopeType.INVESTIGATION, clients);
+        built.authorizationService = service;
+        return service;
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    ScopeResolver dataPrismScopeResolver(PseudonymisationVersion version, DataPrismProperties properties,
+            ObjectProvider<CaseAuthorizer> caseAuthorizer, ObjectProvider<LibraryVersion> libraryVersion,
+            BypassCheck built) {
+        CaseAuthorizer authorizer = caseAuthorizer.getIfAvailable();
+        if (authorizer == null) {
+            if (fallbackForbidden(libraryVersion.getIfAvailable(() -> SecurityWiring::manifestVersion).get())) {
+                throw new DataPrismConfigurationException("MISSING_CASE_AUTHORIZER",
+                        "a CaseAuthorizer bean is required from 0.8.0; the token-trusted fallback is not "
+                                + "available in a release");
+            }
+            LOG.warn("No CaseAuthorizer bean is defined: the case claim in the token is trusted without "
+                    + "assignment checks. Supply a CaseAuthorizer bean.");
+            authorizer = CaseAuthorizer.tokenTrusted();
+        }
+        PurposeValidator purposes = new PurposeValidator(Set.copyOf(properties.getSecurityPolicy().getPurposes()));
+        ScopeResolver resolver = new ScopeResolver(version, properties.getPrivacy().getScopeLifetime(), purposes,
+                authorizer);
+        built.scopeResolver = resolver;
+        return resolver;
+    }
 }

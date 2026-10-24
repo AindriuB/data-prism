@@ -91,7 +91,19 @@ Order: 265, 244 and 257 in parallel; then 267 (stacked on 265) and 245; then 266
 - 257: `34bcce2b`, `4c8a070b`, `e5864921`, `9118afc7`, `61ec2f94` (docs only), `00810a75`, `752d867a` (docs only), `f456a12b`. Pick `e34a738c` (the post-tag correction to `docs/verifying-releases.md`) before `61ec2f94`.
 - 265 (core-fix commits only, pick first): `484cf7c7`, `7c23172a`, `d4469c7e`. Skip `5445c0b8` (main only).
 - 267 (core-fix commits only, pick after 265's): `82329385`, `34a6a0e3`, `f2090cae`, `096a823e`. Skip `2d5e5c30` (main only).
-- 245: `168ca025`, `f0cfdb10`, `811a73eb`, `5fd20ef7`, `212fceb5`, `c81fa46f`, `846d9b2f`. Seven commits, all code and tests, none under `docs/plan/`. The first two and the third are tests and a refactor that precede the fixes; pick all seven in this order. One existing test line changed (see "Follow-ups from 245" below).
+- 245: `168ca025`, `f0cfdb10`, `811a73eb`, `5fd20ef7`, `212fceb5`, `c81fa46f`, `846d9b2f`. Seven commits, all code and tests, none under `docs/plan/`. The first two and the third are tests and a refactor that precede the fixes; pick all seven in this order. One existing test line changed (see "Third external review round on PR #163 (Lows and Nits; none scheduled, each fold into the next edit of the named code):
+
+- `HazelcastApprovalStore.forgetScope` and `HazelcastScopeBudget.forget` do not catch `HazelcastException` and throw a bare timeout; give them the refusal handling `endScope` now has.
+- `SealedWrites.unregister` should log the exception class.
+- `SourceTree`:270: the holder serializer is not contextualised.
+- `SourceTree`:317: allow-list `ReferenceTypeSerializer`.
+- `ScrubPlanDescriberTest`:624 has no non-record-holder test and no catch-path test.
+- `AuditChainVerifier`:320 counts broken writers as unkeyed.
+- `AuditChainVerifier`:357 reports key 0 on a checkpoint mismatch; report the furthest break.
+- `LinkArchitectureTest`:213 hard-codes the core classes directory; use `ModuleGraph`.
+- Nits: a reassigned timeout parameter; a new `Mac` per event hash; the `cancel(true)` in the invoker catch is covered without a failing-first assertion. (Inline FQNs and import order, `Holder.close()`, the stats ThreadLocal and `ResolverInvoker` shutdown are already listed above.)
+
+Follow-ups from 245" below).
 - 268: `b12f0966` (`pom.xml`) then `7175ed4e` (`docs/extending.md`). There is no Outcome commit to skip: the Outcome lands in the record commit.
 
 Pick order for 266: 265 core, 267 core, 244, 245, the `e34a738c` docs carry, 257, 268 (its `pom.xml` and `docs/extending.md` commits only).
@@ -126,8 +138,7 @@ Order by wave (briefs in a wave can run in parallel when their owned files do no
 | 1 | 268 done 2026-10-21 (Tomcat 11.0.27 override; PR record/0.7.1-wave3-245-268, also goes to 0.7.1); 218, 219, 238, 239, 243, 258 landed 2026-10-21 (PR record/0.8-wave1a); 259 done 2026-10-21 (baseline in `perf/baseline-0.7-quiet.md`) |
 | 2 | 220, 221, 240 landed 2026-10-21 (PR record/0.8-wave2) |
 | 3 | 222 and 242 landed 2026-10-22 (PR record/0.8-wave3); 265 done 2026-10-21 (PR record/0.7.1-wave2-265-267, also goes to 0.7.1); 244 and 257 done 2026-10-21 (PR record/0.7.1-wave1-244, also go to 0.7.1) |
-| 4 | 223, 241, 248, 269 (settle the link attempt limiter's contract before 250, 251, 252, 255 and 264. OD-269-1 to 3 decided (a) by the owner 2026-10-22, the ceiling consequence accepted 2026-10-23, OD-269-4 done (250 depends on 269), **OD-269-5 decided (b) by the owner 2026-10-23** (a limiter outage answers the new retryable `LINK_CHECK_UNAVAILABLE`; a failure to open answers `LINK_INVALID`; the audit keeps both causes; 269 adds the register row; 261 documents the code). Current shape, after reviews to 2026-10-23: one call `LinkAttemptGate.open` checks inputs (`""` is `MALFORMED`), the lock, opens, and records atomically, returning `Proceed`, `Invalid(reason)` or `Exhausted(cause)` with an audit-only cause; the SPI is `lockState` and `recordFailure` returning `Admission` (`WITHIN_LIMIT`, `OVER_LIMIT`, `CEILING`, `UNAVAILABLE`); `AttemptSubject` with the `dataprism/link/v1/attempt` label and lossless `canonicalText()`; `attemptCounterKey` removed; the in-memory limiter keyed under a `SecureRandom` key, a ceiling of 100,000 reserved by CAS, one expiry marker per entry, and exclusive bounded head examination; 264 keys under the name key with a TTL only for memory); 245 done 2026-10-21 (PR record/0.7.1-wave3-245-268, also goes to 0.7.1); 267 done 2026-10-21 (PR record/0.7.1-wave2-265-267, also goes to 0.7.1) |
-| 4 (added 2026-10-23) | 203, 206: open, not started; no open dependency |
+| 4 | 203, 206, 223, 241, 248 and 269 landed 2026-10-23 (PR wave/0.8-wave4); 245 done 2026-10-21 (PR record/0.7.1-wave3-245-268, also goes to 0.7.1); 267 done 2026-10-21 (PR record/0.7.1-wave2-265-267, also goes to 0.7.1) |
 | 5 | 207, 210, 224, 225, 226, 227 |
 | 6 | 208, 228, 246, 262 |
 | 7 | 211, 229, 247, 256 |
@@ -142,6 +153,7 @@ Order by wave (briefs in a wave can run in parallel when their owned files do no
 
 Obligations for the 0.8.0 release cut (no brief filed yet; whoever files it copies these into its Acceptance):
 
+- **BLOCKING:** 0.8.0 must not be tagged until task 210 has merged: the token-trusted case-authorizer fallback is refused at runtime from 0.8.0 (any non-SNAPSHOT version, `MISSING_CASE_AUTHORIZER`) unless a `CaseAuthorizer` bean is supplied, and 210 adds the explicit configuration. The unrestricted client allowlist default is intended (D-1.0-1).
 - Re-run 262's clean-checkout `docker compose up` against the published 0.8.0 images, not the local build overlay (coordinator decision 2026-10-23).
 - Keep `compose.yaml` and `docker/multi-instance/kubernetes.yaml` on the version-literal list, and confirm that no image reference is older than the released version.
 
@@ -214,6 +226,50 @@ Follow-ups from wave 3 (222 and 242 landed 2026-10-22), each belonging to the br
 - Small (no brief): `docs-site/requirements.txt` lacks PyYAML, which `docs-site/hooks/check_site.py` and `docs-site/hooks/check_snippet_markers.py` import, so the check hooks fail in a clean environment.
 
 Planning gap: closed 2026-10-23. The planner audit confirmed that 203, 206, 207, 208, 210 and 211 are not started and that 209 landed. They are placed in the wave table above; 211 lands at wave 7, before 254 (9) and 255 (11), so the link-key and audit-key briefs keep their waves. 211, 254 and 255 now own `ClusterKeyResolution.java`.
+
+Follow-ups from wave 4 (203, 206, 223, 241, 248 and 269 landed 2026-10-23), each belonging to the brief named (the full lists are in the Outcomes under `tasks/retired/`):
+
+- **210: 0.8.0 must not ship without it.** `SecurityWiring` uses a deployer-supplied `CaseAuthorizer` or `ClientAllowlist` bean (two of either refuse startup). With none it falls back to `tokenTrusted()` and `unrestricted()` with one WARN; 210 makes the property-driven wiring.
+- 213: `docs/tools.md` lines 69-70 show the old `CaseAuthorizer` constructors; tell implementers to keep case data out of the messages of exceptions they throw; `docs/audit.md` notes that `KEYED_LIMITATION` is not printed when the audit path is unreadable and that a lone non-GENESIS writer carries no key label; `docs/migration-0.8.md` notes that `PrivacyCluster.close()` now stops only an instance it started; the cluster-security design table at line 175 still shows the scope-pause key form.
+- 211: with only `--allow-unkeyed-writers`, a broken writer is still counted as "unkeyed allowed" (Low).
+- Autoconfigure (task 286, planned on PR #164): Spring does not pass `dataprism.hazelcast.lock-timeout` to the new overloads in `ClusterBackedState`:172 and `ReidentificationWiring`:61.
+- 224 and 228: 224 may delete `ClaimEntries.sweepLegacy`; the scope-pause value holds the scope id until 228 replaces it.
+- Small (no brief), from 223: test-only instance leaks at `ClusterConfigurationTest`:319 and `ClusterLegacyGaugeTest`:247; the multi-key `ran` guard in `SealedWrites` fires after the first key's primary is written; `SoloMemberKeysTest` captures JUL logs only; `KeyedLockHoldTest`:131 has a wall-clock bound; `SealedWrites.unregister` swallows an exception silently.
+- 255: add a pool-size property for `ResolverInvoker` (default 8 concurrent calls). Small, from 241: rename the test `aNullKeyInTheListIsInvalidOutput`; the adapter filters `expand`'s keys to the second source; `PrivacyMetricsTest` does not tie each metric name to its constant.
+- 272 (PR #161): the `SourceFanOut` starvation found in 241.
+- 270 and 271: the scrubber-side leak found in 248 (advisory GHSA-f94h-6mxv-c957, draft, exposure accepted by the owner) goes to 270; `PrivacyEngineWiring` passing the descriptor map to the engine goes to 271. 249 and 250 read 248's description: recursive paths are omitted from it, so the brief's line "single `[]` level describes everything the scrubber emits" excludes them. Accepted residuals: a decorator around `ValueTokenSource.unavailable()` reports as available; `Optional` content is judged by the type-level lookup; `Optional<List<Record>>`'s element path is not described; `profileChangesDescription` only asserts `isNotEqualTo`.
+- 264: nested classes inside a Hazelcast limiter are not exempt from the 269 architecture rule (fails closed). The lone-surrogate UTF-8 encoding in `AttemptSubject` is pre-existing.
+- Tooling: `.claude/scripts/wt-new.sh` cannot base a worktree on a given commit.
+- Migration note, for 261 or `docs/migration-0.8.md`: upgrading from 0.7 or from any pre-223 build requires wiping the cluster state with a full restart of every member, because raw NUL-keyed entries in maps other than the oversight map are neither detected nor migrated. A cluster whose oversight map still holds such a pause refuses to start with LEGACY_OVERSIGHT_STATE.
+
+External review round on PR #163 (Lows and Nits; none scheduled, each fold into the next edit of the named code):
+
+- Security: `ScopeResolver`:110 logs the authorizer exception in full; log the class only. `AuditChainVerifier`:344 accepts a writer with zero recomputed records as verified in keyed mode; that should be a break unless `--allow-unkeyed-writers` is set.
+- `ResolverInvoker`: it is never shut down; make it `AutoCloseable` and the bean's destroy method. The `valueOf(name())` reason mapping should be an exhaustive switch. `ResolutionContext`'s deadline and context are not validated.
+- Core and engine: add `ValueTokenSource.isAvailable()` instead of `getEnclosingClass`. Add `ModelDescription` null checks. Fix `SourceTree` and `ScrubPlanDescriber` import grouping and inline FQNs.
+- `SealedWrites`: the `ran` flag can reject a local retry; guard on the key. `unregister` should catch only `HazelcastInstanceNotActiveException`.
+- `InMemoryLinkAttemptLimiter`: its test stats ThreadLocal is on the hot path; use a sink through the test constructor. Its cleanup is only approximately FIFO; document it. The test `Holder.close()` should assert the thread finished, as a daemon.
+- Nits: inline FQNs in 206, 223 and 269; long lines and import order in 241; the parameter list on 248's `field(...)`; use `String.equals` for the HMAC in the verifier.
+- Smaller: the keyed-run shared tail wording, "by someone who did not also recompute the chain", is loose for keyed chains.
+
+Second external review round on PR #163 (Lows and Nits; none scheduled, each fold into the next edit of the named code):
+
+- `HazelcastScopeBudget.forget` lists every key; use a prefix predicate.
+- `ScrubPlanDescriber`:114 has a broad catch that hides bugs.
+- `InMemoryLinkAttemptLimiter`:235: an `Error` during offer leaves an entry with no marker; roll back in `finally`.
+- `ResolverInvokerTest`:212 has a misleading name.
+- `IdentityResolverKeyResolvers`:52: post-processing sits outside the try.
+- Lines over 120 characters in `KeyResolvers`:45 and `SecurityWiring`:33.
+- `AuditChainVerifierCli`:274: readKey failures should report a category.
+- `AuditChainVerifier`:316: broken writers are marked "unkeyed allowed".
+- The legacy watch runs only on member joins.
+
+Third, fourth and fifth external review rounds on PR #163 are fixed in full except one item (round 5, 2026-10-24):
+
+- 163-15: `AuditChainVerifier.verifyWithKeys` pairs writers by list index; look them up by instance id. Belongs to the next edit of `AuditChainVerifier` (206's successors).
+- 163 round 6: `ClusterMembership.java:418` scans the oversight `keySet` client-side; use a predicate as `ScopeKeys.keysWithPrefix` now does. Belongs to the next edit of `ClusterMembership` (223's successors).
+- 163 round 6: the limiter field check in the architecture rule (269) does not cover a field typed `Object`. Belongs to 269's successors.
+- 163 round 7: `AuditChainVerifier` has older Javadoc lines over 120 characters. Belongs to the next edit of `AuditChainVerifier`.
 
 Follow-ups from 245 (found in its review and verify, 2026-10-21, none scheduled; fold into the next edit of the operator controller):
 

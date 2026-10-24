@@ -48,3 +48,22 @@ Translation between key namespaces happens only through a declared resolver (D-R
 - Declaring translated targets when issuing links (251).
 - Spring bean collection and the `dataprism.key-resolvers.*` properties (255).
 - Any metric beyond the list above, and any metric label API.
+
+## Outcome (2026-10-23, 0.8)
+The KeyResolver SPI (`KeyResolver`, `ResolutionContext`, `KeyResolutionException`) and the `IdentityResolverKeyResolvers` adapter in core; `KeyResolvers`, `ResolverInvoker` and `ResolverOutcome` in `orchestration.links`; 14 new `Metric` constants; and `KeyResolverArchitectureTest`.
+
+Tests that fail on the base: `ResolverInvokerTest`, `KeyResolversTest`, `KeyResolverContractTest`, `IdentityResolverKeyResolversTest` and `KeyResolverArchitectureTest` (compile failure); `PrivacyMetricsTest` (assertion).
+
+Decisions. Resolver calls run on a dedicated pool of daemon platform threads (`key-resolver-N`), default `DEFAULT_MAX_CONCURRENT_CALLS = 8`, set by `ResolverInvoker(PrivacyMetrics, int)`. Slots are counted by a Semaphore and released when the resolver code returns; when every slot is taken the call returns `Failed[UNAVAILABLE]` at once and the resolver is not called. `RESOLVER_LATENCY` uses the fixed tag `"key-resolver"` (OD-200-15). Duplicate resolver names are refused with `DUPLICATE_KEY_RESOLVER`. `maxResults` below 1 is rejected. The invoker never calls `name()`; the registry reads name, from and to once.
+
+Follow-ups. The `SourceFanOut` starvation is now task 272 (PR #161). The test name `aNullKeyInTheListIsInvalidOutput` is misleading. The adapter filters `expand`'s keys to the second source. `PrivacyMetricsTest` does not tie each metric name to its constant. 255 needs a pool-size property.
+
+**Review round (PR #163).** `Resolution` keeps null elements, so a null key gives INVALID_OUTPUT.
+
+**Review round 2 (PR #163).** The invoker waits for the shorter of the timeout and the time to the deadline; if the deadline has already passed it returns `TIMEOUT` without calling the resolver. `toString` of `Resolution`, `Keys` and `ResolutionContext` prints counts only, or the deadline, never key material. The test `CONTEXT` deadline moved a year ahead so it cannot expire during a run.
+
+**Review round 3 (PR #163).** The wait is converted to a duration with saturation before the slot is taken. Every abnormal branch calls `cancel(true)`. The deadline-passed test asserts the TIMEOUT metric and that the slot is free.
+
+**Review round 5 (PR #163; reviewer ids 163-1 to 163-15).** Imports sorted and `THREAD_KEEP_ALIVE` named.
+
+**Review round 6 (PR #163; reviewer ids 163-1 to 163-19).** The resolver tests are bounded and check that the slot is returned.

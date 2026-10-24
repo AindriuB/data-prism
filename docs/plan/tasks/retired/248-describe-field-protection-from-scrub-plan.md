@@ -44,3 +44,26 @@
 - Configured JSON sources (249) and the `describe_source` tool (250).
 - `describe_entity_model` (0.9).
 - The mutation-survivor work in `JsonTreeScrubbingEngine` (a separate candidate task).
+
+## Outcome (2026-10-23, 0.8)
+`ScrubbingEngine.describe`, `ModelDescription`, `FieldProtection` (its `keyNamespace` is a validated String, to avoid a model-to-spi cycle) and `ScrubPlanDescriber`.
+
+Tests that fail on the base: `ScrubPlanDescriberTest` and `DescriptionConformsToScrubTest` (compile failure).
+
+Decisions. Owns widened to a public 5-argument `JsonTreeScrubbingEngine` constructor taking a `Map<String, ModelDescriptor>`, with private `tokensAvailable` and `descriptors` fields; and to `SourceTree.java` for `readsAsPlainBean` and its private helpers (`contextual`, `plainHolder`, `plainBean`) only. The describer omits any record or structure that SourceTree's READER does not write as a plain bean. That is an allowlist built from Jackson's own serializers, contextualised, through the holder property's merged view and container content serializers.
+
+Accepted residuals. Recursive paths are omitted: the brief's line "single `[]` level describes everything the scrubber emits" must be read as excluding recursive paths. A decorator around `ValueTokenSource.unavailable()` is reported as available. `Optional` content is judged by the type-level lookup. `READER._serializationContext()` is a Jackson internal and fails closed.
+
+Routed. `PrivacyEngineWiring` passing the descriptor map goes to task 271. The scrubber-side leak goes to task 270 and advisory GHSA-f94h-6mxv-c957 (draft; the owner accepted the exposure).
+
+Follow-ups. `profileChangesDescription` only asserts `isNotEqualTo`. `Optional<List<Record>>`'s element path is not described.
+
+**Review round (PR #163).** `profileChangesDescription` asserts the exact STRICT tightening of `recipientName`, and the mutant was shown failing.
+
+**Review round 3 (PR #163).** `ValueTokenSource.available()` (default true, false for `unavailable()`) replaces the enclosing-class check and the engine uses it. Decorators of `ValueTokenSource` must delegate it.
+
+**Review round 5 (PR #163; reviewer ids 163-1 to 163-15).** `tokens.available()` is checked on every describe, and an `available()` that throws counts as unavailable.
+
+**Review round 6 (PR #163; reviewer ids 163-1 to 163-19).** `ValueTokenSource.available()` defaults to false (fail closed), `HmacValueTokenSource` overrides it, and CHANGELOG has a Breaking line. The describer Javadoc is rewritten, `tokensAvailable` logs the exception class on failure, and imports and field order are fixed.
+
+**Review round 7 (PR #163; reviewer ids 163-1 to 163-12).** A throwing `available()` warns once per source class, then logs at DEBUG.

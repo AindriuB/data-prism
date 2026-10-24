@@ -53,7 +53,8 @@ class IdentityMetricsTest {
         config.getJetConfig().setEnabled(false);
         config.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
         config.getNetworkConfig().getJoin().getTcpIpConfig().setEnabled(false);
-        notReidentifying = PrivacyCluster.embedded(config, false);
+        // Both wrappers share one instance, so they must hold the same keys.
+        notReidentifying = PrivacyCluster.embedded(config, false, java.util.OptionalInt.empty(), TestMembers.KEYS);
         reidentifying = PrivacyCluster.using(notReidentifying.instance(), true, TestMembers.KEYS);
     }
 
@@ -146,7 +147,7 @@ class IdentityMetricsTest {
     void collisionIsRecordedWhenAConcurrentWriteDisagrees() throws Exception {
         var metrics = new RecordingPrivacyMetrics();
         var context = scope("M-CASE-COLLISION");
-        String key = ScopeKeys.identity(context.scopeId(), "s-1", PrivacyNamespace.PERSON_NAME);
+        String key = notReidentifying.scopeKeys().identity(context.scopeId(), "s-1", PrivacyNamespace.PERSON_NAME);
 
         // Ordering is enforced with latches, not timing: the generator signals
         // that the lookup already came back empty (a real miss) and then blocks,
@@ -281,7 +282,7 @@ class IdentityMetricsTest {
     @DisplayName("a metrics failure on a collision still overwrites the disagreeing cached value")
     void metricsFailureOnCollisionStillOverwritesTheStaleValue() throws Exception {
         var context = scope("M-CASE-COLLISIONTHROW");
-        String key = ScopeKeys.identity(context.scopeId(), "s-1", PrivacyNamespace.PERSON_NAME);
+        String key = notReidentifying.scopeKeys().identity(context.scopeId(), "s-1", PrivacyNamespace.PERSON_NAME);
 
         // Same latch technique as the collision test above: the generator signals
         // that its own lookup already came back empty, then blocks, so the direct
@@ -369,7 +370,7 @@ class IdentityMetricsTest {
         // Collision, so the assertion below also covers CachingSyntheticValueSource:125.
         String collisionScopeId = "M-CASE-SAFE-COLLISION";
         var collisionContext = scope(collisionScopeId);
-        String collisionKey = ScopeKeys.identity(collisionScopeId, subjectId, PrivacyNamespace.PERSON_NAME);
+        String collisionKey = reidentifying.scopeKeys().identity(collisionScopeId, subjectId, PrivacyNamespace.PERSON_NAME);
         CountDownLatch generatorEntered = new CountDownLatch(1);
         CountDownLatch proceed = new CountDownLatch(1);
         var blockingGenerator = new SyntheticValueSource() {

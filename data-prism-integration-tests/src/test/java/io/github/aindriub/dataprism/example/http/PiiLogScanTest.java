@@ -30,6 +30,8 @@ import io.github.aindriub.dataprism.mcp.CorrelationRequirement;
 import io.github.aindriub.dataprism.mcp.DataPrismMcpServer;
 import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
 import io.github.aindriub.dataprism.pseudonymisation.StaticSecretKeyProvider;
+import io.github.aindriub.dataprism.security.CaseAuthorizer;
+import io.github.aindriub.dataprism.security.ClientAllowlist;
 import io.github.aindriub.dataprism.security.ToolAdmission;
 import org.slf4j.spi.MDCAdapter;
 import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
@@ -1087,9 +1089,9 @@ class PiiLogScanTest {
         SecurityPolicy policy = new SecurityPolicy(Set.of(purpose),
                 Map.of(role, Set.of(Capability.GET_ENTITY_CONTEXT, Capability.COMPARE_ENTITY_SOURCES)));
         AuthorizationService authorizationService =
-                new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.INVESTIGATION);
+                new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.INVESTIGATION, ClientAllowlist.unrestricted());
         ScopeResolver scopeResolver = new ScopeResolver(assembly.pseudonymisationVersion(), Duration.ofHours(8),
-                new PurposeValidator(Set.of(purpose)));
+                new PurposeValidator(Set.of(purpose)), CaseAuthorizer.tokenTrusted());
         ParameterFingerprinter fingerprinter =
                 new ParameterFingerprinter(StaticSecretKeyProvider.of("pii-scan-test-key-not-for-any-real-data-32b"));
         GetEntityContextTool tool = new GetEntityContextTool(assembly.orchestrator(), authorizationService,
