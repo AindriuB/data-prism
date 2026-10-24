@@ -345,7 +345,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
             key = pendingKey(request.kind(), request.requesterPrincipalId());
         } catch (RuntimeException failed) {
             metrics.increment(Metric.APPROVAL_RELEASE_SKIPPED);
-            return false;
+            throw ClusterRefusals.mapped(failed);
         }
         if (!lockOrSkip(pendingSets, key, deadlineNanos)) {
             return false;
@@ -356,7 +356,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
             return true;
         } catch (RuntimeException failed) {
             metrics.increment(Metric.APPROVAL_RELEASE_SKIPPED);
-            return false;
+            throw ClusterRefusals.mapped(failed);
         } finally {
             ClusterLocks.release(pendingSets, key);
         }
@@ -370,7 +370,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
             claims = idClaims();
         } catch (RuntimeException failed) {
             metrics.increment(Metric.APPROVAL_RELEASE_SKIPPED);
-            return false;
+            throw ClusterRefusals.mapped(failed);
         }
         if (!lockOrSkip(claims, id, deadlineNanos)) {
             return false;
@@ -380,7 +380,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
             return true;
         } catch (RuntimeException failed) {
             metrics.increment(Metric.APPROVAL_RELEASE_SKIPPED);
-            return false;
+            throw ClusterRefusals.mapped(failed);
         } finally {
             ClusterLocks.release(claims, id);
         }

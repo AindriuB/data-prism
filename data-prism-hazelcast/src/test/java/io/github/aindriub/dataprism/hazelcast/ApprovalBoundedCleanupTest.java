@@ -267,6 +267,18 @@ class ApprovalBoundedCleanupTest {
     }
 
     @Test
+    void forgetWhoseSlotReleaseFailsWithAClusterFaultThrowsTheRefusalNotATimeout() {
+        StalledInsert injector = StalledInsert.passive().inactive(PrivacyCluster.APPROVAL_PENDING_MAP, "executeOnKey");
+        var faulty = new HazelcastApprovalStore(injector.over(members[0]), TIMEOUT, metrics);
+        faulty.create(request("e-1", "scope-e", "alice"), 5);
+        injector.arm();
+
+        assertThatThrownBy(() -> faulty.forgetScope("scope-e"))
+                .isInstanceOf(ClusterOperationRefusedException.class);
+        assertThat(metrics.countOf(Metric.APPROVAL_RELEASE_SKIPPED)).isEqualTo(1);
+    }
+
+    @Test
     void forgetWhoseGuardLockFailsWithAClusterFaultThrowsTheRefusalNotATimeout() {
         StalledInsert injector = StalledInsert.passive().inactive(PrivacyCluster.APPROVAL_PENDING_MAP, "tryLock");
         var faulty = new HazelcastApprovalStore(injector.over(members[0]), TIMEOUT, metrics);
