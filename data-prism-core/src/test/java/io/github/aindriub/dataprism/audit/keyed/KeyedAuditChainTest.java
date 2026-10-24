@@ -438,6 +438,54 @@ class KeyedAuditChainTest {
         });
     }
 
+    /** Writes a chain with a checkpoint, then replaces the last record with a validly hashed one. */
+    private Path[] badCheckpointChain(String name, AuditChainMode mode, AuditChainKey rehashKey) throws IOException {
+        Path audit = tempDir.resolve(name + ".log");
+        Path cp = tempDir.resolve(name + ".jsonl");
+        try (FileAuditSink sink = new FileAuditSink(audit);
+             FileAuditCheckpointSink cps = new FileAuditCheckpointSink(cp, tempDir.resolve("unused-" + name))) {
+            AuditRecorder recorder = new AuditRecorder(sink, FIXED, "w", cps, null, mode);
+            for (int i = 0; i < 5; i++) {
+                write(recorder);
+            }
+            recorder.checkpoint();
+        }
+        List<String> lines = new ArrayList<>(Files.readAllLines(audit));
+        AuditEvent last = AuditRecordFormat.parse(lines.get(4));
+        AuditEvent draft = copy(last, "someone-else", last.previousHash(), "x");
+        String hash = rehashKey == null ? AuditEventHash.compute(draft) : AuditEventHash.compute(draft, rehashKey);
+        lines.set(4, AuditRecordFormat.serialize(copy(last, "someone-else", last.previousHash(), hash)));
+        Files.write(audit, (String.join("\n", lines) + "\n").getBytes(StandardCharsets.UTF_8));
+        return new Path[] {audit, cp};
+    }
+
+    @Test
+    void anUnkeyedWriterWithABadCheckpointIsNotLabelledAsKeyZeroEitherWay() throws IOException {
+        Path[] files = badCheckpointChain("u-cp", AuditChainMode.unkeyed(), null);
+        for (boolean allow : new boolean[] {false, true}) {
+            VerificationReport report = AuditChainVerifier.verify(files[0], files[1], Period.ofMonths(6),
+                    List.of(KEY_A, KEY_B), allow);
+            assertThat(report.hasBreak()).isTrue();
+            assertThat(report.writers()).singleElement().satisfies(w -> {
+                assertThat(w.keyId()).isEmpty();
+                assertThat(w.firstBreak().orElseThrow().reason()).doesNotContain("under key");
+            });
+        }
+    }
+
+    @Test
+    void aForgedWriterWithABadCheckpointIsNotLabelledAsAKeyedWriter() throws IOException {
+        // Keyed chain, last record re-hashed UNKEYED: key A fails on a hash, unkeyed fails the checkpoint.
+        Path[] files = badCheckpointChain("f-cp", AuditChainMode.keyed(KEY_A), null);
+        VerificationReport report = AuditChainVerifier.verify(files[0], files[1], Period.ofMonths(6),
+                List.of(KEY_A), false);
+        assertThat(report.hasBreak()).isTrue();
+        assertThat(report.writers()).singleElement().satisfies(w -> {
+            assertThat(w.keyId()).isEmpty();
+            assertThat(w.firstBreak().orElseThrow().reason()).doesNotContain("checkpoint file recorded");
+        });
+    }
+
     @Test
     void aLoneNonGenesisWriterIsNotLabelledAsVerifiedUnderAKey() throws IOException {
         Path path = tempDir.resolve("lone.log");

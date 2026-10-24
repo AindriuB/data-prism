@@ -357,13 +357,17 @@ public final class AuditChainVerifier {
             }
             if (chosen == null) {
                 WriterResult plain = unkeyed.report().writers().get(i);
-                // A checkpoint mismatch is detected per replay, not read from key 0's alone.
-                boolean mismatch = keyed.stream().anyMatch(r -> r.states().get(instance).checkpointMismatch);
+                // Only a replay whose reported break IS the checkpoint break counts: a writer that failed on
+                // a hash first (unkeyed, forged) must fall through to the unkeyed and forger branches.
+                boolean mismatch = keyed.stream().anyMatch(r -> r.states().get(instance).checkpointBreak);
                 if (mismatch) {
                     // Report the replay that hashed furthest, not key 0's by default, and name its key.
-                    int best = 0;
-                    long most = keyed.get(0).states().get(instance).recomputed;
-                    for (int k = 1; k < keyed.size(); k++) {
+                    int best = -1;
+                    long most = -1;
+                    for (int k = 0; k < keyed.size(); k++) {
+                        if (!keyed.get(k).states().get(instance).checkpointBreak) {
+                            continue;
+                        }
                         long hashed = keyed.get(k).states().get(instance).recomputed;
                         if (hashed > most) {
                             most = hashed;
@@ -480,6 +484,7 @@ public final class AuditChainVerifier {
                 writer.checkpointMismatch = true;
                 if (!writer.broken) {
                     writer.broken = true;
+                    writer.checkpointBreak = true;
                     writer.firstBreak = new Break(cp.sequence(), cp.instanceId(),
                             writer.seenSequences.get(cp.sequence()),
                             "its eventHash differs from the head hash the checkpoint file recorded for this writer "
@@ -821,6 +826,8 @@ public final class AuditChainVerifier {
         private final Map<Long, Long> seenSequences = new LinkedHashMap<>();
         private final Map<Long, String> hashBySequence = new LinkedHashMap<>();
         private boolean checkpointMismatch;
+        /** True when the writer's reported first break is the checkpoint break itself, not an earlier one. */
+        private boolean checkpointBreak;
         private long recordCount;
         /** Records whose hash was recomputed and compared; zero means nothing verified this writer. */
         private long recomputed;
