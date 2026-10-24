@@ -2,9 +2,9 @@
 
 **Repo:** `.`
 **Release:** 0.8.0
-**Base branch:** `origin/main` once 248 has merged
-**Depends on:** 248 (both edit `JsonTreeScrubbingEngine.java`; this task also edits 248's `ScrubPlanDescriber`, adds cases to 248's two new tests, and builds on 248's final `SourceTree.readsAsPlainBean`)
-**Wave:** 5 (filed 2026-10-23)
+**Base branch:** `origin/main` once 248 and 271 have merged
+**Depends on:** 271 (both insert into `CHANGELOG.md` `[Unreleased]` and `docs/plan/design/contract-register.md`; added 2026-10-24), 248 (both edit `JsonTreeScrubbingEngine.java`; this task also edits 248's `ScrubPlanDescriber`, adds cases to 248's two new tests, and builds on 248's final `SourceTree.readsAsPlainBean`)
+**Wave:** 6 (filed 2026-10-23 at wave 5; moved to 6 on 2026-10-24 by the edge on 271)
 **Decisions:** OD-270-1 decided (a) and OD-270-2 decided (a), both by the owner on 2026-10-23 (below). The repros under "The gap" stay in this public brief: the owner accepted that exposure on 2026-10-23 (review item H1), and the advisory GHSA-f94h-6mxv-c957 is drafted now rather than at the release cut. `readsAsPlainBean` stays strict, because strict fails closed (coordinator, 2026-10-23, review of PR #161).
 **Owns:**
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/JsonTreeScrubbingEngine.java *(the `apply`, `scrubArray` and `scalar` paths, for a value at a classified-record position, and the `SourceTree.of` call in `scrub`; not the `describe` override)*
@@ -23,7 +23,7 @@
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PropertiesValidation.java *(the `dataPrismContractValidator` bean method only)*
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/validation/ClassifiedRecordStartupTest.java *(new; in the `validation` sub-package, outside 210's `spring/boot/*.java` glob)*
 - data-prism-spring-boot-autoconfigure/src/test/resources/classified-records/** *(new fixture files only)*
-- data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/ClassifiedShapesArchitectureTest.java *(new; 225 owns `ArchitectureTest.java` in this wave, so the rule lives in its own file)*
+- data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/ClassifiedShapesArchitectureTest.java *(new; 225 owns `ArchitectureTest.java`, so the rule lives in its own file)*
 - docs/extending.md *(the source-model shape paragraph, about :355-369, only)*
 - docs/plan/design/contract-register.md *(insertions only: the rows for the codes this task adds, in sections 3.1 and 3.5)*
 - CHANGELOG.md *(`[Unreleased]`, insertions only: one Security entry and one Breaking entry)*
@@ -49,7 +49,15 @@ The value is never passed through.
 3. `@SensitiveObject @JsonIdentityInfo(generator=ObjectIdGenerators.PropertyGenerator.class, property="email") record IdContact(@SensitiveData(classifications=CONTACT, namespace=EMAIL, suggestedAction=REDACT) String email)`, held by `@NonSensitive(reason="x") List<IdContact> contacts` with the same instance twice. The scrub emits `[{"email":"[REDACTED]"},"ada@example.invalid"]`: the second occurrence is an object id, a scalar, and takes the holder's policy.
 4. Container variants of 1 and 2, each held by a `@NonSensitive(reason="x")` component: `Optional<Email>`, `Optional<ArrContact>`, `List<Email>` and `Email[]`. `Optional` is transparent to `nestedType`, and an element takes the element type, so each reaches the same path.
 5. Type-info wrappers: the `ArrContact` record without `@JsonFormat`, instead annotated `@JsonTypeInfo(use=Id.NAME, include=As.WRAPPER_ARRAY)`, and again with `As.WRAPPER_OBJECT`. Also a classified record with `@JsonAppend` adding a virtual property. Their outcomes on `main` are recorded first (characterisation). Whatever 248's `readsAsPlainBean` answers for them, each must end up refused.
-6. Untyped position: `@NonSensitive(reason="x") Object payload` holding an `Email`, and the same through an interface the record implements. Nothing at startup sees the record. At scrub time the scalar takes the holder's policy.
+6. Untyped position: an `Email` held by a `@NonSensitive(reason="x")` component declared as each of the following:
+   - `Object`;
+   - an interface the record implements;
+   - an abstract base class: `java.lang.Record` itself, the only abstract class a record can extend, since a record cannot extend a user class;
+   - `List<?>` (the record as an element);
+   - a raw `List`;
+   - `Optional<Object>`.
+
+   Nothing at startup sees the record. At scrub time the scalar takes the holder's policy.
 
 `SourceValues.prohibited` is blind to all of these for the same reason: it descends only into objects, and the holder is not sensitive. So `RawValueLeakValidator` does not catch the emitted value either.
 
@@ -68,13 +76,19 @@ The value is never passed through.
   - It stays strict. A component renamed with `@JsonProperty`, and an `@JsonInclude` on the holding component, are therefore not plain. They are refused like the rest, and named in the Breaking entry.
   - `ClassifiedShapes` calls that method and implements no second check. If a repro shows the method answering `true` for a shape that is not a plain object (a type-info wrapper, for example), fix the method itself and name the change in the Outcome.
 - **Classified-record position:** a field value or array element whose type, under the existing `nestedType` rule, is a classified record.
+- **Component-exact object:** a JSON object whose property names are exactly the classified record's component names: no extra key, none missing, none renamed. This is the only shape the scrubber accepts at a classified-record position. It is checked on the tree at scrub time, independently of `readsAsPlainBean`, because a scrubbed tree carries no serializer.
 - **Untyped position:** a property or element whose declared type is `Object`, an interface, an abstract type, or a wildcard or raw collection element.
 
 ## OD-270-1: decided (a) by the owner, 2026-10-23
 - **Decided: refuse at startup, and refuse at scrub time.**
   - **At startup.** `SourceModels.require` refuses a model that reaches a classified record that is not a plain object, with the new code `SOURCE_MODEL_CLASSIFIED_RECORD_NOT_AN_OBJECT`. This includes a holding component whose `@JsonFormat`, `@JsonSerialize` or `@JsonInclude` makes it non-plain. The message reads `<Model.component>: <Record> serialised shape not verifiable as a plain object`, naming the component and the record's simple name, never a value.
   - **At scrub time.**
-    - A non-object, non-null value at a classified-record position refuses the response with `CLASSIFIED_RECORD_NOT_AN_OBJECT` at that path.
+    - A non-null value at a classified-record position that is not a component-exact object refuses the response with `CLASSIFIED_RECORD_NOT_AN_OBJECT` at that path. The refusal message reads `classified record value is not an object of exactly its components`, with no value and no property name. This covers:
+      - a scalar or an array;
+      - a wrapper key (`@JsonTypeInfo` `WRAPPER_OBJECT`);
+      - an appended or any-getter property;
+      - a missing component (an `@JsonInclude` omission, for example);
+      - a renamed one.
     - While the tree is built, `SourceTree.of` refuses a classified record written at an untyped position, plain or not, with `CLASSIFIED_RECORD_UNTYPED_POSITION`. The message reads `classified record at a position whose declared type is not that record`, with no value and no class name.
   - **Why.**
     - It follows the narrowing of D-173-2 and the other `SOURCE_MODEL_*` refusals.
@@ -115,8 +129,14 @@ The value is never passed through.
 
   The message is `<Model.component>: <Record> serialised shape not verifiable as a plain object` and contains no value.
 - [ ] **Still allowed at startup.** A record with `@JsonValue` whose components are all `@NonSensitive` still passes, as does an unclassified wrapper. Every model in the existing `SourceModelsTest` passes unchanged.
-- [ ] **Scrub-time backstop.** With the startup check bypassed (the engine is called directly), each of repros 1 to 5 is refused with `CLASSIFIED_RECORD_NOT_AN_OBJECT` at the holding path. Neither the `PrivacyRefusedException` message nor its path contains a value.
-- [ ] **Untyped positions.** Repro 6 (both the `Object` and the interface variant) is refused while the tree is built, with `CLASSIFIED_RECORD_UNTYPED_POSITION`, both through the engine and through `SourceValues.prohibited`. The same holds for a plain, classified record in an `Object` position. An unclassified record at an untyped position keeps today's behaviour, pinned by a test.
+- [ ] **Scrub-time backstop.** With the startup check bypassed (the engine is called directly), each of the following is refused with `CLASSIFIED_RECORD_NOT_AN_OBJECT` at the holding path:
+  - repros 1 to 5, including the `WRAPPER_OBJECT` and `@JsonAppend` variants, which write objects;
+  - a classified record with an `@JsonAnyGetter` that adds a key;
+  - one whose serialised object misses a component (`@JsonInclude(NON_NULL)` with a `null` component);
+  - one with a `@JsonProperty`-renamed component.
+
+  The message is `classified record value is not an object of exactly its components`. Neither the message nor the path contains a value or a property name.
+- [ ] **Untyped positions.** Repro 6, in each of its six declarations (`Object`, interface, `java.lang.Record`, `List<?>`, raw `List`, `Optional<Object>`), is refused while the tree is built, with `CLASSIFIED_RECORD_UNTYPED_POSITION`, both through the engine and through `SourceValues.prohibited`. The same holds for a plain, classified record in an `Object` position. An unclassified record at an untyped position keeps today's behaviour, pinned by a test.
 - [ ] **Descriptor-only classification, scrub time.** A record classified only by a descriptor (`DescriptorFieldMetadataResolver` classifying the `@JsonValue` component of an otherwise `@NonSensitive` record) is refused at scrub time with `CLASSIFIED_RECORD_NOT_AN_OBJECT`. At an untyped position it is refused with `CLASSIFIED_RECORD_UNTYPED_POSITION`.
 - [ ] **Descriptor-only classification, startup (M3).** `ClassifiedRecordStartupTest` starts a context whose descriptor file (under `src/test/resources/classified-records/`) classifies the `@JsonValue` component of an otherwise `@NonSensitive` record. One adapter returns a model that holds it. Startup fails with `SOURCE_MODEL_CLASSIFIED_RECORD_NOT_AN_OBJECT` and the source name. Without the descriptor, the same context starts. The bean inventories are unchanged.
 - [ ] **Unchanged behaviour (characterisation, each pinned by a test):**
@@ -130,14 +150,16 @@ The value is never passed through.
   - no class in `io.github.aindriub.dataprism.core.engine` other than `SourceTree` depends on `tools.jackson.databind.ser.BeanSerializer`, `tools.jackson.databind.ser.bean.UnrolledBeanSerializer` or `tools.jackson.databind.ser.impl.ObjectIdWriter`. Use the class names as they are on the base commit.
 - [ ] **Mutation proofs, each recorded in the Outcome with the test that fails:**
   - remove the scrub-time backstop: the direct-engine and descriptor-only tests fail;
+  - weaken the backstop to "is a JSON object" (dropping the exact-property-names comparison): the `WRAPPER_OBJECT`, `@JsonAppend`, any-getter, missing-component and renamed-component tests fail;
+  - weaken it to "no extra keys" (allowing missing ones): the missing-component test fails;
   - remove the startup check from `SourceModels.require`: the startup tests fail;
   - make `ClassifiedShapes` treat every record as plain: repros 1 to 5 fail;
   - drop the object-id condition from `readsAsPlainBean`: repro 3 fails;
-  - remove the untyped-position check: repro 6 fails.
+  - remove the untyped-position check: each of repro 6's six declarations fails.
 - [ ] **Codes.** `RefusalCodes.sanitise` returns each new code unchanged: `SOURCE_MODEL_CLASSIFIED_RECORD_NOT_AN_OBJECT`, `CLASSIFIED_RECORD_NOT_AN_OBJECT` and `CLASSIFIED_RECORD_UNTYPED_POSITION`. A test asserts it. The contract register gains a row for each.
 - [ ] **`docs/extending.md`, source-model shape paragraph.**
   - Delete the words "(the engine still classifies what they produce)", because this task found that claim false.
-  - Add these two sentences verbatim: "A record that carries a classification (a `@SensitiveData` or `@InternalIdentifier` component) must serialise as a plain JSON object whose properties are exactly its components, and must be held at a position declared as that record. Startup refuses any other shape with `SOURCE_MODEL_CLASSIFIED_RECORD_NOT_AN_OBJECT`, including `@JsonValue`, a custom or delegating serializer, `@JsonFormat(shape=ARRAY)`, `@JsonIdentityInfo`, `@JsonTypeInfo`, `@JsonAppend`, a component renamed with `@JsonProperty`, and `@JsonInclude` on the holding component."
+  - Add these two sentences verbatim: "A record that carries a classification (a `@SensitiveData` or `@InternalIdentifier` component, or through a model descriptor) must serialise as a plain JSON object whose properties are exactly its components, and must be held at a position declared as that record. Startup refuses any other shape with `SOURCE_MODEL_CLASSIFIED_RECORD_NOT_AN_OBJECT`, including `@JsonValue`, a custom or delegating serializer, `@JsonFormat(shape=ARRAY)`, `@JsonIdentityInfo`, `@JsonTypeInfo`, `@JsonAppend`, a component renamed with `@JsonProperty`, and `@JsonInclude` on the holding component."
 - [ ] **`CHANGELOG.md` `[Unreleased]`.**
   - Security entry: what leaked, under which shapes, and since which version (as established below).
   - Breaking entry:
@@ -155,12 +177,16 @@ The value is never passed through.
     - classified by a descriptor.
 
     The advisory's workaround is derived from that table. It is expected to read "do not mark a field `@NonSensitive` (or `@SensitiveData` with `PASS_THROUGH`) when it holds a classified record", and is corrected if the table says otherwise.
-  - **Affected versions.** For each release tag from the first that allowed `@JsonValue` on a model record (D-173-2, 0.6.0) through `v0.7.1`:
-    - check the tag out in its own scratch worktree;
-    - copy in the repro test;
-    - run `./mvnw -B -pl data-prism-core -am test -Dtest=<repro>`.
+  - **Affected versions.**
+    - First, find the earliest release tag at which the scrubber descends into nested records (`git tag`, then the history of `JsonTreeScrubbingEngine`'s nested-object descent). Do not assume 0.6.0. The Outcome names that tag and the commit that introduced descent.
+    - Then, for every release tag from that one through `v0.7.1`, and for every repro (1 to 6, each variant):
+      - check the tag out in its own scratch worktree;
+      - copy in the repro tests, adapted only where an API they use did not yet exist (each adaptation recorded);
+      - run `./mvnw -B -pl data-prism-core -am test -Dtest=<repro class>`.
 
-    The Outcome lists the tags where the repro leaks, as the affected range, and that range replaces the one in GHSA-f94h-6mxv-c957 when this task merges. It names 0.8.0 as the patched version, and it describes the shapes without real data.
+      A repro that cannot compile on a tag, because the annotation or shape did not exist yet, is recorded as "not applicable", not as "not affected".
+    - The Outcome tabulates tag × repro (leaks, refused, not applicable).
+    - The affected range for GHSA-f94h-6mxv-c957 is the union: every tag on which any repro leaks. That range replaces the advisory's current one when this task merges. It names 0.8.0 as the patched version, and it describes the shapes without real data.
 - [ ] Every existing test in the touched modules passes unmodified.
 - [ ] `./mvnw -B -pl data-prism-core,data-prism-validation,data-prism-spring-boot-autoconfigure,data-prism-architecture -am verify` passes.
 
@@ -170,7 +196,7 @@ The fix ships in 0.8.0 only. There is no 0.7.2. On 2026-10-23 the owner also dec
 ## Out of scope
 - Maps of records, and records inside nested containers (refused already; 0.9).
 - A stricter-of policy merge for scalar records (rejected above).
-- `@JsonAnyGetter`, `@JsonUnwrapped` and other shapes that still write an object of the record's components. If a test finds one leaking, report it in the Outcome; do not fix it here.
+- Unclassified records with `@JsonAnyGetter`, `@JsonUnwrapped` or other object shapes: they keep today's handling. A classified record with such a shape is refused by the backstop above.
 - `ConfiguredJsonScrubbingEngine` and configured JSON sources, which have no records (249).
 - `NamespaceCorrelationService`, which keeps `SourceTree.of(Object)`.
 - `PrivacyEngineWiring` and the descriptor map (271).

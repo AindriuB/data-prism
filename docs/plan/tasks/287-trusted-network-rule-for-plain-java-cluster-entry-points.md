@@ -47,7 +47,7 @@ Every entry point that starts or wraps a member that joins, or already has, othe
 - [ ] `./mvnw -B -pl data-prism-hazelcast -am verify` and `./mvnw -B verify` exit 0. Report the counts.
 
 ## Out of scope
-- New properties, `docs/configuration.md` and the contract register (284 owns them, and its rows already name the condition independently of the entry point).
+- New properties, `docs/configuration.md` and the contract register (284 owns the properties and `docs/configuration.md`, 286 the register rows, which name the condition independently of the entry point).
 - Sealing any store, and member cards (224 and 226 deferred; 225; 227).
 - IPv6 interfaces.
 - `docs/` pages and `CHANGELOG.md`: put the before and after of a plain-Java joining member, with the declaration, in the Outcome for 213.

@@ -18,6 +18,7 @@ Filed 2026-10-23 for owner decision (b). Task 230 is deferred past 1.0, but 1.0 
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/ClusterLockTimeoutPassThroughTest.java *(new)*
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/ClusterLegacyGaugeTest.java *(the recording map only)*
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/PrivacyExtensionPointsTest.java *(insertions only, if it lists rows)*
+- docs/plan/design/contract-register.md *(the rows 284's Outcome lists: `PUBLIC_MEMBER_INTERFACE`, `MISSING_TRUSTED_NETWORK`, `INVALID_TRUSTED_RANGE`, the `trusted-network` and `member.trusted-ranges` properties, and the `INVALID_CLUSTER_INTERFACE` row, only; moved from 284 on 2026-10-24)*
 
 ## Goal
 An operator sees cluster security on the readiness probe. The `clusterSecurity` contributor is `DOWN` while this instance is not serving, for any of these reasons: an unverified member under `refuse`, a sentinel or key-check-value failure (227), or a pause document that is not fresh (228). It is `UP` otherwise. It is in the readiness group and not the liveness group, so a refusing instance is taken out of rotation, not restarted. Three defects found in reviews of the cluster wiring are fixed alongside.
@@ -39,6 +40,7 @@ An operator sees cluster security on the readiness probe. The `clusterSecurity` 
 - [ ] `lock-timeout` pass-through: with `dataprism.hazelcast.lock-timeout: PT3S`, every cluster-backed store and the reidentification index feed built by the starter use `PT3S`. `ClusterLockTimeoutPassThroughTest` asserts this for each bean through an accessor or a recording `PrivacyCluster`, not by timing.
 - [ ] One rule decides "is this the starter's cluster": `ClusterBackedState.builtHere` and `PropertiesValidation.isFrameworkCluster` both call one shared method, and neither keeps its own copy. A test runs both callers over a starter-built cluster, an application cluster under the starter's bean name and an application cluster under another name, and asserts that they agree on each.
 - [ ] `ClusterLegacyGaugeTest` records every gauge registration in a list, not in a map keyed by metric, and asserts exactly one registration per gauge metric. Registering the legacy gauge twice fails the test (the Outcome shows the mutant).
+- [ ] The contract register (moved from 284 on 2026-10-24, because 270 now shares 284's wave and owns the register there): `PUBLIC_MEMBER_INTERFACE` moves from "not built; the name stays reserved" to built by 284 and 287, with the private-range condition. `MISSING_TRUSTED_NETWORK`, `INVALID_TRUSTED_RANGE` and the two properties have rows, taken from 284's Outcome. The `INVALID_CLUSTER_INTERFACE` row carries the same keyed or keyless wording as `docs/configuration.md`.
 - [ ] `PrivacyExtensionPointsTest`, `AutoConfiguredBeanClassificationTest` and `AutoConfiguredBeanInventoryTest` pass, with only this task's lines in their lists.
 - [ ] `./mvnw -B verify` exits 0 over the full reactor. Report the counts.
 
