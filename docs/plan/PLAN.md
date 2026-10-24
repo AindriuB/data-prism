@@ -228,7 +228,7 @@ Follow-ups from wave 4 (203, 206, 223, 241, 248 and 269 landed 2026-10-23), each
 - 270 and 271: the scrubber-side leak found in 248 (advisory GHSA-f94h-6mxv-c957, draft, exposure accepted by the owner) goes to 270; `PrivacyEngineWiring` passing the descriptor map to the engine goes to 271. 249 and 250 read 248's description: recursive paths are omitted from it, so the brief's line "single `[]` level describes everything the scrubber emits" excludes them. Accepted residuals: a decorator around `ValueTokenSource.unavailable()` reports as available; `Optional` content is judged by the type-level lookup; `Optional<List<Record>>`'s element path is not described; `profileChangesDescription` only asserts `isNotEqualTo`.
 - 264: nested classes inside a Hazelcast limiter are not exempt from the 269 architecture rule (fails closed). The lone-surrogate UTF-8 encoding in `AttemptSubject` is pre-existing.
 - Tooling: `.claude/scripts/wt-new.sh` cannot base a worktree on a given commit.
-- Migration note, for 261 or `docs/migration-0.8.md`: upgrade from 0.7.x requires a full cluster restart, no rolling upgrade. A cluster whose oversight map still holds a 0.7 scope pause refuses to start with LEGACY_OVERSIGHT_STATE; stop every member, clear the oversight map (or re-pause the scopes after upgrade), then start 0.8.
+- Migration note, for 261 or `docs/migration-0.8.md`: upgrading from 0.7 or from any pre-223 build requires wiping the cluster state with a full restart of every member, because raw NUL-keyed entries in maps other than the oversight map are neither detected nor migrated. A cluster whose oversight map still holds such a pause refuses to start with LEGACY_OVERSIGHT_STATE.
 
 External review round on PR #163 (Lows and Nits; none scheduled, each fold into the next edit of the named code):
 
@@ -239,6 +239,18 @@ External review round on PR #163 (Lows and Nits; none scheduled, each fold into 
 - `InMemoryLinkAttemptLimiter`: its test stats ThreadLocal is on the hot path; use a sink through the test constructor. Its cleanup is only approximately FIFO; document it. The test `Holder.close()` should assert the thread finished, as a daemon.
 - Nits: inline FQNs in 206, 223 and 269; long lines and import order in 241; the parameter list on 248's `field(...)`; use `String.equals` for the HMAC in the verifier.
 - Smaller: the keyed-run shared tail wording, "by someone who did not also recompute the chain", is loose for keyed chains.
+
+Second external review round on PR #163 (Lows and Nits; none scheduled, each fold into the next edit of the named code):
+
+- `HazelcastScopeBudget.forget` lists every key; use a prefix predicate.
+- `ScrubPlanDescriber`:114 has a broad catch that hides bugs.
+- `InMemoryLinkAttemptLimiter`:235: an `Error` during offer leaves an entry with no marker; roll back in `finally`.
+- `ResolverInvokerTest`:212 has a misleading name.
+- `IdentityResolverKeyResolvers`:52: post-processing sits outside the try.
+- Lines over 120 characters in `KeyResolvers`:45 and `SecurityWiring`:33.
+- `AuditChainVerifierCli`:274: readKey failures should report a category.
+- `AuditChainVerifier`:316: broken writers are marked "unkeyed allowed".
+- The legacy watch runs only on member joins.
 
 Follow-ups from 245 (found in its review and verify, 2026-10-21, none scheduled; fold into the next edit of the operator controller):
 
