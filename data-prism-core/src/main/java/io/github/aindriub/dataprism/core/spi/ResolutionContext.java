@@ -7,4 +7,10 @@ import java.time.Instant;
  * record and no other key.
  */
 public record ResolutionContext(String scopeId, String principalId, String purpose, Instant deadline) {
+
+    /** Shows only the deadline: the scope, principal and purpose identify who asked and are never printed. */
+    @Override
+    public String toString() {
+        return "ResolutionContext[deadline=" + deadline + "]";
+    }
 }

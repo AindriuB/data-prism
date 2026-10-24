@@ -17,6 +17,12 @@ public sealed interface ResolverOutcome {
         public Keys {
             keys = List.copyOf(Objects.requireNonNull(keys, "keys"));
         }
+
+        /** Counts only: a key is never printed. */
+        @Override
+        public String toString() {
+            return "Keys[count=" + keys.size() + ", more=" + more + "]";
+        }
     }
 
     /** The resolver knows no translation. Not a failure. */

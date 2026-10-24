@@ -31,7 +31,7 @@ class ResolverInvokerTest {
 
     private static final String SENTINEL = "SENTINEL-KEY-7f3a";
     private static final ResolutionContext CONTEXT = new ResolutionContext("scope", "principal", "purpose",
-            Instant.EPOCH);
+            Instant.now().plus(Duration.ofDays(365)));
     private static final Duration TIMEOUT = Duration.ofSeconds(5);
 
     private final List<Metric> counted = new CopyOnWriteArrayList<>();
@@ -467,5 +467,55 @@ class ResolverInvokerTest {
                 resolver(() -> new KeyResolver.Resolution(List.of("x"), false)), 5);
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> keys.keys().add("y"))
                 .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    private static final Instant NOW = Instant.parse("2030-01-01T00:00:00Z");
+
+    private static ResolutionContext contextWithDeadline(Instant deadline) {
+        return new ResolutionContext("scope", "principal", "purpose", deadline);
+    }
+
+    @Test
+    void aDeadlineAlreadyPassedFailsWithTimeoutWithoutCallingTheResolver() {
+        ResolverInvoker fixed = new ResolverInvoker(metrics, 2, java.time.Clock.fixed(NOW, java.time.ZoneOffset.UTC));
+        AtomicBoolean called = new AtomicBoolean();
+        KeyResolver resolver = resolver(() -> {
+            called.set(true);
+            return new KeyResolver.Resolution(List.of("x"), false);
+        });
+        ResolverOutcome outcome = fixed.invoke(resolver, SENTINEL, contextWithDeadline(NOW.minusSeconds(1)), 5,
+                TIMEOUT);
+        assertThat(outcome).isEqualTo(new ResolverOutcome.Failed(ResolverOutcome.Reason.TIMEOUT));
+        assertThat(called).isFalse();
+        assertThat(counted).contains(Metric.RESOLVER_TIMEOUT);
+    }
+
+    @Test
+    void aDeadlineShorterThanTheTimeoutBoundsTheWait() {
+        ResolverInvoker fixed = new ResolverInvoker(metrics, 2, java.time.Clock.fixed(NOW, java.time.ZoneOffset.UTC));
+        CountDownLatch never = new CountDownLatch(1);
+        KeyResolver blocking = resolver(() -> {
+            try {
+                never.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            return new KeyResolver.Resolution(List.of("x"), false);
+        });
+        long started = System.nanoTime();
+        ResolverOutcome outcome = fixed.invoke(blocking, SENTINEL,
+                contextWithDeadline(NOW.plusMillis(50)), 5, Duration.ofMinutes(5));
+        assertThat(outcome).isEqualTo(new ResolverOutcome.Failed(ResolverOutcome.Reason.TIMEOUT));
+        assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(30));
+    }
+
+    @Test
+    void recordsNeverPrintKeysOrIds() {
+        String rendered = new KeyResolver.Resolution(List.of(SENTINEL), true).toString()
+                + new ResolverOutcome.Keys(List.of(SENTINEL), true)
+                + new ResolutionContext(SENTINEL, SENTINEL, SENTINEL, NOW);
+        assertThat(rendered).doesNotContain(SENTINEL);
+        assertThat(new ResolverOutcome.Keys(List.of("a", "b", "c"), false).toString())
+                .isEqualTo("Keys[count=3, more=false]");
     }
 }

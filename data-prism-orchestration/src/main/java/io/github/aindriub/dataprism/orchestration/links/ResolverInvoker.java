@@ -7,7 +7,9 @@ import io.github.aindriub.dataprism.core.spi.KeyResolver;
 import io.github.aindriub.dataprism.core.spi.ResolutionContext;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
@@ -46,12 +48,18 @@ public final class ResolverInvoker {
     private final PrivacyMetrics metrics;
     private final ThreadPoolExecutor executor;
     private final Semaphore slots;
+    private final Clock clock;
 
     public ResolverInvoker(PrivacyMetrics metrics) {
         this(metrics, DEFAULT_MAX_CONCURRENT_CALLS);
     }
 
     public ResolverInvoker(PrivacyMetrics metrics, int maxConcurrentCalls) {
+        this(metrics, maxConcurrentCalls, Clock.systemUTC());
+    }
+
+    ResolverInvoker(PrivacyMetrics metrics, int maxConcurrentCalls, Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock");
         this.metrics = Objects.requireNonNull(metrics, "metrics");
         if (maxConcurrentCalls < 1) {
             throw new IllegalArgumentException("maxConcurrentCalls must be at least 1");
@@ -88,6 +96,18 @@ public final class ResolverInvoker {
                                        Duration timeout) {
         if (timeout.isZero() || timeout.isNegative()) {
             return new ResolverOutcome.Failed(ResolverOutcome.Reason.TIMEOUT);
+        }
+        // The wait is the shorter of the timeout and the time left to the context's deadline; a deadline already
+        // passed fails at once without calling the resolver.
+        Instant deadline = context == null ? null : context.deadline();
+        if (deadline != null) {
+            Duration remaining = Duration.between(clock.instant(), deadline);
+            if (remaining.isZero() || remaining.isNegative()) {
+                return new ResolverOutcome.Failed(ResolverOutcome.Reason.TIMEOUT);
+            }
+            if (remaining.compareTo(timeout) < 0) {
+                timeout = remaining;
+            }
         }
         if (!slots.tryAcquire()) {
             return new ResolverOutcome.Failed(ResolverOutcome.Reason.UNAVAILABLE);
