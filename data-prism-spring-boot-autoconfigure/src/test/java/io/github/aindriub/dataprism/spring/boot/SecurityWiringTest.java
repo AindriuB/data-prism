@@ -128,10 +128,10 @@ class SecurityWiringTest {
     void the_fallback_is_refused_at_runtime_in_a_release(String version) {
         withVersion(version).withUserConfiguration(Base.class).run(result -> {
             assertRefusal(result.getStartupFailure(), "MISSING_CASE_AUTHORIZER");
-            assertThat(result.getStartupFailure()).rootCause()
+            assertThat(result.getStartupFailure())
                     .hasMessageContaining("a CaseAuthorizer bean is required from 0.8.0");
             if (!version.equals("0.8.0")) {
-                assertThat(result.getStartupFailure()).rootCause().hasMessageNotContaining(version);
+                assertThat(result.getStartupFailure()).hasMessageNotContaining(version);
             }
         });
     }
@@ -146,12 +146,48 @@ class SecurityWiringTest {
     }
 
     @Test
-    void the_fallback_starts_with_a_warning_when_the_version_is_unknown() {
+    void an_unknown_version_is_refused_as_a_release() {
         context.withBean(SecurityWiring.LibraryVersion.class, () -> () -> null)
-                .withUserConfiguration(Base.class).run(result -> {
-                    assertThat(result).hasNotFailed();
-                    assertThat(warnings()).filteredOn(w -> w.contains("CaseAuthorizer")).hasSize(1);
-                });
+                .withUserConfiguration(Base.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "MISSING_CASE_AUTHORIZER"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "garbage", "0.8", "99999999999.0.0", "0.99999999999.0", "0.8.99999999999", "1.0.0-"})
+    void an_unparseable_or_oversized_version_is_forbidden(String version) {
+        assertThat(SecurityWiring.fallbackForbidden(version)).isTrue();
+    }
+
+    @Test
+    void the_real_embedded_version_is_the_maven_project_version() {
+        String expected = System.getProperty("dataprism.expectedVersion");
+        assertThat(expected).isNotBlank().doesNotContain("${");
+        assertThat(SecurityWiring.embeddedVersion()).isEqualTo(expected);
+    }
+
+    @Test
+    void without_injection_the_real_version_is_used_and_the_gate_matches_it() {
+        boolean forbidden = SecurityWiring.fallbackForbidden(System.getProperty("dataprism.expectedVersion"));
+        context.withUserConfiguration(Base.class).run(result -> {
+            if (forbidden) {
+                assertRefusal(result.getStartupFailure(), "MISSING_CASE_AUTHORIZER");
+            } else {
+                assertThat(result).hasNotFailed();
+            }
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"0.8.0", "1.0.0"})
+    void an_application_scope_resolver_without_a_case_authorizer_is_refused_in_a_release(String version) {
+        withVersion(version).withUserConfiguration(Base.class, OwnScopeResolver.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "MISSING_CASE_AUTHORIZER"));
+    }
+
+    @Test
+    void an_application_scope_resolver_without_a_case_authorizer_starts_before_a_release() {
+        withVersion("0.8.0-SNAPSHOT").withUserConfiguration(Base.class, OwnScopeResolver.class)
+                .run(result -> assertThat(result).hasNotFailed());
     }
 
     @ParameterizedTest

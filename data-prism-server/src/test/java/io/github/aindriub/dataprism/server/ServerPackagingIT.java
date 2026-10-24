@@ -43,6 +43,25 @@ class ServerPackagingIT {
         return v;
     }
 
+    /** The release gate reads this resource; a fat jar that lost it would fail closed, so it must be present. */
+    @Test
+    void nestedAutoconfigureJarCarriesTheProjectVersionResource() throws Exception {
+        Path artifact = Path.of("target", "data-prism-server-" + VERSION + ".jar").toAbsolutePath();
+        String nested = "BOOT-INF/lib/data-prism-spring-boot-autoconfigure-" + VERSION + ".jar";
+        String found = null;
+        try (JarFile jar = new JarFile(artifact.toFile());
+                ZipInputStream outer = new ZipInputStream(jar.getInputStream(jar.getEntry(nested)))) {
+            for (ZipEntry e = outer.getNextEntry(); e != null; e = outer.getNextEntry()) {
+                if (e.getName().equals("META-INF/data-prism/version.properties")) {
+                    java.util.Properties p = new java.util.Properties();
+                    p.load(outer);
+                    found = p.getProperty("version");
+                }
+            }
+        }
+        assertThat(found).isEqualTo(VERSION);
+    }
+
     /** The packaged jar bundles exactly the Hazelcast the build pins, not the Spring Boot BOM's own. */
     @Test
     void packagedJarBundlesThePinnedHazelcastAndNoOther() throws Exception {
