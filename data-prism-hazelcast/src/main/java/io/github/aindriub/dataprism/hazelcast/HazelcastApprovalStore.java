@@ -7,6 +7,7 @@ import io.github.aindriub.dataprism.core.metrics.Metric;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
 import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
+import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 import io.github.aindriub.dataprism.oversight.ApprovalRefusedException;
 import io.github.aindriub.dataprism.oversight.ApprovalRefusedException.Code;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest;
@@ -386,13 +387,20 @@ public final class HazelcastApprovalStore implements ApprovalStore {
     }
 
     /**
-     * Takes a lock for a release after a commit, waiting only for what is left of the deadline. A timeout or
-     * failure skips the release and is counted.
+     * Takes a lock for a release after a commit, waiting only for what is left of the deadline. A lock timeout or
+     * other failure skips the release and is counted. A refusal by the cluster (a lock or lease it rejected) is
+     * not a timeout and is thrown, so the caller can report it.
      */
     private boolean lockOrSkip(IMap<String, String> map, String key, long deadlineNanos) {
         try {
             ClusterLocks.acquireUntil(map, key, deadlineNanos, lockTimeout);
             return true;
+        } catch (ClusterLockTimeoutException timedOut) {
+            metrics.increment(Metric.APPROVAL_RELEASE_SKIPPED);
+            return false;
+        } catch (PrivacyRefusedException refused) {
+            metrics.increment(Metric.APPROVAL_RELEASE_SKIPPED);
+            throw refused;
         } catch (RuntimeException notTaken) {
             metrics.increment(Metric.APPROVAL_RELEASE_SKIPPED);
             return false;
@@ -543,12 +551,13 @@ public final class HazelcastApprovalStore implements ApprovalStore {
             try {
                 stored = Codec.decodeStored(raw);
             } catch (RuntimeException unreadable) {
-                // No token, so nothing it guards can be released by token. Remove it; its claim and slot stay.
+                // No token, so nothing it guards can be released by token. Remove it; its claim and slot stay,
+                // which is counted and reported to the caller.
                 if (!approvals.remove(key, raw) && approvals.get(key) != null) {
                     return false;
                 }
                 metrics.increment(Metric.APPROVAL_RELEASE_SKIPPED);
-                return true;
+                return false;
             }
             // A remove that reports false for an entry that is gone (a retried call, or a change after the read)
             // is not a lock timeout: the entry is gone, so its guards are released by token below.
@@ -559,8 +568,22 @@ public final class HazelcastApprovalStore implements ApprovalStore {
             ClusterLocks.release(approvals, key);
         }
         // Both releases are tried even if the first is skipped, and a skip of either is reported to the caller.
-        boolean slot = leavePending(stored.request(), stored.token(), deadlineNanos);
-        boolean claim = releaseClaim(stored.request().approvalId(), key, stored.token(), deadlineNanos);
+        RuntimeException refused = null;
+        boolean slot = false;
+        boolean claim = false;
+        try {
+            slot = leavePending(stored.request(), stored.token(), deadlineNanos);
+        } catch (PrivacyRefusedException failed) {
+            refused = failed;
+        }
+        try {
+            claim = releaseClaim(stored.request().approvalId(), key, stored.token(), deadlineNanos);
+        } catch (PrivacyRefusedException failed) {
+            refused = refused != null ? refused : failed;
+        }
+        if (refused != null) {
+            throw refused;
+        }
         return slot && claim;
     }
 
@@ -598,7 +621,11 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         }
         // The entry's lock is released before the pending key is touched, so no thread holds the two in the order
         // opposite to admit. The decision has committed: nothing below can fail the call.
-        leavePending(request, token, System.nanoTime() + lockTimeout.toNanos());
+        try {
+            leavePending(request, token, System.nanoTime() + lockTimeout.toNanos());
+        } catch (PrivacyRefusedException refused) {
+            // Counted by lockOrSkip; the slot stays counted until the sweep, and the decision stands.
+        }
         if (decided == null) {
             throw new ApprovalRefusedException(Code.EXPIRED);
         }

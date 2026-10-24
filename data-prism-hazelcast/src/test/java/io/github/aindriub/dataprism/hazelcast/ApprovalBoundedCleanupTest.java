@@ -4,6 +4,7 @@ import com.hazelcast.core.EntryView;
 import com.hazelcast.map.IMap;
 import io.github.aindriub.dataprism.core.metrics.Metric;
 import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
+import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
 import io.github.aindriub.dataprism.oversight.ApprovalRefusedException;
 import io.github.aindriub.dataprism.oversight.ApprovalRefusedException.Code;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest;
@@ -244,6 +245,32 @@ class ApprovalBoundedCleanupTest {
         sweepPendingOnBothMembers(LONG_AFTER);
         // The id and the slot are free again.
         assertThat(store.create(request("x-1", "scope-a", "alice"), 1).approvalId()).isEqualTo("x-1");
+    }
+
+    @Test
+    void forgetWhoseGuardLockIsRefusedByTheClusterThrowsTheRefusalNotATimeoutAndStillReleasesTheClaim()
+            throws Exception {
+        StalledInsert injector = StalledInsert.passive().rejecting(PrivacyCluster.APPROVAL_PENDING_MAP, "tryLock");
+        var faulty = new HazelcastApprovalStore(injector.over(members[0]), TIMEOUT, metrics);
+        faulty.create(request("k-1", "scope-k", "alice"), 5);
+        injector.arm();
+
+        assertThatThrownBy(() -> faulty.forgetScope("scope-k"))
+                .isInstanceOf(ClusterOperationRefusedException.class);
+        assertThat(metrics.countOf(Metric.APPROVAL_RELEASE_SKIPPED)).isEqualTo(1);
+        assertThat(members[0].instance().getMap(PrivacyCluster.APPROVAL_ID_MAP)
+                .containsKey(TestMembers.SCOPE_KEYS.claim("k-1"))).isFalse();
+    }
+
+    @Test
+    void forgetOfAnUnreadableEntryRemovesItCountsItAndReportsThatItsClaimAndSlotWereLeft() {
+        IMap<String, String> approvals = members[0].instance().getMap(PrivacyCluster.APPROVAL_MAP);
+        String key = TestMembers.SCOPE_KEYS.approval("scope-u", "u-1");
+        approvals.put(key, "garbage");
+
+        assertThatThrownBy(() -> store.forgetScope("scope-u")).isInstanceOf(ClusterLockTimeoutException.class);
+        assertThat(approvals.containsKey(key)).isFalse();
+        assertThat(metrics.countOf(Metric.APPROVAL_RELEASE_SKIPPED)).isEqualTo(1);
     }
 
     @Test
