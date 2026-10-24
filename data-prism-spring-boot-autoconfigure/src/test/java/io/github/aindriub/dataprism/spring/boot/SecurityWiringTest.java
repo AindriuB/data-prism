@@ -232,10 +232,10 @@ class SecurityWiringTest {
     void an_application_bean_shadowing_the_bypass_check_refuses_startup() {
         context.withUserConfiguration(Base.class, ShadowingBypassCheck.class).run(result -> {
             assertThat(result).hasFailed();
-            // the shadowing bean is not a BypassCheck, so the auto-configuration's injection point cannot be met
-            assertThat(result.getStartupFailure()).hasRootCauseInstanceOf(
-                    org.springframework.beans.factory.NoSuchBeanDefinitionException.class);
-            assertThat(rootCause(result.getStartupFailure()).getMessage()).contains("BypassCheck");
+            // bean-definition overriding is off, so the same-named bean is rejected outright
+            assertThat(result.getStartupFailure()).isInstanceOf(
+                    org.springframework.beans.factory.support.BeanDefinitionOverrideException.class);
+            assertThat(result.getStartupFailure().getMessage()).contains("dataPrismSecurityBypassCheck");
         });
     }
 
