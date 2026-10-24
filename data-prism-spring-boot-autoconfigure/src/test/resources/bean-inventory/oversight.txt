@@ -34,7 +34,7 @@ dataPrismScopeBudget | io.github.aindriub.dataprism.core.limits.ScopeBudget
 dataPrismScopeResolver | io.github.aindriub.dataprism.security.ScopeResolver
 dataPrismScrubber | io.github.aindriub.dataprism.core.engine.JsonTreeScrubbingEngine
 dataPrismSecretKeyProvider | io.github.aindriub.dataprism.core.spi.SecretKeyProvider
-dataPrismSecurityBypassCheck | org.springframework.beans.factory.config.BeanFactoryPostProcessor
+dataPrismSecurityBypassCheck | io.github.aindriub.dataprism.spring.boot.SecurityWiring$BypassCheck
 dataPrismSecurityPolicy | io.github.aindriub.dataprism.security.SecurityPolicy
 dataPrismSensitivePatternValidator | io.github.aindriub.dataprism.validation.LlmResponseValidator
 dataPrismSharedBudgetPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor

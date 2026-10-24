@@ -10,7 +10,8 @@ import io.github.aindriub.dataprism.security.SecurityPolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
+import org.springframework.beans.factory.ListableBeanFactory;
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -30,27 +31,44 @@ import java.util.Set;
 class SecurityWiring {
     private static final Logger LOG = LoggerFactory.getLogger(SecurityWiring.class);
 
-    @Bean
-    static BeanFactoryPostProcessor dataPrismSecurityBypassCheck() {
-        return beanFactory -> {
-            if (replaced(beanFactory, ScopeResolver.class, "dataPrismScopeResolver")
-                    && beanFactory.getBeanNamesForType(CaseAuthorizer.class, true, false).length > 0) {
+    /**
+     * Remembers the instances this auto-configuration built and, once every singleton exists,
+     * compares instances rather than names, so a same-named or FactoryBean-produced replacement
+     * is seen as itself.
+     */
+    static final class BypassCheck implements SmartInitializingSingleton {
+        private final ListableBeanFactory beanFactory;
+        private volatile ScopeResolver scopeResolver;
+        private volatile AuthorizationService authorizationService;
+
+        BypassCheck(ListableBeanFactory beanFactory) {
+            this.beanFactory = beanFactory;
+        }
+
+        @Override
+        public void afterSingletonsInstantiated() {
+            if (replaced(beanFactory.getBeansOfType(ScopeResolver.class, true, true).values(), scopeResolver)
+                    && !beanFactory.getBeansOfType(CaseAuthorizer.class, true, true).isEmpty()) {
                 throw new DataPrismConfigurationException("CASE_AUTHORIZER_BYPASSED",
                         "a ScopeResolver bean replaces the default, so the CaseAuthorizer bean would never be consulted; "
                                 + "call the CaseAuthorizer from your ScopeResolver and remove the bean, or remove your ScopeResolver");
             }
-            if (replaced(beanFactory, AuthorizationService.class, "dataPrismAuthorizationService")
-                    && beanFactory.getBeanNamesForType(ClientAllowlist.class, true, false).length > 0) {
+            if (replaced(beanFactory.getBeansOfType(AuthorizationService.class, true, true).values(), authorizationService)
+                    && !beanFactory.getBeansOfType(ClientAllowlist.class, true, true).isEmpty()) {
                 throw new DataPrismConfigurationException("CLIENT_ALLOWLIST_BYPASSED",
                         "an AuthorizationService bean replaces the default, so the ClientAllowlist bean would never be consulted; "
                                 + "apply the ClientAllowlist in your AuthorizationService and remove the bean, or remove your AuthorizationService");
             }
-        };
+        }
     }
 
-    private static boolean replaced(org.springframework.beans.factory.ListableBeanFactory beanFactory, Class<?> type, String ours) {
-        String[] names = beanFactory.getBeanNamesForType(type, true, false);
-        return names.length > 0 && !java.util.Arrays.asList(names).contains(ours);
+    @Bean
+    static BypassCheck dataPrismSecurityBypassCheck(ListableBeanFactory beanFactory) {
+        return new BypassCheck(beanFactory);
+    }
+
+    private static boolean replaced(java.util.Collection<?> instances, Object ours) {
+        return instances.stream().anyMatch(instance -> instance != ours);
     }
 
     @Bean @ConditionalOnMissingBean
@@ -58,19 +76,23 @@ class SecurityWiring {
         return new SecurityPolicy(Set.copyOf(properties.getSecurityPolicy().getPurposes()), properties.getSecurityPolicy().getRoles().entrySet().stream().collect(java.util.stream.Collectors.toMap(Map.Entry::getKey, entry -> Set.copyOf(entry.getValue()))));
     }
     @Bean @ConditionalOnMissingBean
-    AuthorizationService dataPrismAuthorizationService(SecurityPolicy policy, DataPrismProperties properties, ObjectProvider<ClientAllowlist> allowlist) {
+    AuthorizationService dataPrismAuthorizationService(SecurityPolicy policy, DataPrismProperties properties, ObjectProvider<ClientAllowlist> allowlist, BypassCheck built) {
         ClientAllowlist clients = allowlist.getIfAvailable();
         if (clients == null) {
             LOG.warn("No ClientAllowlist bean is defined: every client is allowed. Supply a ClientAllowlist bean.");
             clients = ClientAllowlist.unrestricted();
         }
-        return new AuthorizationService(policy, properties.getPrivacy().getProfile(), io.github.aindriub.dataprism.core.model.PrivacyScopeType.INVESTIGATION, clients); }
+        AuthorizationService service = new AuthorizationService(policy, properties.getPrivacy().getProfile(), io.github.aindriub.dataprism.core.model.PrivacyScopeType.INVESTIGATION, clients);
+        built.authorizationService = service;
+        return service; }
     @Bean @ConditionalOnMissingBean
-    ScopeResolver dataPrismScopeResolver(PseudonymisationVersion version, DataPrismProperties properties, ObjectProvider<CaseAuthorizer> caseAuthorizer) {
+    ScopeResolver dataPrismScopeResolver(PseudonymisationVersion version, DataPrismProperties properties, ObjectProvider<CaseAuthorizer> caseAuthorizer, BypassCheck built) {
         CaseAuthorizer authorizer = caseAuthorizer.getIfAvailable();
         if (authorizer == null) {
             LOG.warn("No CaseAuthorizer bean is defined: the case claim in the token is trusted without assignment checks. Supply a CaseAuthorizer bean.");
             authorizer = CaseAuthorizer.tokenTrusted();
         }
-        return new ScopeResolver(version, properties.getPrivacy().getScopeLifetime(), new PurposeValidator(Set.copyOf(properties.getSecurityPolicy().getPurposes())), authorizer); }
+        ScopeResolver resolver = new ScopeResolver(version, properties.getPrivacy().getScopeLifetime(), new PurposeValidator(Set.copyOf(properties.getSecurityPolicy().getPurposes())), authorizer);
+        built.scopeResolver = resolver;
+        return resolver; }
 }

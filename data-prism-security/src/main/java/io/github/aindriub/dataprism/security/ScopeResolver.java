@@ -105,9 +105,9 @@ public final class ScopeResolver {
             authorised = caseAuthorizer.isAuthorised(new CaseAccessRequest(
                     caller.principalId(), caller.clientId(), caller.caseId(), caller.purpose(), caller.roles()));
         } catch (RuntimeException e) {
-            // Server log only, for the operator; the client message stays code-only. The log
-            // message names no case or principal (docs/conventions.md, deliberate exception).
-            LOG.warn("case authorizer threw; refusing with {}", CASE_AUTHORISATION_UNAVAILABLE, e);
+            // Server log only, for the operator; the client message stays code-only. Only the
+            // exception class is logged: its message and trace can name the case or principal.
+            LOG.warn("case authorizer threw {}; refusing with {}", e.getClass().getName(), CASE_AUTHORISATION_UNAVAILABLE);
             throw new SecurityRefusedException(CASE_AUTHORISATION_UNAVAILABLE, "case authorisation could not be decided");
         }
         if (!authorised) {
