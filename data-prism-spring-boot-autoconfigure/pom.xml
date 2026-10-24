@@ -37,6 +37,19 @@
     <dependency><groupId>org.springframework</groupId><artifactId>spring-web</artifactId><scope>test</scope></dependency>
   </dependencies>
   <build>
+    <testResources>
+      <!-- Only the version stamp is filtered; filtering the rest could corrupt fixtures containing ${...}. -->
+      <testResource>
+        <directory>src/test/resources</directory>
+        <filtering>false</filtering>
+        <excludes><exclude>project-version.properties</exclude></excludes>
+      </testResource>
+      <testResource>
+        <directory>src/test/resources</directory>
+        <filtering>true</filtering>
+        <includes><include>project-version.properties</include></includes>
+      </testResource>
+    </testResources>
     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
