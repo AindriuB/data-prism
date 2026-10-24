@@ -141,6 +141,7 @@ Order by wave (briefs in a wave can run in parallel when their owned files do no
 
 Obligations for the 0.8.0 release cut (no brief filed yet; whoever files it copies these into its Acceptance):
 
+- **BLOCKING:** 0.8.0 must not be tagged until task 210 has merged: the token-trusted / unrestricted fallback must be an explicit opt-in.
 - Re-run 262's clean-checkout `docker compose up` against the published 0.8.0 images, not the local build overlay (coordinator decision 2026-10-23).
 - Keep `compose.yaml` and `docker/multi-instance/kubernetes.yaml` on the version-literal list, and confirm that no image reference is older than the released version.
 
