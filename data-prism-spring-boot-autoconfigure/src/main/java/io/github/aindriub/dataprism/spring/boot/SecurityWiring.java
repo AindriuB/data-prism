@@ -17,6 +17,7 @@ import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Lazy;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -154,6 +155,7 @@ class SecurityWiring {
         }
     }
 
+    @Lazy(false)
     @Bean
     static BypassCheck dataPrismSecurityBypassCheck(ListableBeanFactory beanFactory,
             ObjectProvider<LibraryVersion> libraryVersion) {

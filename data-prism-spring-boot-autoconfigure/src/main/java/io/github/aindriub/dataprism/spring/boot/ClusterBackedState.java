@@ -27,6 +27,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
+import org.springframework.context.annotation.Lazy;
 
 import java.util.OptionalInt;
 
@@ -84,6 +85,7 @@ class ClusterBackedState {
      * build. Fail-safe: that member is not ours to stop, so a gauge that will not register is logged by class and
      * startup goes on.
      */
+    @Lazy(false)
     @Bean
     static SmartInitializingSingleton dataPrismSuppliedClusterGauge(ConfigurableListableBeanFactory beans,
             ObjectProvider<PrivacyMetrics> metrics) {

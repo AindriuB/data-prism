@@ -25,6 +25,7 @@ import org.springframework.boot.web.servlet.ServletRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
+import org.springframework.context.annotation.Lazy;
 
 import java.time.Clock;
 import java.util.Set;
@@ -47,6 +48,7 @@ class McpTransportWiring {
      * inherits it rather than only the standalone server's own
      * {@code standaloneTransportValidated} bean.
      */
+    @Lazy(false)
     @Bean
     Object dataPrismStdioTransportRefused(DataPrismProperties properties) {
         if (properties.getTransport().getMode() == TransportProperties.Mode.STDIO) {
@@ -56,6 +58,7 @@ class McpTransportWiring {
         return new Object();
     }
 
+    @Lazy(false)
     @Bean
     @ConditionalOnProperty(prefix = "dataprism.transport", name = "mode", havingValue = "HTTP",
             matchIfMissing = true)
