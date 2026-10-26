@@ -31,7 +31,9 @@ import java.util.stream.Collectors;
 
 /**
  * Authorization, purpose and scope resolution. A deployer's own {@link CaseAuthorizer} and
- * {@link ClientAllowlist} bean is used when present; more than one of either refuses startup. An
+ * {@link ClientAllowlist} bean is used when present; more than one of either refuses startup
+ * ({@code AMBIGUOUS_CASE_AUTHORIZER}, {@code AMBIGUOUS_CLIENT_ALLOWLIST}), checked before anything else and
+ * whoever built the resolver or service. An
  * application that replaces {@link ScopeResolver} while a {@link CaseAuthorizer} bean exists, or
  * {@link AuthorizationService} while a {@link ClientAllowlist} bean exists, without building it with
  * that bean, would silently bypass the deployer's check, so startup refuses
@@ -115,6 +117,16 @@ class SecurityWiring {
 
         @Override
         public void afterSingletonsInstantiated() {
+            if (beanFactory.getBeansOfType(CaseAuthorizer.class, true, true).size() > 1) {
+                throw new DataPrismConfigurationException("AMBIGUOUS_CASE_AUTHORIZER",
+                        "more than one CaseAuthorizer bean is defined; define exactly one, so that it is "
+                                + "unambiguous which check applies");
+            }
+            if (beanFactory.getBeansOfType(ClientAllowlist.class, true, true).size() > 1) {
+                throw new DataPrismConfigurationException("AMBIGUOUS_CLIENT_ALLOWLIST",
+                        "more than one ClientAllowlist bean is defined; define exactly one, so that it is "
+                                + "unambiguous which allowlist applies");
+            }
             if (beanFactory.getBeansOfType(CaseAuthorizer.class, true, true).isEmpty()
                     && fallbackForbidden(libraryVersion.getIfAvailable(() -> SecurityWiring::embeddedVersion).get())) {
                 throw new DataPrismConfigurationException("MISSING_CASE_AUTHORIZER",
@@ -185,7 +197,7 @@ class SecurityWiring {
     @ConditionalOnMissingBean
     AuthorizationService dataPrismAuthorizationService(SecurityPolicy policy, DataPrismProperties properties,
             ObjectProvider<ClientAllowlist> allowlist, BypassCheck built) {
-        ClientAllowlist clients = allowlist.getIfAvailable();
+        ClientAllowlist clients = allowlist.getIfUnique();
         if (clients == null) {
             LOG.warn("No ClientAllowlist bean is defined: every client is allowed. Supply a ClientAllowlist bean.");
             clients = ClientAllowlist.unrestricted();
@@ -200,7 +212,7 @@ class SecurityWiring {
     @ConditionalOnMissingBean
     ScopeResolver dataPrismScopeResolver(PseudonymisationVersion version, DataPrismProperties properties,
             ObjectProvider<CaseAuthorizer> caseAuthorizer, BypassCheck built) {
-        CaseAuthorizer authorizer = caseAuthorizer.getIfAvailable();
+        CaseAuthorizer authorizer = caseAuthorizer.getIfUnique();
         if (authorizer == null) {
             LOG.warn("No CaseAuthorizer bean is defined: the case claim in the token is trusted without "
                     + "assignment checks. Supply a CaseAuthorizer bean.");

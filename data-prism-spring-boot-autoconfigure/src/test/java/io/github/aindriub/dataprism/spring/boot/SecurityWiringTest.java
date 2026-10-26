@@ -100,13 +100,46 @@ class SecurityWiringTest {
     @Test
     void two_case_authorizers_refuse_startup() {
         context.withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, SecondCaseAuthorizer.class)
-                .run(result -> assertThat(result).hasFailed());
+                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CASE_AUTHORIZER"));
     }
 
     @Test
     void two_client_allowlists_refuse_startup() {
         context.withUserConfiguration(Base.class, RestrictiveAllowlist.class, SecondAllowlist.class)
-                .run(result -> assertThat(result).hasFailed());
+                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CLIENT_ALLOWLIST"));
+    }
+
+    @Test
+    void two_case_authorizers_refuse_startup_even_when_a_custom_resolver_uses_one() {
+        withVersion("0.8.0").withUserConfiguration(Base.class, RefusingCaseAuthorizer.class,
+                        SecondCaseAuthorizer.class, WiredToFirstScopeResolver.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CASE_AUTHORIZER"));
+    }
+
+    @Test
+    void two_client_allowlists_refuse_startup_even_when_a_custom_service_uses_one() {
+        withVersion("0.8.0").withUserConfiguration(Base.class, RefusingCaseAuthorizer.class,
+                        RestrictiveAllowlist.class, SecondAllowlist.class, WiredToFirstAuthorizationService.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CLIENT_ALLOWLIST"));
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class WiredToFirstScopeResolver {
+        @Bean ScopeResolver firstScopeResolver(io.github.aindriub.dataprism.core.model.PseudonymisationVersion version,
+                @org.springframework.beans.factory.annotation.Qualifier("refusing") CaseAuthorizer authorizer) {
+            return new ScopeResolver(version, java.time.Duration.ofHours(1),
+                    new io.github.aindriub.dataprism.security.PurposeValidator(Set.of("investigation")), authorizer);
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class WiredToFirstAuthorizationService {
+        @Bean AuthorizationService firstAuthorizationService(io.github.aindriub.dataprism.security.SecurityPolicy policy,
+                DataPrismProperties properties,
+                @org.springframework.beans.factory.annotation.Qualifier("allowlist") ClientAllowlist allowlist) {
+            return new AuthorizationService(policy, properties.getPrivacy().getProfile(),
+                    io.github.aindriub.dataprism.core.model.PrivacyScopeType.INVESTIGATION, allowlist);
+        }
     }
 
     @Test
