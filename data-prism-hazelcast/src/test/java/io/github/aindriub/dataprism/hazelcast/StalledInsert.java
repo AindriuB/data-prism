@@ -32,6 +32,8 @@ final class StalledInsert {
     private final java.util.Set<String> failing = java.util.concurrent.ConcurrentHashMap.newKeySet();
     /** Calls that always throw {@link IllegalArgumentException} once armed. */
     private final java.util.Set<String> rejecting = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** Calls that always throw {@link com.hazelcast.core.HazelcastInstanceNotActiveException} once armed. */
+    private final java.util.Set<String> inactive = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private volatile boolean armed;
     /** Calls that run twice once armed, returning the second result, as a retried invocation would. */
     private final java.util.Set<String> repeating = java.util.concurrent.ConcurrentHashMap.newKeySet();
@@ -100,6 +102,16 @@ final class StalledInsert {
     }
 
     /**
+     * Makes every call of {@code method} on the map {@code mapName} throw
+     * {@link com.hazelcast.core.HazelcastInstanceNotActiveException} once armed, as a member that is shutting down
+     * does: a cluster fault that is not an {@link IllegalArgumentException}.
+     */
+    StalledInsert inactive(String mapName, String method) {
+        inactive.add(mapName + ":" + method);
+        return this;
+    }
+
+    /**
      * Makes every call of {@code method} on {@code mapName} run twice once armed and return the second result, as an
      * invocation retried after the first attempt already applied would.
      */
@@ -137,6 +149,9 @@ final class StalledInsert {
                                         .incrementAndGet();
                                 if (armed && rejecting.contains(name + ":" + call.getName())) {
                                     throw new IllegalArgumentException("injected rejection");
+                                }
+                                if (armed && inactive.contains(name + ":" + call.getName())) {
+                                    throw new com.hazelcast.core.HazelcastInstanceNotActiveException();
                                 }
                                 if (armed && failing.contains(name + ":" + call.getName())) {
                                     throw new IllegalStateException("injected failure");

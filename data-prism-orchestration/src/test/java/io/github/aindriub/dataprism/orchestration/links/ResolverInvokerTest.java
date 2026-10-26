@@ -531,6 +531,7 @@ class ResolverInvokerTest {
     }
 
     @Test
+    @Timeout(30)
     void aDeadlineShorterThanTheTimeoutBoundsTheWait() {
         ResolverInvoker fixed = new ResolverInvoker(metrics, 2, java.time.Clock.fixed(NOW, java.time.ZoneOffset.UTC));
         CountDownLatch never = new CountDownLatch(1);
