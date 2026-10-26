@@ -3,7 +3,7 @@
 **Repo:** `.`
 **Release:** 0.9.0 (changes the starter's public contract; must land before the 0.9.0 freeze)
 **Base branch:** `origin/main` once every 0.8 brief has merged
-**Depends on:** 260 (creates `freeze/codes.txt`, which this task may edit), 210 (case authorisation stays required; 210 also owns `validatePolicy`), 211, 254, 255, 284 and 286 (PR #164; 284 and 286 replace the deferred 230; these are the last 0.8 editors of `DataPrismPropertiesValidator.java`, `frozen-property-names.txt`, `additional-spring-configuration-metadata.json`, the bean inventories and `docs/configuration.md`)
+**Depends on:** 260 (creates `freeze/codes.txt`, which this task may edit), 203 (`SecurityWiring.BypassCheck`, the guard pattern to copy), 246 and 247 (the last 0.8 editors of `DefaultContextOrchestrator.java`), 210 (case authorisation stays required; 210 also owns `validatePolicy`), 211, 254, 255, 284 and 286 (PR #164; 284 and 286 replace the deferred 230; these are the last 0.8 editors of `DataPrismPropertiesValidator.java`, `frozen-property-names.txt`, `additional-spring-configuration-metadata.json`, the bean inventories and `docs/configuration.md`)
 **Wave:** 15 (0.9 starter onboarding; filed 2026-10-23 from `docs/plan/specs/2026-10-23-starter-onboarding.md`)
 **Decisions:** OD-273-1 and OD-273-2 are open (below). OD-273-3 was decided (a) by the owner on 2026-10-24 (below). The settings to default and derive, and the ones that stay required, are owner decisions already made in the spec, section 1.
 **Owns:**
@@ -13,7 +13,13 @@
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/SecurityProperties.java *(the `Jwt` group only)*
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/AuditProperties.java *(the `writer-id` derivation only)*
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/IdentityResolverSelection.java
-- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/Preflights.java *(`dataPrismIdentityResolverPreflight` only)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/Preflights.java *(`dataPrismIdentityResolverPreflight`'s Javadoc only; its checks do not change)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/DefaultedPassThroughIdentityResolver.java *(new, package-private: the marked default)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/IdentityResolverGuard.java *(new; name may differ: the startup guard)*
+- data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/DefaultContextOrchestrator.java *(insertions only: a public `sourceCount()` accessor)*
+- data-prism-orchestration/src/test/java/io/github/aindriub/dataprism/orchestration/DefaultContextOrchestratorSourceCountTest.java *(new)*
+- data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/IdentityResolverGuardTest.java *(new)*
+- data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/PrivacyExtensionPointsTest.java *(insertions only: the guard's case)*
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/jwt/JwtDecoderSupport.java
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/EffectiveSettingsReport.java *(new; name may differ: the startup log block that lists every defaulted or derived value)*
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/DataPrismAutoConfiguration.java *(insertions only, if the report is a bean)*
@@ -50,7 +56,7 @@ A Spring Boot developer should set only what is a security decision. Default the
 - Defaults to set (each visible in `spring-configuration-metadata.json` so that `ConfigurationMetadataDocumentedTest` compares it with `docs/configuration.md`):
   - `dataprism.privacy.profile`: `DEFAULT`.
   - `dataprism.privacy.scope-lifetime`: OD-273-1.
-  - `dataprism.identity.resolver`: `pass-through`, but only when exactly one source is configured (OD-273-3, decided (a) 2026-10-24). `IdentityResolverSelection.java` (its `@ConditionalOnProperty(prefix = "dataprism.identity", name = "resolver", havingValue = "pass-through")`) and `Preflights.java:25-45` (`dataPrismIdentityResolverPreflight`).
+  - `dataprism.identity.resolver`: `pass-through`, but only when exactly one source is configured (OD-273-3, decided (a) 2026-10-24). `IdentityResolverSelection.java` (its `@ConditionalOnProperty(prefix = "dataprism.identity", name = "resolver", havingValue = "pass-through")`), and a startup guard that reads the sources the orchestrator actually serves (OD-273-3 below).
   - `dataprism.hazelcast.topology`: `single-node`. Coordinator decision of 2026-10-24, after the second external review of PR #162: the default removes `MISSING_CLUSTER_TOPOLOGY` (`DataPrismPropertiesValidator.java:627`), so a deployment that meant to cluster must not silently run alone.
     - Any `dataprism.hazelcast` member, join, cluster-name, security (cluster key, name key, rotation), trusted-network (284's `trusted-network` and `member.trusted-ranges`), approval-quorum, lock-timeout or approval-sweep-interval setting without an explicit `topology: embedded` refuses with the existing `CLUSTER_SETTINGS_IGNORED`. That covers both the defaulted and the explicit `single-node` topology. The message names the first such property set and says to set `dataprism.hazelcast.topology: embedded` or remove it. Today's checks (about :229-233 and :655-662) already refuse explicit `single-node` with these settings; extend them to every setting in that list, and to the defaulted case.
     - `dataprism.reidentification.enabled: true` without an explicit `embedded` topology still refuses as today (about :463).
@@ -78,17 +84,25 @@ A Spring Boot developer should set only what is a security decision. Default the
 ## OD-273-3: decided (a) by the owner, 2026-10-24: when the identity resolver defaults to pass-through
 A pass-through resolver uses the requested subject id as every source's key. With one source that is harmless. With two or more, a default would silently join records from sources that key the same person differently, which today's `MISSING_IDENTITY_RESOLVER` refusal stops. Found in the external review of PR #162.
 - **Decided (a):** default to pass-through only when exactly one source is configured. With two or more sources and no resolver configured, startup refuses as today. This was the coordinator's recommendation.
-- **Required shape:**
-  - `IdentityResolverSelection`'s bean condition gains `matchIfMissing = true`, so the pass-through bean is defined when the property is unset. `@ConditionalOnMissingBean(IdentityResolver.class)` stays, so an application resolver always wins.
-  - The count cannot be a bean condition, because configured JSON adapters (`ConfiguredJsonSourcesInitializer`) and 278's generated adapters are registered by other means. `dataPrismIdentityResolverPreflight` counts the sources with `factory.getBeanNamesForType(DataSourceAdapter.class, true, false)`. That call returns bean definitions and manually registered singletons alike, which matters because `ConfiguredJsonSourcesInitializer` registers configured JSON adapters with `registerSingleton` (`ConfiguredJsonSourcesInitializer.java:59-62`), not as definitions. The check runs where it already runs: in the static `BeanFactoryPostProcessor`'s `postProcessBeanFactory`. By then the initializer's singletons are registered (an `ApplicationContextInitializer` runs before refresh), and so are the definitions from `ConfigurationClassPostProcessor`, a `BeanDefinitionRegistryPostProcessor` that runs before every plain `BeanFactoryPostProcessor`, including 278's generated adapters. It initialises no bean (`allowEagerInit` false). A hand-written adapter is counted by its `@Bean` method's declared return type. The Javadoc says so, and a test pins an adapter declared as its concrete type.
-    - **Factory beans whose product is unknown (fail closed; coordinator decision 2026-10-26, after the fourth external review of PR #162).** Without eager initialisation, a raw `FactoryBean` whose product type is known only after construction is not returned by `getBeanNamesForType`. Two real sources could then get the defaulted pass-through.
-      - The preflight also walks `factory.getBeanDefinitionNames()`. For each definition that is a factory bean (`factory.isFactoryBean(name)`, judged from the definition alone) and whose product type cannot be determined without initialisation (`factory.getType(name, false)` returns `null`), it counts one possible `DataSourceAdapter`.
-      - The count is the size of the union, by bean name, of these names and the `getBeanNamesForType` result. A factory bean whose type is known is counted at most once: through `getBeanNamesForType` if its product is an adapter, and not at all otherwise.
-      - No bean is created.
-      - When an unknown-type factory bean makes the count two or more, the refusal message also names the bean (a bean name, never a value) and says how to fix it: set `FactoryBean.OBJECT_TYPE_ATTRIBUTE` or a typed `@Bean` return, or configure the resolver explicitly.
-    - When `dataprism.identity.resolver` is unset, the only `IdentityResolver` is the defaulted pass-through bean, and the count is two or more, it refuses `MISSING_IDENTITY_RESOLVER`. The message names `dataprism.identity.resolver` and says that two or more sources need a resolver or an explicit `pass-through`.
-  - An explicit `dataprism.identity.resolver: pass-through` is still accepted with any number of sources, because the operator has stated it.
-  - The startup report lists the defaulted resolver with the origin "default: one source configured".
+- **Mechanism (rewritten 2026-10-26, coordinator, on the owner's instruction for a robust fix rather than a patched heuristic).** An earlier version counted adapter bean definitions in a `BeanFactoryPostProcessor`. The internal review of 95f7dd98 showed that a definition-time count cannot be made reliable.
+  - It misses adapters: `FactoryBean<Object>`, a `@Bean` returning `Object`, a wrong `OBJECT_TYPE_ATTRIBUTE`, late singletons, parent contexts, and generated adapters registered after the preflight.
+  - It also refuses wrongly: one source plus any untyped `FactoryBean`, and possibly a scoped proxy counted twice.
+  - That approach is removed entirely. There is no definition-time count, no factory-bean walk and no union. `dataPrismIdentityResolverPreflight` keeps exactly its existing checks (`UNSUPPORTED_IDENTITY_RESOLVER`, and `MISSING_IDENTITY_RESOLVER` when no `IdentityResolver` bean is defined at all).
+- **The default bean, marked.**
+  - `IdentityResolverSelection`'s bean method keeps its name (`dataPrismPassThroughIdentityResolver`) and `@ConditionalOnMissingBean(IdentityResolver.class)`, so an application resolver always wins. Its condition gains `matchIfMissing = true`.
+  - It reads the `Environment`. With `dataprism.identity.resolver` unset, it returns a `DefaultedPassThroughIdentityResolver`: a package-private final class that implements `IdentityResolver` by delegating to `PassThroughIdentityResolver`, and whose type is the mark.
+  - With `dataprism.identity.resolver: pass-through` set explicitly, it returns a plain `PassThroughIdentityResolver`. That is an opt-in and is not marked.
+- **The startup guard.**
+  - `IdentityResolverGuard` implements `SmartInitializingSingleton`, and its `@Bean` method is `static` and `@Lazy(false)`. This is the pattern of 203's `SecurityWiring.BypassCheck` (`dataPrismSecurityBypassCheck`, on `wave/0.8-wave4` and on `main` once wave 4 merges), including its proxy unwrapping. It is classified `PRIVACY_CRITICAL` with `COMPETING_BEAN_REFUSAL`, as `BypassCheck` is, and has no `@ConditionalOnMissingBean`.
+  - In `afterSingletonsInstantiated`, after every singleton exists, it obtains the `ContextOrchestrator` bean with `getBean(ContextOrchestrator.class)`. That also creates it under global lazy initialisation. It is either `dataPrismContextOrchestrator` (`OrchestrationWiring.java:62-73`) or, with configured JSON sources, `configuredJsonSourcesContextOrchestrator` (`ConfiguredJsonSourcesAutoConfiguration.java:166-185`).
+  - Both bean methods build a `DefaultContextOrchestrator` from an injected `List<DataSourceAdapter<?>>`. That is the same resolution `DataPrismContractValidator.java:30` checks against the configured sources (`adapters.orderedStream().toList()`), and the list 254's `dataPrismSourceCatalog` is built from.
+  - The guard unwraps AOP proxies on the orchestrator, nested ones included. If the result is a `DefaultContextOrchestrator`, the source count is its new `sourceCount()`: the number of adapters it serves, computed from the list it was built with and calling no adapter method. That is exactly what the orchestrator serves.
+  - If the application supplied its own `ContextOrchestrator` of another type, the guard falls back to the validator's list. That is `beanFactory.getBeanProvider(DataSourceAdapter.class).orderedStream()`, including ancestor contexts (`BeanFactoryUtils.beansOfTypeIncludingAncestors`, as collection injection does), counted by list entries, never by `sourceName()` calls.
+  - It then takes the `IdentityResolver` bean and unwraps AOP proxies on it (nested ones too). If the target is a `DefaultedPassThroughIdentityResolver` and the source count is two or more, it refuses `MISSING_IDENTITY_RESOLVER`. The message gives the source count and the fix: configure `dataprism.identity.resolver` or an `IdentityResolver` bean, or set `dataprism.identity.resolver: pass-through` explicitly. It contains no source name, value or configured value.
+- **What counts as a source.** A source is whatever the orchestrator serves, however it was registered: a bean definition, a factory bean, a `registerSingleton` (configured JSON), a late or ancestor-context bean, or a scoped proxy. A scoped proxy is one entry, because its `scopedTarget.` definition is not an autowire candidate. A `FactoryBean` whose product type is still `null` after construction is not served by the orchestrator, because Spring's collection injection does not match it. So it is not counted, and the guard and the orchestrator cannot disagree.
+- **Parent and child contexts.** The orchestrator's injected list includes adapters from ancestor contexts, so they are counted. An adapter in a sibling or child context that the orchestrator does not see is not.
+- An explicit `dataprism.identity.resolver: pass-through` is still accepted with any number of sources, because the operator has stated it.
+- The startup report lists the defaulted resolver with the origin "default: one source served".
 - **Rejected:** (b) default to pass-through regardless of the source count, as the spec's list reads; this removes a refusal that prevents silent joins. (c) no default; the resolver stays required.
 
 ## OD-273-2 (open, owner): what happens to `dataprism.security.jwt.*`
@@ -109,16 +123,33 @@ A pass-through resolver uses the requested subject id as every source's key. Wit
   - the JWT audience (Spring's `audiences`, `MISSING_JWT_AUDIENCE`);
   - the writer id, with both `dataprism.audit.writer-id` and `spring.application.name` unset (`MISSING_AUDIT_WRITER`).
   281 maps its mandatory rows to these.
-- [ ] OD-273-3 (a):
-  - One configured source with no resolver set starts, using pass-through.
-  - Two sources with no resolver set refuse `MISSING_IDENTITY_RESOLVER`. One row each: two Java adapters; two configured JSON sources (registered as singletons by `ConfiguredJsonSourcesInitializer`, with no Java adapter); one Java adapter and one configured JSON source. Each row must refuse.
-  - One configured JSON source alone, with no Java adapter, starts with pass-through.
-  - One configured JSON source plus a raw `FactoryBean` adapter whose product type is unknown without initialisation (a `FactoryBean<?>` definition with no `OBJECT_TYPE_ATTRIBUTE`, whose `getObjectType()` returns `null` before construction) refuses `MISSING_IDENTITY_RESOLVER`. The message names the factory bean. The test also asserts that the factory bean was never instantiated: a constructor counter stays at zero until the refusal.
-  - One configured JSON source plus a factory bean that sets `OBJECT_TYPE_ATTRIBUTE` to a non-adapter type starts, so a known non-adapter is not counted.
-  - One configured JSON source plus a factory bean whose `OBJECT_TYPE_ATTRIBUTE` is an adapter type refuses, and that bean is counted once, not twice.
-  - Two sources with explicit `pass-through` start.
-  - An application `IdentityResolver` bean with two sources starts and is the only resolver.
-  - Mutants killed: removing `matchIfMissing`; counting `>= 1` instead of `>= 2`; counting with `getBeanDefinitionNames` or `includeNonSingletons` false, which the two-JSON-sources row catches; dropping the unknown-type factory-bean walk, which the raw-`FactoryBean` row catches; adding instead of taking the union, which the typed-adapter factory-bean row catches.
+- [ ] OD-273-3 (a), in `IdentityResolverGuardTest` unless noted. Every row that starts fails on the base commit, where a missing resolver always refuses. Every refusal row is pinned by a mutant below. Each refusal row asserts the message gives the source count and no source name or value.
+  - **Refuse with a defaulted resolver, two sources, one row per registration style:**
+    - two configured JSON sources, registered as singletons by `ConfiguredJsonSourcesInitializer`;
+    - one configured JSON source plus one Java `@Bean` adapter;
+    - two adapters registered as 278 will register them, in both styles: a `RootBeanDefinition` with a `DataSourceAdapter<Record>` target type and an instance supplier, and a `FactoryBean` with `OBJECT_TYPE_ATTRIBUTE` (278 repeats this with the real annotation);
+    - a `FactoryBean<Object>` whose `getObjectType()` returns the adapter class once constructed, plus one `@Bean` adapter;
+    - a `@Bean` method declared to return `Object` that returns an adapter, plus one `@Bean` adapter;
+    - a bean registered with an instance supplier and no target type, plus one `@Bean` adapter;
+    - a singleton registered with `registerSingleton` from a `BeanFactoryPostProcessor`, after the configuration classes are processed, plus one `@Bean` adapter.
+  - **Unrelated factory beans:** one adapter plus three unrelated untyped `FactoryBean`s (stand-ins for Spring Data repositories or Feign clients, whose `getObjectType()` returns a non-adapter type) starts with pass-through.
+  - **Scoped proxies:** a scoped-proxy adapter (`ScopedProxyMode.TARGET_CLASS`, in a scope active at startup such as Spring's `SimpleThreadScope`) plus one other adapter refuses, and the message gives the count as 2, not 3. One scoped-proxy adapter alone starts.
+  - **Explicit opt-in:** two sources with `dataprism.identity.resolver: pass-through` start, and the resolver is a plain `PassThroughIdentityResolver`.
+  - **Lazy initialisation:** `spring.main.lazy-initialization=true` with two sources and a defaulted resolver still refuses.
+  - **Application resolver:** an application `IdentityResolver` bean with two sources starts, and it is the only resolver. The same holds when that bean is an AOP proxy (`ProxyFactory`).
+  - **Proxied default:** a defaulted resolver wrapped in an AOP proxy by a `BeanPostProcessor`, with two sources, still refuses.
+  - **One source:** one source with no resolver set starts, using the defaulted pass-through. This holds for one configured JSON source alone and for one Java adapter alone.
+  - **Parent and child:** a parent context holding one adapter and a child context holding one adapter plus the auto-configuration refuses, because the child's orchestrator serves both. The same child with no adapter in the parent starts.
+  - **Agreement:** across every row above, the guard's count equals the number of adapters the orchestrator serves. `DefaultContextOrchestratorSourceCountTest` pins `sourceCount()`, and the guard test compares it with `beanFactory.getBean(ContextOrchestrator.class)`.
+  - **Mutants killed:**
+    - removing `matchIfMissing`;
+    - returning the marked type for an explicit `pass-through` (the opt-in row);
+    - removing `@Lazy(false)` (the lazy row);
+    - counting `>= 1` instead of `>= 2`;
+    - counting bean definitions instead of what the orchestrator serves (the `@Bean`-returning-`Object` and late-singleton rows);
+    - counting `scopedTarget.` definitions (the scoped row);
+    - not unwrapping the resolver's proxy (the proxied-default row);
+    - the fallback ignoring ancestor contexts (a parent-and-child row with an application `ContextOrchestrator`).
 - [ ] Topology (coordinator decision 2026-10-24):
   - With no `dataprism.hazelcast` setting, the context starts single-node, and the startup report shows `dataprism.hazelcast.topology=single-node (default)` once.
   - One row per setting family, each with the topology unset and again with an explicit `single-node`, refuses `CLUSTER_SETTINGS_IGNORED` naming that property: `join.mode`, `join.members`, `member.interface`, `cluster-name`, the cluster key, the name key, `trusted-network` (284), `approval-minimum-members`, `lock-timeout` and `approval-sweep-interval`.

@@ -140,7 +140,7 @@ Order by wave (briefs in a wave can run in parallel when their owned files do no
 | 13 | 231, 261, 264 |
 | 14 | 260, 263 |
 | last (14) | 213 (depends on 208, 210, 211, 261, 218 to 231 and 264) |
-| 15 (0.9) | 273, 274 (0.9 starter onboarding, filed 2026-10-23; see "0.9 starter onboarding plan" after the 0.8 follow-ups). 214, the 0.9 data-protection annex (depends only on 213), is not placed by this plan; its Owns are disjoint from 273 and 274, so it can join this wave |
+| 15 (0.9) | 273, 274 (0.9 starter onboarding, filed 2026-10-23; see "0.9 starter onboarding plan" after the 0.8 follow-ups). 273's OD-273-3 (a) mechanism, rewritten 2026-10-26: with no resolver configured, a marked default pass-through resolver is created. A `SmartInitializingSingleton` guard (`@Lazy(false)`, the `BypassCheck` pattern) runs after all singletons exist. It reads the sources the `ContextOrchestrator` actually serves, and refuses `MISSING_IDENTITY_RESOLVER` when there are two or more and the unwrapped resolver is the marked default. There is no definition-time count. 214, the 0.9 data-protection annex (depends only on 213), is not placed by this plan; its Owns are disjoint from 273 and 274, so it can join this wave |
 | 16 (0.9) | 275, 277 |
 | 17 (0.9) | 276 (moved from 16 on 2026-10-24: it now adds `MISSING_MCP_SECURITY`, so it follows 275 on `freeze/codes.txt`) |
 | 18 (0.9) | 278 (after 276, on `freeze/codes.txt`) |
@@ -256,7 +256,7 @@ Goal: adopting Data Prism should feel like adopting any Spring Boot starter. Spe
 Open owner decisions (each brief carries options and a recommendation):
 
 - OD-273-1: the default `dataprism.privacy.scope-lifetime`. Recommended: `PT8H`.
-- OD-273-3: **decided (a) by the owner, 2026-10-24.** `dataprism.identity.resolver` defaults to pass-through only when exactly one source is configured. With two or more sources and no resolver configured, startup refuses `MISSING_IDENTITY_RESOLVER`, as today. Found in the external review of PR #162.
+- OD-273-3: **decided (a) by the owner, 2026-10-24.** `dataprism.identity.resolver` defaults to pass-through only when exactly one source is configured. With two or more sources and no resolver configured, startup refuses `MISSING_IDENTITY_RESOLVER`, as today. Found in the external review of PR #162. Mechanism (rewritten 2026-10-26, for a robust fix): a marked default bean, plus a startup guard over the orchestrator's served sources. The earlier definition-time count is removed.
 - Topology default (coordinator decision 2026-10-24, second external review of PR #162): `single-node` stays the default.
   - Any `dataprism.hazelcast` member, join, security or trusted-network setting without an explicit `topology: embedded` refuses `CLUSTER_SETTINGS_IGNORED`.
   - `MISSING_CLUSTER_TOPOLOGY` is retired, with a migration line and a CHANGELOG entry (281).
