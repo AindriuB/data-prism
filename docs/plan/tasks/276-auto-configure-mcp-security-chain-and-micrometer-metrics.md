@@ -55,7 +55,7 @@ Today every embedding application writes the same three beans by hand: a `Securi
   - **Classification.** The MCP chain is `PRIVACY_CRITICAL` with `Guard.COMPETING_BEAN_REFUSAL`, in its list-collected sense: `FilterChainProxy` collects chains into a list, so an application chain can be added but cannot remove ours. `PrivacyExtensionPointsTest` proves it.
   - **Residual risk.** An application chain registered at an even higher precedence and matching the MCP path would still win. Javadoc and the docs say so, and the tool-level refusal below is the backstop.
   - **The server.** `ServerSecurityConfiguration` keeps its own chains. The MCP chain then also exists on the server at order 10, after the operator chain and ahead of the server's MCP chain. Because it matches only the exact MCP path, with the same authentication the server's chain applies there, the server's behaviour is unchanged. The server's tests must pass unmodified, and `McpChainPrecedenceTest` proves the cases below. If they cannot pass, stop and report rather than adding an opt-out.
-- `PrivacyExtensionPoints`: the catch-all chain, the extractor and the metrics bean are `REPLACEABLE`, as the spec decides. Rule 2 still holds when an application replaces the chain with a weaker one: the MCP tools refuse a call with no authenticated caller (`GetEntityContextTool.java:89`). Pin that with one test.
+- `PrivacyExtensionPoints`: the catch-all chain, the extractor and the metrics bean are `REPLACEABLE`, as the spec decides. Rule 2 still holds when an application replaces the chain with a weaker one: the MCP tools refuse a call with no authenticated caller (`GetEntityContextTool.java:285-300`, `denyUnauthenticated`). Pin that with one test.
 - docs/conventions.md: `ApplicationContextRunner` and `WebApplicationContextRunner`, latches, no sleeps.
 - Never read `~/.m2/settings.xml`, `~/.m2/settings-security.xml`, `~/.gnupg` or any other credential file.
 
@@ -73,8 +73,13 @@ When the application defines no `SecurityFilterChain`, Spring Boot's default cha
 - [ ] With an application catch-all chain that permits everything, at the default order, the MCP path with no token still gets 401. With an application `McpTransportContextExtractor<HttpServletRequest>`, ours is absent. With an application `PrivacyMetrics`, ours is absent. One test each.
 - [ ] Tool-level backstop (rule 2), fixed after the external review of PR #162. The test must actually reach the tool; otherwise our MCP chain's 401 makes it pass either way.
   - The test adds an application `SecurityFilterChain` matched to the MCP path, at a precedence above our MCP chain's (for example `@Order(5)`, below 10), that permits every request. This bypasses our chain for that path, exactly as a misconfigured application would.
+  - That permit-all chain is defined in the test's own configuration only. It never appears under any `src/main`, under `examples/` or in `docs/`, where a reader could copy it. The Outcome shows `git grep` for the test class name and the chain's order constant returning test paths only.
   - The test first asserts that the bypass works: the request reaches the MCP transport, with no 401 or 403 from any chain.
-  - An MCP `tools/call` of `get_entity_context` with no token is then refused by the tool. The result is a refusal for an unauthenticated caller (`GetEntityContextTool.java:89`, `UNAUTHENTICATED_PRINCIPAL`), no source is called (a counting adapter stays at zero), and no source value is in the response.
+  - An MCP `tools/call` of `get_entity_context` with no token is then refused by the tool. The refusal comes from `denyUnauthenticated` (`GetEntityContextTool.java:285-300`). The test asserts all of these:
+    - the tool result is the denial for `NO_AUTHENTICATED_CALLER` (its code, not only the word "unauthenticated");
+    - the audit sink records one entry whose principal and caller are the `UNAUTHENTICATED_PRINCIPAL` sentinel and whose decision is `ToolCalls.denyDecision(NO_AUTHENTICATED_CALLER)`;
+    - no source is called (a counting adapter stays at zero);
+    - no source value is in the response.
   - Mutant, recorded in the Outcome as a manual or PIT run: removing the tool's unauthenticated-caller refusal makes this test fail. Excluding `McpSecurityWiring` instead of adding the bypass chain is an acceptable alternative setup, if the Outcome says why.
 - [ ] `MicrometerMetricsAutoConfigurationTest`:
   - With Micrometer and a `MeterRegistry` bean, and no `dataprism.metrics.sink` set, the sink is `micrometer`, and a `PrivacyMetrics` increment shows in the registry with only the `source` tag.
