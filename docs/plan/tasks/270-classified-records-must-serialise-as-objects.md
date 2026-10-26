@@ -20,7 +20,8 @@
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/core/engine/SourceModelsTest.java *(insertions only)*
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/core/engine/ScrubPlanDescriberTest.java *(insertions only)*
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/core/engine/DescriptionConformsToScrubTest.java *(insertions only: the repro shapes as models)*
-- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/validation/DataPrismContractValidator.java *(the resolver-aware model check in `afterPropertiesSet` only, using the `ObjectProvider<FieldMetadataResolver>` that 271 adds; the constructor and the static `validateIntegrations` signature are unchanged)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/validation/DataPrismContractValidator.java *(the constructor, one new `ObjectProvider<FieldMetadataResolver>` field, and the resolver-aware model check in `afterPropertiesSet` only; the static `validateIntegrations` signature is unchanged)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PropertiesValidation.java *(the `dataPrismContractValidator` bean method only)*
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/validation/ClassifiedRecordStartupTest.java *(new; in the `validation` sub-package, outside 210's `spring/boot/*.java` glob)*
 - data-prism-spring-boot-autoconfigure/src/test/resources/classified-records/** *(new fixture files only)*
 - data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/ClassifiedShapesArchitectureTest.java *(new; 225 owns `ArchitectureTest.java`, so the rule lives in its own file)*
@@ -103,14 +104,19 @@ The value is never passed through.
     - While the tree is built, `SourceTree.of` refuses a classified record written at an untyped position, plain or not, with `CLASSIFIED_RECORD_UNTYPED_POSITION`. The message reads `classified record at a position whose declared type is not that record`, with no value and no class name.
   - **Why.**
     - It follows the narrowing of D-173-2 and the other `SOURCE_MODEL_*` refusals.
-    - The author learns at startup and fixes the model, by classifying the holder or by removing the custom shape.
+    - The author learns at startup and fixes the model by following the 0.8 upgrade instructions ("Two kinds of advice" below).
     - A redacted array or object id is not a value anyone wants delivered.
     - Every refused path stays omitted from `describe`, which 248 already does.
   - **Cost.** A breaking change for any adopter model with these shapes. 0.8 accepts breaking changes (D-1.0-5).
 - **Rejected when the task was filed:** a stricter-of merge of the holder's policy with the record's components' policies. It answers only the scalar case, needs a namespace rule for `SYNTHESIZE`, `TOKENIZE` and `HASH`, and has no meaning for an array or an object id.
 
+## Two kinds of advice (external review, 2026-10-26)
+Keep these apart. Each place in this task names the one it uses.
+- **Pre-fix workaround** (0.7.x only; for the GHSA-f94h-6mxv-c957 advisory text): mark the holding field with a classification, for example `@SensitiveData(classifications=CONTACT, suggestedAction=REDACT)`, instead of `@NonSensitive`. The scrubber then applies the holder's policy to the scalar. This holds only before 0.8. From 0.8.0 the same model is refused at startup, because the record's shape is still not a plain object.
+- **0.8 upgrade instructions** (for `docs/extending.md`, the CHANGELOG Breaking entry and the migration notes): a classified record must serialise as a plain object: remove `@JsonValue`, custom or delegating serializers, `@JsonFormat(shape=ARRAY)`, object ids (`@JsonIdentityInfo`) and type-info wrappers from classified records; if the value really is a single scalar, make the field itself a classified scalar (for example a `String` with `@SensitiveData`) instead of a classified record. Classifying the holding field does not resolve the startup refusal.
+
 ## Startup with the wired resolver (M3)
-`DataPrismContractValidator` already holds an `ObjectProvider<FieldMetadataResolver>`, which 271 adds for its replaced-resolver check. After the existing static checks and 271's check, `afterPropertiesSet` calls `SourceModels.require(adapter.responseType(), resolver)` for every adapter, so a record classified only by a descriptor is refused at startup. The refusal is wrapped exactly as `validateIntegrations` wraps `require` today: a `DataPrismConfigurationException` with the same code and the source name. The public static `validateIntegrations` keeps its signature and its annotation-only check, so its existing callers and tests are untouched.
+`DataPrismContractValidator` gains an `ObjectProvider<FieldMetadataResolver>`, passed from `PropertiesValidation.dataPrismContractValidator`. 271's identity check lives in `PrivacyEngineWiring`, not here. After the existing static checks, `afterPropertiesSet` calls `SourceModels.require(adapter.responseType(), resolver)` for every adapter, so a record classified only by a descriptor is refused at startup. The refusal is wrapped exactly as `validateIntegrations` wraps `require` today: a `DataPrismConfigurationException` with the same code and the source name. The public static `validateIntegrations` keeps its signature and its annotation-only check, so its existing callers and tests are untouched.
 
 ## Context
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/JsonTreeScrubbingEngine.java:241-382: `apply`, `scrubArray`, `scrubNestedObject`, `nestedType` and `scalar`. The holder's policy reaches `scalar` with no check of the declared type.
@@ -176,15 +182,17 @@ The value is never passed through.
 - [ ] **Codes.** `RefusalCodes.sanitise` returns each new code unchanged: `SOURCE_MODEL_CLASSIFIED_RECORD_NOT_AN_OBJECT`, `CLASSIFIED_RECORD_NOT_AN_OBJECT` and `CLASSIFIED_RECORD_UNTYPED_POSITION`. A test asserts it. The contract register gains a row for each.
 - [ ] **`docs/extending.md`, source-model shape paragraph.**
   - Delete the words "(the engine still classifies what they produce)", because this task found that claim false.
-  - Add these three sentences verbatim: "A record is classified if any of its components carries a classification (`@SensitiveData` or `@InternalIdentifier`, in code or through a model descriptor), or if any component's type, through arrays, collections and `Optional`, is itself a classified record. A classified record must serialise as a plain JSON object whose properties are exactly its components, and must be held at a position declared as that record. Startup refuses any other shape with `SOURCE_MODEL_CLASSIFIED_RECORD_NOT_AN_OBJECT`, including `@JsonValue`, a custom or delegating serializer, `@JsonFormat(shape=ARRAY)`, `@JsonIdentityInfo`, `@JsonTypeInfo`, `@JsonAppend`, a component renamed with `@JsonProperty`, and `@JsonInclude` on the holding component."
+  - Add these four sentences verbatim: "A record is classified if any of its components carries a classification (`@SensitiveData` or `@InternalIdentifier`, in code or through a model descriptor), or if any component's type, through arrays, collections and `Optional`, is itself a classified record. A classified record must serialise as a plain JSON object whose properties are exactly its components, and must be held at a position declared as that record. Startup refuses any other shape with `SOURCE_MODEL_CLASSIFIED_RECORD_NOT_AN_OBJECT`, including `@JsonValue`, a custom or delegating serializer, `@JsonFormat(shape=ARRAY)`, `@JsonIdentityInfo`, `@JsonTypeInfo`, `@JsonAppend`, a component renamed with `@JsonProperty`, and `@JsonInclude` on the holding component. To fix a refused model, remove that shape from the classified record, or, if the value really is a single scalar, make the field itself a classified scalar (for example a `String` with `@SensitiveData`) instead of a classified record."
+  - The paragraph does not give the pre-fix workaround (classifying the holding field), which does not resolve the refusal.
 - [ ] **`CHANGELOG.md` `[Unreleased]`.**
   - Security entry: what leaked, under which shapes, and since which version (as established below).
   - Breaking entry:
     - names `SOURCE_MODEL_CLASSIFIED_RECORD_NOT_AN_OBJECT` and `CLASSIFIED_RECORD_UNTYPED_POSITION`;
     - names the shapes now refused, including the `@JsonProperty` rename and `@JsonInclude` on the holder;
-    - gives the author's fixes: classify the holding field, remove the custom shape, or declare the position as the record.
+    - names `DataPrismContractValidator`'s public constructor change (a new `ObjectProvider<FieldMetadataResolver>` parameter);
+    - gives the 0.8 upgrade instructions only: a classified record must serialise as a plain object: remove `@JsonValue`, custom or delegating serializers, `@JsonFormat(shape=ARRAY)`, object ids (`@JsonIdentityInfo`) and type-info wrappers from classified records; if the value really is a single scalar, make the field itself a classified scalar (for example a `String` with `@SensitiveData`) instead of a classified record; and, for an untyped position, declare the position as the record. It does not suggest classifying the holding field.
   - Text for `docs/migration-0.8.md` goes in the Outcome under "for the migration notes" (261 owns that page and depends on this task).
-- [ ] **Security advisory GHSA-f94h-6mxv-c957 (OD-270-2).** The advisory is already drafted (owner decision, 2026-10-23). The Outcome has a heading of its own with the text to update it with: the confirmed affected range, the workaround and the patched version 0.8.0. Before it states the workaround or the range, the Outcome does both of the following:
+- [ ] **Security advisory GHSA-f94h-6mxv-c957 (OD-270-2).** The advisory is already drafted (owner decision, 2026-10-23). The Outcome has a heading of its own with the text to update it with: the confirmed affected range, the pre-fix workaround ("Two kinds of advice"), the 0.8 upgrade instructions, and the patched version 0.8.0. Before it states the workaround or the range, the Outcome does both of the following:
   - **Workaround matrix.** Runs repro 1 under DEFAULT with each holder annotation, and records which leak:
     - `@NonSensitive`;
     - `@SensitiveData` with each implemented action (`PASS_THROUGH`, `REDACT`, `REMOVE`, `SYNTHESIZE`, `TOKENIZE`, `HASH`, `GENERALIZE`);
@@ -192,7 +200,7 @@ The value is never passed through.
     - unannotated;
     - classified by a descriptor.
 
-    The advisory's workaround is derived from that table. It is expected to read "do not mark a field `@NonSensitive` (or `@SensitiveData` with `PASS_THROUGH`) when it holds a classified record", and is corrected if the table says otherwise.
+    The advisory's workaround for 0.7.x is the pre-fix workaround, checked against that table: every annotation the table shows stops the leak is a valid alternative to `@NonSensitive`, and every one that leaks (for example `@SensitiveData` with `PASS_THROUGH`) is named as not a workaround. The advisory states that the workaround applies only before 0.8.0, and that upgrading requires the 0.8 upgrade instructions.
   - **Affected versions.**
     - Cover every release tag from `v0.1.0` (or the earliest release tag, if that is later) through `v0.7.1`. The scalar repros (1 and 6) need no record descent, so no tag is skipped on that ground. The Outcome also names the commit that introduced nested-record descent, for the advisory's description.
     - For each tag, write a leak probe against that tag's own API: its annotations, its engine constructor and its resolver. Do not copy this task's repro classes.
@@ -209,7 +217,7 @@ The value is never passed through.
 - [ ] `./mvnw -B -pl data-prism-core,data-prism-validation,data-prism-orchestration,data-prism-connectors-rest,data-prism-spring-boot-autoconfigure,data-prism-architecture -am verify` passes.
 
 ## OD-270-2: decided (a) by the owner, 2026-10-23
-The fix ships in 0.8.0 only. There is no 0.7.2. On 2026-10-23 the owner also decided (H1 (a)) to accept the exposure of the public repros, and to draft the advisory now rather than at 0.8.0. The draft is GHSA-f94h-6mxv-c957. This task's Outcome confirms the affected range tag by tag and the workaround from the matrix above, and the advisory is then updated with that range. The 0.8.0 release-cut brief, not yet filed, updates GHSA-f94h-6mxv-c957 with the patched version 0.8.0; this is listed in PLAN.md's release-cut obligations. The recommendation cited Central's File Count limit, whose grace period ends 2026-11-08, as the reason not to cut a 0.7.2.
+The fix ships in 0.8.0 only. There is no 0.7.2. On 2026-10-23 the owner also decided (H1 (a)) to accept the exposure of the public repros, and to draft the advisory now rather than at 0.8.0. The draft is GHSA-f94h-6mxv-c957. This task's Outcome confirms the affected range tag by tag and the pre-fix workaround from the matrix above, and the advisory is then updated with that range and workaround. The 0.8.0 release-cut brief, not yet filed, updates GHSA-f94h-6mxv-c957 with the patched version 0.8.0; this is listed in PLAN.md's release-cut obligations. The recommendation cited Central's File Count limit, whose grace period ends 2026-11-08, as the reason not to cut a 0.7.2.
 
 ## Out of scope
 - Maps of records, and records inside nested containers (refused already; 0.9).
