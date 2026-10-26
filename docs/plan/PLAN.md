@@ -148,7 +148,7 @@ Order by wave (briefs in a wave can run in parallel when their owned files do no
 | 20 (0.9) | 280 |
 | 21 (0.9) | 281 (after 280: it cites 280's Outcome) |
 | 22 (0.9) | 282 |
-| after the 0.9.0 publication | 283 (external template repository; OD-283-1) |
+| per OD-283-1 (recommended after 0.9.0) | 283 (external template repository; OD-283-1 is open) |
 
 Obligations for the 0.8.0 release cut (no brief filed yet; whoever files it copies these into its Acceptance):
 

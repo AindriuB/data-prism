@@ -67,7 +67,7 @@ rejected one explicitly.
   - three small runnable apps: YAML-only; a record with `@DataPrismSource`; an HTTP interface with `@DataPrismSource`;
   - built and tested in CI on every PR against the reactor;
   - not published to Central.
-- **After 0.8.0 is published:** a public template repository generated from the YAML example, depending only on Maven Central. It replaces the unpushed external demo project.
+- **After 0.8.0 is published:** a public template repository generated from the YAML example, depending only on Maven Central. It replaces the unpushed external demo project. (Note added 2026-10-26: the timing follows OD-283-1, which is still open; the planner recommends after 0.9.0, because the YAML example uses 0.9 features.)
 - **Out of scope:** public-API catalogues. The owner wants them as separate associated repositories later, not as new modules here. Record this as a future idea only.
 
 ## 5. Fit with the release plan

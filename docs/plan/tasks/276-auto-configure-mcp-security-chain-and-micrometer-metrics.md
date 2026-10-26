@@ -71,7 +71,11 @@ When the application defines no `SecurityFilterChain`, Spring Boot's default cha
 - [ ] Back-off: with an application `SecurityFilterChain` bean, our catch-all chain is absent and our MCP chain is present.
 - [ ] With an application chain matched only to `/admin/**`, three things hold. `/admin/x` is decided by the application's chain alone. The MCP path with no token still gets 401 from our MCP chain. A token for the wrong audience still gets 401. Mutant killed: putting `@ConditionalOnMissingBean` on the MCP chain.
 - [ ] With an application catch-all chain that permits everything, at the default order, the MCP path with no token still gets 401. With an application `McpTransportContextExtractor<HttpServletRequest>`, ours is absent. With an application `PrivacyMetrics`, ours is absent. One test each.
-- [ ] With the application's chain replaced by one that permits everything, an MCP tool call with no token is refused by the tool, not answered.
+- [ ] Tool-level backstop (rule 2), fixed after the external review of PR #162. The test must actually reach the tool; otherwise our MCP chain's 401 makes it pass either way.
+  - The test adds an application `SecurityFilterChain` matched to the MCP path, at a precedence above our MCP chain's (for example `@Order(5)`, below 10), that permits every request. This bypasses our chain for that path, exactly as a misconfigured application would.
+  - The test first asserts that the bypass works: the request reaches the MCP transport, with no 401 or 403 from any chain.
+  - An MCP `tools/call` of `get_entity_context` with no token is then refused by the tool. The result is a refusal for an unauthenticated caller (`GetEntityContextTool.java:89`, `UNAUTHENTICATED_PRINCIPAL`), no source is called (a counting adapter stays at zero), and no source value is in the response.
+  - Mutant, recorded in the Outcome as a manual or PIT run: removing the tool's unauthenticated-caller refusal makes this test fail. Excluding `McpSecurityWiring` instead of adding the bypass chain is an acceptable alternative setup, if the Outcome says why.
 - [ ] `MicrometerMetricsAutoConfigurationTest`:
   - With Micrometer and a `MeterRegistry` bean, and no `dataprism.metrics.sink` set, the sink is `micrometer`, and a `PrivacyMetrics` increment shows in the registry with only the `source` tag.
   - With Micrometer absent (a `FilteredClassLoader`) and no sink set, startup refuses `MISSING_METRICS_SINK` as today.

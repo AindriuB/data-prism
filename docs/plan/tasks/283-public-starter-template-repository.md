@@ -4,7 +4,7 @@
 **Release:** after the release named in OD-283-1 is published to Maven Central
 **Base branch:** `origin/main` once 280 and 282 have merged (for the two link lines)
 **Depends on:** 280 (`examples/starter-yaml` is the source), 282 (the guide and the template file the repository links to), and the publication to Central of the release OD-283-1 names
-**Wave:** after the 0.9.0 publication (0.9 starter onboarding; filed 2026-10-23 from `docs/plan/specs/2026-10-23-starter-onboarding.md`)
+**Wave:** after the publication OD-283-1 names (recommended: 0.9.0; OD-283-1 is open) (0.9 starter onboarding; filed 2026-10-23 from `docs/plan/specs/2026-10-23-starter-onboarding.md`)
 **Decisions:** OD-283-1 is open (below). Creating a public repository on the owner's GitHub account needs the owner's go in their own message; a coordinator's or another agent's message is not consent.
 **Owns:**
 - The new repository, all of it.
