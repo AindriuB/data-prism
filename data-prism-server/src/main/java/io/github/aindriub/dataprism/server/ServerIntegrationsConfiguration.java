@@ -12,6 +12,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Lazy;
 
 import java.nio.charset.StandardCharsets;
 
@@ -24,6 +25,7 @@ class ServerIntegrationsConfiguration {
      * #dataPrismMcpTransportPreflight} in {@code data-prism-spring-boot-autoconfigure}
      * for the full map and why they are not one.
      */
+    @Lazy(false)
     @Bean
     Object standaloneTransportValidated(DataPrismProperties properties) {
         if (properties.getTransport().isFixtureDevelopment()
