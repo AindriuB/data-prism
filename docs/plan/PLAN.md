@@ -70,6 +70,7 @@ The owner has asked to record the options and return to this later; nothing is d
   - hazelcast and reidentification: both are optional for single-node deployments.
   - reidentification into hazelcast: it weakens boundary 5.
 - **Note:** one release a month matters more than module count for the File Count limit.
+- **Bears on 0.9 starter onboarding (2026-10-23):** if a merge brief is filed, 277 (the starter pom) and 280 (the root and architecture poms) depend on it. 277's OD-277-1 (a) adds `data-prism-connectors-rest` as a starter dependency, which every option here allows, a pom-only starter included.
 
 #### 0.7.0 release gate: done
 
@@ -138,6 +139,15 @@ Order by wave (briefs in a wave can run in parallel when their owned files do no
 | 11 | 255 |
 | 12 | 260, 261, 263 |
 | last (13) | 213 (depends on 208, 210, 211, 261, 225, 227, 228 and 284 to 287) |
+| 15 (0.9) | 273, 274 (0.9 starter onboarding, filed 2026-10-23; see "0.9 starter onboarding plan" after the 0.8 follow-ups). 273's OD-273-3 (a) mechanism, rewritten 2026-10-26: with no resolver configured, a marked default pass-through resolver is created. A `SmartInitializingSingleton` guard (`@Lazy(false)`, the `BypassCheck` pattern) runs after all singletons exist. It reads every `ContextOrchestrator` bean (proxies unwrapped) and the sources each `DefaultContextOrchestrator` serves (`sourceCount()`, `@since 0.9`, taking the maximum). With the marked default resolver, it refuses `MISSING_IDENTITY_RESOLVER` on two or more sources, on zero orchestrators, and on any custom orchestrator. It fires before the embedded web server starts. There is no definition-time count. 214, the 0.9 data-protection annex (depends only on 213), is not placed by this plan; its Owns are disjoint from 273 and 274, so it can join this wave |
+| 16 (0.9) | 275, 277 |
+| 17 (0.9) | 276 (moved from 16 on 2026-10-24: it now adds `MISSING_MCP_SECURITY`, so it follows 275 on `freeze/codes.txt`) |
+| 18 (0.9) | 278 (after 276, on `freeze/codes.txt`) |
+| 19 (0.9) | 279 |
+| 20 (0.9) | 280 |
+| 21 (0.9) | 281 (after 280: it cites 280's Outcome) |
+| 22 (0.9) | 282 |
+| per OD-283-1 (recommended after 0.9.0) | 283 (external template repository; OD-283-1 is open) |
 | deferred past 1.0 | 224, 226, 229, 230, 231, 264 (`tasks/deferred/`; see "After 1.0: untrusted-network clusters") |
 
 Obligations for the 0.8.0 release cut (no brief filed yet; whoever files it copies these into its Acceptance):
@@ -249,6 +259,29 @@ The owner chose option (b) on 2026-10-23. 1.0 supports multiple instances on a t
 What 1.0 does protect on a cluster: member cards and the sentinel (227: a wrong key refuses to start, an unverified member stops service under `refuse`), the sealed, sequenced, leased pause document (228), sealed identity and re-identification entries (225, current key only), keyed map and lock names (223), and the startup guardrails (284, 287). What it does not: approvals and counters are plain values that anyone reaching the member port can read and write. 213 documents both lists in `docs/multiple-instances.md` and `docs/eu-ai-act.md`.
 
 Follow-ups that go with the deferred briefs are left in place above, marked "deferred". `docs/plan/roadmap.md` (0.8 readiness) and `design/cluster-security.md` (status) carry a dated note of 2026-10-23 pointing here; revisit both in full when the milestone opens.
+
+#### 0.9 starter onboarding plan (filed 2026-10-23)
+
+Goal: adopting Data Prism should feel like adopting any Spring Boot starter. Spec: `specs/2026-10-23-starter-onboarding.md` (owner-agreed design). Eleven briefs, 273 to 283, in waves 15 to 22 above. They change the starter's public contract, so they must land before the 0.9.0 freeze. Every 0.8 brief precedes wave 15, and none of these runs alongside wave 4.
+
+- 273 defaults the low-stakes settings and derives the JWT settings and writer id from Spring. 274 adds the restricted JSONPath library. 275 keys `json-sources:` fields by restricted JSONPath. 276 auto-configures the security chain, the caller-context extractor and Micrometer metrics. 277 makes configured JSON sources work in an embedded starter application. 278 adds `@DataPrismSource`. 279 makes startup refusals name the property, an example and the doc anchor. 280 adds three runnable examples, built in the reactor and never published. 281 updates the reference docs. 282 writes the getting-started guide and the `application.yaml` template. 283 is the public template repository.
+- The order is mostly serial because 273, 275, 276, 278 and 279 all add refusal codes, so each edits 260's `freeze/codes.txt` and the contract register. 273, 276, 279 and 281 all edit `docs/configuration.md`.
+- 279's `RefusalGuide` coverage test is a new shared exhaustiveness guard. Any brief filed after it that adds a startup code must own `RefusalGuide.java` (insertions only).
+- Interactions: 210 (case authorisation stays required), 249 and 251 (275 keys chainable fields by path), 213 and 261 (281 follows their docs), 270 and 271 (PR #161; 275 and 278 build on them), and the pending module-merge decision above (277 and 280 gain an edge to the merge brief if one is filed; every option is compatible with this plan).
+
+Open owner decisions (each brief carries options and a recommendation):
+
+- OD-273-1: the default `dataprism.privacy.scope-lifetime`. Recommended: `PT8H`.
+- OD-273-3: **decided (a) by the owner, 2026-10-24.** `dataprism.identity.resolver` defaults to pass-through only when exactly one source is configured. With two or more sources and no resolver configured, startup refuses `MISSING_IDENTITY_RESOLVER`, as today. Found in the external review of PR #162. Mechanism (rewritten 2026-10-26, for a robust fix): a marked default bean, plus a startup guard over the orchestrator's served sources. The earlier definition-time count is removed.
+- Topology default (coordinator decision 2026-10-24, second external review of PR #162): `single-node` stays the default.
+  - Any `dataprism.hazelcast` member, join, security or trusted-network setting without an explicit `topology: embedded` refuses `CLUSTER_SETTINGS_IGNORED`.
+  - `MISSING_CLUSTER_TOPOLOGY` is retired, with a migration line and a CHANGELOG entry (281).
+  - The effective topology is logged once at INFO. 273 carries the rows.
+- OD-273-2: what happens to `dataprism.security.jwt.*` now that Spring's keys are read. Recommended (a): Spring's keys only, with a coded migration refusal. This is breaking for server operators and touches `server.json`, docker, compose and the quickstart. (b) accepts both and refuses on conflict.
+- OD-275-1: existing catalogues. Recommended (a): bare names keep working as `$.<name>`, and `nested-catalogues:` is retired with a coded refusal and a migration note.
+- OD-276-1: what the auto-configured chain protects when the host application has none. Recommended (a): every request needs a JWT except the health probe, so the host application fails closed.
+- OD-277-1: whether the starter depends on `data-prism-connectors-rest`. Recommended (a): yes. It stays inert until configured, and no artifact is added.
+- OD-283-1: when to create the template repository, its name and visibility. Recommended: after 0.9.0 is on Central (the spec said after 0.8.0, but the example needs 0.9 features), named `data-prism-starter-template`, public. Creating it needs the owner's own go.
 
 #### 0.8 backlog (carried from 0.7)
 
@@ -3253,6 +3286,7 @@ lands and are the natural parallelisation point.
 - **S12 — Hardening.** Threat model T1–T10 as tests, mutation testing over the
   privacy and validation modules, `docs/data-protection.md`,
   `docs/threat-model.md`, ADRs, load testing.
+- **Public-API catalogues (future idea, owner 2026-10-23).** Ready-made `json-sources:` catalogues for public APIs, kept as separate associated repositories, not as modules of this one. Recorded from the starter-onboarding spec; nothing is planned.
 
 ## Not doing
 
