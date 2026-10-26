@@ -10,7 +10,7 @@
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/JsonTreeScrubbingEngine.java *(the `apply`, `scrubArray` and `scalar` paths, for a value at a classified-record position, and the `SourceTree.of` call in `scrub`; not the `describe` override)*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/ClassifiedShapes.java *(new, package-private: the one rule, shared by every site below, for "classified record" and "plain object")*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/SourceModels.java *(insertions only: the new startup refusal, its code constant and the `require(Class, FieldMetadataResolver)` overload)*
-- data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/SourceTree.java *(the `of` path and its `of(Object, FieldMetadataResolver)` overload, the `RecordsOnly` serializer-modifier callbacks for the runtime position check, and 248's `readsAsPlainBean`: calls into it, or fixes confined to that method that the Outcome names)*
+- data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/SourceTree.java *(the `of` path and its `of(Object, FieldMetadataResolver)` overload, a new package-private non-refusing builder `lenientOf(Object, FieldMetadataResolver)` (below), the `RecordsOnly` serializer-modifier callbacks for the runtime position check, and 248's `readsAsPlainBean`: calls into it, or fixes confined to that method that the Outcome names)*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/SourceValues.java *(the non-object value at a classified-record position, and the `SourceTree.of` call, only)*
 - data-prism-orchestration/src/test/java/io/github/aindriub/dataprism/orchestration/ClassifiedRecordSourceRefusalTest.java *(new: the two-source test; no main code in `data-prism-orchestration` changes)*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/ScrubPlanDescriber.java *(the branch that decides such a type is ambiguous only)*
@@ -87,7 +87,7 @@ The value is never passed through.
 - **Untyped position:** a property or element whose declared type is `Object`, an interface, an abstract type, a type variable, an unbounded wildcard, or a raw collection element. A bounded wildcard is read by its upper bound. `List<? extends Email>` is a classified-record position for `Email`, not an untyped one; records are final, so the bound is exact.
 - **`SourceValues.prohibited` never throws for this task's refusals.**
   - `DefaultContextOrchestrator.fetchAndScrub` (`:387`) calls it outside the per-source `try`, so a throw there would fail the whole request, not just the source.
-  - Instead, where the scrubber refuses with `CLASSIFIED_RECORD_NOT_AN_OBJECT` or `CLASSIFIED_RECORD_UNTYPED_POSITION`, `prohibited` adds every scalar under that value, which fails closed, and returns normally. It reads the tree through a non-refusing variant of the same position check.
+  - Instead, where the scrubber refuses with `CLASSIFIED_RECORD_NOT_AN_OBJECT` or `CLASSIFIED_RECORD_UNTYPED_POSITION`, `prohibited` adds every scalar under that value, which fails closed, and returns normally. It reads the tree through `SourceTree.lenientOf(Object, FieldMetadataResolver)`, a new package-private builder. It applies the same position and shape checks as `of`, but where `of` would refuse with either code, it records the position so that `prohibited` can prohibit every scalar under it. `SourceValues` never calls the refusing `of` overloads. `lenientOf` does not relax any pre-existing runtime refusal, such as `SOURCE_MODEL_NOT_A_RECORD` or `SOURCE_MODEL_GENERIC`: those still throw from `prohibited` as they do on `main`, outside the per-source `try`. That is an existing behaviour, named under Out of scope as a follow-up.
   - The refusal then comes from `scrubber.scrub`, inside the existing per-source `try`: that source is `REFUSED` and dropped whole, its values stay prohibited for every other source, and the other sources still answer.
   - No change to `DefaultContextOrchestrator` is needed. `ConfiguredJsonScrubbingEngine` calls `prohibited` after `scrub`, so it is unaffected.
 
@@ -164,6 +164,7 @@ Keep these apart. Each place in this task names the one it uses.
   - a classified record written as a plain object at a declared position is descended into as today;
   - a `null` at a classified-record position stays `null`;
   - a record with `@JsonValue` that is unclassified under the transitive rule (no classified component at any depth) takes the holder's policy as today. Repro 7 is not such a record, and no test pins its current output except the characterisation item.
+- [ ] **`lenientOf` parity.** For every existing fixture in the `data-prism-core` engine tests that `SourceTree.of` accepts, `lenientOf` returns an equal tree and records no position. The test iterates the fixtures and compares the trees with `JsonNode.equals`. Mutant killed: a `lenientOf` that drops a property.
 - [ ] **Prohibited values.** `SourceValues.prohibited` contains every scalar under a non-object value at a classified-record position (repros 1 to 5 and 7), and under every classified record at an untyped position (repro 6). It throws for none of them. `ClassifiedRecordProhibitedValuesTest` shows this, and that on the base commit the set misses them.
 - [ ] **One bad source does not fail the request.** `ClassifiedRecordSourceRefusalTest` builds a `DefaultContextOrchestrator` with two sources. Source `a` returns repro 1's `Holder`; source `b` returns a well-formed model.
   - The response is answered: `a` is `REFUSED` with disposition `a:<refused>` = `REFUSED:CLASSIFIED_RECORD_NOT_AN_OBJECT`, and `b` is `ANSWERED`.
@@ -171,8 +172,9 @@ Keep these apart. Each place in this task names the one it uses.
   - A second case uses repro 6's `Object` variant for `a`, with `REFUSED:CLASSIFIED_RECORD_UNTYPED_POSITION`.
   - Mutant killed: letting `prohibited` throw fails the whole request, which fails this test.
 - [ ] **Describer.** `ScrubPlanDescriber` decides "ambiguous" through `ClassifiedShapes` and nothing else. `DescriptionConformsToScrubTest` gains repros 1 to 4. No field the scrubber refuses or changes is described `VERBATIM`, and the existing cases pass unchanged.
-- [ ] **One check.** `ClassifiedShapesArchitectureTest` (ArchUnit) asserts two things:
+- [ ] **One check.** `ClassifiedShapesArchitectureTest` (ArchUnit) asserts three things:
   - `ClassifiedShapes` calls `SourceTree.readsAsPlainBean`;
+  - `SourceValues` calls `SourceTree.lenientOf` and calls neither `SourceTree.of` overload. Mutant: switching `SourceValues` back to `of` fails this rule, and also fails the two-source test, because the whole request then fails. ArchUnit sees direct calls only; an indirect call through another class is caught by the two-source test, which is the accepted backstop;
   - no class in `io.github.aindriub.dataprism.core.engine` other than `SourceTree` depends on `tools.jackson.databind.ser.BeanSerializer`, `tools.jackson.databind.ser.bean.UnrolledBeanSerializer` or `tools.jackson.databind.ser.impl.ObjectIdWriter`. Use the class names as they are on the base commit.
 - [ ] **Mutation proofs, each recorded in the Outcome with the test that fails:**
   - remove the scrub-time backstop: the direct-engine and descriptor-only tests fail;
@@ -238,6 +240,7 @@ The fix ships in 0.8.0 only. There is no 0.7.2. On 2026-10-23 the owner also dec
 - Unclassified records with `@JsonAnyGetter`, `@JsonUnwrapped` or other object shapes: they keep today's handling. A classified record with such a shape is refused by the backstop above.
 - `ConfiguredJsonScrubbingEngine` and configured JSON sources, which have no records (249).
 - `NamespaceCorrelationService`, which keeps `SourceTree.of(Object)`.
+- Pre-existing runtime refusals thrown from `SourceValues.prohibited` (`SOURCE_MODEL_NOT_A_RECORD`, `SOURCE_MODEL_GENERIC` and the others `SourceTree.of` raises today). They are raised outside `fetchAndScrub`'s per-source `try`, so one such source fails the whole request, on `main` as well. That is a candidate follow-up, recorded in the Outcome.
 - `PrivacyEngineWiring` and the descriptor map (271).
 - `docs/migration-0.8.md` and every other user page (261).
 - Updating GHSA-f94h-6mxv-c957 with the patched version once 0.8.0 is released (the 0.8.0 release-cut brief).

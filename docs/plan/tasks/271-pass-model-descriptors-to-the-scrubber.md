@@ -18,7 +18,7 @@
   - *the `dataPrismFieldMetadataResolver` method, to record the instance it builds;*
   - *`afterSingletonsInstantiated`;*
   - *the `dataPrismScrubber` method.)*
-- data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/JsonTreeScrubbingEngine.java *(insertions only: a public `FieldMetadataResolver resolver()` accessor)*
+- data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/JsonTreeScrubbingEngine.java *(insertions only: public `FieldMetadataResolver resolver()` and `Map<String, ModelDescriptor> descriptors()` accessors)*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/descriptor/DescriptorFieldMetadataResolver.java *(insertions only: a public `descriptors()` accessor)*
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/core/descriptor/DescriptorFieldMetadataResolverTest.java *(insertions only)*
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/descriptors/ScrubberDescriptorWiringTest.java *(new; in a sub-package so that it stays outside 210's `spring/boot/*.java` glob)*
@@ -33,7 +33,9 @@ This task does two things:
 - Pass the engine the descriptor map that the auto-configured resolver was built from. The file is loaded once.
 - When a descriptor file is set, refuse startup unless both the resolver and the engine use exactly that resolver:
   - the only `FieldMetadataResolver` bean is the instance this auto-configuration built from the file;
-  - every `JsonTreeScrubbingEngine` bean uses that same instance.
+  - every `JsonTreeScrubbingEngine` bean uses that same instance, and its descriptor map.
+
+**Limit.** The engine check sees only `JsonTreeScrubbingEngine` beans. An engine that is not a bean is not checked: the connectors' `javaFirst` engine (pinned instead by 249, which builds it from the auto-configured engine bean's resolver and map) or any engine an application constructs inside its own code.
 
 ## "Is set"
 `dataprism.privacy.descriptor-file` is set exactly when the value is non-null and not blank. This is the test `dataPrismFieldMetadataResolver` already uses (`PrivacyEngineWiring.java:54-56`). The check and the engine map use that same test, through one shared private method.
@@ -46,18 +48,18 @@ It follows the approach of 203's `BypassCheck` (`SecurityWiring.java`): remember
 - **What it checks.** When the file is set, `afterSingletonsInstantiated` refuses with `MODEL_DESCRIPTOR_RESOLVER_REPLACED` unless all of these hold:
   - **Resolvers.** `getBeansOfType(FieldMetadataResolver.class, true, true)` holds exactly one bean. Unwrapped through AOP proxies, nested ones too, as `BypassCheck` does, that bean is the recorded instance. A JDK or CGLIB proxy whose target is the recorded instance passes.
   - **No other kinds of resolver bean.** A resolver produced by a `FactoryBean`, one registered under our bean name (bean-definition overriding), and a prototype- or custom-scoped resolver bean all refuse. Getting a non-singleton bean gives a new instance, which is never the recorded one. The check reads the definitions so that it says so rather than relying on that.
-  - **Engines.** Every `JsonTreeScrubbingEngine` bean, unwrapped the same way, has `resolver()` equal by identity to the recorded instance, also after unwrapping. The orchestrator wiring injects a `JsonTreeScrubbingEngine` (`OrchestrationWiring.java:64`), so that is the type to check.
+  - **Engines.** Every `JsonTreeScrubbingEngine` bean, unwrapped the same way, meets two conditions: `resolver()` is equal by identity to the recorded instance, also after unwrapping; and `descriptors()` is `equals()` to the recorded instance's `descriptors()` map. The map is compared by value, not identity, because 248's engine stores `Map.copyOf(...)` of what it is given (`JsonTreeScrubbingEngine.java:105`), and the JDK only says that copy *may* return the same instance. The orchestrator wiring injects a `JsonTreeScrubbingEngine` (`OrchestrationWiring.java:64`), so that is the type to check.
 - **When it does nothing.** With no file set, it checks nothing.
 - **Why not a separate bean, as `BypassCheck` is.** A new bean would change the `bean-inventory/*.txt` fixtures and `PrivacyExtensionPoints`, which 210 owns in this wave. The configuration class is already a singleton and is not `@ConditionalOnMissingBean`, so neither an application engine nor an application resolver can skip the check.
 
 ## The engine's descriptor map
-`dataPrismScrubber` passes the recorded instance's `descriptors()` when the file is set, and `Map.of()` when it is not. It does not test the injected resolver with `instanceof`: a JDK proxy over our resolver would fail that test, and the descriptors would be lost silently.
+`dataPrismScrubber` passes the recorded instance's `descriptors()` when the file is set, and `Map.of()` when it is not. 248's engine stores `Map.copyOf` of the map it is given, so `descriptors()` returns an equal map, not necessarily the same object. The engine check therefore compares maps with `equals()`. It does not test the injected resolver with `instanceof`: a JDK proxy over our resolver would fail that test, and the descriptors would be lost silently.
 
 ## Context
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PrivacyEngineWiring.java:51-59 (the resolver bean, which loads the file through `dataPrismModelDescriptors(descriptorFile)` at :84) and :156-158 (the engine bean).
 - `SecurityWiring.BypassCheck` (203, on the base branch): the identity pattern and its proxy unwrapping.
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/descriptor/DescriptorFieldMetadataResolver.java:42-47: holds the validated, immutable map.
-- 249 makes the same change at the connectors' `javaFirst` engine (`ConfiguredJsonSourcesAutoConfiguration.java:177`). It depends on this task for the accessor and unwraps proxies before reading the map.
+- 249 makes the same change at the connectors' `javaFirst` engine (`ConfiguredJsonSourcesAutoConfiguration.java:177`). 249 builds `javaFirst` from the auto-configured engine bean's `resolver()` and `descriptors()` when the file is set; see 249.
 - `ModelDescriptorsConfigurationTest.java:56-57`: the `WebApplicationContextRunner` shape to copy.
 
 ## Acceptance
@@ -65,7 +67,9 @@ It follows the approach of 203's `BypassCheck` (`SecurityWiring.java`): remember
   - the no-file cases;
   - the auto-configured resolver starting;
   - the proxy-starts case.
-- [ ] `DescriptorFieldMetadataResolver.descriptors()` returns the map it was built with, unmodifiable, and a test shows that mutating the result throws. `JsonTreeScrubbingEngine.resolver()` returns the resolver the engine was constructed with.
+- [ ] `DescriptorFieldMetadataResolver.descriptors()` returns the map it was built with, unmodifiable, and a test shows that mutating the result throws. `JsonTreeScrubbingEngine.resolver()` returns the resolver the engine was constructed with. `descriptors()` returns the engine's stored map, which is equal to the map it was given (`Map.of()` for the four-argument constructor). With the file set, each of these application engine beans refuses, both built with our resolver:
+  - one built with `Map.of()`, since an empty map is not equal to the loaded one;
+  - one built with a different, non-empty map, for example the loaded map minus one model.
 - [ ] **Descriptor-declared chainable field is described.** In `ScrubberDescriptorWiringTest`, `dataprism.privacy.descriptor-file` names a fixture that declares a chainable identifier (`chainable: true`, `keyNamespace`) on a model whose code has no chainable marking.
   - With links enabled, the context's `JsonTreeScrubbingEngine` describes that field with the declared `keyNamespace`.
   - The same holds when the auto-configured resolver is wrapped in a JDK proxy, and the test asserts the described `keyNamespace` is present.
@@ -86,7 +90,7 @@ It follows the approach of 203's `BypassCheck` (`SecurityWiring.java`): remember
   - an application `JsonTreeScrubbingEngine` bean built with `new DefaultFieldMetadataResolver()`, while our resolver bean is present and no application resolver bean exists;
   - an application resolver together with an application `JsonTreeScrubbingEngine` bean;
   - with `spring.main.lazy-initialization=true`, an application resolver.
-- [ ] **Accepted with the file set.** The auto-configured resolver and engine start, and so does the same resolver behind an AOP proxy.
+- [ ] **Accepted with the file set.** The auto-configured resolver and engine start, and so does the same resolver behind an AOP proxy. The auto-configured-starts test is the guard that the checks hold for our own beans: resolver identity, and an equal map. If the resolver bean were rebuilt, or the engine were given a different map, this test would fail. A mutant that compares the maps by identity is not required to fail, because `Map.copyOf` may return the same instance; the value comparison is what the brief requires.
 - [ ] **The message.** It is exactly `dataprism.privacy.descriptor-file is set but the FieldMetadataResolver bean is not the one built from it, or an engine does not use it`. It names the property only: no file path, no file content, no class name. There is no WARN path.
 - [ ] **Mutants killed by the refusal tests:**
   - an `instanceof DescriptorFieldMetadataResolver` check in place of identity: the first two refusal cases start;
@@ -99,7 +103,8 @@ It follows the approach of 203's `BypassCheck` (`SecurityWiring.java`): remember
 - [ ] `./mvnw -B -pl data-prism-core,data-prism-spring-boot-autoconfigure -am verify` passes.
 
 ## Out of scope
-- The connectors' `javaFirst` engine (249).
+- The connectors' `javaFirst` engine (249 pins it to the auto-configured engine's resolver and map).
+- Engines that are not Spring beans (built inside application code). The identity check cannot see them, and this brief does not claim to.
 - `DataPrismAssembly` in `data-prism-integration-tests`, which loads no descriptors.
 - Any other method of `PrivacyEngineWiring`, including `dataPrismSensitivePatternValidator` (208) and `dataPrismModelDescriptors`.
 - Any other part of `JsonTreeScrubbingEngine` (270 changes its scrub paths in wave 6).

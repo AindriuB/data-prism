@@ -55,9 +55,19 @@ It does not stop a hung adapter from holding its own slots; those come back only
 - **Order.** Inside a call, after 246's bulkhead permit is held:
   1. take the source's slot (`tryAcquire`), then the pool's;
   2. if either fails, release whatever was taken and report the source at once;
-  3. otherwise start the thread.
+  3. otherwise create and start the thread.
 
   Both slots are released in the thread's own `finally`, when the adapter call returns. That may be long after its timeout.
+
+  If creating or starting the thread throws, both slots are released at once, through the same once-only guard, and the source is reported `FAILED` with `detail` `UNAVAILABLE`.
+  - **What the `try` covers.** It wraps exactly `threadFactory.newThread(task)` and `thread.start()`, and nothing else: no slot acquisition, no adapter code. It catches any `Throwable`, such as an `OutOfMemoryError` ("unable to create native thread") or an `IllegalThreadStateException`.
+  - **Telling it apart from saturation.** `SourceCallSlots.acquireAndStart` returns a three-state result: `STARTED`, `SATURATED` or `START_FAILED`. `fetchAll` keeps one local set per non-started state, and reads neither from `detail`.
+  - **For `START_FAILED`:**
+    - the breaker does not record it;
+    - neither `SOURCE_ERRORS`, `SOURCE_LATENCY` nor `SOURCE_CALLS_SATURATED` is touched;
+    - the cause is logged at ERROR, once per failed call, with its class name only.
+
+  The thread factory is a package-private constructor argument of `SourceCallSlots`, for tests.
 - **Saturation.**
   - The source is not called. Its outcome is `FAILED` with `detail` the constant `UNAVAILABLE`.
   - `SourceFanOut` marks it as saturated with a structured marker, never by reading `detail`. `Fetched` is a public record, and a new component would change public API, so `fetchAll` keeps a local set of saturated source names.
@@ -111,6 +121,13 @@ How a saturated call appears to the client.
   - A timed-out call's slots stay taken until its adapter call returns, and are then released exactly once (the double-release guard is exercised by a call that completes as it is cancelled).
   - After 1,000 mixed calls, `SourceCallSlots` reports every pool and per-source permit free. The mix covers answers, failures, timeouts, and interrupt-ignoring calls that are later released.
   - Both are checked through a package-private test hook, not by timing.
+- [ ] **Thread start failure.**
+  - **Setup.** Inject a thread factory that throws `OutOfMemoryError` from `newThread`. In a second case, it returns an already-started thread, so that `start()` throws `IllegalThreadStateException`.
+  - **Outcome.** The source is reported `FAILED` with `detail` `UNAVAILABLE`, and its adapter is not called. `acquireAndStart` returned `START_FAILED`.
+  - **Untouched.** The breaker's record for the source is unchanged. `SOURCE_ERRORS`, `SOURCE_LATENCY` and `SOURCE_CALLS_SATURATED` are unchanged, read from a recording `PrivacyMetrics`. Exactly one ERROR line is logged per failed call: three failed calls give three lines.
+  - **Slots.** The pool's and the source's permits are all back, read through the permit hook.
+  - **No permanent block.** A following call with a working factory reports `ANSWERED`, so the source is not left `UNAVAILABLE` for good.
+  - **Mutant killed:** not releasing on a start failure leaves the permits short, and the following call is `UNAVAILABLE`.
 - [ ] **Thread isolation (H3).** Inject a pool of 1 so that request B's call follows request A's. Before starting B, wait until A's slots are back: poll `SourceCallSlots`'s package-private permit hook (pool and per-source `availablePermits`) in a loop bounded at 2 s by `System.nanoTime`, with `Thread.onSpinWait()` between polls. Fail if the bound passes. B never races A's release.
   - An adapter in request A sets a `ThreadLocal` and an `InheritableThreadLocal` it owns. The adapter in request B reads both and sees neither value.
   - The requesting thread sets an `InheritableThreadLocal`, and the adapter does not see it.
