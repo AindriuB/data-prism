@@ -113,7 +113,11 @@ The value is never passed through.
 ## Two kinds of advice (external review, 2026-10-26)
 Keep these apart. Each place in this task names the one it uses.
 - **Pre-fix workaround** (0.7.x only; for the GHSA-f94h-6mxv-c957 advisory text): mark the holding field with a classification, for example `@SensitiveData(classifications=CONTACT, suggestedAction=REDACT)`, instead of `@NonSensitive`. The scrubber then applies the holder's policy to the scalar. This holds only before 0.8. From 0.8.0 the same model is refused at startup, because the record's shape is still not a plain object.
-- **0.8 upgrade instructions** (for `docs/extending.md`, the CHANGELOG Breaking entry and the migration notes): a classified record must serialise as a plain object: remove `@JsonValue`, custom or delegating serializers, `@JsonFormat(shape=ARRAY)`, object ids (`@JsonIdentityInfo`) and type-info wrappers from classified records; if the value really is a single scalar, make the field itself a classified scalar (for example a `String` with `@SensitiveData`) instead of a classified record. Classifying the holding field does not resolve the startup refusal.
+- **0.8 upgrade instructions: the fix list.** This exact text is used verbatim in `docs/extending.md`, the CHANGELOG Breaking entry and 261's migration notes, so the three cannot drift:
+
+  > To fix a model refused with `SOURCE_MODEL_CLASSIFIED_RECORD_NOT_AN_OBJECT`, make each classified record serialise as a plain JSON object of exactly its components: remove `@JsonValue`; remove any custom, delegating or converting serializer (`@JsonSerialize(using=...)` or `converter=...`, on the record or on the holding component); remove `@JsonFormat(shape=ARRAY)` from the record and from the holding component; remove `@JsonIdentityInfo`; remove `@JsonTypeInfo`; remove `@JsonAppend` and `@JsonAnyGetter`; undo any `@JsonProperty` rename of a component; and remove `@JsonInclude` from the holding component. If the value really is a single scalar, make the field itself a classified scalar (for example a `String` with `@SensitiveData`) instead of a classified record. To fix `CLASSIFIED_RECORD_UNTYPED_POSITION`, declare the position as the record type instead of `Object`, an interface, `Record`, a type variable, an unbounded wildcard or a raw collection.
+
+  Classifying the holding field does not resolve the startup refusal, and none of the three places suggests it.
 
 ## Startup with the wired resolver (M3)
 `DataPrismContractValidator` gains an `ObjectProvider<FieldMetadataResolver>`, passed from `PropertiesValidation.dataPrismContractValidator`. 271's identity check lives in `PrivacyEngineWiring`, not here. After the existing static checks, `afterPropertiesSet` calls `SourceModels.require(adapter.responseType(), resolver)` for every adapter, so a record classified only by a descriptor is refused at startup. The refusal is wrapped exactly as `validateIntegrations` wraps `require` today: a `DataPrismConfigurationException` with the same code and the source name. The public static `validateIntegrations` keeps its signature and its annotation-only check, so its existing callers and tests are untouched.
@@ -181,8 +185,8 @@ Keep these apart. Each place in this task names the one it uses.
   - remove the untyped-position check: each of repro 6's first six declarations fails, and so does the direct call for the type-variable case.
 - [ ] **Codes.** `RefusalCodes.sanitise` returns each new code unchanged: `SOURCE_MODEL_CLASSIFIED_RECORD_NOT_AN_OBJECT`, `CLASSIFIED_RECORD_NOT_AN_OBJECT` and `CLASSIFIED_RECORD_UNTYPED_POSITION`. A test asserts it. The contract register gains a row for each.
 - [ ] **`docs/extending.md`, source-model shape paragraph.**
-  - Delete the words "(the engine still classifies what they produce)", because this task found that claim false.
-  - Add these four sentences verbatim: "A record is classified if any of its components carries a classification (`@SensitiveData` or `@InternalIdentifier`, in code or through a model descriptor), or if any component's type, through arrays, collections and `Optional`, is itself a classified record. A classified record must serialise as a plain JSON object whose properties are exactly its components, and must be held at a position declared as that record. Startup refuses any other shape with `SOURCE_MODEL_CLASSIFIED_RECORD_NOT_AN_OBJECT`, including `@JsonValue`, a custom or delegating serializer, `@JsonFormat(shape=ARRAY)`, `@JsonIdentityInfo`, `@JsonTypeInfo`, `@JsonAppend`, a component renamed with `@JsonProperty`, and `@JsonInclude` on the holding component. To fix a refused model, remove that shape from the classified record, or, if the value really is a single scalar, make the field itself a classified scalar (for example a `String` with `@SensitiveData`) instead of a classified record."
+  - **The "stay allowed" clause, `docs/extending.md:364-366`.** The sentence begins "A `@JsonSerialize(using=...)` on a record or its components, `@JsonAnyGetter` and `@JsonValue` are the model author's explicit choice and stay allowed (the engine still classifies what they produce)". Reword it so that it applies to unclassified records only: "On an unclassified record, a `@JsonSerialize(using=...)` on the record or its components, `@JsonAnyGetter` and `@JsonValue` are the model author's explicit choice and stay allowed; the holding field's classification applies to what they produce." The old parenthesis, the claim this task found false, is gone.
+  - Add these sentences verbatim, after the reworded one: "A record is classified if any of its components carries a classification (`@SensitiveData` or `@InternalIdentifier`, in code or through a model descriptor), or if any component's type, through arrays, collections and `Optional`, is itself a classified record. A classified record must serialise as a plain JSON object whose properties are exactly its components, and must be held at a position declared as that record. Startup refuses any other shape with `SOURCE_MODEL_CLASSIFIED_RECORD_NOT_AN_OBJECT`, and a response that holds a classified record at any other position is refused with `CLASSIFIED_RECORD_UNTYPED_POSITION`." Then the fix list from "Two kinds of advice", verbatim.
   - The paragraph does not give the pre-fix workaround (classifying the holding field), which does not resolve the refusal.
 - [ ] **`CHANGELOG.md` `[Unreleased]`.**
   - Security entry: what leaked, under which shapes, and since which version (as established below).
@@ -190,17 +194,25 @@ Keep these apart. Each place in this task names the one it uses.
     - names `SOURCE_MODEL_CLASSIFIED_RECORD_NOT_AN_OBJECT` and `CLASSIFIED_RECORD_UNTYPED_POSITION`;
     - names the shapes now refused, including the `@JsonProperty` rename and `@JsonInclude` on the holder;
     - names `DataPrismContractValidator`'s public constructor change (a new `ObjectProvider<FieldMetadataResolver>` parameter);
-    - gives the 0.8 upgrade instructions only: a classified record must serialise as a plain object: remove `@JsonValue`, custom or delegating serializers, `@JsonFormat(shape=ARRAY)`, object ids (`@JsonIdentityInfo`) and type-info wrappers from classified records; if the value really is a single scalar, make the field itself a classified scalar (for example a `String` with `@SensitiveData`) instead of a classified record; and, for an untyped position, declare the position as the record. It does not suggest classifying the holding field.
+    - gives the fix list from "Two kinds of advice", verbatim, and nothing else as a fix. It does not suggest classifying the holding field.
   - Text for `docs/migration-0.8.md` goes in the Outcome under "for the migration notes" (261 owns that page and depends on this task).
 - [ ] **Security advisory GHSA-f94h-6mxv-c957 (OD-270-2).** The advisory is already drafted (owner decision, 2026-10-23). The Outcome has a heading of its own with the text to update it with: the confirmed affected range, the pre-fix workaround ("Two kinds of advice"), the 0.8 upgrade instructions, and the patched version 0.8.0. Before it states the workaround or the range, the Outcome does both of the following:
-  - **Workaround matrix.** Runs repro 1 under DEFAULT with each holder annotation, and records which leak:
-    - `@NonSensitive`;
-    - `@SensitiveData` with each implemented action (`PASS_THROUGH`, `REDACT`, `REMOVE`, `SYNTHESIZE`, `TOKENIZE`, `HASH`, `GENERALIZE`);
-    - `@InternalIdentifier`;
-    - unannotated;
-    - classified by a descriptor.
+  - **Workaround matrix.** On `v0.7.1`, the Outcome runs every repro shape (1 to 7, each variant) against three things:
+    - **each holder annotation:**
+      - `@NonSensitive`;
+      - `@SensitiveData` with each implemented action (`PASS_THROUGH`, `REDACT`, `REMOVE`, `SYNTHESIZE`, `TOKENIZE`, `HASH`, `GENERALIZE`);
+      - `@InternalIdentifier`;
+      - unannotated;
+      - classified by a descriptor;
+    - **each bundled profile:** DEFAULT and STRICT;
+    - **one custom profile** that maps the holder's classification to `PASS_THROUGH`.
 
-    The advisory's workaround for 0.7.x is the pre-fix workaround, checked against that table: every annotation the table shows stops the leak is a valid alternative to `@NonSensitive`, and every one that leaks (for example `@SensitiveData` with `PASS_THROUGH`) is named as not a workaround. The advisory states that the workaround applies only before 0.8.0, and that upgrading requires the 0.8 upgrade instructions.
+    It records shape × annotation × profile as leaks or not.
+  - **The advisory's 0.7.x workaround is scoped to what that table proves.**
+    - It lists the shapes for which classifying the holding field stops the leak under each profile, and the annotations that do so.
+    - It states plainly that every other shape has no workaround and needs 0.8.0.
+    - It names the annotations and profiles that still leak, as not workarounds: `@SensitiveData` with `PASS_THROUGH`, and any profile that maps the holder's classification to `PASS_THROUGH`.
+    - It says the workaround applies only before 0.8.0, and that upgrading requires the fix list.
   - **Affected versions.**
     - Cover every release tag from `v0.1.0` (or the earliest release tag, if that is later) through `v0.7.1`. The scalar repros (1 and 6) need no record descent, so no tag is skipped on that ground. The Outcome also names the commit that introduced nested-record descent, for the advisory's description.
     - For each tag, write a leak probe against that tag's own API: its annotations, its engine constructor and its resolver. Do not copy this task's repro classes.
