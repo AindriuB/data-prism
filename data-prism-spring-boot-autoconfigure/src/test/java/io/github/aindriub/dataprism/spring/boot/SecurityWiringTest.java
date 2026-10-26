@@ -208,6 +208,64 @@ class SecurityWiringTest {
     }
 
     @Test
+    void a_scope_resolver_built_with_the_deployers_case_authorizer_starts_in_a_release() {
+        withVersion("0.8.0").withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, WiredScopeResolver.class)
+                .run(result -> {
+                    assertThat(result).hasNotFailed();
+                    assertThat(result.getBean(ScopeResolver.class).usesCaseAuthorizer(
+                            result.getBean(CaseAuthorizer.class))).isTrue();
+                });
+    }
+
+    @Test
+    void a_scope_resolver_built_with_a_different_authorizer_while_a_bean_exists_refuses_startup() {
+        withVersion("0.8.0").withUserConfiguration(Base.class, RefusingCaseAuthorizer.class,
+                        OtherAuthorizerScopeResolver.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
+    }
+
+    @Test
+    void an_authorization_service_built_with_the_deployers_client_allowlist_starts() {
+        withVersion("0.8.0").withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, RestrictiveAllowlist.class,
+                        WiredAuthorizationService.class)
+                .run(result -> assertThat(result).hasNotFailed());
+    }
+
+    @Test
+    void an_authorization_service_built_with_a_different_allowlist_while_a_bean_exists_refuses_startup() {
+        withVersion("0.8.0").withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, RestrictiveAllowlist.class,
+                        OwnAuthorizationService.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CLIENT_ALLOWLIST_BYPASSED"));
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class WiredScopeResolver {
+        @Bean ScopeResolver wiredScopeResolver(io.github.aindriub.dataprism.core.model.PseudonymisationVersion version,
+                CaseAuthorizer authorizer) {
+            return new ScopeResolver(version, java.time.Duration.ofHours(1),
+                    new io.github.aindriub.dataprism.security.PurposeValidator(Set.of("investigation")), authorizer);
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class OtherAuthorizerScopeResolver {
+        @Bean ScopeResolver otherScopeResolver(io.github.aindriub.dataprism.core.model.PseudonymisationVersion version) {
+            return new ScopeResolver(version, java.time.Duration.ofHours(1),
+                    new io.github.aindriub.dataprism.security.PurposeValidator(Set.of("investigation")),
+                    request -> true);
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class WiredAuthorizationService {
+        @Bean AuthorizationService wiredAuthorizationService(io.github.aindriub.dataprism.security.SecurityPolicy policy,
+                DataPrismProperties properties, ClientAllowlist allowlist) {
+            return new AuthorizationService(policy, properties.getPrivacy().getProfile(),
+                    io.github.aindriub.dataprism.core.model.PrivacyScopeType.INVESTIGATION, allowlist);
+        }
+    }
+
+    @Test
     void replacing_the_authorization_service_while_a_client_allowlist_exists_refuses_startup() {
         context.withUserConfiguration(Base.class, RestrictiveAllowlist.class, OwnAuthorizationService.class)
                 .run(result -> assertRefusal(result.getStartupFailure(), "CLIENT_ALLOWLIST_BYPASSED"));

@@ -55,6 +55,15 @@ public final class ScopeResolver {
     }
 
     /**
+     * True only when this resolver consults exactly {@code authorizer}, the same instance (identity, not
+     * equality). Lets a wiring check tell a custom resolver built with the deployer's authorizer from one
+     * that bypasses it.
+     */
+    public boolean usesCaseAuthorizer(CaseAuthorizer authorizer) {
+        return authorizer != null && caseAuthorizer == authorizer;
+    }
+
+    /**
      * @throws SecurityRefusedException with code {@code TOKEN_EXPIRED} when
      *                                  {@code caller}'s token has already expired against
      *                                  {@code clock}, with the decision's own

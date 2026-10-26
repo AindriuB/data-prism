@@ -251,4 +251,15 @@ class ScopeResolverTest {
         assertThatThrownBy(() -> resolver.resolve(caller("case-1", null), allowed(), CLOCK))
                 .isInstanceOf(AssertionError.class);
     }
+
+    @Test
+    @DisplayName("usesCaseAuthorizer is true only for the very instance the resolver was built with")
+    void usesCaseAuthorizerIsIdentity() {
+        CaseAuthorizer mine = request -> true;
+        ScopeResolver resolver = resolverWith(mine);
+        assertThat(resolver.usesCaseAuthorizer(mine)).isTrue();
+        assertThat(resolver.usesCaseAuthorizer(request -> true)).isFalse();
+        assertThat(resolver.usesCaseAuthorizer(CaseAuthorizer.tokenTrusted())).isFalse();
+        assertThat(resolver.usesCaseAuthorizer(null)).isFalse();
+    }
 }

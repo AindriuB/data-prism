@@ -26,15 +26,23 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 /**
  * Authorization, purpose and scope resolution. A deployer's own {@link CaseAuthorizer} and
  * {@link ClientAllowlist} bean is used when present; more than one of either refuses startup. An
  * application that replaces {@link ScopeResolver} while a {@link CaseAuthorizer} bean exists, or
- * {@link AuthorizationService} while a {@link ClientAllowlist} bean exists, would silently bypass
- * the deployer's check, so startup refuses ({@code CASE_AUTHORIZER_BYPASSED},
- * {@code CLIENT_ALLOWLIST_BYPASSED}).
+ * {@link AuthorizationService} while a {@link ClientAllowlist} bean exists, without building it with
+ * that bean, would silently bypass the deployer's check, so startup refuses
+ * ({@code CASE_AUTHORIZER_BYPASSED}, {@code CLIENT_ALLOWLIST_BYPASSED}). The test is identity:
+ * {@link ScopeResolver#usesCaseAuthorizer} and {@link AuthorizationService#usesClientAllowlist}.
+ *
+ * <p>Supported custom configuration: define the {@link CaseAuthorizer} bean and a {@link ScopeResolver}
+ * bean constructed with that injected bean (likewise {@link ClientAllowlist} and
+ * {@link AuthorizationService}). It starts in every version, including 0.8.0 and later, where the
+ * {@link CaseAuthorizer} bean is required. A resolver built with another authorizer or
+ * {@code CaseAuthorizer.tokenTrusted()} is refused while the bean exists.
  *
  * <p>The token-trusted {@link CaseAuthorizer} fallback (no bean) is for development only. From version
  * 0.8.0 on, a build refuses to start with it ({@code MISSING_CASE_AUTHORIZER}), whoever built the
@@ -113,20 +121,23 @@ class SecurityWiring {
                         "a CaseAuthorizer bean is required from 0.8.0; the token-trusted fallback is not "
                                 + "available in a release");
             }
-            if (replaced(beanFactory.getBeansOfType(ScopeResolver.class, true, true).values(), scopeResolver)
-                    && !beanFactory.getBeansOfType(CaseAuthorizer.class, true, true).isEmpty()) {
+            Collection<CaseAuthorizer> authorizers = beanFactory.getBeansOfType(CaseAuthorizer.class, true, true)
+                    .values();
+            if (!authorizers.isEmpty() && bypasses(beanFactory.getBeansOfType(ScopeResolver.class, true, true)
+                    .values(), scopeResolver, resolver -> authorizers.stream().anyMatch(resolver::usesCaseAuthorizer))) {
                 throw new DataPrismConfigurationException("CASE_AUTHORIZER_BYPASSED",
-                        "a ScopeResolver bean replaces the default, so the CaseAuthorizer bean would never be "
-                                + "consulted; call the CaseAuthorizer from your ScopeResolver and remove the bean, "
-                                + "or remove your ScopeResolver");
+                        "a ScopeResolver bean replaces the default and is not built with the CaseAuthorizer bean, "
+                                + "so that bean would never be consulted; construct your ScopeResolver with the "
+                                + "injected CaseAuthorizer bean, or remove your ScopeResolver");
             }
-            if (replaced(beanFactory.getBeansOfType(AuthorizationService.class, true, true).values(),
-                    authorizationService)
-                    && !beanFactory.getBeansOfType(ClientAllowlist.class, true, true).isEmpty()) {
+            Collection<ClientAllowlist> allowlists = beanFactory.getBeansOfType(ClientAllowlist.class, true, true)
+                    .values();
+            if (!allowlists.isEmpty() && bypasses(beanFactory.getBeansOfType(AuthorizationService.class, true, true)
+                    .values(), authorizationService, service -> allowlists.stream().anyMatch(service::usesClientAllowlist))) {
                 throw new DataPrismConfigurationException("CLIENT_ALLOWLIST_BYPASSED",
-                        "an AuthorizationService bean replaces the default, so the ClientAllowlist bean would never "
-                                + "be consulted; apply the ClientAllowlist in your AuthorizationService and remove "
-                                + "the bean, or remove your AuthorizationService");
+                        "an AuthorizationService bean replaces the default and is not built with the ClientAllowlist "
+                                + "bean, so that bean would never be consulted; construct your AuthorizationService "
+                                + "with the injected ClientAllowlist bean, or remove your AuthorizationService");
             }
         }
     }
@@ -137,9 +148,12 @@ class SecurityWiring {
         return new BypassCheck(beanFactory, libraryVersion);
     }
 
-    /** True when any instance is not our default, looking through AOP proxies (nested ones too) to the target. */
-    private static boolean replaced(Collection<?> instances, Object ours) {
-        return instances.stream().anyMatch(instance -> unwrap(instance) != ours);
+    /**
+     * True when any instance is not our default (looking through AOP proxies, nested ones too, to the target)
+     * and does not use the deployer's bean.
+     */
+    private static <T> boolean bypasses(Collection<T> instances, Object ours, Predicate<T> usesDeployersBean) {
+        return instances.stream().anyMatch(instance -> unwrap(instance) != ours && !usesDeployersBean.test(instance));
     }
 
     /**

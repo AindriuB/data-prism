@@ -29,6 +29,15 @@ public final class AuthorizationService {
         this.clientAllowlist = Objects.requireNonNull(clientAllowlist, "clientAllowlist");
     }
 
+    /**
+     * True only when this service applies exactly {@code allowlist}, the same instance (identity, not
+     * equality). Lets a wiring check tell a custom service built with the deployer's allowlist from one
+     * that bypasses it.
+     */
+    public boolean usesClientAllowlist(ClientAllowlist allowlist) {
+        return allowlist != null && clientAllowlist == allowlist;
+    }
+
     public AuthorizationDecision authorize(AuthenticatedCaller caller, ToolInvocation invocation) {
         Objects.requireNonNull(caller, "caller");
         Objects.requireNonNull(invocation, "invocation");

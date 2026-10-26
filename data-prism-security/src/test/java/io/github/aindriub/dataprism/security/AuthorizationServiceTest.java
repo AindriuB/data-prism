@@ -121,4 +121,16 @@ class AuthorizationServiceTest {
 
         assertThat(service.authorize(caller(Set.of("investigator")), GET_ENTITY_CONTEXT).allowed()).isTrue();
     }
+
+    @Test
+    @DisplayName("usesClientAllowlist is true only for the very instance the service was built with")
+    void usesClientAllowlistIsIdentity() {
+        ClientAllowlist mine = ClientAllowlist.of(Set.of("client-1"));
+        AuthorizationService service = new AuthorizationService(policy(Map.of()), "DEFAULT",
+                PrivacyScopeType.CASE, mine);
+        assertThat(service.usesClientAllowlist(mine)).isTrue();
+        assertThat(service.usesClientAllowlist(ClientAllowlist.of(Set.of("client-1")))).isFalse();
+        assertThat(service.usesClientAllowlist(ClientAllowlist.unrestricted())).isFalse();
+        assertThat(service.usesClientAllowlist(null)).isFalse();
+    }
 }
