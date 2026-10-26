@@ -34,6 +34,8 @@ final class StalledInsert {
     private final java.util.Set<String> rejecting = java.util.concurrent.ConcurrentHashMap.newKeySet();
     /** Calls that always throw {@link com.hazelcast.core.HazelcastInstanceNotActiveException} once armed. */
     private final java.util.Set<String> inactive = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** Calls that always throw {@link com.hazelcast.splitbrainprotection.SplitBrainProtectionException} once armed. */
+    private final java.util.Set<String> lostQuorum = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private volatile boolean armed;
     /** Calls that run twice once armed, returning the second result, as a retried invocation would. */
     private final java.util.Set<String> repeating = java.util.concurrent.ConcurrentHashMap.newKeySet();
@@ -106,6 +108,11 @@ final class StalledInsert {
      * {@link com.hazelcast.core.HazelcastInstanceNotActiveException} once armed, as a member that is shutting down
      * does: a cluster fault that is not an {@link IllegalArgumentException}.
      */
+    StalledInsert lostQuorum(String mapName, String method) {
+        lostQuorum.add(mapName + ":" + method);
+        return this;
+    }
+
     StalledInsert inactive(String mapName, String method) {
         inactive.add(mapName + ":" + method);
         return this;
@@ -149,6 +156,10 @@ final class StalledInsert {
                                         .incrementAndGet();
                                 if (armed && rejecting.contains(name + ":" + call.getName())) {
                                     throw new IllegalArgumentException("injected rejection");
+                                }
+                                if (armed && lostQuorum.contains(name + ":" + call.getName())) {
+                                    throw new com.hazelcast.splitbrainprotection.SplitBrainProtectionException(
+                                            "injected quorum loss");
                                 }
                                 if (armed && inactive.contains(name + ":" + call.getName())) {
                                     throw new com.hazelcast.core.HazelcastInstanceNotActiveException();

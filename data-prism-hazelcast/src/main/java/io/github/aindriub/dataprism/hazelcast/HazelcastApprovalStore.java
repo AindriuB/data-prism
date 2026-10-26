@@ -75,6 +75,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
     /**
      * How long an entry we mark expired stays visible, so a late approver sees EXPIRED.
      */
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(HazelcastApprovalStore.class);
     private static final Duration DEFAULT_RETENTION = Duration.ofMinutes(1);
 
     private final PrivacyCluster cluster;
@@ -626,8 +627,11 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         // opposite to admit. The decision has committed: nothing below can fail the call.
         try {
             leavePending(request, token, System.nanoTime() + lockTimeout.toNanos());
-        } catch (PrivacyRefusedException refused) {
-            // Counted by lockOrSkip; the slot stays counted until the sweep, and the decision stands.
+        } catch (RuntimeException failed) {
+            // Any failure here, a lost quorum included, is counted by leavePending or lockOrSkip. The slot stays
+            // counted until the sweep and the decision stands. Only the class is logged: a message can echo a key.
+            log.warn("approval pending-slot release failed after the decision committed; cause {}",
+                    failed.getClass().getSimpleName());
         }
         if (decided == null) {
             throw new ApprovalRefusedException(Code.EXPIRED);
