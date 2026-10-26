@@ -534,4 +534,34 @@ class ApprovalBoundedCleanupTest {
         assertThat(faulty.approve("m-1", "bob", NOW.plusSeconds(1)).status()).isEqualTo(Status.APPROVED);
         assertThat(metrics.countOf(Metric.APPROVAL_RELEASE_SKIPPED)).isEqualTo(1);
     }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"approve", "reject"})
+    void aDecisionWhoseSlotReleaseLosesQuorumAfterTheCommitStillReturnsTheDecision(String decision) {
+        StalledInsert injector = StalledInsert.passive().lostQuorum(PrivacyCluster.APPROVAL_PENDING_MAP, "executeOnKey");
+        var faulty = new HazelcastApprovalStore(injector.over(members[0]), TIMEOUT, metrics);
+        faulty.create(request("q-1", "scope-q", "alice"), 5);
+        injector.arm();
+        Instant now = NOW.plusSeconds(1);
+        Status expected = decision.equals("approve") ? Status.APPROVED : Status.REJECTED;
+
+        ApprovalRequest decided = decision.equals("approve")
+                ? faulty.approve("q-1", "bob", now) : faulty.reject("q-1", "bob", now);
+
+        assertThat(decided.status()).isEqualTo(expected);
+        assertThat(store.find("q-1").orElseThrow().status()).isEqualTo(expected);
+        assertThat(metrics.countOf(Metric.APPROVAL_RELEASE_SKIPPED)).isEqualTo(1);
+    }
+
+    @Test
+    void aRefusalBeforeTheCommitStillPropagatesAndLeavesTheApprovalPending() {
+        StalledInsert injector = StalledInsert.passive().lostQuorum(PrivacyCluster.APPROVAL_MAP, "tryLock");
+        var faulty = new HazelcastApprovalStore(injector.over(members[0]), TIMEOUT, metrics);
+        faulty.create(request("p-1", "scope-p", "alice"), 5);
+        injector.arm();
+
+        assertThatThrownBy(() -> faulty.approve("p-1", "bob", NOW.plusSeconds(1)))
+                .isInstanceOf(com.hazelcast.splitbrainprotection.SplitBrainProtectionException.class);
+        assertThat(store.find("p-1").orElseThrow().status()).isEqualTo(Status.PENDING);
+    }
 }
