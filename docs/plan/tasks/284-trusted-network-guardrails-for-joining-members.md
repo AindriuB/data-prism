@@ -1,6 +1,6 @@
 # 284 — Refuse a joining member that is not declared and bound to a trusted network
 
-Filed 2026-10-23 for owner decision (b): 1.0 supports multiple instances on a trusted network only (D-RM-1 (a) as amended, `PLAN.md`). The sealed-store briefs 224, 226, 229 to 231 and 264 are deferred past 1.0, so on a multi-member cluster approvals and counters stay unsealed (225 seals identity and re-identification entries in 0.8). This task makes that limit a startup refusal instead of a sentence in the docs.
+Filed 2026-10-23 for owner decision (b): 1.0 supports multiple instances on a trusted network only (D-RM-1 (a) as amended, `PLAN.md`). The sealed-store briefs 224, 226, 229 to 231 and 264 are deferred past 1.0, so on a multi-member cluster approvals and counters stay unsealed (225 seals identity and re-identification entries in 0.8). This task does not make a cluster safe on an untrusted network, and it cannot stop an untrusted host from joining. It adds two things: the operator's explicit assertion (`trusted-network: true`) that only Data Prism members can reach the member port, and a startup check that the member binds and advertises only private (or explicitly allow-listed) addresses. A deployment that makes the assertion falsely is still exposed; the refusals only stop the most common misconfigurations from starting silently (external review of PR #164, 164-3).
 
 **Repo:** `.`
 **Release:** 0.8.0
@@ -21,6 +21,7 @@ Filed 2026-10-23 for owner decision (b): 1.0 supports multiple instances on a tr
 - data-prism-server/src/test/java/io/github/aindriub/dataprism/server/** *(adding the opt-in to a joining member's properties only)*
 - docker/multi-instance/compose.yaml, docker/multi-instance/kubernetes.yaml *(the `DATAPRISM_HAZELCAST_TRUSTED_NETWORK` setting and its comment, the compose file's demo-only header comment, and the comment above the NetworkPolicy, only; the NetworkPolicy itself is not changed)*
 - docker/smoke/java-runtime-smoke.sh *(the opt-in only, and only if the script sets join settings itself)*
+- docs/multiple-instances.md *(insertions only: one sentence at the top of the cluster section; added 2026-10-26, 164-2)*
 - data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/MultiInstanceManifestTest.java *(new: the NetworkPolicy check)*
 - docs/configuration.md *(rows for the two new properties and three new codes, the refusal-order table, the keyless loopback-literal rule from 227, and the `INVALID_CLUSTER_INTERFACE` wording, only)*
 
@@ -74,6 +75,7 @@ A Spring-configured member that joins other members (`join.mode` `tcp-ip` or `ku
 - [ ] `docs/configuration.md` has rows for `trusted-network` (stating the isolation assertion) and `member.trusted-ranges` (stating the `/24` limit for non-private ranges), rows for `PUBLIC_MEMBER_INTERFACE`, `MISSING_TRUSTED_NETWORK` and `INVALID_TRUSTED_RANGE`, and the refusal-order table in the order above. The `INVALID_CLUSTER_INTERFACE` sentence states the address-property refusal for a keyed solo member only, and says a keyless one refuses `MISSING_CLUSTER_KEY`. The keyless loopback-literal rule (227) is stated.
 - [ ] The Outcome lists, for 286, the contract-register rows this task's codes and properties need: `PUBLIC_MEMBER_INTERFACE` (built, private-range condition), `MISSING_TRUSTED_NETWORK`, `INVALID_TRUSTED_RANGE`, both properties, and the `INVALID_CLUSTER_INTERFACE` keyed or keyless wording. `git diff` shows no change to `docs/plan/design/contract-register.md`.
 - [ ] `PropertyNamesFrozenTest`, `ConfigurationMetadataDocumentedTest` and `AutoConfiguredBeanClassificationTest` pass, and the frozen list and metadata diffs contain only this task's lines.
+- [ ] `docs/multiple-instances.md` gains one inserted sentence at the top of its cluster section, so the page is not wrong between this task and 213 (wave 13): multi-member deployments are supported on a trusted network only, `trusted-network: true` is required on `tcp-ip` and `kubernetes`, and approvals and counters are not sealed. `git diff` on the page shows that insertion and nothing else; 213 writes the full text (external review of PR #164, 164-2).
 - [ ] `mkdocs build --strict` and every `docs-site/hooks/check_*.py` pass with `DP_REQUIRE_NO_STUBS=true`.
 - [ ] `./mvnw -B verify` exits 0 over the full reactor. Report the counts.
 
@@ -82,7 +84,7 @@ A Spring-configured member that joins other members (`join.mode` `tcp-ip` or `ku
 - The `MISSING_SHARED_LINK_LIMITER` refusal for links and page links on joining members (core 255).
 - IPv6 member interfaces. The grammar stays IPv4.
 - `isolation.attestation`, health, tamper reporting and the other 230 properties (deferred with 230; health is 286).
-- `docs/multiple-instances.md`, `docs/migration-0.8.md`, `docs/eu-ai-act.md` and `CHANGELOG.md` (213). Put the facts in the Outcome: both properties, the three codes, the private rule, and the before and after of a `tcp-ip` configuration.
+- `docs/multiple-instances.md` beyond the one inserted sentence, `docs/migration-0.8.md`, `docs/eu-ai-act.md` and `CHANGELOG.md` (213). Put the facts in the Outcome: both properties, the three codes, the private rule, and the before and after of a `tcp-ip` configuration.
 - Root `compose.yaml` and `docker/server/application.yaml`: the quickstart is a solo member (262).
 
 ## Rules
