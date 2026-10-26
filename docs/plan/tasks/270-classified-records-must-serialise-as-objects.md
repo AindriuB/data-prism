@@ -213,6 +213,7 @@ Keep these apart. Each place in this task names the one it uses.
     - It states plainly that every other shape has no workaround and needs 0.8.0.
     - It names the annotations and profiles that still leak, as not workarounds: `@SensitiveData` with `PASS_THROUGH`, and any profile that maps the holder's classification to `PASS_THROUGH`.
     - It says the workaround applies only before 0.8.0, and that upgrading requires the fix list.
+    - It states the workaround as verified on `v0.7.1` only, the tag the matrix ran on. Earlier affected tags are listed as unverified for the workaround; they are affected, but whether classifying the holder stops the leak there was not tested.
   - **Affected versions.**
     - Cover every release tag from `v0.1.0` (or the earliest release tag, if that is later) through `v0.7.1`. The scalar repros (1 and 6) need no record descent, so no tag is skipped on that ground. The Outcome also names the commit that introduced nested-record descent, for the advisory's description.
     - For each tag, write a leak probe against that tag's own API: its annotations, its engine constructor and its resolver. Do not copy this task's repro classes.

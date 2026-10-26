@@ -9,6 +9,7 @@
 - **2026-10-24 (coordinator, on fail-closed grounds).** A replaced resolver while a descriptor file is set refuses startup with `MODEL_DESCRIPTOR_RESOLVER_REPLACED`. Today such a resolver silently drops the descriptor's tightening for scrubbing, not only for description.
 - **2026-10-26 (coordinator, external review P1).** With the file set, the only accepted resolver is the instance this auto-configuration built from that file, checked by identity. Any other bean refuses, including a `DescriptorFieldMetadataResolver` the application built itself.
 - **2026-10-26 (coordinator, internal review F1, decision a).** The check also covers what the running engine uses. Every `JsonTreeScrubbingEngine` bean must use the recorded resolver instance. An application engine built with its own resolver refuses, even when our resolver bean is present.
+- **`@Lazy(false)` (internal review F2), an accepted cost.** Under global lazy mode, `@Lazy(false)` forces the configuration class to initialise eagerly, and with the file set it also forces the resolver and engine beans the check reads. This is a small cost, and it is accepted.
 
 **Owns:**
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PrivacyEngineWiring.java *(only these parts:*
@@ -86,7 +87,7 @@ It follows the approach of 203's `BypassCheck` (`SecurityWiring.java`): remember
   - an application resolver together with an application `JsonTreeScrubbingEngine` bean;
   - with `spring.main.lazy-initialization=true`, an application resolver.
 - [ ] **Accepted with the file set.** The auto-configured resolver and engine start, and so does the same resolver behind an AOP proxy.
-- [ ] **The message.** It is exactly `dataprism.privacy.descriptor-file is set but the FieldMetadataResolver bean is not the one built from it`. It names the property only: no file path, no file content, no class name. There is no WARN path.
+- [ ] **The message.** It is exactly `dataprism.privacy.descriptor-file is set but the FieldMetadataResolver bean is not the one built from it, or an engine does not use it`. It names the property only: no file path, no file content, no class name. There is no WARN path.
 - [ ] **Mutants killed by the refusal tests:**
   - an `instanceof DescriptorFieldMetadataResolver` check in place of identity: the first two refusal cases start;
   - dropping the engine check: the `DefaultFieldMetadataResolver` engine case starts;
