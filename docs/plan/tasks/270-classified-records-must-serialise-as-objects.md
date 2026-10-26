@@ -164,6 +164,7 @@ Keep these apart. Each place in this task names the one it uses.
   - a classified record written as a plain object at a declared position is descended into as today;
   - a `null` at a classified-record position stays `null`;
   - a record with `@JsonValue` that is unclassified under the transitive rule (no classified component at any depth) takes the holder's policy as today. Repro 7 is not such a record, and no test pins its current output except the characterisation item.
+- [ ] **`lenientOf` parity.** For every existing fixture in the `data-prism-core` engine tests that `SourceTree.of` accepts, `lenientOf` returns an equal tree and records no position. The test iterates the fixtures and compares the trees with `JsonNode.equals`. Mutant killed: a `lenientOf` that drops a property.
 - [ ] **Prohibited values.** `SourceValues.prohibited` contains every scalar under a non-object value at a classified-record position (repros 1 to 5 and 7), and under every classified record at an untyped position (repro 6). It throws for none of them. `ClassifiedRecordProhibitedValuesTest` shows this, and that on the base commit the set misses them.
 - [ ] **One bad source does not fail the request.** `ClassifiedRecordSourceRefusalTest` builds a `DefaultContextOrchestrator` with two sources. Source `a` returns repro 1's `Holder`; source `b` returns a well-formed model.
   - The response is answered: `a` is `REFUSED` with disposition `a:<refused>` = `REFUSED:CLASSIFIED_RECORD_NOT_AN_OBJECT`, and `b` is `ANSWERED`.
@@ -173,7 +174,7 @@ Keep these apart. Each place in this task names the one it uses.
 - [ ] **Describer.** `ScrubPlanDescriber` decides "ambiguous" through `ClassifiedShapes` and nothing else. `DescriptionConformsToScrubTest` gains repros 1 to 4. No field the scrubber refuses or changes is described `VERBATIM`, and the existing cases pass unchanged.
 - [ ] **One check.** `ClassifiedShapesArchitectureTest` (ArchUnit) asserts three things:
   - `ClassifiedShapes` calls `SourceTree.readsAsPlainBean`;
-  - `SourceValues` calls `SourceTree.lenientOf` and calls neither `SourceTree.of` overload. Mutant: switching `SourceValues` back to `of` fails this rule, and also fails the two-source test, because the whole request then fails;
+  - `SourceValues` calls `SourceTree.lenientOf` and calls neither `SourceTree.of` overload. Mutant: switching `SourceValues` back to `of` fails this rule, and also fails the two-source test, because the whole request then fails. ArchUnit sees direct calls only; an indirect call through another class is caught by the two-source test, which is the accepted backstop;
   - no class in `io.github.aindriub.dataprism.core.engine` other than `SourceTree` depends on `tools.jackson.databind.ser.BeanSerializer`, `tools.jackson.databind.ser.bean.UnrolledBeanSerializer` or `tools.jackson.databind.ser.impl.ObjectIdWriter`. Use the class names as they are on the base commit.
 - [ ] **Mutation proofs, each recorded in the Outcome with the test that fails:**
   - remove the scrub-time backstop: the direct-engine and descriptor-only tests fail;

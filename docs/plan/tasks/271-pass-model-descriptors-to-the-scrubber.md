@@ -53,13 +53,13 @@ It follows the approach of 203's `BypassCheck` (`SecurityWiring.java`): remember
 - **Why not a separate bean, as `BypassCheck` is.** A new bean would change the `bean-inventory/*.txt` fixtures and `PrivacyExtensionPoints`, which 210 owns in this wave. The configuration class is already a singleton and is not `@ConditionalOnMissingBean`, so neither an application engine nor an application resolver can skip the check.
 
 ## The engine's descriptor map
-`dataPrismScrubber` passes the recorded instance's `descriptors()` when the file is set, and `Map.of()` when it is not. It does not test the injected resolver with `instanceof`: a JDK proxy over our resolver would fail that test, and the descriptors would be lost silently.
+`dataPrismScrubber` passes the recorded instance's `descriptors()` when the file is set, and `Map.of()` when it is not. The engine stores the map it is given as given, never copied or wrapped, so the identity comparison in the engine check is meaningful; `descriptors()` returns that same object. It does not test the injected resolver with `instanceof`: a JDK proxy over our resolver would fail that test, and the descriptors would be lost silently.
 
 ## Context
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PrivacyEngineWiring.java:51-59 (the resolver bean, which loads the file through `dataPrismModelDescriptors(descriptorFile)` at :84) and :156-158 (the engine bean).
 - `SecurityWiring.BypassCheck` (203, on the base branch): the identity pattern and its proxy unwrapping.
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/descriptor/DescriptorFieldMetadataResolver.java:42-47: holds the validated, immutable map.
-- 249 makes the same change at the connectors' `javaFirst` engine (`ConfiguredJsonSourcesAutoConfiguration.java:177`). It depends on this task for the accessor and unwraps proxies before reading the map.
+- 249 makes the same change at the connectors' `javaFirst` engine (`ConfiguredJsonSourcesAutoConfiguration.java:177`). 249 builds `javaFirst` from the auto-configured engine bean's `resolver()` and `descriptors()` when the file is set; see 249.
 - `ModelDescriptorsConfigurationTest.java:56-57`: the `WebApplicationContextRunner` shape to copy.
 
 ## Acceptance
@@ -88,7 +88,7 @@ It follows the approach of 203's `BypassCheck` (`SecurityWiring.java`): remember
   - an application `JsonTreeScrubbingEngine` bean built with `new DefaultFieldMetadataResolver()`, while our resolver bean is present and no application resolver bean exists;
   - an application resolver together with an application `JsonTreeScrubbingEngine` bean;
   - with `spring.main.lazy-initialization=true`, an application resolver.
-- [ ] **Accepted with the file set.** The auto-configured resolver and engine start, and so does the same resolver behind an AOP proxy.
+- [ ] **Accepted with the file set.** The auto-configured resolver and engine start, and so does the same resolver behind an AOP proxy. The auto-configured-starts test is the guard that the identity checks hold for our own beans. If the engine copied the map, or the resolver bean were rebuilt, this test would fail.
 - [ ] **The message.** It is exactly `dataprism.privacy.descriptor-file is set but the FieldMetadataResolver bean is not the one built from it, or an engine does not use it`. It names the property only: no file path, no file content, no class name. There is no WARN path.
 - [ ] **Mutants killed by the refusal tests:**
   - an `instanceof DescriptorFieldMetadataResolver` check in place of identity: the first two refusal cases start;

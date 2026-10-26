@@ -59,9 +59,13 @@ It does not stop a hung adapter from holding its own slots; those come back only
 
   Both slots are released in the thread's own `finally`, when the adapter call returns. That may be long after its timeout.
 
-  If creating or starting the thread throws, both slots are released at once, through the same once-only guard, and the source is reported `FAILED` with `detail` `UNAVAILABLE`. That covers any `Throwable`, an `OutOfMemoryError` ("unable to create native thread") or an `IllegalThreadStateException`. For this case:
-  - the breaker does not record it, and neither `SOURCE_ERRORS` nor `SOURCE_CALLS_SATURATED` is incremented;
-  - the cause is logged once at ERROR, with its class name only.
+  If creating or starting the thread throws, both slots are released at once, through the same once-only guard, and the source is reported `FAILED` with `detail` `UNAVAILABLE`.
+  - **What the `try` covers.** It wraps exactly `threadFactory.newThread(task)` and `thread.start()`, and nothing else: no slot acquisition, no adapter code. It catches any `Throwable`, such as an `OutOfMemoryError` ("unable to create native thread") or an `IllegalThreadStateException`.
+  - **Telling it apart from saturation.** `SourceCallSlots.acquireAndStart` returns a three-state result: `STARTED`, `SATURATED` or `START_FAILED`. `fetchAll` keeps one local set per non-started state, and reads neither from `detail`.
+  - **For `START_FAILED`:**
+    - the breaker does not record it;
+    - neither `SOURCE_ERRORS`, `SOURCE_LATENCY` nor `SOURCE_CALLS_SATURATED` is touched;
+    - the cause is logged at ERROR, once per failed call, with its class name only.
 
   The thread factory is a package-private constructor argument of `SourceCallSlots`, for tests.
 - **Saturation.**
@@ -119,7 +123,8 @@ How a saturated call appears to the client.
   - Both are checked through a package-private test hook, not by timing.
 - [ ] **Thread start failure.**
   - **Setup.** Inject a thread factory that throws `OutOfMemoryError` from `newThread`. In a second case, it returns an already-started thread, so that `start()` throws `IllegalThreadStateException`.
-  - **Outcome.** The source is reported `FAILED` with `detail` `UNAVAILABLE`, and its adapter is not called.
+  - **Outcome.** The source is reported `FAILED` with `detail` `UNAVAILABLE`, and its adapter is not called. `acquireAndStart` returned `START_FAILED`.
+  - **Untouched.** The breaker's record for the source is unchanged. `SOURCE_ERRORS`, `SOURCE_LATENCY` and `SOURCE_CALLS_SATURATED` are unchanged, read from a recording `PrivacyMetrics`. Exactly one ERROR line is logged per failed call: three failed calls give three lines.
   - **Slots.** The pool's and the source's permits are all back, read through the permit hook.
   - **No permanent block.** A following call with a working factory reports `ANSWERED`, so the source is not left `UNAVAILABLE` for good.
   - **Mutant killed:** not releasing on a start failure leaves the permits short, and the following call is `UNAVAILABLE`.
