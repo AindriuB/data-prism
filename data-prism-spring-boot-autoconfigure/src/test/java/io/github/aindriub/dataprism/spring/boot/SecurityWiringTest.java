@@ -98,6 +98,46 @@ class SecurityWiringTest {
     }
 
     @Test
+    void a_release_without_a_case_authorizer_is_refused_under_global_lazy_initialisation() {
+        withVersion("0.8.0").withPropertyValues("spring.main.lazy-initialization=true")
+                .withInitializer(SecurityWiringTest::applyLazyInitialisation)
+                .withUserConfiguration(Base.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "MISSING_CASE_AUTHORIZER"));
+    }
+
+    @Test
+    void a_bypassing_scope_resolver_is_refused_under_global_lazy_initialisation() {
+        context.withPropertyValues("spring.main.lazy-initialization=true")
+                .withInitializer(SecurityWiringTest::applyLazyInitialisation)
+                .withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, OwnScopeResolver.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
+    }
+
+    @Test
+    void two_case_authorizers_are_refused_under_global_lazy_initialisation() {
+        context.withPropertyValues("spring.main.lazy-initialization=true")
+                .withInitializer(SecurityWiringTest::applyLazyInitialisation)
+                .withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, SecondCaseAuthorizer.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CASE_AUTHORIZER"));
+    }
+
+    /**
+     * Marks every definition lazy that has not said otherwise. Boot's own lazy-initialisation post-processor
+     * happens to leave SmartInitializingSingleton beans alone; this one does not, so the guard must opt out
+     * itself rather than rely on that.
+     */
+    private static void applyLazyInitialisation(org.springframework.context.ConfigurableApplicationContext ctx) {
+        ctx.addBeanFactoryPostProcessor(factory -> {
+            for (String name : factory.getBeanDefinitionNames()) {
+                if (factory.getBeanDefinition(name) instanceof org.springframework.beans.factory.support.AbstractBeanDefinition definition
+                        && definition.getLazyInit() == null) {
+                    definition.setLazyInit(true);
+                }
+            }
+        });
+    }
+
+    @Test
     void two_case_authorizers_refuse_startup() {
         context.withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, SecondCaseAuthorizer.class)
                 .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CASE_AUTHORIZER"));
