@@ -18,8 +18,11 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.Collection;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -34,14 +37,16 @@ import java.util.stream.Collectors;
  * {@code CLIENT_ALLOWLIST_BYPASSED}).
  *
  * <p>The token-trusted {@link CaseAuthorizer} fallback (no bean) is for development only. From version
- * 0.8.0 on, a non-SNAPSHOT build refuses to start with it ({@code MISSING_CASE_AUTHORIZER}). The version is
- * the jar manifest's {@code Implementation-Version}; it is absent when classes run unpackaged (an IDE), and
- * then the fallback is kept with its WARN.
+ * 0.8.0 on, a build refuses to start with it ({@code MISSING_CASE_AUTHORIZER}), whoever built the
+ * {@link ScopeResolver}. The version is embedded at build time in {@code META-INF/data-prism/version.properties}
+ * and read from this library's own class loader resource; if it is missing or unparseable it counts as a
+ * release. Only an explicit {@code -SNAPSHOT} or a release below 0.8.0 keeps the fallback, with its WARN.
  */
 @Configuration(proxyBeanMethods = false)
 class SecurityWiring {
     private static final Logger LOG = LoggerFactory.getLogger(SecurityWiring.class);
-    private static final Pattern VERSION = Pattern.compile("^(\\d+)\\.(\\d+)\\.(\\d+)(-.+)?$");
+    private static final Pattern VERSION = Pattern.compile("^(\\d{1,9})\\.(\\d{1,9})\\.(\\d{1,9})(-.+)?$");
+    private static final String VERSION_RESOURCE = "/META-INF/data-prism/version.properties";
 
     /** Where the running library's version comes from; a bean of this package-private type lets a test drive it. */
     @FunctionalInterface
@@ -50,17 +55,28 @@ class SecurityWiring {
         String get();
     }
 
-    private static String manifestVersion() {
-        return SecurityWiring.class.getPackage().getImplementationVersion();
+    /** The version embedded at build time in this library's own resource; null when missing or unreadable. */
+    static String embeddedVersion() {
+        try (InputStream in = SecurityWiring.class.getResourceAsStream(VERSION_RESOURCE)) {
+            if (in == null) {
+                return null;
+            }
+            Properties properties = new Properties();
+            properties.load(in);
+            String version = properties.getProperty("version");
+            return version == null ? null : version.strip();
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
     }
 
     /**
-     * True for a non-SNAPSHOT version at or above 0.8.0 (a release candidate included). An unparseable
-     * non-null version counts as a release: fail closed.
+     * True unless the version is a parseable explicit {@code -SNAPSHOT}, or a release below 0.8.0. A null,
+     * unparseable or oversized version is forbidden: fail closed.
      */
     static boolean fallbackForbidden(String version) {
         if (version == null) {
-            return false;
+            return true;
         }
         Matcher m = VERSION.matcher(version);
         if (!m.matches()) {
@@ -69,7 +85,7 @@ class SecurityWiring {
         if ("-SNAPSHOT".equals(m.group(4))) {
             return false;
         }
-        return Long.parseLong(m.group(1)) > 0 || Long.parseLong(m.group(2)) >= 8;
+        return Integer.parseInt(m.group(1)) > 0 || Integer.parseInt(m.group(2)) >= 8;
     }
 
     /**
@@ -82,12 +98,21 @@ class SecurityWiring {
         private volatile ScopeResolver scopeResolver;
         private volatile AuthorizationService authorizationService;
 
-        BypassCheck(ListableBeanFactory beanFactory) {
+        private final ObjectProvider<LibraryVersion> libraryVersion;
+
+        BypassCheck(ListableBeanFactory beanFactory, ObjectProvider<LibraryVersion> libraryVersion) {
             this.beanFactory = beanFactory;
+            this.libraryVersion = libraryVersion;
         }
 
         @Override
         public void afterSingletonsInstantiated() {
+            if (beanFactory.getBeansOfType(CaseAuthorizer.class, true, true).isEmpty()
+                    && fallbackForbidden(libraryVersion.getIfAvailable(() -> SecurityWiring::embeddedVersion).get())) {
+                throw new DataPrismConfigurationException("MISSING_CASE_AUTHORIZER",
+                        "a CaseAuthorizer bean is required from 0.8.0; the token-trusted fallback is not "
+                                + "available in a release");
+            }
             if (replaced(beanFactory.getBeansOfType(ScopeResolver.class, true, true).values(), scopeResolver)
                     && !beanFactory.getBeansOfType(CaseAuthorizer.class, true, true).isEmpty()) {
                 throw new DataPrismConfigurationException("CASE_AUTHORIZER_BYPASSED",
@@ -107,8 +132,9 @@ class SecurityWiring {
     }
 
     @Bean
-    static BypassCheck dataPrismSecurityBypassCheck(ListableBeanFactory beanFactory) {
-        return new BypassCheck(beanFactory);
+    static BypassCheck dataPrismSecurityBypassCheck(ListableBeanFactory beanFactory,
+            ObjectProvider<LibraryVersion> libraryVersion) {
+        return new BypassCheck(beanFactory, libraryVersion);
     }
 
     /** True when any instance is not our default, looking through AOP proxies (nested ones too) to the target. */
@@ -159,15 +185,9 @@ class SecurityWiring {
     @Bean
     @ConditionalOnMissingBean
     ScopeResolver dataPrismScopeResolver(PseudonymisationVersion version, DataPrismProperties properties,
-            ObjectProvider<CaseAuthorizer> caseAuthorizer, ObjectProvider<LibraryVersion> libraryVersion,
-            BypassCheck built) {
+            ObjectProvider<CaseAuthorizer> caseAuthorizer, BypassCheck built) {
         CaseAuthorizer authorizer = caseAuthorizer.getIfAvailable();
         if (authorizer == null) {
-            if (fallbackForbidden(libraryVersion.getIfAvailable(() -> SecurityWiring::manifestVersion).get())) {
-                throw new DataPrismConfigurationException("MISSING_CASE_AUTHORIZER",
-                        "a CaseAuthorizer bean is required from 0.8.0; the token-trusted fallback is not "
-                                + "available in a release");
-            }
             LOG.warn("No CaseAuthorizer bean is defined: the case claim in the token is trusted without "
                     + "assignment checks. Supply a CaseAuthorizer bean.");
             authorizer = CaseAuthorizer.tokenTrusted();
