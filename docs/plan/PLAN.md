@@ -153,7 +153,7 @@ Order by wave (briefs in a wave can run in parallel when their owned files do no
 
 Obligations for the 0.8.0 release cut (no brief filed yet; whoever files it copies these into its Acceptance):
 
-- **BLOCKING:** 0.8.0 must not be tagged until task 210 has merged: the token-trusted case-authorizer fallback is refused at runtime from 0.8.0 (any non-SNAPSHOT version, `MISSING_CASE_AUTHORIZER`) unless a `CaseAuthorizer` bean is supplied, and 210 adds the explicit configuration. The unrestricted client allowlist default is intended (D-1.0-1).
+- **BLOCKING:** 0.8.0 must not be tagged until task 210 has merged: the token-trusted case-authorizer fallback is refused at runtime from 0.8.0 (any non-SNAPSHOT version, `MISSING_CASE_AUTHORIZER`; the gate reads the library version from the embedded `META-INF/data-prism/version.properties`, and a missing or unreadable version is forbidden) unless a `CaseAuthorizer` bean is supplied, and 210 adds the explicit configuration. The unrestricted client allowlist default is intended (D-1.0-1).
 - Re-run 262's clean-checkout `docker compose up` against the published 0.8.0 images, not the local build overlay (coordinator decision 2026-10-23).
 - Keep `compose.yaml` and `docker/multi-instance/kubernetes.yaml` on the version-literal list, and confirm that no image reference is older than the released version.
 
