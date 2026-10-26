@@ -46,6 +46,10 @@ A task file is parallel-safe when it declares:
 
 Tasks with `depends on: none` form the first wave. Everything else waits.
 
+A planning PR gets an internal adversarial review by `architect` after every
+revision, not only the first. A revision can reintroduce what the previous one
+removed, and the owner's reviewer should not be the one to find it.
+
 ## Phase 2 — fanout
 
 For each task in the current wave, in a single message, spawn one `implementer`
@@ -56,6 +60,37 @@ with the task id. Each one:
 2. reads only its task file and the files that task names,
 3. implements, commits on its branch,
 4. returns the branch name, the files touched and a one-line summary.
+
+Every implementer, tester and scribe runs the same gate, and it is the one CI
+runs:
+
+```
+./mvnw -B verify                                     # online
+./mvnw -B -DskipTests -Prelease -Dgpg.skip package   # whole reactor
+```
+
+Read each exit code directly with `echo $?`, never through a pipe, which
+reports the last command's status instead of Maven's. A PR is not ready for
+review until its `ci-gate` check is green.
+
+A fix hands back the name of the test that proves it and that test's failure
+output from before the fix. A reviewer rejects a hand-back without it: a test
+that never failed has not shown it covers the defect.
+
+Branch discipline:
+
+- An implementer pushes only to its own fix branch. Only the scribe pushes the
+  wave or PR branch.
+- A tester starts only after its implementer has handed back, never alongside.
+
+Agent hygiene:
+
+- No `mvn install`; it writes to the shared `~/.m2` and leaks one task's
+  artifacts into another's build.
+- Never `pkill` or `killall` by pattern. It kills other agents' processes; see
+  the `pgrep` incident in Phase 3.
+- Each agent keeps its scripts in its own sub-folder of the scratchpad. Shared
+  scripts were being deleted by other agents mid-run.
 
 Concurrency is bounded by the worktree scripts, not by discipline: two agents
 physically cannot be in the same checkout.
@@ -103,6 +138,16 @@ waiting loop itself; the main session found and killed them.
 A failing task goes back to phase 2 with the failure appended to its task file.
 It does not get "fixed inline" — that is how the main context blows up.
 
+**Fix rounds are reviewed too.** Every fix branch, whether it comes from the
+first code-review pass or from an external-review fix round, gets a
+`code-reviewer` pass on its diff before the scribe merges it, with `since` set
+to the pre-fix head. `code-reviewer` runs an adversarial security pass and a
+functional regression pass (the agent definition lives in the kit, AindriuB/
+workspace PR #3). The external-review stopping rule applies to these internal
+rounds as well: nothing Medium or worse goes back to the owner's reviewer.
+The `pr-code-review` skill is deliberately not part of this workflow; the
+owner judged it too slow and heavy.
+
 ## Phase 4 — record
 
 `main` has branch protection: the `build` check (GitHub Actions) is required
@@ -113,7 +158,8 @@ not only to a fast-forward merge. So a passing branch reaches `main` through a
 pull request, not a local merge:
 
 1. Push the task branch, open a PR against `main`.
-2. Let Actions run `build` on the PR's head commit.
+2. Let Actions run `build` on the PR's head commit, and wait for `ci-gate`
+   to be green.
 3. Merge once `build` is green. Repository auto-merge is off
    (`allow_auto_merge` is `false`) and this repository does not enable it —
    merging is a deliberate `/record` step, never done by the implementer
@@ -135,6 +181,9 @@ this project re-runs the full suite after closing a wave is that
 individually-green branches can still break in combination once several land
 together, and branch protection does nothing to change that — `scribe` still
 runs the suite after a wave closes.
+
+**PR size.** From wave 5 on, open one PR per task rather than one per wave, so
+that external reviews converge instead of reopening on every round.
 
 Each `HISTORY.md` entry gets its row in `HISTORY-INDEX.md` in the same commit.
 That pairing is what keeps the index trustworthy enough for `planner` to rely
