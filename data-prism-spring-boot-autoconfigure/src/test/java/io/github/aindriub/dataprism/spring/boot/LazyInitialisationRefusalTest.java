@@ -43,6 +43,15 @@ class LazyInitialisationRefusalTest {
                         .startsWith("INVALID_SOURCE_URL:"));
     }
 
+    /** Only dataPrismPropertiesValidated raises this; the property binding alone accepts the value. */
+    @Test
+    void an_unknown_privacy_profile_is_refused_under_lazy_initialisation() {
+        lazy.withUserConfiguration(DataPrismAutoConfigurationTest.ReviewedHttpIntegrations.class)
+                .withPropertyValues("dataprism.privacy.profile=NO_SUCH_PROFILE")
+                .run(result -> assertThat(rootMessage(result.getStartupFailure()))
+                        .startsWith("UNKNOWN_PRIVACY_PROFILE:"));
+    }
+
     @Test
     void a_valid_configuration_still_starts_under_lazy_initialisation() {
         lazy.withUserConfiguration(DataPrismAutoConfigurationTest.ReviewedHttpIntegrations.class)
