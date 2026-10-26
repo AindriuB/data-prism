@@ -12,7 +12,7 @@
 - data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonDataSourceAdapter.java
 - data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonScrubbingEngine.java *(the `describe` override only)*
 - data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSourcesInitializer.java
-- data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSourcesAutoConfiguration.java *(location binding, description plumbing, and the descriptor map passed to the `javaFirst` engine at :177 only; the last added 2026-10-23)*
+- data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSourcesAutoConfiguration.java *(location binding, description plumbing, and building the `javaFirst` engine at :177 from the injected auto-configured `JsonTreeScrubbingEngine` bean's resolver and map, with its new `ObjectProvider<JsonTreeScrubbingEngine>` parameter, only; the last added 2026-10-23, revised 2026-10-26)*
 - data-prism-connectors-rest/src/test/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonDescriptionTest.java *(new)*
 - data-prism-connectors-rest/src/test/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonChainableTest.java *(new)*
 - data-prism-connectors-rest/src/test/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonDescribeConformanceTest.java *(new)*
@@ -36,7 +36,13 @@ A configured JSON source is declared in a `json-sources:` file, not in Java, so 
 - [ ] `ConfiguredJsonScrubbingEngine.describe` describes every `fields:` entry and nested catalogue as 248 specifies. `ConfiguredJsonDescribeConformanceTest` proves, over the existing fixtures, that every path a scrubbed response contains is described with the protection it was scrubbed under.
 - [ ] Several files, as OD-08-8 decides. Under its option (a): `dataprism.json-sources.config-location` accepts a list of locations (a single value still works unchanged); every file is parsed strictly; a source name declared in two files refuses startup with the code OD-08-8 names, and the message names the source and neither location; the resulting source order does not depend on file order; an unreadable file refuses as today, with the location shown only by the existing `describe(location)` rule.
 - [ ] The base-url host of each configured source is available to the catalog's rule 5 check (an accessor read by 254).
-- [ ] The `javaFirst` `JsonTreeScrubbingEngine` in `ConfiguredJsonSourcesAutoConfiguration` is built with 248's five-argument constructor, passing the descriptor map of the injected resolver after unwrapping AOP proxies (`AopProxyUtils.getSingletonTarget`, repeated until there is no further target), and `Map.of()` if the target is not a `DescriptorFieldMetadataResolver`. With a descriptor file set, 271's identity check guarantees the target is the one built from the file. A JDK-proxy test asserts the described `keyNamespace` is present. A test shows that a descriptor-declared chainable field on a Java-first model is described with its `keyNamespace` (added 2026-10-23).
+- [ ] The `javaFirst` `JsonTreeScrubbingEngine` in `ConfiguredJsonSourcesAutoConfiguration` is built with 248's five-argument constructor, pinned to 271's recorded instance. It does not type-test the injected resolver.
+  - **With `dataprism.privacy.descriptor-file` set** (non-blank, the same test 271 uses), it injects the auto-configured `JsonTreeScrubbingEngine` bean and builds `javaFirst` from that bean's `resolver()` and `descriptors()`. 271 guarantees these are the recorded resolver and its map. If no unique `JsonTreeScrubbingEngine` bean is available, startup refuses with `MODEL_DESCRIPTOR_RESOLVER_REPLACED` and 271's message.
+  - **Without the file**, it uses the injected resolver and `Map.of()`, as today.
+  - **Tests:**
+    - with the file set and the resolver behind a JDK proxy, the described `keyNamespace` is present;
+    - with the file set and no engine bean, startup refuses;
+    - a mutant that falls back to `Map.of()` is killed. A test shows that a descriptor-declared chainable field on a Java-first model is described with its `keyNamespace` (added 2026-10-23).
 - [ ] Every existing `data-prism-connectors-rest` test passes unmodified.
 - [ ] `./mvnw -B -pl data-prism-connectors-rest -am verify` passes.
 
