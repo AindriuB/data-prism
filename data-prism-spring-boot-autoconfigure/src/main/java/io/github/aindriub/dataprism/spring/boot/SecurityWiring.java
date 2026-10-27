@@ -10,170 +10,92 @@ import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.SecurityPolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.aop.scope.ScopedProxyFactoryBean;
-import org.springframework.aop.scope.ScopedProxyUtils;
-import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.BeanFactoryUtils;
-import org.springframework.beans.factory.HierarchicalBeanFactory;
-import org.springframework.beans.factory.ListableBeanFactory;
+import org.springframework.beans.factory.NoSuchBeanDefinitionException;
+import org.springframework.beans.factory.NoUniqueBeanDefinitionException;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.SmartInitializingSingleton;
-import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
-import org.springframework.beans.factory.support.AbstractBeanDefinition;
+import org.springframework.beans.factory.config.NamedBeanHolder;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Condition;
+import org.springframework.context.annotation.ConditionContext;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.core.type.AnnotatedTypeMetadata;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.URL;
-import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Map;
-import java.util.Properties;
 import java.util.Set;
 import java.util.function.Predicate;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
- * Authorization, purpose and scope resolution. A deployer's own {@link CaseAuthorizer} and
- * {@link ClientAllowlist} bean is used when present; more than one of either refuses startup
- * ({@code AMBIGUOUS_CASE_AUTHORIZER}, {@code AMBIGUOUS_CLIENT_ALLOWLIST}), as does one that is not a singleton
- * ({@code NON_SINGLETON_CASE_AUTHORIZER}, {@code NON_SINGLETON_CLIENT_ALLOWLIST}), checked before anything else
- * and whoever built the resolver or service. Beans in a parent context count. An
- * application that replaces {@link ScopeResolver} while a {@link CaseAuthorizer} bean exists, or
- * {@link AuthorizationService} while a {@link ClientAllowlist} bean exists, without building it with
- * that bean, would silently bypass the deployer's check, so startup refuses
- * ({@code CASE_AUTHORIZER_BYPASSED}, {@code CLIENT_ALLOWLIST_BYPASSED}). The test is identity:
- * {@link ScopeResolver#usesCaseAuthorizer} and {@link AuthorizationService#usesClientAllowlist}.
- * Limit: the guard inspects {@link ScopeResolver} and {@link AuthorizationService} beans. An application
+ * Authorization, purpose and scope resolution. Case authorisation and the client allowlist are explicit
+ * decisions: a {@link CaseAuthorizer} bean or {@code dataprism.security-policy.case-authorisation=token-trusted},
+ * and a {@link ClientAllowlist} bean, {@code dataprism.security-policy.allowed-clients} or
+ * {@code dataprism.security-policy.client-allowlist=unrestricted}. Neither has a default; a setting together with
+ * an application bean is refused before any bean exists (see {@link Preflights}).
+ *
+ * <p>The default {@link ScopeResolver} and {@link AuthorizationService} take the deployer's bean through the one
+ * injection Spring itself uses, so none, many or a non-candidate is Spring's to refuse: two beans fail with
+ * {@link NoUniqueBeanDefinitionException} unless one is {@code @Primary}, and no injectable bean is refused here
+ * ({@code MISSING_CASE_AUTHORIZER}, {@code MISSING_CLIENT_ALLOWLIST}).
+ *
+ * <p>What is checked after that is the outcome ({@link BypassCheck}): the bean Spring would inject must be a
+ * singleton (or a scoped proxy), and every {@link ScopeResolver} and {@link AuthorizationService} in the context
+ * and its ancestors must hold it, or startup is refused ({@code CASE_AUTHORIZER_BYPASSED},
+ * {@code CLIENT_ALLOWLIST_BYPASSED}). The test is identity: {@link ScopeResolver#usesCaseAuthorizer} and
+ * {@link AuthorizationService#usesClientAllowlist}. An application that replaces either with one built around
+ * another authoriser or allowlist is refused; one built with the injected bean starts. A request- or
+ * session-scoped {@link CaseAuthorizer} behind a scoped proxy is supported, because the proxy is a singleton.
+ *
+ * <p>Limit: the check inspects {@link ScopeResolver} and {@link AuthorizationService} beans. An application
  * {@code HttpTransport} built by hand around its own resolver is not inspected, because {@code HttpTransport}
  * exposes none.
- *
- * <p>Supported custom configuration: define the {@link CaseAuthorizer} bean and a {@link ScopeResolver}
- * bean constructed with that injected bean (likewise {@link ClientAllowlist} and
- * {@link AuthorizationService}). It starts in every version, including 0.8.0 and later, where the
- * {@link CaseAuthorizer} bean is required. A resolver built with another authorizer or
- * {@code CaseAuthorizer.tokenTrusted()} is refused while the bean exists. A request- or session-scoped
- * {@link CaseAuthorizer} behind a scoped proxy (TARGET_CLASS or INTERFACES) is supported: the proxy is the
- * bean, its genuine {@code scopedTarget.*} twin is not counted, and the proxy is a singleton, so the identity
- * checks hold. The guard counts the same autowire candidates the defaults inject; any other bean of the type,
- * including a bean merely named {@code scopedTarget.*} or one with autowire-candidate off, refuses as ambiguous.
- * An INTERFACES-mode scoped proxy of the final {@link ClientAllowlist} cannot be typed as one and is refused.
- *
- * <p>The token-trusted {@link CaseAuthorizer} fallback (no bean) is for development only. From version
- * 0.8.0 on, a build refuses to start with it ({@code MISSING_CASE_AUTHORIZER}), whoever built the
- * {@link ScopeResolver}. The version is embedded at build time in {@code META-INF/data-prism/version.properties}
- * and read from this library's own class loader resource; if it is missing, present more than once on the
- * class path, or unparseable it counts as a release. Only an explicit {@code -SNAPSHOT} or a release below
- * 0.8.0 keeps the fallback, with its WARN.
  */
 @Configuration(proxyBeanMethods = false)
 class SecurityWiring {
     private static final Logger LOG = LoggerFactory.getLogger(SecurityWiring.class);
-    private static final Pattern VERSION = Pattern.compile("^(\\d{1,9})\\.(\\d{1,9})\\.(\\d{1,9})(-.+)?$");
-    private static final String VERSION_RESOURCE = "META-INF/data-prism/version.properties";
 
-    /** Where the running library's version comes from; a bean of this package-private type lets a test drive it. */
-    @FunctionalInterface
-    interface LibraryVersion {
-        /** The version, or null when unknown. */
-        String get();
-    }
+    private static final String CASE_SETTING = "dataprism.security-policy.case-authorisation";
+    private static final String ALLOWED_CLIENTS_SETTING = "dataprism.security-policy.allowed-clients";
+    private static final String CLIENT_ALLOWLIST_SETTING = "dataprism.security-policy.client-allowlist";
 
     /**
-     * The version embedded at build time in this library's own resource; null when missing, unreadable or
-     * present more than once on the class path (another file of that name could decide the gate).
-     */
-    static String embeddedVersion() {
-        return embeddedVersion(SecurityWiring.class.getClassLoader());
-    }
-
-    static String embeddedVersion(ClassLoader loader) {
-        try {
-            if (loader == null) {
-                return null;
-            }
-            List<URL> urls = Collections.list(loader.getResources(VERSION_RESOURCE));
-            if (urls.size() != 1) {
-                return null;
-            }
-            try (InputStream in = urls.get(0).openStream()) {
-                Properties properties = new Properties();
-                properties.load(in);
-                String version = properties.getProperty("version");
-                return version == null ? null : version.strip();
-            }
-        } catch (IOException | RuntimeException e) {
-            return null;
-        }
-    }
-
-    /**
-     * True unless the version is a parseable explicit {@code -SNAPSHOT}, or a release below 0.8.0. A null,
-     * unparseable or oversized version is forbidden: fail closed.
-     */
-    static boolean fallbackForbidden(String version) {
-        if (version == null) {
-            return true;
-        }
-        Matcher m = VERSION.matcher(version);
-        if (!m.matches()) {
-            return true;
-        }
-        if ("-SNAPSHOT".equals(m.group(4))) {
-            return false;
-        }
-        return Integer.parseInt(m.group(1)) > 0 || Integer.parseInt(m.group(2)) >= 8;
-    }
-
-    /**
-     * Once every singleton exists, checks the outcome rather than the wiring: with one deployer
-     * {@link CaseAuthorizer} or {@link ClientAllowlist} bean, every {@link ScopeResolver} or
-     * {@link AuthorizationService} in the context, the defaults included, must use it. It compares
-     * instances, not names, so a same-named or FactoryBean-produced replacement is seen as itself.
+     * Once every singleton exists, checks the outcome rather than the wiring: the {@link CaseAuthorizer} and
+     * {@link ClientAllowlist} that Spring injects must be held by every {@link ScopeResolver} or
+     * {@link AuthorizationService} in the context, the defaults included. It compares instances, not names, so a
+     * same-named or FactoryBean-produced replacement is seen as itself.
      */
     static final class BypassCheck implements SmartInitializingSingleton {
-        private final ListableBeanFactory beanFactory;
-        private final ObjectProvider<LibraryVersion> libraryVersion;
+        private final ConfigurableListableBeanFactory beanFactory;
 
-        BypassCheck(ListableBeanFactory beanFactory, ObjectProvider<LibraryVersion> libraryVersion) {
+        BypassCheck(ConfigurableListableBeanFactory beanFactory) {
             this.beanFactory = beanFactory;
-            this.libraryVersion = libraryVersion;
         }
 
         @Override
         public void afterSingletonsInstantiated() {
-            Map<String, CaseAuthorizer> authorizers = lookup(CaseAuthorizer.class, "CASE_AUTHORIZER", "CaseAuthorizer",
-                    "which check applies");
-            Map<String, ClientAllowlist> allowlists = lookup(ClientAllowlist.class, "CLIENT_ALLOWLIST",
-                    "ClientAllowlist", "which allowlist applies");
-            if (authorizers.isEmpty()
-                    && fallbackForbidden(libraryVersion.getIfAvailable(() -> SecurityWiring::embeddedVersion).get())) {
-                throw new DataPrismConfigurationException("MISSING_CASE_AUTHORIZER",
-                        "a CaseAuthorizer bean is required from 0.8.0; the token-trusted fallback is not "
-                                + "available in a release");
-            }
-            Collection<CaseAuthorizer> authorizerBeans = authorizers.values();
-            if (!authorizerBeans.isEmpty() && bypasses(all(ScopeResolver.class),
-                    resolver -> authorizerBeans.stream().anyMatch(resolver::usesCaseAuthorizer))) {
+            NamedBeanHolder<CaseAuthorizer> authorizer = resolve(CaseAuthorizer.class, "MISSING_CASE_AUTHORIZER",
+                    "no CaseAuthorizer bean is available, so a ScopeResolver that skips the default has none to "
+                            + "consult; supply a CaseAuthorizer bean, or set " + CASE_SETTING + "=token-trusted");
+            requireSingleton(authorizer.getBeanName(), "CASE_AUTHORIZER_BYPASSED", "CaseAuthorizer");
+            if (bypasses(all(ScopeResolver.class), resolver -> resolver.usesCaseAuthorizer(authorizer.getBeanInstance()))) {
                 throw new DataPrismConfigurationException("CASE_AUTHORIZER_BYPASSED",
                         "a ScopeResolver bean replaces the default and is not built with the CaseAuthorizer bean, "
                                 + "so that bean would never be consulted; construct your ScopeResolver with the "
                                 + "injected CaseAuthorizer bean, or remove your ScopeResolver");
             }
-            Collection<ClientAllowlist> allowlistBeans = allowlists.values();
-            if (!allowlistBeans.isEmpty() && bypasses(all(AuthorizationService.class),
-                    service -> allowlistBeans.stream().anyMatch(service::usesClientAllowlist))) {
+            NamedBeanHolder<ClientAllowlist> allowlist = resolve(ClientAllowlist.class, "MISSING_CLIENT_ALLOWLIST",
+                    "no ClientAllowlist bean is available, so an AuthorizationService that skips the default has "
+                            + "none to consult; supply a ClientAllowlist bean, or set " + ALLOWED_CLIENTS_SETTING
+                            + " or " + CLIENT_ALLOWLIST_SETTING + "=unrestricted");
+            requireSingleton(allowlist.getBeanName(), "CLIENT_ALLOWLIST_BYPASSED", "ClientAllowlist");
+            if (bypasses(all(AuthorizationService.class), service -> service.usesClientAllowlist(allowlist.getBeanInstance()))) {
                 throw new DataPrismConfigurationException("CLIENT_ALLOWLIST_BYPASSED",
                         "an AuthorizationService bean replaces the default and is not built with the ClientAllowlist "
                                 + "bean, so that bean would never be consulted; construct your AuthorizationService "
@@ -181,124 +103,76 @@ class SecurityWiring {
             }
         }
 
-        /** Every bean of the type, this context and its ancestors, as the defaults' unique lookups see them. */
+        /**
+         * The bean Spring injects for the type, ancestors included: the same resolution as the defaults'
+         * injection. Anything but "no injectable bean" is Spring's own error and propagates as raised.
+         */
+        private <T> NamedBeanHolder<T> resolve(Class<T> type, String missingCode, String missingMessage) {
+            try {
+                return beanFactory.resolveNamedBean(type);
+            } catch (NoUniqueBeanDefinitionException e) {
+                throw e;
+            } catch (NoSuchBeanDefinitionException e) {
+                throw new DataPrismConfigurationException(missingCode, missingMessage);
+            }
+        }
+
+        private void requireSingleton(String name, String code, String simpleName) {
+            if (!beanFactory.isSingleton(name)) {
+                throw new DataPrismConfigurationException(code, "the " + simpleName + " bean is not a singleton, "
+                        + "so no holder can be shown to hold it; define it as a singleton (or a scoped proxy)");
+            }
+        }
+
+        /** Every bean of the type, this context and its ancestors. */
         private <T> Collection<T> all(Class<T> type) {
             return BeanFactoryUtils.beansOfTypeIncludingAncestors(beanFactory, type, true, true).values();
-        }
-
-        /**
-         * One lookup for a deployer-supplied type, deciding with the resolution the defaults use: the candidates
-         * are the beans of the type, ancestors included, that are autowire candidates, which is what
-         * {@code getIfUnique} sees. More than one candidate refuses, as does a non-singleton one. Any other bean
-         * of the type is refused unless it is the {@code scopedTarget.*} twin of a genuine scoped proxy that is
-         * itself a candidate; a name alone proves nothing.
-         */
-        private <T> Map<String, T> lookup(Class<T> type, String codeStem, String simpleName, String applies) {
-            String[] all = BeanFactoryUtils.beanNamesForTypeIncludingAncestors(beanFactory, type, true, true);
-            Set<String> candidates = new LinkedHashSet<>();
-            for (String name : all) {
-                BeanDefinition definition = definitionOf(name);
-                if (definition == null || (definition.isAutowireCandidate() && isDefaultCandidate(definition))) {
-                    candidates.add(name);
-                }
-            }
-            List<String> others = new ArrayList<>();
-            for (String name : all) {
-                if (!candidates.contains(name) && !isGenuineScopedTarget(name, candidates)) {
-                    if (isOrphanScopedTarget(name)) {
-                        throw new DataPrismConfigurationException("AMBIGUOUS_" + codeStem,
-                                "a scoped-proxy " + simpleName + " in INTERFACES mode cannot be used; "
-                                        + simpleName + " is final, so use a singleton");
-                    }
-                    others.add(name);
-                }
-            }
-            if (others.size() == 1 && candidates.isEmpty()) {
-                throw new DataPrismConfigurationException("AMBIGUOUS_" + codeStem,
-                        "the only " + simpleName + " bean is not a default autowire candidate, so it would not be "
-                                + "injected; remove defaultCandidate = false or autowireCandidate = false");
-            }
-            if (!others.isEmpty()) {
-                throw ambiguous(codeStem, simpleName, applies);
-            }
-            if (candidates.size() > 1) {
-                throw ambiguous(codeStem, simpleName, applies);
-            }
-            for (String name : candidates) {
-                if (!beanFactory.isSingleton(name)) {
-                    throw new DataPrismConfigurationException("NON_SINGLETON_" + codeStem,
-                            "the " + simpleName + " bean is not a singleton; define it as a singleton, so that "
-                                    + "the check can be compared by identity");
-                }
-            }
-            Map<String, T> beans = new LinkedHashMap<>();
-            for (String name : candidates) {
-                beans.put(name, beanFactory.getBean(name, type));
-            }
-            return beans;
-        }
-
-        private static DataPrismConfigurationException ambiguous(String codeStem, String simpleName, String applies) {
-            return new DataPrismConfigurationException("AMBIGUOUS_" + codeStem,
-                    "more than one " + simpleName + " bean is defined; define exactly one, so that it is "
-                            + "unambiguous " + applies);
-        }
-
-        /** True for the target of a scoped proxy whose proxy bean is not itself of the looked-up type. */
-        private boolean isOrphanScopedTarget(String name) {
-            if (!ScopedProxyUtils.isScopedTarget(name)) {
-                return false;
-            }
-            BeanDefinition proxy = definitionOf(ScopedProxyUtils.getOriginalBeanName(name));
-            return proxy != null && ScopedProxyFactoryBean.class.getName().equals(proxy.getBeanClassName());
-        }
-
-        /** Spring's {@code defaultCandidate=false} hides a bean from unqualified injection, as the defaults do. */
-        private static boolean isDefaultCandidate(BeanDefinition definition) {
-            return !(definition instanceof AbstractBeanDefinition abstractDefinition)
-                    || abstractDefinition.isDefaultCandidate();
-        }
-
-        private boolean isGenuineScopedTarget(String name, Set<String> candidates) {
-            if (!ScopedProxyUtils.isScopedTarget(name)) {
-                return false;
-            }
-            String original = ScopedProxyUtils.getOriginalBeanName(name);
-            BeanDefinition proxy = definitionOf(original);
-            return candidates.contains(original) && proxy != null
-                    && ScopedProxyFactoryBean.class.getName().equals(proxy.getBeanClassName());
-        }
-
-        /** The definition of the named bean in this factory or the nearest ancestor holding it; null if none. */
-        private BeanDefinition definitionOf(String name) {
-            BeanFactory current = beanFactory;
-            while (current != null) {
-                BeanFactory factory = current instanceof ConfigurableApplicationContext context
-                        ? context.getBeanFactory() : current;
-                if (factory instanceof ConfigurableListableBeanFactory configurable
-                        && configurable.containsBeanDefinition(name)) {
-                    return configurable.getBeanDefinition(name);
-                }
-                current = current instanceof HierarchicalBeanFactory hierarchical
-                        ? hierarchical.getParentBeanFactory() : null;
-            }
-            return null;
         }
     }
 
     @Lazy(false)
     @Bean
-    static BypassCheck dataPrismSecurityBypassCheck(ListableBeanFactory beanFactory,
-            ObjectProvider<LibraryVersion> libraryVersion) {
-        return new BypassCheck(beanFactory, libraryVersion);
+    static BypassCheck dataPrismSecurityBypassCheck(ConfigurableListableBeanFactory beanFactory) {
+        return new BypassCheck(beanFactory);
     }
 
     /**
      * True when any instance, ours included, does not use the deployer's bean. This is a consistency check on
-     * the outcome: whatever the lookups decided, the resolver or service in use must hold the deployer's bean.
+     * the outcome: whatever the injection decided, the resolver or service in use must hold the deployer's bean.
      */
     private static <T> boolean bypasses(Collection<T> instances, Predicate<T> usesDeployersBean) {
         return instances.stream().anyMatch(instance -> !usesDeployersBean.test(instance));
+    }
+
+    /** True when the {@code allowed-clients} or {@code client-allowlist} setting defines the allowlist. */
+    static final class ClientAllowlistSettings implements Condition {
+        @Override
+        public boolean matches(ConditionContext context, AnnotatedTypeMetadata metadata) {
+            return SecurityPolicyProperties.decisionsFrom(context.getEnvironment()).clientAllowlistSet();
+        }
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "dataprism.security-policy", name = "case-authorisation",
+            havingValue = SecurityPolicyProperties.TOKEN_TRUSTED)
+    CaseAuthorizer dataPrismCaseAuthorizer() {
+        LOG.warn("{}={}: the case claim in the token is trusted without assignment checks. Supply a CaseAuthorizer "
+                + "bean instead of this setting for a real deployment.", CASE_SETTING,
+                SecurityPolicyProperties.TOKEN_TRUSTED);
+        return CaseAuthorizer.tokenTrusted();
+    }
+
+    @Bean
+    @Conditional(ClientAllowlistSettings.class)
+    ClientAllowlist dataPrismClientAllowlist(DataPrismProperties properties) {
+        SecurityPolicyProperties policy = properties.getSecurityPolicy();
+        if (policy.unrestricted()) {
+            LOG.warn("{}={}: every client is allowed. List the allowed clients in {}, or supply a ClientAllowlist "
+                    + "bean, for a real deployment.", CLIENT_ALLOWLIST_SETTING,
+                    SecurityPolicyProperties.UNRESTRICTED, ALLOWED_CLIENTS_SETTING);
+            return ClientAllowlist.unrestricted();
+        }
+        return ClientAllowlist.of(Set.copyOf(policy.getAllowedClients()));
     }
 
     @Bean
@@ -314,10 +188,15 @@ class SecurityWiring {
     @ConditionalOnMissingBean
     AuthorizationService dataPrismAuthorizationService(SecurityPolicy policy, DataPrismProperties properties,
             ObjectProvider<ClientAllowlist> allowlist) {
-        ClientAllowlist clients = allowlist.getIfUnique();
-        if (clients == null) {
-            LOG.warn("No ClientAllowlist bean is defined: every client is allowed. Supply a ClientAllowlist bean.");
-            clients = ClientAllowlist.unrestricted();
+        ClientAllowlist clients;
+        try {
+            clients = allowlist.getObject();
+        } catch (NoUniqueBeanDefinitionException e) {
+            throw e;
+        } catch (NoSuchBeanDefinitionException e) {
+            throw new DataPrismConfigurationException("MISSING_CLIENT_ALLOWLIST",
+                    "no ClientAllowlist bean is available; supply a ClientAllowlist bean, or set "
+                            + ALLOWED_CLIENTS_SETTING + " or " + CLIENT_ALLOWLIST_SETTING + "=unrestricted");
         }
         return new AuthorizationService(policy, properties.getPrivacy().getProfile(),
                 PrivacyScopeType.INVESTIGATION, clients);
@@ -327,11 +206,15 @@ class SecurityWiring {
     @ConditionalOnMissingBean
     ScopeResolver dataPrismScopeResolver(PseudonymisationVersion version, DataPrismProperties properties,
             ObjectProvider<CaseAuthorizer> caseAuthorizer) {
-        CaseAuthorizer authorizer = caseAuthorizer.getIfUnique();
-        if (authorizer == null) {
-            LOG.warn("No CaseAuthorizer bean is defined: the case claim in the token is trusted without "
-                    + "assignment checks. Supply a CaseAuthorizer bean.");
-            authorizer = CaseAuthorizer.tokenTrusted();
+        CaseAuthorizer authorizer;
+        try {
+            authorizer = caseAuthorizer.getObject();
+        } catch (NoUniqueBeanDefinitionException e) {
+            throw e;
+        } catch (NoSuchBeanDefinitionException e) {
+            throw new DataPrismConfigurationException("MISSING_CASE_AUTHORIZER",
+                    "no CaseAuthorizer bean is available; supply a CaseAuthorizer bean, or set "
+                            + CASE_SETTING + "=token-trusted");
         }
         PurposeValidator purposes = new PurposeValidator(Set.copyOf(properties.getSecurityPolicy().getPurposes()));
         return new ScopeResolver(version, properties.getPrivacy().getScopeLifetime(), purposes, authorizer);
