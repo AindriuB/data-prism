@@ -14,6 +14,8 @@ import io.github.aindriub.dataprism.oversight.ApprovalRequest;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest.Kind;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest.Status;
 import io.github.aindriub.dataprism.oversight.ApprovalStore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -72,10 +74,11 @@ import java.util.function.Supplier;
  */
 public final class HazelcastApprovalStore implements ApprovalStore {
 
+    private static final Logger log = LoggerFactory.getLogger(HazelcastApprovalStore.class);
+
     /**
      * How long an entry we mark expired stays visible, so a late approver sees EXPIRED.
      */
-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(HazelcastApprovalStore.class);
     private static final Duration DEFAULT_RETENTION = Duration.ofMinutes(1);
 
     private final PrivacyCluster cluster;
@@ -577,12 +580,12 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         boolean claim = false;
         try {
             slot = leavePending(stored.request(), stored.token(), deadlineNanos);
-        } catch (PrivacyRefusedException failed) {
+        } catch (RuntimeException failed) {
             refused = failed;
         }
         try {
             claim = releaseClaim(stored.request().approvalId(), key, stored.token(), deadlineNanos);
-        } catch (PrivacyRefusedException failed) {
+        } catch (RuntimeException failed) {
             refused = refused != null ? refused : failed;
         }
         if (refused != null) {

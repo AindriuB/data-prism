@@ -105,14 +105,19 @@ final class StalledInsert {
 
     /**
      * Makes every call of {@code method} on the map {@code mapName} throw
-     * {@link com.hazelcast.core.HazelcastInstanceNotActiveException} once armed, as a member that is shutting down
-     * does: a cluster fault that is not an {@link IllegalArgumentException}.
+     * {@link com.hazelcast.splitbrainprotection.SplitBrainProtectionException} once armed, as a map whose
+     * split-brain protection lost its quorum does.
      */
     StalledInsert lostQuorum(String mapName, String method) {
         lostQuorum.add(mapName + ":" + method);
         return this;
     }
 
+    /**
+     * Makes every call of {@code method} on the map {@code mapName} throw
+     * {@link com.hazelcast.core.HazelcastInstanceNotActiveException} once armed, as a member that is shutting down
+     * does: a cluster fault that is not an {@link IllegalArgumentException}.
+     */
     StalledInsert inactive(String mapName, String method) {
         inactive.add(mapName + ":" + method);
         return this;

@@ -2,6 +2,7 @@ package io.github.aindriub.dataprism.hazelcast;
 
 import com.hazelcast.core.EntryView;
 import com.hazelcast.map.IMap;
+import com.hazelcast.splitbrainprotection.SplitBrainProtectionException;
 import io.github.aindriub.dataprism.core.metrics.Metric;
 import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
 import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
@@ -14,6 +15,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.Duration;
@@ -30,6 +33,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.Stream;
 
 import static io.github.aindriub.dataprism.hazelcast.TestMembers.NOW;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -266,28 +270,62 @@ class ApprovalBoundedCleanupTest {
                 .containsKey(TestMembers.SCOPE_KEYS.claim("k-1"))).isFalse();
     }
 
-    @Test
-    void forgetWhoseSlotReleaseFailsWithAClusterFaultThrowsTheRefusalNotATimeout() {
-        StalledInsert injector = StalledInsert.passive().inactive(PrivacyCluster.APPROVAL_PENDING_MAP, "executeOnKey");
+    /** The cluster faults a release can meet: a member shutting down, and a lost split-brain quorum. */
+    static Stream<Arguments> clusterFaults() {
+        return Stream.of(
+                Arguments.of("inactive", ClusterOperationRefusedException.class),
+                Arguments.of("lostQuorum",
+                        SplitBrainProtectionException.class));
+    }
+
+    private static StalledInsert fault(String kind, String map, String method) {
+        StalledInsert injector = StalledInsert.passive();
+        return kind.equals("inactive") ? injector.inactive(map, method) : injector.lostQuorum(map, method);
+    }
+
+    @ParameterizedTest
+    @MethodSource("clusterFaults")
+    void forgetWhoseSlotReleaseFailsWithAClusterFaultThrowsItAndStillReleasesTheClaim(String kind,
+            Class<? extends Throwable> expected) {
+        StalledInsert injector = fault(kind, PrivacyCluster.APPROVAL_PENDING_MAP, "executeOnKey");
         var faulty = new HazelcastApprovalStore(injector.over(members[0]), TIMEOUT, metrics);
         faulty.create(request("e-1", "scope-e", "alice"), 5);
         injector.arm();
 
-        assertThatThrownBy(() -> faulty.forgetScope("scope-e"))
-                .isInstanceOf(ClusterOperationRefusedException.class);
+        assertThatThrownBy(() -> faulty.forgetScope("scope-e")).isInstanceOf(expected);
         assertThat(metrics.countOf(Metric.APPROVAL_RELEASE_SKIPPED)).isEqualTo(1);
+        assertThat(members[0].instance().getMap(PrivacyCluster.APPROVAL_ID_MAP)
+                .containsKey(TestMembers.SCOPE_KEYS.claim("e-1"))).isFalse();
     }
 
-    @Test
-    void forgetWhoseGuardLockFailsWithAClusterFaultThrowsTheRefusalNotATimeout() {
-        StalledInsert injector = StalledInsert.passive().inactive(PrivacyCluster.APPROVAL_PENDING_MAP, "tryLock");
+    @ParameterizedTest
+    @MethodSource("clusterFaults")
+    void forgetWhoseGuardLockFailsWithAClusterFaultThrowsItAndStillReleasesTheClaim(String kind,
+            Class<? extends Throwable> expected) {
+        StalledInsert injector = fault(kind, PrivacyCluster.APPROVAL_PENDING_MAP, "tryLock");
         var faulty = new HazelcastApprovalStore(injector.over(members[0]), TIMEOUT, metrics);
         faulty.create(request("n-1", "scope-n", "alice"), 5);
         injector.arm();
 
-        assertThatThrownBy(() -> faulty.forgetScope("scope-n"))
-                .isInstanceOf(ClusterOperationRefusedException.class);
+        assertThatThrownBy(() -> faulty.forgetScope("scope-n")).isInstanceOf(expected);
         assertThat(metrics.countOf(Metric.APPROVAL_RELEASE_SKIPPED)).isEqualTo(1);
+        assertThat(members[0].instance().getMap(PrivacyCluster.APPROVAL_ID_MAP)
+                .containsKey(TestMembers.SCOPE_KEYS.claim("n-1"))).isFalse();
+    }
+
+    @Test
+    void endScopeWithALostQuorumOnThePendingMapThrowsItAndStillReleasesTheClaim() {
+        StalledInsert injector = StalledInsert.passive()
+                .lostQuorum(PrivacyCluster.APPROVAL_PENDING_MAP, "executeOnKey");
+        PrivacyCluster faultyCluster = injector.over(members[0]);
+        var faulty = new HazelcastApprovalStore(faultyCluster, TIMEOUT, metrics);
+        faulty.create(request("q-1", "scope-q", "alice"), 5);
+        injector.arm();
+
+        assertThatThrownBy(() -> new ScopeIdentityIndex(faultyCluster, metrics, TIMEOUT).endScope("scope-q"))
+                .isInstanceOf(SplitBrainProtectionException.class);
+        assertThat(members[0].instance().getMap(PrivacyCluster.APPROVAL_ID_MAP)
+                .containsKey(TestMembers.SCOPE_KEYS.claim("q-1"))).isFalse();
     }
 
     @Test
@@ -561,7 +599,7 @@ class ApprovalBoundedCleanupTest {
         injector.arm();
 
         assertThatThrownBy(() -> faulty.approve("p-1", "bob", NOW.plusSeconds(1)))
-                .isInstanceOf(com.hazelcast.splitbrainprotection.SplitBrainProtectionException.class);
+                .isInstanceOf(SplitBrainProtectionException.class);
         assertThat(store.find("p-1").orElseThrow().status()).isEqualTo(Status.PENDING);
     }
 }
