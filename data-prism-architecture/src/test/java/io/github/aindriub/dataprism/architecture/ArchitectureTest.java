@@ -810,6 +810,52 @@ class ArchitectureTest {
                 .hasMessageContaining("IndexOpenerReferenceFixture");
     }
 
+    /**
+     * T14, third rule: {@code SealedWrites.computing} opens a stored value with the member's sealer and hands the
+     * plaintext to the caller's step, so it is a second way to read a sealed entry. Outside the seal package no class
+     * may call or method-reference it. The allow-list is empty: tasks 224 and 226 add their own store class here
+     * when they need it, in the same change that adds the call.
+     */
+    private static final String SEALED_WRITES = "io.github.aindriub.dataprism.hazelcast.seal.SealedWrites";
+
+    @Test
+    void noClassOutsideTheSealPackageUsesSealedWritesComputing() {
+        onlyTheseOpen(SEALED_WRITES, "computing").check(CLASSES);
+    }
+
+    @Test
+    void computingRuleCatchesACall() {
+        JavaClasses fixture = new ClassFileImporter().importClasses(ComputingCallerFixture.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> onlyTheseOpen(SEALED_WRITES, "computing").check(fixture))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("ComputingCallerFixture");
+    }
+
+    @Test
+    void computingRuleCatchesAMethodReference() {
+        JavaClasses fixture = new ClassFileImporter().importClasses(ComputingReferenceFixture.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> onlyTheseOpen(SEALED_WRITES, "computing").check(fixture))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("ComputingReferenceFixture");
+    }
+
+    /** Reads a sealed entry through a step, as the rule above exists to stop. */
+    static final class ComputingCallerFixture {
+        Object call() {
+            return io.github.aindriub.dataprism.hazelcast.seal.SealedWrites.computing("m",
+                    current -> io.github.aindriub.dataprism.hazelcast.seal.SealedWrites.Plan.unchanged(null));
+        }
+    }
+
+    static final class ComputingReferenceFixture {
+        java.util.function.BiFunction<String, io.github.aindriub.dataprism.hazelcast.seal.SealedWrites.Step, Object>
+                reference() {
+            return io.github.aindriub.dataprism.hazelcast.seal.SealedWrites::computing;
+        }
+    }
+
     interface Opener {
         Object apply(String map, String key, String stored);
     }
