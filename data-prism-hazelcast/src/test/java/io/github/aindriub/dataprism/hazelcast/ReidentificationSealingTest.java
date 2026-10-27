@@ -216,6 +216,38 @@ class ReidentificationSealingTest {
         assertThat(caching.failures()).isEqualTo(1);
     }
 
+    @Test
+    void anIdentityEntryThatChangesOnceDuringTheWriteIsRetriedAndTheIndexIsStillWritten() {
+        start();
+        var caching = new CachingSyntheticValueSource(GENERATOR, cluster, metrics);
+        var runs = new java.util.concurrent.atomic.AtomicInteger();
+        String identityKey = cluster.scopeKeys().identity(SCOPE, SUBJECT, NS);
+        caching.beforeIdentityWrite = () -> {
+            if (runs.getAndIncrement() == 0) {
+                cluster.instance().<String, String>getMap(PrivacyCluster.IDENTITY_MAP).set(identityKey, "foreign");
+            }
+        };
+        String synthetic = caching.syntheticValue(SUBJECT, NS, scope());
+        assertThat(caching.failures()).isZero();
+        assertThat(cluster.instance().<String, String>getMap(PrivacyCluster.IDENTITY_MAP).get(identityKey))
+                .startsWith("dps1.");
+        assertThat(new ScopeIdentityIndex(cluster, metrics).subjectFor(SCOPE, NS, synthetic)).contains(SUBJECT);
+    }
+
+    @Test
+    void anIdentityEntryThatKeepsChangingIsACacheFailureAndWritesNoIndexEntry() {
+        start();
+        var caching = new CachingSyntheticValueSource(GENERATOR, cluster, metrics);
+        var counter = new java.util.concurrent.atomic.AtomicInteger();
+        String identityKey = cluster.scopeKeys().identity(SCOPE, SUBJECT, NS);
+        caching.beforeIdentityWrite = () -> cluster.instance().<String, String>getMap(PrivacyCluster.IDENTITY_MAP)
+                .set(identityKey, "foreign-" + counter.incrementAndGet());
+        String synthetic = caching.syntheticValue(SUBJECT, NS, scope());
+        assertThat(synthetic).isEqualTo(GENERATOR.syntheticValue(SUBJECT, NS, scope()));
+        assertThat(caching.failures()).isEqualTo(1);
+        assertThat(index().isEmpty()).isTrue();
+    }
+
     /** The sealer a member of this cluster registered: the one that wrote the entries. */
     private static final class ScopeIdentitySealer {
         final Sealer sealer;

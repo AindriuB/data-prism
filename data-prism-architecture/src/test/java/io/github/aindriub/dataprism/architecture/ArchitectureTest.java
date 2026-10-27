@@ -763,6 +763,21 @@ class ArchitectureTest {
     private static final String INDEX = ScopeIdentityIndex.class.getName();
     private static final String IDENTITY_CACHE = "io.github.aindriub.dataprism.hazelcast.CachingSyntheticValueSource";
 
+    private static final String SEAL_PACKAGE = "io.github.aindriub.dataprism.hazelcast.seal";
+
+    /** The seal package and its sub-packages only: a sibling such as {@code ...hazelcast.sealedstore} is outside. */
+    static boolean isSealPackage(String packageName) {
+        return packageName.equals(SEAL_PACKAGE) || packageName.startsWith(SEAL_PACKAGE + ".");
+    }
+
+    @Test
+    void theSealPackageExemptionDoesNotCoverSiblingPackages() {
+        org.assertj.core.api.Assertions.assertThat(isSealPackage(SEAL_PACKAGE)).isTrue();
+        org.assertj.core.api.Assertions.assertThat(isSealPackage(SEAL_PACKAGE + ".inner")).isTrue();
+        org.assertj.core.api.Assertions.assertThat(isSealPackage(SEAL_PACKAGE + "dstore")).isFalse();
+        org.assertj.core.api.Assertions.assertThat(isSealPackage("io.github.aindriub.dataprism.hazelcast")).isFalse();
+    }
+
     private static ArchRule onlyTheseOpen(String ownerName, String method, String... allowedOrigins) {
         return noClasses()
                 .that(new DescribedPredicate<JavaClass>("are not " + String.join("/", allowedOrigins)) {
@@ -770,7 +785,7 @@ class ArchitectureTest {
                     public boolean test(JavaClass origin) {
                         String top = origin.getName().split("\\$")[0];
                         return !List.of(allowedOrigins).contains(top)
-                                && !origin.getPackageName().startsWith("io.github.aindriub.dataprism.hazelcast.seal");
+                                && !isSealPackage(origin.getPackageName());
                     }
                 })
                 .should().accessTargetWhere(new DescribedPredicate<JavaAccess<?>>(
@@ -814,7 +829,7 @@ class ArchitectureTest {
      * T14, third rule: {@code SealedWrites.computing} opens a stored value with the member's sealer and hands the
      * plaintext to the caller's step, so it is a second way to read a sealed entry. Outside the seal package no class
      * may call or method-reference it. The allow-list is empty: tasks 224 and 226 add their own store class here
-     * when they need it, in the same change that adds the call.
+     * when they need it, in the same change that adds the call. Owner decision OD-225-1 (a), owner 2026-10-27.
      */
     private static final String SEALED_WRITES = "io.github.aindriub.dataprism.hazelcast.seal.SealedWrites";
 

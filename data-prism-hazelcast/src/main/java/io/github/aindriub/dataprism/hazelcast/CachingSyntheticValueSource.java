@@ -59,6 +59,8 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
     private final Sealer sealer;
     /** Runs between the read and the compare-and-set of an index write; a seam for tests. */
     Runnable beforeIndexWrite = () -> { };
+    /** Runs between the read and the compare-and-set of an identity write; a seam for tests. */
+    Runnable beforeIdentityWrite = () -> { };
 
     private final AtomicLong hits = new AtomicLong();
     private final AtomicLong misses = new AtomicLong();
@@ -152,28 +154,42 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
 
         ClusterLocks.acquire(identities, key, lockTimeout);
         try {
-            String existing = identities.get(key);
-            if (existing != null) {
+            // The entry can change between the read and the compare-and-set (eviction, expiry, a foreign write): it
+            // then reports false. Retry once on a fresh read; a second miss is a cache failure, and the index is not
+            // written for an identity entry that was not.
+            boolean done = false;
+            boolean conflictCounted = false;
+            for (int attempt = 0; attempt < 2 && !done; attempt++) {
+                String existing = identities.get(key);
+                beforeIdentityWrite.run();
+                if (existing == null) {
+                    done = Boolean.TRUE.equals(identities.executeOnKey(key,
+                            SealedWrites.compareAndSet(null, sealed, ttlMillis)));
+                    continue;
+                }
                 Optional<String> current = IdentityMaps.valueOf(
                         sealer.open(PrivacyCluster.IDENTITY_MAP, key, existing), canonical);
                 if (current.isPresent() && current.get().equals(generated)) {
                     // A concurrent writer stored the same value: nothing to do.
-                } else {
-                    if (current.isPresent()) {
-                        // Not a race: two threads deriving the same key derive the same value.
-                        // Something about the derivation changed while the scope was live.
-                        conflicts.incrementAndGet();
-                        metrics.increment(Metric.IDENTITY_COLLISION, namespace.name());
-                        LOG.warn("cached identity for a live scope disagrees with the generator; "
-                                + "the key, algorithm version or vocabulary changed mid-scope. "
-                                + "Overwriting so output stays a function of the generator, not the cache.");
-                    }
-                    // An entry that does not open was counted by the sealer; it is replaced all the same.
-                    requireWritten(identities.executeOnKey(key,
-                            SealedWrites.compareAndSet(existing, sealed, ttlMillis)));
+                    done = true;
+                    continue;
                 }
-            } else {
-                requireWritten(identities.executeOnKey(key, SealedWrites.compareAndSet(null, sealed, ttlMillis)));
+                if (current.isPresent() && !conflictCounted) {
+                    conflictCounted = true;
+                    // Not a race: two threads deriving the same key derive the same value.
+                    // Something about the derivation changed while the scope was live.
+                    conflicts.incrementAndGet();
+                    metrics.increment(Metric.IDENTITY_COLLISION, namespace.name());
+                    LOG.warn("cached identity for a live scope disagrees with the generator; "
+                            + "the key, algorithm version or vocabulary changed mid-scope. "
+                            + "Overwriting so output stays a function of the generator, not the cache.");
+                }
+                // An entry that does not open was counted by the sealer; it is replaced all the same.
+                done = Boolean.TRUE.equals(identities.executeOnKey(key,
+                        SealedWrites.compareAndSet(existing, sealed, ttlMillis)));
+            }
+            if (!done) {
+                throw new IllegalStateException("the identity entry kept changing");
             }
         } finally {
             ClusterLocks.release(identities, key);
@@ -203,12 +219,6 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
             } finally {
                 ClusterLocks.release(index, indexKey);
             }
-        }
-    }
-
-    private static void requireWritten(Boolean written) {
-        if (!Boolean.TRUE.equals(written)) {
-            throw new IllegalStateException("the identity entry changed during the write");
         }
     }
 
