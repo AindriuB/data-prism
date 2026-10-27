@@ -2,6 +2,7 @@ package io.github.aindriub.dataprism.hazelcast;
 
 import com.hazelcast.core.EntryView;
 import com.hazelcast.map.IMap;
+import com.hazelcast.splitbrainprotection.SplitBrainProtectionException;
 import io.github.aindriub.dataprism.core.metrics.Metric;
 import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
 import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
@@ -14,6 +15,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.Duration;
@@ -30,6 +33,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.Stream;
 
 import static io.github.aindriub.dataprism.hazelcast.TestMembers.NOW;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -267,11 +271,11 @@ class ApprovalBoundedCleanupTest {
     }
 
     /** The cluster faults a release can meet: a member shutting down, and a lost split-brain quorum. */
-    static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> clusterFaults() {
-        return java.util.stream.Stream.of(
-                org.junit.jupiter.params.provider.Arguments.of("inactive", ClusterOperationRefusedException.class),
-                org.junit.jupiter.params.provider.Arguments.of("lostQuorum",
-                        com.hazelcast.splitbrainprotection.SplitBrainProtectionException.class));
+    static Stream<Arguments> clusterFaults() {
+        return Stream.of(
+                Arguments.of("inactive", ClusterOperationRefusedException.class),
+                Arguments.of("lostQuorum",
+                        SplitBrainProtectionException.class));
     }
 
     private static StalledInsert fault(String kind, String map, String method) {
@@ -280,7 +284,7 @@ class ApprovalBoundedCleanupTest {
     }
 
     @ParameterizedTest
-    @org.junit.jupiter.params.provider.MethodSource("clusterFaults")
+    @MethodSource("clusterFaults")
     void forgetWhoseSlotReleaseFailsWithAClusterFaultThrowsItAndStillReleasesTheClaim(String kind,
             Class<? extends Throwable> expected) {
         StalledInsert injector = fault(kind, PrivacyCluster.APPROVAL_PENDING_MAP, "executeOnKey");
@@ -295,7 +299,7 @@ class ApprovalBoundedCleanupTest {
     }
 
     @ParameterizedTest
-    @org.junit.jupiter.params.provider.MethodSource("clusterFaults")
+    @MethodSource("clusterFaults")
     void forgetWhoseGuardLockFailsWithAClusterFaultThrowsItAndStillReleasesTheClaim(String kind,
             Class<? extends Throwable> expected) {
         StalledInsert injector = fault(kind, PrivacyCluster.APPROVAL_PENDING_MAP, "tryLock");
@@ -319,7 +323,7 @@ class ApprovalBoundedCleanupTest {
         injector.arm();
 
         assertThatThrownBy(() -> new ScopeIdentityIndex(faultyCluster, metrics, TIMEOUT).endScope("scope-q"))
-                .isInstanceOf(com.hazelcast.splitbrainprotection.SplitBrainProtectionException.class);
+                .isInstanceOf(SplitBrainProtectionException.class);
         assertThat(members[0].instance().getMap(PrivacyCluster.APPROVAL_ID_MAP)
                 .containsKey(TestMembers.SCOPE_KEYS.claim("q-1"))).isFalse();
     }
@@ -595,7 +599,7 @@ class ApprovalBoundedCleanupTest {
         injector.arm();
 
         assertThatThrownBy(() -> faulty.approve("p-1", "bob", NOW.plusSeconds(1)))
-                .isInstanceOf(com.hazelcast.splitbrainprotection.SplitBrainProtectionException.class);
+                .isInstanceOf(SplitBrainProtectionException.class);
         assertThat(store.find("p-1").orElseThrow().status()).isEqualTo(Status.PENDING);
     }
 }
