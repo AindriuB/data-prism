@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.audit.retention;
 
 import io.github.aindriub.dataprism.audit.AuditCheckpoint;
+import io.github.aindriub.dataprism.audit.AuditCheckpointSink;
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.audit.sink.SegmentedFileAuditSink;
@@ -150,5 +151,137 @@ class AuditRetentionSizeCapTest {
 
         assertThat(names(dir)).isEmpty();
         assertThat(second).isNotEmpty();
+    }
+
+    // -- finishing a partly deleted day --------------------------------------------------------------
+
+    /** A checkpoint sink that, like the file one, hands its retention anchors back. */
+    private static final class AnchorStore implements AuditCheckpointSink {
+        final List<AuditCheckpoint> all = new ArrayList<>();
+
+        @Override
+        public void record(AuditCheckpoint checkpoint) {
+            all.add(checkpoint);
+        }
+
+        @Override
+        public List<AuditCheckpoint> retentionAnchors() {
+            return List.copyOf(all);
+        }
+    }
+
+    /** Writes "writer@instant" entries in order through one sink, one record per segment (10-byte cap). */
+    private void writeMulti(Path dir, String... entries) throws IOException {
+        java.util.Map<String, AuditRecorder> byWriter = new java.util.HashMap<>();
+        Instant[] now = new Instant[1];
+        Clock clock = new Clock() {
+            @Override
+            public java.time.ZoneId getZone() {
+                return ZoneOffset.UTC;
+            }
+
+            @Override
+            public Clock withZone(java.time.ZoneId zone) {
+                return this;
+            }
+
+            @Override
+            public Instant instant() {
+                return now[0];
+            }
+        };
+        try (SegmentedFileAuditSink sink = new SegmentedFileAuditSink(dir, 10)) {
+            for (String entry : entries) {
+                String[] parts = entry.split("@");
+                now[0] = Instant.parse(parts[1]);
+                byWriter.computeIfAbsent(parts[0], w -> new AuditRecorder(sink, clock, w)).record("p", "c", "t",
+                        "E", "ps", "fp", "D", "s", "i", "CASE", "ALLOW", Set.of("a:ANSWERED"), Set.of(), "corr");
+            }
+        }
+    }
+
+    private static AuditRetention.Deleter failingOn(String name) {
+        return segment -> {
+            if (segment.getFileName().toString().equals(name)) {
+                throw new IOException("injected");
+            }
+            Files.delete(segment);
+        };
+    }
+
+    private void purgeFailingOn(AuditRetention retention, String name) {
+        retention.deleter = failingOn(name);
+        assertThatThrownBy(retention::purge).hasMessageContaining("AUDIT_RETENTION_DELETE_FAILED");
+    }
+
+    @Test
+    void aPartlyDeletedDayIsFinishedEvenWhenTheNextDayHasAlsoExpired() throws IOException {
+        Path dir = tempDir.resolve("seg");
+        writeMulti(dir, "w@2026-03-01T01:00:00Z", "w@2026-03-01T02:00:00Z", "w@2026-03-01T03:00:00Z",
+                "w@2026-03-02T01:00:00Z", "w@2026-09-09T01:00:00Z");
+        AnchorStore store = new AnchorStore();
+        purgeFailingOn(new AuditRetention(dir, Period.ofMonths(6), store, NOW), "audit-2026-03-01.0001.log");
+
+        new AuditRetention(dir, Period.ofMonths(6), store, NOW).purge();
+
+        assertThat(names(dir)).containsExactly("audit-2026-09-09.log");
+    }
+
+    @Test
+    void aPartlyDeletedDayWithTwoWritersIsFinishedToo() throws IOException {
+        Path dir = tempDir.resolve("seg");
+        writeMulti(dir, "w1@2026-03-01T01:00:00Z", "w2@2026-03-01T02:00:00Z", "w1@2026-03-01T03:00:00Z",
+                "w2@2026-03-01T04:00:00Z", "w1@2026-03-02T01:00:00Z", "w2@2026-03-02T02:00:00Z",
+                "w1@2026-09-09T01:00:00Z");
+        AnchorStore store = new AnchorStore();
+        purgeFailingOn(new AuditRetention(dir, Period.ofMonths(6), store, NOW), "audit-2026-03-01.0001.log");
+        assertThat(names(dir)).contains("audit-2026-03-01.log", "audit-2026-03-01.0001.log")
+                .doesNotContain("audit-2026-03-01.0002.log");
+
+        new AuditRetention(dir, Period.ofMonths(6), store, NOW).purge();
+
+        assertThat(names(dir)).containsExactly("audit-2026-09-09.log");
+    }
+
+    @Test
+    void aDayWhoseTailWasCutByHandWithNoMatchingAnchorStillRefuses() throws IOException {
+        Path dir = tempDir.resolve("seg");
+        writeMulti(dir, "w@2026-03-01T01:00:00Z", "w@2026-03-01T02:00:00Z", "w@2026-03-01T03:00:00Z",
+                "w@2026-03-02T01:00:00Z");
+        Files.delete(dir.resolve("audit-2026-03-01.0002.log"));
+
+        assertThatThrownBy(() -> new AuditRetention(dir, Period.ofMonths(6), new AnchorStore(), NOW).purge())
+                .hasMessageContaining("AUDIT_RETENTION_CHAIN_UNVERIFIED");
+        assertThat(names(dir)).contains("audit-2026-03-02.log");
+    }
+
+    @Test
+    void aPrefixWhereOnlyOneWriterIsAnchoredStillRefuses() throws IOException {
+        Path dir = tempDir.resolve("seg");
+        writeMulti(dir, "w1@2026-03-01T01:00:00Z", "w2@2026-03-01T02:00:00Z", "w1@2026-03-01T03:00:00Z",
+                "w2@2026-03-01T04:00:00Z", "w1@2026-03-02T01:00:00Z", "w2@2026-03-02T02:00:00Z");
+        AnchorStore store = new AnchorStore();
+        purgeFailingOn(new AuditRetention(dir, Period.ofMonths(6), store, NOW), "audit-2026-03-01.0001.log");
+        store.all.removeIf(a -> a.instanceId().startsWith("w2/") && a.segmentDate().equals(LocalDate.of(2026, 3, 1)));
+
+        assertThatThrownBy(() -> new AuditRetention(dir, Period.ofMonths(6), store, NOW).purge())
+                .hasMessageContaining("AUDIT_RETENTION_CHAIN_UNVERIFIED");
+        assertThat(names(dir)).contains("audit-2026-03-02.log", "audit-2026-03-02.0001.log");
+    }
+
+    @Test
+    void aDayFollowingAnEarlierDaysRecordedAnchorIsPurgedThroughTheAnchorStore() throws IOException {
+        Path dir = tempDir.resolve("seg");
+        writeMulti(dir, "w@2026-03-01T01:00:00Z", "w@2026-03-01T02:00:00Z", "w@2026-03-12T01:00:00Z",
+                "w@2026-03-12T02:00:00Z", "w@2026-09-09T01:00:00Z");
+        AnchorStore store = new AnchorStore();
+        new AuditRetention(dir, Period.ofMonths(6), store, NOW).purge();
+        assertThat(names(dir)).doesNotContain("audit-2026-03-01.log").contains("audit-2026-03-12.log");
+
+        Clock later = Clock.fixed(Instant.parse("2026-09-20T12:00:00Z"), ZoneOffset.UTC);
+        new AuditRetention(dir, Period.ofMonths(6), store, later).purge();
+
+        assertThat(names(dir)).containsExactly("audit-2026-09-09.log");
+        assertThat(store.all).hasSize(2);
     }
 }

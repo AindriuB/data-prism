@@ -152,6 +152,14 @@ public final class AuditRetention {
         }
 
         segments.sort(SegmentedFileAuditSink.SEGMENT_ORDER);
+        List<Path> deleted = new ArrayList<>();
+        // A day an earlier run anchored and then failed to finish deleting is finished first, unverified.
+        int partial = partlyPurgedDayLength(segments);
+        if (partial > 0) {
+            List<Path> rest = deleteDay(new ArrayList<>(segments.subList(0, partial)));
+            deleted.addAll(rest);
+            segments.subList(0, partial).clear();
+        }
         int verified = segments.size();
         String unverified = null;
         if (!segments.isEmpty()) {
@@ -214,10 +222,6 @@ public final class AuditRetention {
             }
         }
 
-        List<Path> deleted = new ArrayList<>();
-        // Within a day the highest index goes first. A failure then leaves a prefix of the day whose first
-        // record still follows the previous anchor, so the next purge finishes the day instead of reporting
-        // a false chain break over a day whose head was already deleted.
         int dayStart = 0;
         while (dayStart < verified) {
             LocalDate day = SegmentedFileAuditSink.segmentDate(segments.get(dayStart));
@@ -225,21 +229,81 @@ public final class AuditRetention {
             while (dayEnd < verified && day.equals(SegmentedFileAuditSink.segmentDate(segments.get(dayEnd)))) {
                 dayEnd++;
             }
-            for (int i = dayEnd - 1; i >= dayStart; i--) {
-                Path segment = segments.get(i);
-                try {
-                    deleter.delete(segment);
-                } catch (IOException e) {
-                    throw new RetentionException("AUDIT_RETENTION_DELETE_FAILED: could not delete " + segment, e);
-                }
-            }
-            deleted.addAll(segments.subList(dayStart, dayEnd));
+            deleted.addAll(deleteDay(segments.subList(dayStart, dayEnd)));
             dayStart = dayEnd;
         }
         if (unverified != null) {
             throw new RetentionException(unverified, null);
         }
         return deleted;
+    }
+
+    /**
+     * Deletes one day's segments, highest index first, and returns them in index order. If a delete fails,
+     * what remains is a prefix of the day. The next purge does not re-verify that prefix against its
+     * neighbours; it recognises it by the day's own anchors (see {@link #partlyPurgedDayLength}) and
+     * finishes it.
+     */
+    private List<Path> deleteDay(List<Path> day) {
+        for (int i = day.size() - 1; i >= 0; i--) {
+            try {
+                deleter.delete(day.get(i));
+            } catch (IOException e) {
+                throw new RetentionException("AUDIT_RETENTION_DELETE_FAILED: could not delete " + day.get(i), e);
+            }
+        }
+        return List.copyOf(day);
+    }
+
+    /**
+     * The number of leading segments that are the remains of a day an earlier purge anchored and part
+     * deleted, or 0. The oldest remaining expired day is such a day only if it has at least one parseable
+     * record and every writer in it has a recorded retention anchor for this very day whose sequence is
+     * beyond that writer's last remaining record: the day was verified and anchored in full before deletion
+     * began, and records after the remainder were deleted. Anything else, including a missing or other-day
+     * anchor, takes the normal verification path, which refuses what it cannot vouch for.
+     */
+    private int partlyPurgedDayLength(List<Path> segments) {
+        if (segments.isEmpty()) {
+            return 0;
+        }
+        LocalDate day = SegmentedFileAuditSink.segmentDate(segments.get(0));
+        int n = 0;
+        while (n < segments.size() && day.equals(SegmentedFileAuditSink.segmentDate(segments.get(n)))) {
+            n++;
+        }
+        Map<String, Long> lastRemaining = new LinkedHashMap<>();
+        for (Path segment : segments.subList(0, n)) {
+            List<String> lines;
+            try {
+                lines = Files.readAllLines(segment, java.nio.charset.StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                throw new RetentionException(ANCHOR_FAILED + ": could not read " + segment, e);
+            }
+            for (String line : lines) {
+                if (line.isEmpty()) {
+                    continue;
+                }
+                try {
+                    AuditEvent event = AuditRecordFormat.parse(line);
+                    lastRemaining.merge(event.instanceId(), event.sequence(), Math::max);
+                } catch (RuntimeException e) {
+                    // a torn fragment carries no chain position
+                }
+            }
+        }
+        if (lastRemaining.isEmpty()) {
+            return 0;
+        }
+        List<AuditCheckpoint> earlier = earlierAnchors();
+        for (Map.Entry<String, Long> w : lastRemaining.entrySet()) {
+            boolean anchored = earlier.stream().anyMatch(a -> a.instanceId().equals(w.getKey())
+                    && day.equals(a.segmentDate()) && a.sequence() > w.getValue());
+            if (!anchored) {
+                return 0;
+            }
+        }
+        return n;
     }
 
     private List<AuditCheckpoint> earlierAnchors() {
