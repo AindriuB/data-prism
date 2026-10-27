@@ -64,10 +64,23 @@ class KeyResolverArchitectureTest {
                 "io.github.aindriub.dataprism.mcp..", "io.github.aindriub.dataprism.connectors..");
     }
 
-    /** A class that is a {@code KeyResolver}, or an anonymous or nested class inside one. */
+    /**
+     * A class that is a {@code KeyResolver}, or any anonymous, local or nested class inside one, however
+     * deeply: a helper in a resolver is part of the resolver, whether or not it implements the interface.
+     */
     private static DescribedPredicate<JavaClass> keyResolverImplementation() {
-        return DescribedPredicate.describe("implements KeyResolver",
-                c -> c.isAssignableTo(KeyResolver.class) && !c.isEquivalentTo(KeyResolver.class));
+        return DescribedPredicate.describe("implements KeyResolver or is nested in an implementation",
+                KeyResolverArchitectureTest::isOrIsInsideAResolver);
+    }
+
+    private static boolean isOrIsInsideAResolver(JavaClass c) {
+        for (JavaClass current = c; current != null;
+                current = current.getEnclosingClass().orElse(null)) {
+            if (current.isAssignableTo(KeyResolver.class) && !current.isEquivalentTo(KeyResolver.class)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static ArchRule noDependencyOnResolvers(DescribedPredicate<JavaClass> origin) {
@@ -136,6 +149,22 @@ class KeyResolverArchitectureTest {
         }
     }
 
+    /** A resolver whose reach into re-identification is in a nested helper that is not itself a resolver. */
+    static final class FixtureResolverWithAHelper implements KeyResolver {
+        @Override public String name() { return "fixture"; }
+        @Override public KeyNamespace from() { return new KeyNamespace("a"); }
+        @Override public KeyNamespace to() { return new KeyNamespace("b"); }
+        @Override public Resolution resolve(String key, ResolutionContext context, int maxResults) {
+            return new Resolution(List.of(), false);
+        }
+
+        static final class Helper {
+            Object reach() {
+                return io.github.aindriub.dataprism.reidentification.ReidentificationService.class;
+            }
+        }
+    }
+
     static final class FixtureCleanResolver implements KeyResolver {
         @Override public String name() { return "fixture"; }
         @Override public KeyNamespace from() { return new KeyNamespace("a"); }
@@ -179,6 +208,15 @@ class KeyResolverArchitectureTest {
                 FixtureResolverReachingReidentification.class).hasViolation()).isTrue();
         assertThat(evaluate(noDependencyOnReidentification(keyResolverImplementation()),
                 FixtureCleanResolver.class).hasViolation()).isFalse();
+    }
+
+    @Test
+    void reidentificationRuleCoversAHelperNestedInAResolver() {
+        var imported = new ClassFileImporter().importClasses(FixtureResolverWithAHelper.class,
+                FixtureResolverWithAHelper.Helper.class);
+        assertThat(keyResolverImplementation().test(imported.get(FixtureResolverWithAHelper.Helper.class))).isTrue();
+        assertThat(noDependencyOnReidentification(keyResolverImplementation()).evaluate(imported).hasViolation())
+                .isTrue();
     }
 
     @Test
