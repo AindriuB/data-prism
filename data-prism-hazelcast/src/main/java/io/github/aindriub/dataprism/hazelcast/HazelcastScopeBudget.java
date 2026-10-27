@@ -29,7 +29,7 @@ import java.util.Objects;
  */
 public final class HazelcastScopeBudget implements ScopeBudget {
 
-    private static final Logger LOG = LoggerFactory.getLogger(HazelcastScopeBudget.class);
+    private static volatile Logger LOG = LoggerFactory.getLogger(HazelcastScopeBudget.class);
 
     private final PrivacyCluster cluster;
     private final Duration lockTimeout;
@@ -132,6 +132,13 @@ public final class HazelcastScopeBudget implements ScopeBudget {
         if (skipped > 0) {
             throw new ClusterLockTimeoutException();
         }
+    }
+
+    /** Routes this class's log lines to {@code replacement} until the returned handle is closed; for tests. */
+    static AutoCloseable captureTo(Logger replacement) {
+        Logger previous = LOG;
+        LOG = replacement;
+        return () -> LOG = previous;
     }
 
     private IMap<String, Integer> counts() {
