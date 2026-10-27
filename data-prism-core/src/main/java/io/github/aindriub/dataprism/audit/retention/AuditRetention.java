@@ -55,6 +55,14 @@ public final class AuditRetention {
     private final List<AuditChainKey> chainKeys;
     private final boolean allowUnkeyedWriters;
 
+    /** Deletes one segment; replaceable in tests to inject a delete failure. */
+    @FunctionalInterface
+    interface Deleter {
+        void delete(Path segment) throws IOException;
+    }
+
+    Deleter deleter = Files::delete;
+
     public AuditRetention(Path directory, Period retention, AuditCheckpointSink anchors, Clock clock) {
         this(directory, retention, anchors, clock, false);
     }
@@ -207,13 +215,26 @@ public final class AuditRetention {
         }
 
         List<Path> deleted = new ArrayList<>();
-        for (Path segment : segments.subList(0, verified)) {
-            try {
-                Files.delete(segment);
-            } catch (IOException e) {
-                throw new RetentionException("AUDIT_RETENTION_DELETE_FAILED: could not delete " + segment, e);
+        // Within a day the highest index goes first. A failure then leaves a prefix of the day whose first
+        // record still follows the previous anchor, so the next purge finishes the day instead of reporting
+        // a false chain break over a day whose head was already deleted.
+        int dayStart = 0;
+        while (dayStart < verified) {
+            LocalDate day = SegmentedFileAuditSink.segmentDate(segments.get(dayStart));
+            int dayEnd = dayStart;
+            while (dayEnd < verified && day.equals(SegmentedFileAuditSink.segmentDate(segments.get(dayEnd)))) {
+                dayEnd++;
             }
-            deleted.add(segment);
+            for (int i = dayEnd - 1; i >= dayStart; i--) {
+                Path segment = segments.get(i);
+                try {
+                    deleter.delete(segment);
+                } catch (IOException e) {
+                    throw new RetentionException("AUDIT_RETENTION_DELETE_FAILED: could not delete " + segment, e);
+                }
+            }
+            deleted.addAll(segments.subList(dayStart, dayEnd));
+            dayStart = dayEnd;
         }
         if (unverified != null) {
             throw new RetentionException(unverified, null);

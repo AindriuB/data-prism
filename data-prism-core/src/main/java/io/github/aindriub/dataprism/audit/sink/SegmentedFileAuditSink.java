@@ -36,7 +36,7 @@ public final class SegmentedFileAuditSink implements AuditSink, Closeable {
     private static final String PREFIX = "audit-";
     private static final String SUFFIX = ".log";
     private static final Pattern SEGMENT_NAME =
-            Pattern.compile("audit-(\\d{4}-\\d{2}-\\d{2})(?:\\.(\\d{4}))?\\.log");
+            Pattern.compile("audit-(\\d{4}-\\d{2}-\\d{2})(?:\\.((?!0000)\\d{4}))?\\.log");
 
     /**
      * Orders segment files by day, then by index within the day (the unindexed first segment before

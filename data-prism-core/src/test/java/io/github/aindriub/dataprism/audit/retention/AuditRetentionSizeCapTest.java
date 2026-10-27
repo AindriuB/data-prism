@@ -130,4 +130,25 @@ class AuditRetentionSizeCapTest {
         assertThat(anchors).singleElement().satisfies(a -> assertThat(a.segmentDate())
                 .isEqualTo(LocalDate.of(2026, 3, 1)));
     }
+
+    @Test
+    void aDeleteFailingPartwayThroughADayLeavesAPurgeableDayNotAFalseTamperReport() throws IOException {
+        Path dir = tempDir.resolve("seg");
+        write(dir, "2026-03-01T01:00:00Z", "2026-03-01T02:00:00Z", "2026-03-01T03:00:00Z");
+        AuditRetention failing = retention(dir);
+        failing.deleter = segment -> {
+            if (segment.getFileName().toString().equals("audit-2026-03-01.0001.log")) {
+                throw new IOException("injected");
+            }
+            Files.delete(segment);
+        };
+
+        assertThatThrownBy(failing::purge).isInstanceOf(AuditRetention.RetentionException.class)
+                .hasMessageContaining("AUDIT_RETENTION_DELETE_FAILED");
+
+        List<Path> second = retention(dir).purge();
+
+        assertThat(names(dir)).isEmpty();
+        assertThat(second).isNotEmpty();
+    }
 }

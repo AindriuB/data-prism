@@ -139,7 +139,7 @@ class SegmentedFileAuditSinkSizeCapTest {
                 .isEqualTo(LocalDate.of(2026, 3, 1));
         assertThat(SegmentedFileAuditSink.segmentDate(Path.of("audit-2026-03-01.0007.log")))
                 .isEqualTo(LocalDate.of(2026, 3, 1));
-        for (String other : new String[]{"audit-2026-03-01.7.log", "audit-2026-03-01.00007.log",
+        for (String other : new String[]{"audit-2026-03-01.7.log", "audit-2026-03-01.0000.log", "audit-2026-03-01.00007.log",
                 "audit-2026-03-01.0001.ndjson", "audit-2026-03-01.ndjson", "audit-2026-13-01.0001.log",
                 "audit-2026-03-01.0001.log.bak", "x-audit-2026-03-01.log"}) {
             assertThat(SegmentedFileAuditSink.segmentDate(Path.of(other))).as(other).isNull();
