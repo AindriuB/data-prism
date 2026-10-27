@@ -38,8 +38,8 @@ import java.util.stream.Stream;
  * and only part deleted is finished first. Its remaining segments are removed
  * only if, verified on their own (never joined to the next day), they show no break,
  * no structural anomaly and no unterminated tail, and each writer's first remaining
- * record starts at GENESIS or follows an earlier anchor; otherwise the normal path
- * refuses. This does not catch every edit to an anchored day: lines the verifier
+ * record starts at GENESIS or follows an earlier anchor; otherwise it takes the
+ * normal path. This does not catch every edit to an anchored day: lines the verifier
  * skips unhashed, such as interrupted-write fragments, are a known gap. A failure
  * after that names the finished day in its message.
  *
@@ -278,8 +278,10 @@ public final class AuditRetention {
      * proves records were deleted. A writer whose records all remain loses nothing. The anchors say the day
      * was once verified, not that its files are unchanged, so the remaining segments must then verify as
      * a chain on their own (never joined to the next day, under the same chain keys as the normal path)
-     * and each writer's first remaining record must start at GENESIS or follow an earlier anchor. Anything else, including a missing or other-day
-     * anchor, takes the normal verification path, which refuses what it cannot vouch for.
+     * with no break, no structural anomaly and no unterminated tail, and each writer's first remaining
+     * record must start at GENESIS or follow an earlier anchor. This is a check, not a proof: lines the
+     * verifier skips unhashed, such as interrupted-write fragments, are a known gap. Anything else,
+     * including a missing or other-day anchor, takes the normal verification path.
      */
     private int partlyPurgedDayLength(List<Path> segments) {
         if (segments.isEmpty()) {
