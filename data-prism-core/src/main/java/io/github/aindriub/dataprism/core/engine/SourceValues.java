@@ -33,9 +33,12 @@ public final class SourceValues {
     }
 
     public static Set<String> prohibited(Object source, FieldMetadataResolver resolver) {
-        Set<String> out = new HashSet<>();
-        JsonNode tree = SourceTree.of(source);
-        if (tree.isObject()) {
+        // The lenient walk: it throws nothing but a VirtualMachineError. Where the strict walk would refuse
+        // a position, every scalar under it is prohibited here, and that source's scrub refuses on its own.
+        SourceRecordWalker.Lenient walked = SourceRecordWalker.lenient(source);
+        Set<String> out = new HashSet<>(walked.prohibited());
+        JsonNode tree = walked.tree();
+        if (tree != null && tree.isObject()) {
             collect((ObjectNode) tree, source.getClass(), resolver, out, 0);
         }
         return out;

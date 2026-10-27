@@ -13,6 +13,7 @@ import tools.jackson.databind.ser.bean.BeanSerializerBase;
 import tools.jackson.databind.ser.impl.UnknownSerializer;
 
 import java.lang.reflect.GenericArrayType;
+import java.lang.reflect.Proxy;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.RecordComponent;
 import java.lang.reflect.TypeVariable;
@@ -26,12 +27,20 @@ import java.time.temporal.TemporalAmount;
 import java.util.Calendar;
 import java.util.Currency;
 import java.util.Date;
+import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Locale;
+import java.util.Spliterator;
 import java.util.TimeZone;
 import java.util.UUID;
 import java.util.Set;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicMarkableReference;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicReferenceArray;
+import java.util.concurrent.atomic.AtomicStampedReference;
+import java.util.stream.BaseStream;
 
 /**
  * The shape a source model may have: a record, whose components are records, enums, JDK value
@@ -66,6 +75,24 @@ public final class SourceModels {
     /** A record at array level two or deeper: inside a collection or array that is itself inside one. */
     public static final String NESTED_COLLECTION_OF_RECORD_CODE = "SOURCE_MODEL_NESTED_COLLECTION_OF_RECORD";
 
+    /** A non-null record value at a position whose declared type is not exactly that record class. */
+    public static final String RECORD_NOT_DECLARED_CODE = "SOURCE_MODEL_RECORD_NOT_DECLARED";
+
+    /** A record class whose fields the engine may not read (a named module that does not open its package). */
+    public static final String NOT_READABLE_CODE = "SOURCE_MODEL_NOT_READABLE";
+
+    /** A {@code JsonNode} that is not made of Jackson's own node classes, exactly. */
+    public static final String FOREIGN_NODE_CODE = "SOURCE_MODEL_FOREIGN_NODE";
+
+    /** A built record node whose property names are not exactly the record's component names. */
+    public static final String TREE_NOT_COMPONENT_EXACT_CODE = "SOURCE_TREE_NOT_COMPONENT_EXACT";
+
+    /** A read of the source value threw. */
+    public static final String VALUE_READ_FAILED_CODE = "SOURCE_VALUE_READ_FAILED";
+
+    /** A source value nested beyond the walker's depth bound. */
+    public static final String TOO_DEEP_CODE = "TOO_DEEP";
+
     private SourceModels() {
     }
 
@@ -99,14 +126,8 @@ public final class SourceModels {
      * serializer, enums, and Jackson tree nodes pass.
      */
     static void refuseSerializer(Class<?> type, ValueSerializer<?> serializer) {
-        if (type.isRecord()) {
-            if (type.getTypeParameters().length > 0) {
-                throw genericRefusal(null, type);
-            }
-            refuseForeignProperties(type, serializer);
-            return;
-        }
-        if (JsonNode.class.isAssignableFrom(type) || type.getName().startsWith("tools.jackson.")) {
+        // A record is judged by the walk (generic, readable) and by refuseForeignProperties, called directly.
+        if (type.isRecord() || JsonNode.class.isAssignableFrom(type)) {
             return;
         }
         boolean gettersRead = serializer instanceof BeanSerializerBase || serializer instanceof UnknownSerializer;
@@ -155,7 +176,7 @@ public final class SourceModels {
     /** A user class that is not a record or an enum, however its serializer is supplied. */
     static void refuseUserClass(Class<?> type) {
         if (!type.isArray() && !type.isRecord() && !platform(type) && !isEnum(type) && !JsonNode.class.isAssignableFrom(type)
-                && !type.getName().startsWith("tools.jackson.")) {
+                && !SourceTree.fromJacksonDatabind(type)) {
             throw refusal(type);
         }
     }
@@ -213,9 +234,62 @@ public final class SourceModels {
         return c.isEnum() || (c.getSuperclass() != null && c.getSuperclass().isEnum());
     }
 
-    private static boolean platform(Class<?> c) {
+    /**
+     * The JDK-class test: loaded by the bootstrap or platform loader, not a dynamic proxy class (every
+     * method of a proxy runs the caller's handler, and a proxy for JDK interfaces can be defined by the
+     * bootstrap loader) and not hidden (a lambda, which wraps a function this class cannot read).
+     */
+    static boolean platform(Class<?> c) {
         ClassLoader loader = c.getClassLoader();
-        return loader == null || loader == ClassLoader.getPlatformClassLoader();
+        return (loader == null || loader == ClassLoader.getPlatformClassLoader())
+                && !Proxy.isProxyClass(c) && !c.isHidden();
+    }
+
+    /**
+     * A JDK class that holds another object, or can be consumed once: refused at startup by declared
+     * type and at scrub time by runtime class. {@code Optional} is unwrapped by the walker and is not one.
+     */
+    static boolean referenceOrSingleUse(Class<?> c) {
+        return AtomicReference.class.isAssignableFrom(c)
+                || AtomicReferenceArray.class.isAssignableFrom(c)
+                || AtomicStampedReference.class.isAssignableFrom(c)
+                || AtomicMarkableReference.class.isAssignableFrom(c)
+                || java.lang.ref.Reference.class.isAssignableFrom(c)
+                || ThreadLocal.class.isAssignableFrom(c)
+                || Future.class.isAssignableFrom(c)
+                || BaseStream.class.isAssignableFrom(c)
+                || Iterator.class.isAssignableFrom(c)
+                || Spliterator.class.isAssignableFrom(c)
+                || Enumeration.class.isAssignableFrom(c);
+    }
+
+    static boolean isOptional(Class<?> c) {
+        return c == java.util.Optional.class || c == java.util.OptionalInt.class
+                || c == java.util.OptionalLong.class || c == java.util.OptionalDouble.class;
+    }
+
+    /** A refusal with {@link #CODE} that names the class's simple name only, at {@code path}. */
+    static PrivacyRefusedException refusalAt(Class<?> type, String path) {
+        return new PrivacyRefusedException(CODE, path, simpleName(type) + " is not a record; source models must be records");
+    }
+
+    /**
+     * The one rule for "may this class be a leaf", shared by startup (on declared classes) and the
+     * walker (on runtime classes): a JDK class that is not a container, a holder, a single-use type or a
+     * record, that the reader would not write through getters, and that the inspecting reader does not
+     * write with a container, reference or bean serializer. {@code Path} is a leaf; a {@code ServiceLoader}
+     * is not.
+     */
+    static boolean leafClass(Class<?> c) {
+        if (c.isPrimitive()) {
+            return true;
+        }
+        if (!platform(c) || c.isRecord() || (c.isArray() && c != byte[].class && c != char[].class)
+                || Throwable.class.isAssignableFrom(c) || referenceOrSingleUse(c)
+                || java.util.Collection.class.isAssignableFrom(c) || java.util.Map.class.isAssignableFrom(c)) {
+            return false;
+        }
+        return !SourceTree.writtenAsStructure(c);
     }
 
     /**
@@ -231,6 +305,10 @@ public final class SourceModels {
                     throw genericRefusal(where, c);
                 }
                 if (seen.add(c)) {
+                    if (!SourceRecordWalker.readable(c)) {
+                        throw new PrivacyRefusedException(NOT_READABLE_CODE, "$", at(where) + simpleName(c)
+                                + " cannot be read: its package is not opened to the engine");
+                    }
                     // Components first, so a refusal names the component; then ask the reader to
                     // build it: the serializer modifier compares its properties.
                     for (RecordComponent component : c.getRecordComponents()) {
@@ -245,6 +323,9 @@ public final class SourceModels {
                 }
             } else if (c.isEnum() && objectShaped(c)) {
                 throw refusal(c);
+            } else if (referenceOrSingleUse(c)) {
+                // AtomicReference, Future, ThreadLocal, a Stream or an Iterator: by declared type, interfaces too.
+                throw refusal(c);
             } else if (Throwable.class.isAssignableFrom(c)
                     || (!allowedLeaf(c) && !c.isInterface() && c != Object.class)) {
                 throw refusal(c);
@@ -252,6 +333,12 @@ public final class SourceModels {
                     && !JsonNode.class.isAssignableFrom(c)) {
                 // A JDK class read by getters (java.awt.Point) is found out by asking the reader.
                 SourceTree.refuseIfReadByGetters(c);
+                // The leaf rule the walker applies to a runtime value of this class, so a model that starts
+                // never fails every request on a leaf type. Containers and optionals are walked, not leaves.
+                if (!java.util.Collection.class.isAssignableFrom(c) && !java.util.Map.class.isAssignableFrom(c)
+                        && !isOptional(c) && !leafClass(c)) {
+                    throw refusal(c);
+                }
             }
         } else if (type instanceof ParameterizedType p) {
             if (p.getRawType() instanceof Class<?> raw) {
@@ -374,10 +461,10 @@ public final class SourceModels {
                 || JsonNode.class.isAssignableFrom(c)) {
             return true;
         }
-        // A JDK type is one the platform defines, whatever its package (a TimeZone is a sun.* class).
-        ClassLoader loader = c.getClassLoader();
-        return loader == null || loader == ClassLoader.getPlatformClassLoader()
-                || c.getName().startsWith("tools.jackson.");
+        // A JDK type is one the platform defines, whatever its package (a TimeZone is a sun.* class). A name
+        // is not ownership: a user class in a tools.jackson package is refused, and a Jackson class that
+        // is not a JsonNode is not delegated.
+        return platform(c);
     }
 
     /** The simple name; an anonymous or hidden class has none, so its name without the package stands in. */

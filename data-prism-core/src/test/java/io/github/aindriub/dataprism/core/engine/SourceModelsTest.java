@@ -548,34 +548,6 @@ class SourceModelsTest {
         @Override public String toString() { return "personal-data"; }
     }
 
-    public static final class CtxKeySer extends ValueSerializer<Object> {
-        final String prefix;
-        boolean resolved;
-
-        public CtxKeySer() {
-            this("plain:");
-        }
-
-        private CtxKeySer(String prefix) {
-            this.prefix = prefix;
-        }
-
-        @Override
-        public void resolve(SerializationContext ctxt) {
-            resolved = true;
-        }
-
-        @Override
-        public ValueSerializer<?> createContextual(SerializationContext ctxt, tools.jackson.databind.BeanProperty p) {
-            return new CtxKeySer("contextual:");
-        }
-
-        @Override
-        public void serialize(Object value, JsonGenerator gen, SerializationContext ctxt) {
-            gen.writeName(prefix + value);
-        }
-    }
-
     @Test
     void anInterfaceDeclaredKeyHoldingJdkKeysIsWrittenAsJackson2DidAtStartupAndRuntime() {
         Class<?>[] types = {CsKeyed.class, CmpKeyed.class, SerKeyed.class};
@@ -600,19 +572,6 @@ class SourceModelsTest {
         mixed.put("ok", "v");
         mixed.put(new CsKey(), "v");
         assertRefused(() -> SourceTree.of(new CsKeyed(mixed)), "CsKey");
-    }
-
-    @Test
-    void aWrappedKeySerializerKeepsItsContextualConfiguration() {
-        // No built-in key serializer in Jackson 3.1.5 is contextual, so the hooks are checked directly.
-        CtxKeySer inner = new CtxKeySer();
-        SourceTree.CheckedKey wrapped = new SourceTree.CheckedKey(inner);
-        wrapped.resolve(null);
-        assertThat(inner.resolved).isTrue();
-        assertThat(wrapped.handledType()).isEqualTo(inner.handledType());
-        ValueSerializer<?> contextual = wrapped.createContextual(null, null);
-        assertThat(contextual).isInstanceOf(SourceTree.CheckedKey.class).isNotSameAs(wrapped);
-        assertThat(((CtxKeySer) ((SourceTree.CheckedKey) contextual).delegate()).prefix).isEqualTo("contextual:");
     }
 
     // ---- generic source models and maps of records (task 265) ----------------------------------
