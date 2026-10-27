@@ -481,6 +481,7 @@ Surface: `DataPrismConfigurationException` / `PrivacyClusterRefusal` at context 
 | `MISSING_SOURCE_ADAPTER` | shipped | 0.1.0 | spring-boot-autoconfigure:DataPrismContractValidator.java:60 | yes |  |
 | `MODEL_DESCRIPTOR_FILE_NOT_FOUND` | shipped | 0.1.0 | spring-boot-autoconfigure:PrivacyEngineWiring.java:87 | no |  |
 | `MODEL_DESCRIPTOR_FILE_UNREADABLE` | shipped | 0.1.0 | spring-boot-autoconfigure:PrivacyEngineWiring.java:91 | no |  |
+| `MODEL_DESCRIPTOR_RESOLVER_REPLACED` | proposed | 0.8 | spring-boot-autoconfigure:PrivacyEngineWiring.java | no | `dataprism.privacy.descriptor-file` is set and a `FieldMetadataResolver` bean other than the one built from it exists, or a `JsonTreeScrubbingEngine` bean does not use that resolver and its descriptors. Compared by instance after unwrapping AOP proxies; the message names the property only. Task 271. |
 | `NON_STRING_CONFIG_SCALAR` | shipped | 0.6.0 | core:StrictYaml.java:52 | yes |  |
 | `NO_REIDENTIFICATION_APPROVER` | shipped | 0.4.0 | spring-boot-autoconfigure:DataPrismPropertiesValidator.java:392 | yes |  |
 | `NULL_LIKE_CONFIG_SCALAR` | shipped | 0.6.0 | core:StrictYaml.java:56 | yes |  |

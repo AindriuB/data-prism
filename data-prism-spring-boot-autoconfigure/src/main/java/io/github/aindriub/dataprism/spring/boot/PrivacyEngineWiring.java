@@ -21,11 +21,15 @@ import io.github.aindriub.dataprism.pseudonymisation.vocabulary.VocabularyRegist
 import io.github.aindriub.dataprism.validation.LlmResponseValidator;
 import io.github.aindriub.dataprism.validation.RawValueLeakValidator;
 import io.github.aindriub.dataprism.validation.SensitivePatternValidator;
+import org.springframework.aop.framework.AopProxyUtils;
+import org.springframework.beans.factory.ListableBeanFactory;
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Primary;
 
 import java.io.IOException;
@@ -38,7 +42,69 @@ import java.util.Map;
 
 /** The pseudonymisation and scrubbing pipeline: clock, field metadata, vocabulary, keys, policy, scrubber. */
 @Configuration(proxyBeanMethods = false)
-class PrivacyEngineWiring {
+@Lazy(false)
+class PrivacyEngineWiring implements SmartInitializingSingleton {
+    private static final String RESOLVER_BEAN = "dataPrismFieldMetadataResolver";
+
+    private final ListableBeanFactory beanFactory;
+    private final DataPrismProperties properties;
+    /** The resolver {@link #dataPrismFieldMetadataResolver} built from the descriptor file, if it did. */
+    private volatile DescriptorFieldMetadataResolver builtResolver;
+
+    PrivacyEngineWiring(ListableBeanFactory beanFactory, DataPrismProperties properties) {
+        this.beanFactory = beanFactory;
+        this.properties = properties;
+    }
+
+    /** The one test for "the descriptor file is set": not null and not blank. */
+    private static boolean fileSet(DataPrismProperties properties) {
+        String file = properties.getPrivacy().getDescriptorFile();
+        return file != null && !file.isBlank();
+    }
+
+    /**
+     * With the file set, the only resolver and the only engines allowed are the ones built from it, compared
+     * by instance once every singleton exists, as {@code SecurityWiring.BypassCheck} does for its beans.
+     */
+    @Override
+    public void afterSingletonsInstantiated() {
+        if (!fileSet(properties)) {
+            return;
+        }
+        DescriptorFieldMetadataResolver built = builtResolver;
+        if (built == null) {
+            throw replaced();
+        }
+        String[] names = beanFactory.getBeanNamesForType(FieldMetadataResolver.class, true, true);
+        if (names.length != 1 || !RESOLVER_BEAN.equals(names[0]) || beanFactory.containsBean("&" + names[0])
+                || !beanFactory.isSingleton(names[0])
+                || unwrap(beanFactory.getBean(names[0])) != built) {
+            throw replaced();
+        }
+        for (JsonTreeScrubbingEngine engine : beanFactory.getBeansOfType(JsonTreeScrubbingEngine.class, true, true)
+                .values()) {
+            JsonTreeScrubbingEngine target = (JsonTreeScrubbingEngine) unwrap(engine);
+            if (unwrap(target.resolver()) != built || !target.descriptors().equals(built.descriptors())) {
+                throw replaced();
+            }
+        }
+    }
+
+    private static Object unwrap(Object bean) {
+        Object current = bean;
+        for (Object target = AopProxyUtils.getSingletonTarget(current); target != null;
+             target = AopProxyUtils.getSingletonTarget(current)) {
+            current = target;
+        }
+        return current;
+    }
+
+    private static DataPrismConfigurationException replaced() {
+        return new DataPrismConfigurationException("MODEL_DESCRIPTOR_RESOLVER_REPLACED",
+                "dataprism.privacy.descriptor-file is set but the FieldMetadataResolver bean is not the one built "
+                        + "from it, or an engine does not use it");
+    }
+
     @Bean @ConditionalOnMissingBean
     Clock dataPrismClock() { return Clock.systemUTC(); }
 
@@ -51,11 +117,13 @@ class PrivacyEngineWiring {
     @Bean @ConditionalOnMissingBean
     FieldMetadataResolver dataPrismFieldMetadataResolver(DataPrismProperties properties) {
         DefaultFieldMetadataResolver defaultResolver = new DefaultFieldMetadataResolver();
-        String descriptorFile = properties.getPrivacy().getDescriptorFile();
-        if (descriptorFile == null || descriptorFile.isBlank()) {
+        if (!fileSet(properties)) {
             return defaultResolver;
         }
-        return new DescriptorFieldMetadataResolver(defaultResolver, dataPrismModelDescriptors(descriptorFile));
+        DescriptorFieldMetadataResolver built = new DescriptorFieldMetadataResolver(defaultResolver,
+                dataPrismModelDescriptors(properties.getPrivacy().getDescriptorFile()));
+        builtResolver = built;
+        return built;
     }
 
     /**
@@ -155,7 +223,11 @@ class PrivacyEngineWiring {
 
     @Bean @ConditionalOnMissingBean
     JsonTreeScrubbingEngine dataPrismScrubber(FieldMetadataResolver metadata, PrivacyPolicyResolver policy,
-                                               SyntheticValueSource synthetics, ValueTokenSource tokens) { return new JsonTreeScrubbingEngine(metadata, policy, synthetics, tokens); }
+                                               SyntheticValueSource synthetics, ValueTokenSource tokens) {
+        DescriptorFieldMetadataResolver built = builtResolver;
+        Map<String, ModelDescriptor> descriptors = fileSet(properties) && built != null ? built.descriptors() : Map.of();
+        return new JsonTreeScrubbingEngine(metadata, policy, synthetics, tokens, descriptors);
+    }
 
     /**
      * Not {@code @ConditionalOnMissingBean}: this leak check must always run. An
