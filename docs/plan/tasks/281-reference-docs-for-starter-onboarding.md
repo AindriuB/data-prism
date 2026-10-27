@@ -25,6 +25,7 @@ Bring the reference documentation into line with what 273 to 279 changed, from t
 - The configured-JSON section (`docs/configuration.md:709-722`) says the mode is opted into with `-Dloader.path` and is never part of the base server. Keep that for the server, and add the embedded-starter case as 277 decides.
 - docs/conventions.md: British spelling, and plain prose without marketing words.
 - Never read `~/.m2/settings.xml`, `~/.m2/settings-security.xml`, `~/.gnupg` or any other credential file.
+- From the 2026-10-27 re-plan of 210 (owner decision 2; the client-allowlist part reverses the 2026-10-24 decision): from 0.8 a context with the starter refuses to start unless case authorisation and the client allowlist are each decided. That means a `CaseAuthorizer` bean or `dataprism.security-policy.case-authorisation: token-trusted` (else `MISSING_CASE_AUTHORIZER`), and a `ClientAllowlist` bean, `dataprism.security-policy.allowed-clients`, or `dataprism.security-policy.client-allowlist: unrestricted` (else `MISSING_CLIENT_ALLOWLIST`). The reference docs list both decisions among what a starter application must configure, and point to `docs/configuration.md` for them (210 documents them there).
 
 ## Acceptance
 - [ ] The group table and the property reference each say, per key, whether it is mandatory (no default; startup refuses without it) or optional, with its default or derivation. A short paragraph above the tables lists the mandatory set in one place.
