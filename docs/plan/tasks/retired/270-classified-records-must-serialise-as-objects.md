@@ -1,5 +1,12 @@
 # 270 — Fail closed when a classified record does not serialise as a plain object
 
+> **Retired 2026-10-27, not built. Superseded by 288, 289 and 290** (owner decision 1 of 2026-10-27: the engine builds the scrub tree itself instead of verifying what Jackson writes).
+> - 288 — the engine-owned walker that replaces `READER.valueToTree` for source records (`docs/plan/tasks/288-engine-builds-the-source-tree.md`).
+> - 289 — the describer follows the same plan; the "ambiguous shape" branch and the describe-side proofs go (`docs/plan/tasks/289-describe-from-declared-types-only.md`).
+> - 290 — startup refuses Jackson annotations on source models; docs, CHANGELOG and contract register (`docs/plan/tasks/290-refuse-jackson-annotations-on-source-models.md`).
+>
+> What survives from this brief: the repros under "The gap" (1 to 8, every variant) are 288's acceptance corpus and are cited from here; the component-exact tree check (288); `SourceValues.prohibited` never throwing for the new refusals (288); the fix list, rewritten for the new rule (290). OD-270-1 and OD-270-3 are superseded: their startup refusal becomes 290's annotation refusal. OD-270-2 (fix in 0.8.0 only, no 0.7.2) stands. The runtime serializer-verification design below (at 446dc216) is the documented fallback if 288's parity tests show unacceptable divergence. Nothing below is to be built.
+
 **Repo:** `.`
 **Release:** 0.8.0
 **Base branch:** `origin/main` once 248 and 271 have merged

@@ -2,7 +2,7 @@
 
 **Repo:** `.`
 **Release:** 0.8.0
-**Base branch:** `origin/main` once 248 has merged
+**Base branch:** `origin/wave/0.8-wave4`, where 248 is (re-planned 2026-10-27: PR #163 is held until 210, 288, 289 and 290 have merged into it, so 248 does not reach `main` first). One PR for this task, targeting `wave/0.8-wave4`; 290 depends on it.
 **Depends on:** 248 (adds the `JsonTreeScrubbingEngine(resolver, policies, synthetics, tokens, Map<String, ModelDescriptor> descriptors)` constructor)
 **Wave:** 5 (filed 2026-10-23)
 **Decisions:**
@@ -57,7 +57,9 @@ It follows the approach of 203's `BypassCheck` (`SecurityWiring.java`): remember
 
 ## Context
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PrivacyEngineWiring.java:51-59 (the resolver bean, which loads the file through `dataPrismModelDescriptors(descriptorFile)` at :84) and :156-158 (the engine bean).
-- `SecurityWiring.BypassCheck` (203, on the base branch): the identity pattern and its proxy unwrapping.
+- `SecurityWiring.BypassCheck` (203, on the base branch): the identity pattern. Corrected 2026-10-27: its proxy unwrapping was removed in 203's review round 12 (`unwrap` is gone on wave4), and 210 reduces `BypassCheck` further, so "unwrapped ... as `BypassCheck` does" above means: unwrap with Spring's `AopProxyUtils.getSingletonTarget`, repeatedly, in this task's own code.
+- From the 2026-10-27 re-plan (210, same wave): `DataPrismProperties` binds with `ignoreUnknownFields = false`, so this task's new test cannot set 210's properties before 210 lands, and after 210 lands a context with neither a `CaseAuthorizer` nor a `ClientAllowlist` decided refuses to start. Every context `ScrubberDescriptorWiringTest` starts therefore defines one `CaseAuthorizer` bean and one `ClientAllowlist` bean (`ClientAllowlist.unrestricted()` is enough). That starts on wave4 as it is and after 210, in either merge order.
+- From the 2026-10-27 re-plan: 270 is retired. Its successors 288 (the walker) and 289 (the describer) do not use the resolver or the descriptor map, so the edge from 270 to this task is gone; 290 keeps an edge to this task because both insert into `CHANGELOG.md` and the contract register.
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/descriptor/DescriptorFieldMetadataResolver.java:42-47: holds the validated, immutable map.
 - 249 makes the same change at the connectors' `javaFirst` engine (`ConfiguredJsonSourcesAutoConfiguration.java:177`). 249 builds `javaFirst` from the auto-configured engine bean's `resolver()` and `descriptors()` when the file is set; see 249.
 - `ModelDescriptorsConfigurationTest.java:56-57`: the `WebApplicationContextRunner` shape to copy.
@@ -107,6 +109,6 @@ It follows the approach of 203's `BypassCheck` (`SecurityWiring.java`): remember
 - Engines that are not Spring beans (built inside application code). The identity check cannot see them, and this brief does not claim to.
 - `DataPrismAssembly` in `data-prism-integration-tests`, which loads no descriptors.
 - Any other method of `PrivacyEngineWiring`, including `dataPrismSensitivePatternValidator` (208) and `dataPrismModelDescriptors`.
-- Any other part of `JsonTreeScrubbingEngine` (270 changes its scrub paths in wave 6).
-- `DataPrismContractValidator` and `PropertiesValidation` (270 changes them).
+- Any other part of `JsonTreeScrubbingEngine` (no other task edits it in this wave; 288 reaches the walker through the unchanged `SourceTree.of`).
+- `DataPrismContractValidator` and `PropertiesValidation` (no planned change since 270 was retired).
 - `describe_source` (250).
