@@ -35,14 +35,18 @@ import java.util.stream.Stream;
  * <p>Purge is deletion: the records are gone, and an anchor keeps only a
  * sequence and a hash. Anchors are written first, and if any anchor write
  * fails nothing is deleted, with one exception: a day an earlier purge anchored
- * and only part deleted is finished first (its remaining segments are removed
- * only after they verify as a chain on their own, never joined to the next day, and start where an
- * earlier anchor says they should). A failure after that names the finished day in its message.
+ * and only part deleted is finished first. Its remaining segments are removed
+ * only if, verified on their own (never joined to the next day), they show no break,
+ * no structural anomaly and no unterminated tail, and each writer's first remaining
+ * record starts at GENESIS or follows an earlier anchor; otherwise the normal path
+ * refuses. This does not catch every edit to an anchored day: lines the verifier
+ * skips unhashed, such as interrupted-write fragments, are a known gap. A failure
+ * after that names the finished day in its message.
  *
  * <p>Trust assumption: the retention anchor store is trusted. Anyone who can
  * write to it can vouch for a chain's start and can make a day look partly
  * purged; that was already so for the anchors that vouch for a chain's start.
- * A day recognised as partly purged is still verified before it is deleted.
+ * A day recognised as partly purged is still verified, within the limits above, before it is deleted.
  */
 public final class AuditRetention {
 
@@ -327,8 +331,8 @@ public final class AuditRetention {
             return 0;
         }
         // The anchors only say the day was once verified. The files may have been edited since, so the
-        // remainder must verify as a chain on its own (never joined to the next day) and start where it
-        // should before anything in it is deleted unread.
+        // remainder is verified on its own (never joined to the next day) before it is deleted. That is a
+        // check, not a proof: lines the verifier skips unhashed (interrupted-write fragments) are a known gap.
         List<Path> prefix = segments.subList(0, n);
         AuditChainVerifier.VerificationReport report;
         try {
@@ -336,9 +340,10 @@ public final class AuditRetention {
         } catch (IOException e) {
             throw new RetentionException(ANCHOR_FAILED + ": could not read the expiring segments", e);
         }
-        // A structural anomaly (a duplicate sequence, say) is a refusal here too: a clean partial deletion
-        // never leaves one, and a rewritten sequence number shows up as exactly that.
-        if (firstBadOffset(report) >= 0 || report.hasStructuralAnomaly()
+        // Refuse on any break, structural anomaly (a duplicate sequence, say: a rewritten sequence number
+        // shows up as one), unterminated tail (its last record is never hashed) or unanchored start. A clean
+        // partial deletion leaves none of them.
+        if (firstBadOffset(report) >= 0 || report.hasStructuralAnomaly() || report.tail().isPresent()
                 || firstUnanchoredStart(prefix, earlier) >= 0) {
             return 0;
         }

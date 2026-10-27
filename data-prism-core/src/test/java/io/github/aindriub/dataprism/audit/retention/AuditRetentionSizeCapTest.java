@@ -440,4 +440,24 @@ class AuditRetentionSizeCapTest {
 
         assertThat(names(dir)).contains("audit-2026-03-01.log", "audit-2026-03-01.0001.log");
     }
+
+    @Test
+    void aTamperedUnterminatedLastRecordInAPartlyDeletedPrefixIsRefusedAndKept() throws IOException {
+        Path dir = tempDir.resolve("seg");
+        writeMulti(dir, "w@2026-03-01T01:00:00Z", "w@2026-03-01T02:00:00Z", "w@2026-03-01T03:00:00Z",
+                "w@2026-03-02T01:00:00Z", "w@2026-09-09T01:00:00Z");
+        AnchorStore store = new AnchorStore();
+        purgeFailingOn(new AuditRetention(dir, Period.ofMonths(6), store, NOW), "audit-2026-03-01.0001.log");
+        assertThat(names(dir)).doesNotContain("audit-2026-03-01.0002.log");
+        Path last = dir.resolve("audit-2026-03-01.0001.log");
+        String tampered = Files.readString(last).replace("ALLOW", "DENY");
+        Files.writeString(last, tampered.substring(0, tampered.length() - 1), StandardCharsets.UTF_8);
+
+        assertThatThrownBy(() -> new AuditRetention(dir, Period.ofMonths(6), store, NOW).purge())
+                .hasMessageContaining("AUDIT_RETENTION_CHAIN_UNVERIFIED");
+
+        // The partial path refuses. The normal path then refuses the next day, but it still purges the
+        // earlier day, because the verifier skips an interrupted-write fragment unhashed: the known gap.
+        assertThat(names(dir)).contains("audit-2026-03-02.log", "audit-2026-09-09.log");
+    }
 }
