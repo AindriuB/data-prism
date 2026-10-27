@@ -33,6 +33,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
 /**
@@ -245,7 +246,12 @@ class DescriptionConformsToScrubTest {
         var blobs = new ScrubPlanDescriberTest.Blobs("b-1", new byte[] {1, 2, 3},
                 new Object[][] {{"a", "b"}}, java.util.Collections.singletonList(new Object[] {"c"}));
         for (String profile : BOTH) {
-            assertConforms(new DefaultFieldMetadataResolver(), profile, holder, false);
+            // The walker ignores @JsonValue (task 288): Code is an object, which the scrub refuses as an
+            // unclassified structure where it used to read it as a scalar. 289 rewrites this case.
+            var engine = engine(new DefaultFieldMetadataResolver());
+            assertThatThrownBy(() -> engine.scrub(holder, ScrubPlanDescriberTest.context(profile)))
+                    .isInstanceOfSatisfying(io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException.class,
+                            e -> assertThat(e.code()).isEqualTo("UNCLASSIFIED_STRUCTURE"));
             assertConforms(new DefaultFieldMetadataResolver(), profile, blobs, false);
         }
     }
