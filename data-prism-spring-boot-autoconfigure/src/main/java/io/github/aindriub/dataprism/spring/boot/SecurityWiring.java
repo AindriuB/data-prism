@@ -143,10 +143,15 @@ class SecurityWiring {
         }
 
         /**
-         * When the settings define the bean, the resolved bean must be theirs and no other instance of the type
-         * may exist in this context or an ancestor. Judged on the real instances, so a bean declared as another
-         * type, or a FactoryBean with no object type, cannot slip past the preflight's type prediction. Only
-         * singletons already created are looked at; a bean of the settings' own name in an ancestor is theirs too.
+         * When the settings define the bean, the resolved bean must be theirs and no other already-created
+         * singleton of the type may exist in this context or an ancestor (a bean of the settings' own name in an
+         * ancestor is theirs too). Beans are judged by declared type ({@code getType}, which for a FactoryBean
+         * is {@code getObjectType()}), so nothing is created to be looked at; this catches a bean declared as
+         * another type that really is one. Only a bean whose type is unknown is created. A FactoryBean that
+         * misreports its type is not caught here, which is harmless: Spring injects by the same declared type,
+         * so its product is never injected by type, and wiring it by name is caught as BYPASSED. Accepted
+         * residual: a FactoryBean with a null object type has its product created whenever a setting is in
+         * use; if its {@code getObject()} throws, startup fails with that exception (fail closed).
          */
         private <T> boolean isOnlyInstance(NamedBeanHolder<T> resolved, Class<T> type, String ownName) {
             if (!ownName.equals(resolved.getBeanName())) {

@@ -170,7 +170,7 @@ class CaseAuthorisationConfigurationTest {
     }
 
     @Test
-    void a_non_singleton_factory_bean_is_not_asked_for_its_product_at_startup() {
+    void a_non_singleton_factory_bean_with_a_known_type_is_not_asked_for_its_product() {
         context.withPropertyValues(SETTING + "=token-trusted")
                 .withUserConfiguration(SecurityWiringTest.Base.class, Boom.class)
                 .run(result -> assertThat(result).hasNotFailed());

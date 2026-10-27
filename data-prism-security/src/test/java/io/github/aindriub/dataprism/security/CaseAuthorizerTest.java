@@ -17,10 +17,10 @@ class CaseAuthorizerTest {
         assertThat(CaseAuthorizer.tokenTrusted().isAuthorised(request)).isTrue();
     }
 
-    @org.junit.jupiter.api.Test
-    @org.junit.jupiter.api.DisplayName("tokenTrusted returns the same instance on every call")
+    @Test
+    @DisplayName("tokenTrusted returns the same instance on every call")
     void tokenTrustedIsOneInstance() {
-        org.assertj.core.api.Assertions.assertThat(CaseAuthorizer.tokenTrusted())
+        assertThat(CaseAuthorizer.tokenTrusted())
                 .isSameAs(CaseAuthorizer.tokenTrusted());
     }
 }
