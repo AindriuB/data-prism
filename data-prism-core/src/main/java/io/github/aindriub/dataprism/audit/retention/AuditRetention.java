@@ -34,7 +34,15 @@ import java.util.stream.Stream;
  *
  * <p>Purge is deletion: the records are gone, and an anchor keeps only a
  * sequence and a hash. Anchors are written first, and if any anchor write
- * fails nothing is deleted.
+ * fails nothing is deleted, with one exception: a day an earlier purge anchored
+ * and only part deleted is finished first (its remaining segments are removed
+ * without re-verifying them, because the day was verified and anchored before
+ * its deletion began). A failure after that names the finished day in its message.
+ *
+ * <p>Trust assumption: the retention anchor store is trusted. Anyone who can
+ * write to it can authorise the deletion of a day it anchors, unverified; that
+ * was already so for the anchors that vouch for a chain's start, and finishing
+ * a partly purged day does not widen who can write them.
  */
 public final class AuditRetention {
 
@@ -155,11 +163,15 @@ public final class AuditRetention {
         List<Path> deleted = new ArrayList<>();
         // A day an earlier run anchored and then failed to finish deleting is finished first, unverified.
         int partial = partlyPurgedDayLength(segments);
+        String finishedDay = null;
         if (partial > 0) {
+            finishedDay = SegmentedFileAuditSink.segmentDate(segments.get(0)).toString();
             List<Path> rest = deleteDay(new ArrayList<>(segments.subList(0, partial)));
             deleted.addAll(rest);
             segments.subList(0, partial).clear();
         }
+        String deletedNote = finishedDay == null ? "nothing was deleted"
+                : "nothing was deleted beyond finishing the partly purged day " + finishedDay;
         int verified = segments.size();
         String unverified = null;
         if (!segments.isEmpty()) {
@@ -185,7 +197,7 @@ public final class AuditRetention {
         }
 
         if (verified > 0) {
-            int unanchored = firstUnanchoredStart(segments.subList(0, verified), earlierAnchors());
+            int unanchored = firstUnanchoredStart(segments.subList(0, verified), earlierAnchors(deletedNote));
             if (unanchored >= 0) {
                 verified = unanchored;
                 unverified = CHAIN_UNVERIFIED + ": a writer's first expiring record in "
@@ -218,7 +230,7 @@ public final class AuditRetention {
                 anchors.record(anchor);
             } catch (RuntimeException e) {
                 throw new RetentionException(ANCHOR_FAILED + ": could not record the retention anchor for writer "
-                        + anchor.instanceId() + " at sequence " + anchor.sequence() + "; nothing was deleted", e);
+                        + anchor.instanceId() + " at sequence " + anchor.sequence() + "; " + deletedNote, e);
             }
         }
 
@@ -296,7 +308,7 @@ public final class AuditRetention {
         if (lastRemaining.isEmpty()) {
             return 0;
         }
-        List<AuditCheckpoint> earlier = earlierAnchors();
+        List<AuditCheckpoint> earlier = earlierAnchors("nothing was deleted");
         boolean deletionProven = false;
         for (Map.Entry<String, Long> w : lastRemaining.entrySet()) {
             long best = -1;
@@ -316,12 +328,12 @@ public final class AuditRetention {
         return n;
     }
 
-    private List<AuditCheckpoint> earlierAnchors() {
+    private List<AuditCheckpoint> earlierAnchors(String deletedNote) {
         try {
             return anchors.retentionAnchors();
         } catch (RuntimeException e) {
             throw new RetentionException(CHAIN_UNVERIFIED + ": could not read the earlier retention anchors, so "
-                    + "the start of the expiring chain cannot be checked; nothing was deleted", e);
+                    + "the start of the expiring chain cannot be checked; " + deletedNote, e);
         }
     }
 

@@ -315,4 +315,63 @@ class AuditRetentionSizeCapTest {
         assertThat(names(dir)).contains("audit-2026-03-01.log", "audit-2026-03-01.0001.log",
                 "audit-2026-03-01.0002.log");
     }
+
+    /** An anchor store that can be armed to throw when it is asked to record an anchor for one day. */
+    private static final class FlakyAnchorStore implements AuditCheckpointSink {
+        final List<AuditCheckpoint> all = new ArrayList<>();
+        LocalDate failFor;
+
+        @Override
+        public void record(AuditCheckpoint checkpoint) {
+            if (checkpoint.segmentDate().equals(failFor)) {
+                throw new IllegalStateException("injected anchor failure");
+            }
+            all.add(checkpoint);
+        }
+
+        @Override
+        public List<AuditCheckpoint> retentionAnchors() {
+            return List.copyOf(all);
+        }
+    }
+
+    @Test
+    void anAnchorFailureAfterFinishingAPartlyDeletedDayNamesTheDayItFinished() throws IOException {
+        Path dir = tempDir.resolve("seg");
+        writeMulti(dir, "w@2026-03-01T01:00:00Z", "w@2026-03-01T02:00:00Z", "w@2026-03-01T03:00:00Z",
+                "w@2026-03-02T01:00:00Z");
+        FlakyAnchorStore store = new FlakyAnchorStore();
+        purgeFailingOn(new AuditRetention(dir, Period.ofMonths(6), store, NOW), "audit-2026-03-01.0001.log");
+        // The earlier run anchored both days, so the second must be refused a *new* anchor to fail.
+        store.all.removeIf(a -> a.segmentDate().equals(LocalDate.of(2026, 3, 2)));
+        store.failFor = LocalDate.of(2026, 3, 2);
+
+        assertThatThrownBy(() -> new AuditRetention(dir, Period.ofMonths(6), store, NOW).purge())
+                .hasMessageContaining("AUDIT_RETENTION_ANCHOR_FAILED")
+                .hasMessageContaining("nothing was deleted beyond finishing the partly purged day 2026-03-01");
+
+        assertThat(names(dir)).containsExactly("audit-2026-03-02.log");
+    }
+
+    @Test
+    void anIntactAnchoredDayThatWasTamperedWithBeforeTheNextRunIsRefusedNotFinished() throws IOException {
+        Path dir = tempDir.resolve("seg");
+        writeMulti(dir, "w@2026-03-01T01:00:00Z", "w@2026-03-01T02:00:00Z", "w@2026-03-01T03:00:00Z",
+                "w@2026-03-02T01:00:00Z");
+        FlakyAnchorStore store = new FlakyAnchorStore();
+        store.failFor = LocalDate.of(2026, 3, 2);
+        assertThatThrownBy(() -> new AuditRetention(dir, Period.ofMonths(6), store, NOW).purge())
+                .hasMessageContaining("AUDIT_RETENTION_ANCHOR_FAILED");
+        assertThat(names(dir)).hasSize(4);
+        assertThat(store.all).hasSize(1); // day 1 is anchored, nothing is deleted
+        Path middle = dir.resolve("audit-2026-03-01.0001.log");
+        Files.writeString(middle, Files.readString(middle).replace("ALLOW", "DENY"), StandardCharsets.UTF_8);
+        store.failFor = null;
+
+        assertThatThrownBy(() -> new AuditRetention(dir, Period.ofMonths(6), store, NOW).purge())
+                .hasMessageContaining("AUDIT_RETENTION_CHAIN_UNVERIFIED");
+
+        assertThat(names(dir)).contains("audit-2026-03-01.log", "audit-2026-03-01.0001.log",
+                "audit-2026-03-01.0002.log");
+    }
 }
