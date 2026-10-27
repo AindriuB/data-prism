@@ -239,8 +239,9 @@ final class SourceRecordWalker {
             if (!guarded(pos, optional::isPresent)) {
                 return nodes().nullNode();
             }
+            enter(pos);
             return build(guarded(pos, optional::get), new Pos(pos.path(), optionalArgument(pos.declared()),
-                    pos.depth(), pos.level(), pos.inMap()));
+                    pos.depth() + 1, pos.level(), pos.inMap()));
         }
         if (c == OptionalInt.class) {
             OptionalInt optional = (OptionalInt) v;
@@ -505,7 +506,9 @@ final class SourceRecordWalker {
         JsonNodeFactory f = nodes();
         Class<?> c = n.getClass();
         if (c == ObjectNode.class) {
-            enterAt(depth);
+            if (depth >= MAX_DEPTH) {
+                return tooDeep(foreign);
+            }
             ObjectNode copy = f.objectNode();
             Iterator<?> iterator = guarded(pos, () -> ((ObjectNode) n).properties().iterator());
             while (true) {
@@ -533,7 +536,9 @@ final class SourceRecordWalker {
             return copy;
         }
         if (c == ArrayNode.class) {
-            enterAt(depth);
+            if (depth >= MAX_DEPTH) {
+                return tooDeep(foreign);
+            }
             ArrayNode copy = f.arrayNode();
             Iterator<?> iterator = guarded(pos, () -> ((ArrayNode) n).iterator());
             while (true) {
@@ -592,6 +597,15 @@ final class SourceRecordWalker {
             return f.binaryNode(n.binaryValue().clone());
         }
         return foreignNode(pos, foreign);
+    }
+
+    /** Past the bound: strict refuses; the lenient copy keeps what it has and drops only this position. */
+    private JsonNode tooDeep(boolean[] foreign) {
+        if (!lenient) {
+            enterAt(MAX_DEPTH);
+        }
+        foreign[0] = true;
+        return null;
     }
 
     private JsonNode foreignNode(Pos pos, boolean[] foreign) {
@@ -681,7 +695,9 @@ final class SourceRecordWalker {
                 }
                 cause = cause.getCause();
             }
-        } catch (RuntimeException | StackOverflowError e) {
+        } catch (VirtualMachineError e) {
+            throw e;
+        } catch (Throwable e) {
             // The chain could not be read: no refusal found.
         }
         return null;
@@ -710,7 +726,7 @@ final class SourceRecordWalker {
             } else if (c == Optional.class) {
                 Optional<?> optional = (Optional<?>) v;
                 if (optional.isPresent()) {
-                    collectAll(optional.get(), depth);
+                    collectAll(optional.get(), depth + 1);
                 }
             } else if (c == OptionalInt.class) {
                 OptionalInt optional = (OptionalInt) v;

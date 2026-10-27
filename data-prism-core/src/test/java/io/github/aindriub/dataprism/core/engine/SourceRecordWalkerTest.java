@@ -595,7 +595,7 @@ class SourceRecordWalkerTest {
 
         JsonNode read = SourceTree.of(tree);
         // Compared as text: the reference reader turns a BinaryNode into a POJONode, which equals only itself.
-        assertThat(read.toString()).isEqualTo(SourceTree.referenceTree(tree).toString());
+        assertThat(SourceRecordWalkerParityTest.sameTree(read, SourceTree.referenceTree(tree))).isTrue();
         assertThat(read.get("bytes").binaryValue()).containsExactly(1, 2, 3);
         assertThat(read.get("decimal").decimalValue()).isEqualTo(new BigDecimal("1.5"));
         assertThat(SourceTree.of(new WithNode(DecimalNode.valueOf(new BigDecimal("1.50")))).get("n"))
@@ -1431,5 +1431,15 @@ class SourceRecordWalkerTest {
                 () -> SourceTree.refuseIfReadByGetters(CyclicHolder.class));
         // Whether the exception reached the catch is Jackson's: writerFor's prefetch swallows it on 3.1.8.
         assertThat(CYCLES.get()).isPositive();
+    }
+
+    record OfEnum(Enum<?> e) {
+    }
+
+    @Test
+    @DisplayName("a declared Enum<?> component starts, and its value is written by name()")
+    void aDeclaredEnumIsAccepted() {
+        assertThatCode(() -> SourceModels.require(OfEnum.class)).doesNotThrowAnyException();
+        assertThat(SourceTree.of(new OfEnum(Plain.ALPHA)).get("e").asString()).isEqualTo("ALPHA");
     }
 }

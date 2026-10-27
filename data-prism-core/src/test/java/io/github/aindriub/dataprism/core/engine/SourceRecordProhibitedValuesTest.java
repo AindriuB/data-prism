@@ -442,4 +442,81 @@ class SourceRecordProhibitedValuesTest {
                         e -> assertThat(e.code()).isEqualTo("SOURCE_VALUE_READ_FAILED"));
         assertThat(within(new LazyThenSecret(lazy, EMAIL))).contains(EMAIL);
     }
+
+    // ---- review fixes ----------------------------------------------------------------------------
+
+    @LlmExposedModel
+    record Photo(@InternalIdentifier String id,
+                 @SensitiveData(classifications = DataClassification.CONTACT, namespace = PrivacyNamespace.EMAIL,
+                         suggestedAction = PrivacyAction.REDACT) byte[] photo) {
+    }
+
+    @Test
+    @DisplayName("a sensitive byte[] field puts its base64 text in the set and does not throw")
+    void aByteArrayFieldIsCollected() {
+        assertThat(within(new Photo("1", new byte[]{1, 2, 3}))).contains("AQID");
+        tools.jackson.databind.node.ObjectNode node = SourceTree.newObject();
+        node.put("photo", new byte[]{1, 2, 3});
+        assertThat(SourceValues.prohibited(node, new io.github.aindriub.dataprism.core.spi.FieldMetadataResolver() {
+            @Override
+            public List<io.github.aindriub.dataprism.core.model.FieldMetadata> resolve(Class<?> type) {
+                return new DefaultFieldMetadataResolver().resolve(Photo.class);
+            }
+        })).contains("AQID");
+    }
+
+    /** An exception whose getCause() throws an Error. */
+    static final class BadCause extends RuntimeException {
+        @Override
+        public synchronized Throwable getCause() {
+            throw new AssertionError("getCause");
+        }
+    }
+
+    @Test
+    @DisplayName("a getCause() that throws an Error is a read failure: of refuses, prohibited keeps the sibling")
+    void aThrowingGetCauseIsAReadFailure() {
+        var lazy = Collections.unmodifiableList(new ThrowingList(() -> {
+            throw new BadCause();
+        }));
+        var source = new LazyThenSecret(lazy, EMAIL);
+        assertThatThrownBy(() -> SourceTree.of(source)).isInstanceOfSatisfying(PrivacyRefusedException.class,
+                e -> assertThat(e.code()).isEqualTo("SOURCE_VALUE_READ_FAILED"));
+        assertThat(within(source)).contains(EMAIL);
+    }
+
+    private static Object nestedOptionals(int levels) {
+        Object value = "x";
+        for (int i = 0; i < levels; i++) {
+            value = Optional.of(value);
+        }
+        return value;
+    }
+
+    @Test
+    @DisplayName("200,000 nested Optionals are TOO_DEEP in of and do not overflow the lenient walk")
+    void nestedOptionalsAreBounded() {
+        var source = new Any("r", nestedOptionals(200_000));
+        assertThatThrownBy(() -> SourceTree.of(source)).isInstanceOfSatisfying(PrivacyRefusedException.class,
+                e -> assertThat(e.code()).isEqualTo("TOO_DEEP"));
+        assertThat(within(source)).isNotNull();
+    }
+
+    @LlmExposedModel
+    record WithNode(@InternalIdentifier String id,
+                    @SensitiveData(classifications = DataClassification.CONTACT, namespace = PrivacyNamespace.EMAIL,
+                            suggestedAction = PrivacyAction.REDACT) tools.jackson.databind.JsonNode n) {
+    }
+
+    @Test
+    @DisplayName("a JsonNode nested past the bound keeps its shallow scalars in the lenient walk")
+    void aDeepNodeKeepsItsShallowScalars() {
+        tools.jackson.databind.node.ObjectNode root = SourceTree.newObject();
+        root.put("email", EMAIL);
+        tools.jackson.databind.node.ObjectNode cursor = root.putObject("d");
+        for (int i = 0; i < 70; i++) {
+            cursor = cursor.putObject("d");
+        }
+        assertThat(within(new WithNode("1", root))).contains(EMAIL);
+    }
 }

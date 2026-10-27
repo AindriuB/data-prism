@@ -13,7 +13,6 @@ import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.model.PrivacyScopeType;
 import io.github.aindriub.dataprism.core.policy.PrivacyProfile;
 import com.sun.net.httpserver.HttpServer;
-import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.connectors.rest.ConfiguredJsonDataSourceAdapter;
 import io.github.aindriub.dataprism.connectors.rest.ConfiguredJsonScrubbingEngine;
 import io.github.aindriub.dataprism.connectors.rest.ConfiguredJsonSource;

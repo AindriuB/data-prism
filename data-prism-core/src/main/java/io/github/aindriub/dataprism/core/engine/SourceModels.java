@@ -325,7 +325,7 @@ public final class SourceModels {
                 // The leaf rule the walker applies to a runtime value of this class, so a model that starts
                 // never fails every request on a leaf type. Containers and optionals are walked, not leaves.
                 if (!java.util.Collection.class.isAssignableFrom(c) && !java.util.Map.class.isAssignableFrom(c)
-                        && !isOptional(c) && !leafClass(c)) {
+                        && !isOptional(c) && !Enum.class.isAssignableFrom(c) && !leafClass(c)) {
                     throw refusal(c);
                 }
             }

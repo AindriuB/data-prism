@@ -128,8 +128,8 @@ final class PerSourceHarness {
     /**
      * Refuses in scrub: the payload carries a property the model does not declare, and the default profile
      * fails the request on an unclassified field. The key is itself identifying-looking, as a payload key can be.
-     * A record source can no longer carry undeclared keys (task 288, OD-288-1 (a)), so this is a configured JSON
-     * source: the catalogue declares {@code id} and {@code badName}, and the body adds the stray key.
+     * A record source can no longer carry undeclared keys (task 288, OD-288-1 (a)), so this is an exposed
+     * tree: an {@code ObjectNode} root whose declared fields are {@code id} and {@code badName}, plus the stray key.
      */
     static DataSourceAdapter<?> scrubRefusing(String name) {
         ObjectNode body = SourceTree.newObject();

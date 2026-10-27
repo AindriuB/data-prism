@@ -113,8 +113,47 @@ class SourceRecordWalkerParityTest {
     private static void assertParity(Object value) {
         JsonNode walked = SourceTree.of(value);
         JsonNode reference = SourceTree.referenceTree(value);
-        // Compared as text: a byte[] leaf is a POJONode, which is equal only to a node holding the same array.
-        assertThat(walked.toString()).as(value.getClass().getSimpleName()).isEqualTo(reference.toString());
+        assertThat(sameTree(walked, reference)).as(value.getClass().getSimpleName() + "\n" + walked + "\n" + reference)
+                .isTrue();
+    }
+
+    /**
+     * Node equality, with two documented special cases: a byte[] leaf is a POJONode, which equals only itself,
+     * so two such nodes are equal when their arrays are; and the walker emits a copied BinaryNode where the
+     * reference emitted a POJONode(byte[]) inside a JsonNode, so those two are equal when their bytes are.
+     */
+    static boolean sameTree(JsonNode a, JsonNode b) {
+        byte[] left = bytesOf(a);
+        byte[] right = bytesOf(b);
+        if (left != null || right != null) {
+            return left != null && right != null && java.util.Arrays.equals(left, right);
+        }
+        if (a.isObject() && b.isObject()) {
+            List<String> names = new ArrayList<>(a.propertyNames());
+            if (!names.equals(new ArrayList<>(b.propertyNames()))) {
+                return false;
+            }
+            return names.stream().allMatch(n -> sameTree(a.get(n), b.get(n)));
+        }
+        if (a.isArray() && b.isArray()) {
+            if (a.size() != b.size()) {
+                return false;
+            }
+            for (int i = 0; i < a.size(); i++) {
+                if (!sameTree(a.get(i), b.get(i))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return a.equals(b);
+    }
+
+    private static byte[] bytesOf(JsonNode node) {
+        if (node instanceof tools.jackson.databind.node.POJONode pojo && pojo.getPojo() instanceof byte[] bytes) {
+            return bytes;
+        }
+        return node.isBinary() ? node.binaryValue() : null;
     }
 
     private static InetAddress inet(String value) {

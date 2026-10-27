@@ -112,6 +112,17 @@ public final class SourceValues {
 
     /** Every scalar under this node, so a sensitive collection contributes each element. */
     private static void addScalars(JsonNode node, Set<String> out) {
+        if (node instanceof tools.jackson.databind.node.POJONode pojo) {
+            // Only a byte[] leaf is expected; anything else records nothing rather than throwing.
+            if (pojo.getPojo() != null && pojo.getPojo().getClass() == byte[].class) {
+                out.add(java.util.Base64.getEncoder().encodeToString((byte[]) pojo.getPojo()));
+            }
+            return;
+        }
+        if (node.isBinary()) {
+            out.add(java.util.Base64.getEncoder().encodeToString(node.binaryValue()));
+            return;
+        }
         if (node.isValueNode()) {
             String text = node.asString();
             if (text != null && !text.isBlank()) {
