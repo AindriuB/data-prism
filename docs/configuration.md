@@ -315,7 +315,10 @@ own resolver or service is not inspected.
 A standalone-server deployment has no Java to write in the image. It supplies a `CaseAuthorizer` the way it supplies
 any reviewed extension: an extension jar on `loader.path`, as `data-prism-quickstart-extension` does for its
 identity resolver. The jar's `@Bean CaseAuthorizer` is then the only one, and the `case-authorisation` setting stays
-unset.
+unset. The published server image bakes `case-authorisation: token-trusted` and `client-allowlist: unrestricted`
+into `/app/config/application.yaml`, so with that image an extension jar or an `allowed-clients` list is refused as a
+conflict (`CASE_AUTHORISATION_CONFLICT`, `CLIENT_ALLOWLIST_CONFLICT`): override `/app/config/application.yaml`, or
+build your own image, so that only your decision is set.
 
 Data Prism checks that a decision was made, not what it decides. A bean that is itself
 `CaseAuthorizer.tokenTrusted()`, always answers `true`, or a `ClientAllowlist` that admits everyone, passes. A parent

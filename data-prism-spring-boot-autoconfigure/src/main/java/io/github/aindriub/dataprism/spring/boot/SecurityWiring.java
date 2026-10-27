@@ -152,6 +152,8 @@ class SecurityWiring {
          * so its product is never injected by type, and wiring it by name is caught as BYPASSED. Accepted
          * residual: a FactoryBean with a null object type has its product created whenever a setting is in
          * use; if its {@code getObject()} throws, startup fails with that exception (fail closed).
+         * A bean named {@code dataPrismCaseAuthorizer} or {@code dataPrismClientAllowlist} in an ancestor context
+         * is treated as the settings' own bean, the same name exemption {@code Preflights.hasOtherBean} applies.
          */
         private <T> boolean isOnlyInstance(NamedBeanHolder<T> resolved, Class<T> type, String ownName) {
             if (!ownName.equals(resolved.getBeanName())) {
