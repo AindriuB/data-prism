@@ -31,6 +31,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.beans.factory.FactoryBean;
 import org.springframework.beans.factory.config.BeanPostProcessor;
+import org.springframework.boot.LazyInitializationBeanFactoryPostProcessor;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.assertj.AssertableWebApplicationContext;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
@@ -104,6 +105,12 @@ class ScrubberDescriptorWiringTest {
         DataPrismConfigurationException refusal = (DataPrismConfigurationException) t;
         assertThat(refusal.code()).isEqualTo("MODEL_DESCRIPTOR_RESOLVER_REPLACED");
         assertThat(refusal.getMessage()).isEqualTo("MODEL_DESCRIPTOR_RESOLVER_REPLACED: " + MESSAGE);
+    }
+
+    /** The runner ignores {@code spring.main.lazy-initialization}, so the post-processor is added directly. */
+    private static WebApplicationContextRunner lazily(WebApplicationContextRunner runner) {
+        return runner.withInitializer(context -> context.addBeanFactoryPostProcessor(
+                new LazyInitializationBeanFactoryPostProcessor()));
     }
 
     private void refuses(Class<?> extra, String... properties) throws Exception {
@@ -231,12 +238,18 @@ class ScrubberDescriptorWiringTest {
 
     @Test
     void refuses_an_application_resolver_under_lazy_initialisation() throws Exception {
-        refuses(OwnDefaultResolver.class, "spring.main.lazy-initialization=true");
+        lazily(withFile(OwnDefaultResolver.class)).run(ScrubberDescriptorWiringTest::refused);
     }
 
     @Test
     void refuses_a_parent_context_engine_built_with_the_default_resolver() throws Exception {
         new WebApplicationContextRunner().withUserConfiguration(EngineWithDefaultResolver.class)
+                .run(parent -> withFile().withParent(parent).run(ScrubberDescriptorWiringTest::refused));
+    }
+
+    @Test
+    void refuses_a_parent_context_resolver() throws Exception {
+        new WebApplicationContextRunner().withUserConfiguration(OwnDefaultResolver.class)
                 .run(parent -> withFile().withParent(parent).run(ScrubberDescriptorWiringTest::refused));
     }
 
@@ -255,8 +268,7 @@ class ScrubberDescriptorWiringTest {
 
     @Test
     void the_auto_configured_pair_starts_under_lazy_initialisation() throws Exception {
-        withFile().withPropertyValues("spring.main.lazy-initialization=true")
-                .run(result -> assertThat(result).hasNotFailed());
+        lazily(withFile()).run(result -> assertThat(result).hasNotFailed());
     }
 
     @Test
