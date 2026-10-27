@@ -6,7 +6,6 @@ import io.github.aindriub.dataprism.core.metrics.Metric;
 import io.github.aindriub.dataprism.core.model.PrivacyContext;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.spi.SyntheticValueSource;
-import io.github.aindriub.dataprism.hazelcast.seal.Opened;
 import io.github.aindriub.dataprism.hazelcast.seal.SealedWrites;
 import io.github.aindriub.dataprism.hazelcast.seal.Sealer;
 import io.github.aindriub.dataprism.hazelcast.seal.ServingGate;
@@ -58,6 +57,8 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
     private final PrivacyMetrics metrics;
     private final Duration lockTimeout;
     private final Sealer sealer;
+    /** Runs between the read and the compare-and-set of an index write; a seam for tests. */
+    Runnable beforeIndexWrite = () -> { };
 
     private final AtomicLong hits = new AtomicLong();
     private final AtomicLong misses = new AtomicLong();
@@ -168,10 +169,11 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
                                 + "Overwriting so output stays a function of the generator, not the cache.");
                     }
                     // An entry that does not open was counted by the sealer; it is replaced all the same.
-                    identities.executeOnKey(key, SealedWrites.compareAndSet(existing, sealed, ttlMillis));
+                    requireWritten(identities.executeOnKey(key,
+                            SealedWrites.compareAndSet(existing, sealed, ttlMillis)));
                 }
             } else {
-                identities.executeOnKey(key, SealedWrites.compareAndSet(null, sealed, ttlMillis));
+                requireWritten(identities.executeOnKey(key, SealedWrites.compareAndSet(null, sealed, ttlMillis)));
             }
         } finally {
             ClusterLocks.release(identities, key);
@@ -185,11 +187,28 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
                     IdentityMaps.plaintext(indexCanonical, subjectId));
             ClusterLocks.acquire(index, indexKey, lockTimeout);
             try {
-                index.executeOnKey(indexKey,
-                        SealedWrites.compareAndSet(index.get(indexKey), sealedSubject, ttlMillis));
+                // The entry can change between the read and the write (eviction, expiry, a foreign write): the
+                // compare-and-set then reports false. Retry once on the fresh value; a second miss is a cache
+                // failure, so the pseudonym is never issued without its index entry unnoticed.
+                boolean written = false;
+                for (int attempt = 0; attempt < 2 && !written; attempt++) {
+                    String current = index.get(indexKey);
+                    beforeIndexWrite.run();
+                    written = Boolean.TRUE.equals(index.executeOnKey(indexKey,
+                            SealedWrites.compareAndSet(current, sealedSubject, ttlMillis)));
+                }
+                if (!written) {
+                    throw new IllegalStateException("the re-identification entry kept changing");
+                }
             } finally {
                 ClusterLocks.release(index, indexKey);
             }
+        }
+    }
+
+    private static void requireWritten(Boolean written) {
+        if (!Boolean.TRUE.equals(written)) {
+            throw new IllegalStateException("the identity entry changed during the write");
         }
     }
 

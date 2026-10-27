@@ -777,8 +777,7 @@ class ArchitectureTest {
                         "is a call to " + ownerName + "." + method) {
                     @Override
                     public boolean test(JavaAccess<?> access) {
-                        return access instanceof JavaMethodCall
-                                && access.getTarget().getOwner().getName().equals(ownerName)
+                        return access.getTarget().getOwner().getName().equals(ownerName)
                                 && access.getTarget().getName().equals(method);
                     }
                 })
@@ -799,6 +798,27 @@ class ArchitectureTest {
                         () -> onlyTheseOpen(FakeSealerForOpen.class.getName(), "open", INDEX).check(fixture))
                 .isInstanceOf(AssertionError.class)
                 .hasMessageContaining("IndexOpenerFixture");
+    }
+
+    @Test
+    void reidentificationOpenRuleCatchesAMethodReference() {
+        JavaClasses fixture = new ClassFileImporter().importClasses(IndexOpenerReferenceFixture.class,
+                FakeSealerForOpen.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> onlyTheseOpen(FakeSealerForOpen.class.getName(), "open", INDEX).check(fixture))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("IndexOpenerReferenceFixture");
+    }
+
+    interface Opener {
+        Object apply(String map, String key, String stored);
+    }
+
+    /** Opens through a method reference, which is an access but not a call. */
+    static final class IndexOpenerReferenceFixture {
+        Opener reference(FakeSealerForOpen sealer) {
+            return sealer::open;
+        }
     }
 
     static final class FakeSealerForOpen {

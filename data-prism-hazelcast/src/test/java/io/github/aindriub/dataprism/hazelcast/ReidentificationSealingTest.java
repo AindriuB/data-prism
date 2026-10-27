@@ -167,6 +167,55 @@ class ReidentificationSealingTest {
         assertThat(new ScopeIdentityIndex(cluster, metrics).subjectFor(SCOPE, NS, synthetic)).isEmpty();
     }
 
+    @Test
+    void anAuthenticEnvelopeSealedForOtherCanonicalPartsIsNotUsed() {
+        String synthetic = issue();
+        var sealer = new ScopeIdentitySealer(cluster).sealer;
+        // Authentic under this key and bound to this map key, but its plaintext names other parts.
+        String indexKey = indexKey(synthetic);
+        index().set(indexKey, sealer.seal(PrivacyCluster.REIDENTIFICATION_MAP, indexKey,
+                IdentityMaps.plaintext(ScopeKeys.reidentificationCanonical(SCOPE, NS, "another-pseudonym"),
+                        "subject-other")));
+        assertThat(new ScopeIdentityIndex(cluster, metrics).subjectFor(SCOPE, NS, synthetic)).isEmpty();
+
+        String identityKey = cluster.scopeKeys().identity(SCOPE, SUBJECT, NS);
+        cluster.instance().<String, String>getMap(PrivacyCluster.IDENTITY_MAP).set(identityKey,
+                sealer.seal(PrivacyCluster.IDENTITY_MAP, identityKey, IdentityMaps.plaintext(
+                        ScopeKeys.identityCanonical(SCOPE, "subject-other", NS), "poisoned")));
+        var caching = new CachingSyntheticValueSource(GENERATOR, cluster, metrics);
+        assertThat(caching.syntheticValue(SUBJECT, NS, scope())).isEqualTo(synthetic);
+        assertThat(caching.hits()).isZero();
+        assertThat(caching.misses()).isEqualTo(1);
+    }
+
+    @Test
+    void anIndexEntryThatChangesOnceDuringTheWriteIsRetriedAndStored() {
+        start();
+        var caching = new CachingSyntheticValueSource(GENERATOR, cluster, metrics);
+        var interferences = new java.util.concurrent.atomic.AtomicInteger();
+        caching.beforeIndexWrite = () -> {
+            if (interferences.getAndIncrement() == 0) {
+                // A foreign write lands between the read and the compare-and-set.
+                index().set(indexKey(GENERATOR.syntheticValue(SUBJECT, NS, scope())), "foreign");
+            }
+        };
+        String synthetic = caching.syntheticValue(SUBJECT, NS, scope());
+        assertThat(caching.failures()).isZero();
+        assertThat(new ScopeIdentityIndex(cluster, metrics).subjectFor(SCOPE, NS, synthetic)).contains(SUBJECT);
+    }
+
+    @Test
+    void anIndexEntryThatKeepsChangingIsACacheFailureNotASilentGap() {
+        start();
+        var caching = new CachingSyntheticValueSource(GENERATOR, cluster, metrics);
+        var counter = new java.util.concurrent.atomic.AtomicInteger();
+        caching.beforeIndexWrite = () ->
+                index().set(indexKey(GENERATOR.syntheticValue(SUBJECT, NS, scope())), "foreign-" + counter.incrementAndGet());
+        String synthetic = caching.syntheticValue(SUBJECT, NS, scope());
+        assertThat(synthetic).isEqualTo(GENERATOR.syntheticValue(SUBJECT, NS, scope()));
+        assertThat(caching.failures()).isEqualTo(1);
+    }
+
     /** The sealer a member of this cluster registered: the one that wrote the entries. */
     private static final class ScopeIdentitySealer {
         final Sealer sealer;
