@@ -5,6 +5,8 @@ import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.core.metrics.Metric;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
+import io.github.aindriub.dataprism.hazelcast.seal.Sealer;
+import io.github.aindriub.dataprism.hazelcast.seal.ServingGate;
 
 import java.time.Duration;
 import java.util.Objects;
@@ -35,6 +37,7 @@ public final class ScopeIdentityIndex {
     private final PrivacyMetrics metrics;
     private final HazelcastApprovalStore approvals;
     private final Duration lockTimeout;
+    private final Sealer sealer;
     /** Resolves a map by name; a seam for tests. */
     Function<String, IMap<String, ?>> maps;
 
@@ -54,24 +57,40 @@ public final class ScopeIdentityIndex {
      * @throws IllegalArgumentException if the timeout is outside that range
      */
     public ScopeIdentityIndex(PrivacyCluster cluster, PrivacyMetrics metrics, Duration lockTimeout) {
+        this(cluster, metrics, lockTimeout, ServingGate.open());
+    }
+
+    /** As the public constructor, with the serving gate of the member (a seam until the gate is wired). */
+    ScopeIdentityIndex(PrivacyCluster cluster, PrivacyMetrics metrics, Duration lockTimeout, ServingGate gate) {
         this.cluster = Objects.requireNonNull(cluster, "cluster");
         this.metrics = Objects.requireNonNull(metrics, "metrics");
         this.lockTimeout = ClusterLocks.checked(lockTimeout);
         this.maps = name -> cluster.instance().getMap(name);
         this.approvals = HazelcastApprovalStore.forScopeEnd(cluster, lockTimeout, metrics);
+        this.sealer = IdentityMaps.sealerFor(cluster, metrics, Objects.requireNonNull(gate, "gate"));
     }
 
     /**
+     * The only place an envelope of the re-identification map is opened and its subject returned. An entry that
+     * does not authenticate for exactly these parts (written by a member without the key, in another format, or
+     * moved from another key or map) is counted by the sealer and reads as empty, never as another subject. A
+     * deleted entry also reads as empty: deleted re-identification entries are lost for good.
+     *
      * @return the subject a pseudonym stands for, or empty if the scope has ended,
      *         the entry expired, or the index was never enabled
+     * @throws io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException if this member is not
+     *         serving; that is a refusal, not an empty result and not a tamper
      */
     public Optional<String> subjectFor(String scopeId, PrivacyNamespace namespace, String synthetic) {
         if (!cluster.reidentificationEnabled()) {
             return Optional.empty();
         }
         IMap<String, String> index = cluster.instance().getMap(PrivacyCluster.REIDENTIFICATION_MAP);
-        Optional<String> subject = Optional.ofNullable(index.get(
-                cluster.scopeKeys().reidentification(scopeId, namespace, synthetic)));
+        String key = cluster.scopeKeys().reidentification(scopeId, namespace, synthetic);
+        String stored = index.get(key);
+        Optional<String> subject = stored == null ? Optional.empty()
+                : IdentityMaps.subjectOf(sealer, key, stored,
+                        ScopeKeys.reidentificationCanonical(scopeId, namespace, synthetic));
         subject.ifPresent(ignored -> metrics.increment(Metric.REIDENTIFICATION, namespace.name()));
         return subject;
     }

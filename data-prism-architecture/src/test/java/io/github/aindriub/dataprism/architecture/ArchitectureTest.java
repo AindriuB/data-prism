@@ -753,6 +753,66 @@ class ArchitectureTest {
     }
 
     /**
+     * T14, second rule: an envelope read from the re-identification map is opened in one place, {@code
+     * ScopeIdentityIndex.subjectFor}, through {@code IdentityMaps.subjectOf}. Nothing else calls that helper, and
+     * outside the seal package only the two identity classes call {@code Sealer.open} at all, so no other class can
+     * open an index entry and return a subject.
+     */
+    private static final String IDENTITY_MAPS = "io.github.aindriub.dataprism.hazelcast.IdentityMaps";
+    private static final String SEALER = "io.github.aindriub.dataprism.hazelcast.seal.Sealer";
+    private static final String INDEX = ScopeIdentityIndex.class.getName();
+    private static final String IDENTITY_CACHE = "io.github.aindriub.dataprism.hazelcast.CachingSyntheticValueSource";
+
+    private static ArchRule onlyTheseOpen(String ownerName, String method, String... allowedOrigins) {
+        return noClasses()
+                .that(new DescribedPredicate<JavaClass>("are not " + String.join("/", allowedOrigins)) {
+                    @Override
+                    public boolean test(JavaClass origin) {
+                        String top = origin.getName().split("\\$")[0];
+                        return !List.of(allowedOrigins).contains(top)
+                                && !origin.getPackageName().startsWith("io.github.aindriub.dataprism.hazelcast.seal");
+                    }
+                })
+                .should().accessTargetWhere(new DescribedPredicate<JavaAccess<?>>(
+                        "is a call to " + ownerName + "." + method) {
+                    @Override
+                    public boolean test(JavaAccess<?> access) {
+                        return access instanceof JavaMethodCall
+                                && access.getTarget().getOwner().getName().equals(ownerName)
+                                && access.getTarget().getName().equals(method);
+                    }
+                })
+                .allowEmptyShould(true);
+    }
+
+    @Test
+    void onlyScopeIdentityIndexOpensTheReidentificationMap() {
+        onlyTheseOpen(IDENTITY_MAPS, "subjectOf", INDEX).check(CLASSES);
+        onlyTheseOpen(SEALER, "open", INDEX, IDENTITY_CACHE, IDENTITY_MAPS).check(CLASSES);
+    }
+
+    @Test
+    void reidentificationOpenRuleCatchesAnotherOpener() {
+        JavaClasses fixture = new ClassFileImporter().importClasses(IndexOpenerFixture.class,
+                FakeSealerForOpen.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> onlyTheseOpen(FakeSealerForOpen.class.getName(), "open", INDEX).check(fixture))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("IndexOpenerFixture");
+    }
+
+    static final class FakeSealerForOpen {
+        Object open(String map, String key, String stored) { return stored; }
+    }
+
+    /** A class that opens an index entry itself, as the rule above exists to stop. */
+    static final class IndexOpenerFixture {
+        Object read(FakeSealerForOpen sealer) {
+            return sealer.open("dataprism.reidentification.s1", "key", "dps1.x");
+        }
+    }
+
+    /**
      * The Sealer test seams fix the salt and the nonce counter. A production class that called them could
      * reuse a (subkey, nonce) pair, so no class may call them except tests (this rule imports main classes only).
      */
