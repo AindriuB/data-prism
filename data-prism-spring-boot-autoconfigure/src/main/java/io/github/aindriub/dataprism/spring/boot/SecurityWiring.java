@@ -10,7 +10,6 @@ import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.SecurityPolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.aop.framework.AopProxyUtils;
 import org.springframework.aop.scope.ScopedProxyFactoryBean;
 import org.springframework.aop.scope.ScopedProxyUtils;
 import org.springframework.beans.factory.BeanFactory;
@@ -31,6 +30,7 @@ import org.springframework.context.annotation.Lazy;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -137,15 +137,14 @@ class SecurityWiring {
     }
 
     /**
-     * Remembers the instances this auto-configuration built and, once every singleton exists,
-     * compares instances rather than names, so a same-named or FactoryBean-produced replacement
-     * is seen as itself.
+     * Once every singleton exists, checks the outcome rather than the wiring: with one deployer
+     * {@link CaseAuthorizer} or {@link ClientAllowlist} bean, every {@link ScopeResolver} or
+     * {@link AuthorizationService} in the context, the defaults included, must use it. It compares
+     * instances, not names, so a same-named or FactoryBean-produced replacement is seen as itself.
      */
     static final class BypassCheck implements SmartInitializingSingleton {
         private final ListableBeanFactory beanFactory;
         private final ObjectProvider<LibraryVersion> libraryVersion;
-        private volatile ScopeResolver scopeResolver;
-        private volatile AuthorizationService authorizationService;
 
         BypassCheck(ListableBeanFactory beanFactory, ObjectProvider<LibraryVersion> libraryVersion) {
             this.beanFactory = beanFactory;
@@ -203,6 +202,7 @@ class SecurityWiring {
                     candidates.add(name);
                 }
             }
+            List<String> others = new ArrayList<>();
             for (String name : all) {
                 if (!candidates.contains(name) && !isGenuineScopedTarget(name, candidates)) {
                     if (isOrphanScopedTarget(name)) {
@@ -210,8 +210,16 @@ class SecurityWiring {
                                 "a scoped-proxy " + simpleName + " in INTERFACES mode cannot be used; "
                                         + simpleName + " is final, so use a singleton");
                     }
-                    throw ambiguous(codeStem, simpleName, applies);
+                    others.add(name);
                 }
+            }
+            if (others.size() == 1 && candidates.isEmpty()) {
+                throw new DataPrismConfigurationException("AMBIGUOUS_" + codeStem,
+                        "the only " + simpleName + " bean is not a default autowire candidate, so it would not be "
+                                + "injected; remove defaultCandidate = false or autowireCandidate = false");
+            }
+            if (!others.isEmpty()) {
+                throw ambiguous(codeStem, simpleName, applies);
             }
             if (candidates.size() > 1) {
                 throw ambiguous(codeStem, simpleName, applies);
@@ -293,22 +301,6 @@ class SecurityWiring {
         return instances.stream().anyMatch(instance -> !usesDeployersBean.test(instance));
     }
 
-    /**
-     * Follows singleton AOP targets to the innermost object. Defensive: {@link ScopeResolver} and
-     * {@link AuthorizationService} are final, so no proxy can currently wrap them and only a non-proxy
-     * replacement can reach {@link #replaced}; this keeps the check correct if either stops being final.
-     */
-    static Object unwrap(Object bean) {
-        Object current = bean;
-        while (true) {
-            Object target = AopProxyUtils.getSingletonTarget(current);
-            if (target == null || target == current) {
-                return current;
-            }
-            current = target;
-        }
-    }
-
     @Bean
     @ConditionalOnMissingBean
     SecurityPolicy dataPrismSecurityPolicy(DataPrismProperties properties) {
@@ -321,22 +313,20 @@ class SecurityWiring {
     @Bean
     @ConditionalOnMissingBean
     AuthorizationService dataPrismAuthorizationService(SecurityPolicy policy, DataPrismProperties properties,
-            ObjectProvider<ClientAllowlist> allowlist, BypassCheck built) {
+            ObjectProvider<ClientAllowlist> allowlist) {
         ClientAllowlist clients = allowlist.getIfUnique();
         if (clients == null) {
             LOG.warn("No ClientAllowlist bean is defined: every client is allowed. Supply a ClientAllowlist bean.");
             clients = ClientAllowlist.unrestricted();
         }
-        AuthorizationService service = new AuthorizationService(policy, properties.getPrivacy().getProfile(),
+        return new AuthorizationService(policy, properties.getPrivacy().getProfile(),
                 PrivacyScopeType.INVESTIGATION, clients);
-        built.authorizationService = service;
-        return service;
     }
 
     @Bean
     @ConditionalOnMissingBean
     ScopeResolver dataPrismScopeResolver(PseudonymisationVersion version, DataPrismProperties properties,
-            ObjectProvider<CaseAuthorizer> caseAuthorizer, BypassCheck built) {
+            ObjectProvider<CaseAuthorizer> caseAuthorizer) {
         CaseAuthorizer authorizer = caseAuthorizer.getIfUnique();
         if (authorizer == null) {
             LOG.warn("No CaseAuthorizer bean is defined: the case claim in the token is trusted without "
@@ -344,9 +334,6 @@ class SecurityWiring {
             authorizer = CaseAuthorizer.tokenTrusted();
         }
         PurposeValidator purposes = new PurposeValidator(Set.copyOf(properties.getSecurityPolicy().getPurposes()));
-        ScopeResolver resolver = new ScopeResolver(version, properties.getPrivacy().getScopeLifetime(), purposes,
-                authorizer);
-        built.scopeResolver = resolver;
-        return resolver;
+        return new ScopeResolver(version, properties.getPrivacy().getScopeLifetime(), purposes, authorizer);
     }
 }

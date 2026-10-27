@@ -243,6 +243,68 @@ class SecurityWiringTest {
     }
 
     @Test
+    void a_single_non_default_candidate_authorizer_is_refused_with_an_accurate_message() {
+        withVersion("0.8.0").withUserConfiguration(Base.class, NonDefaultCandidateAuthorizer.class)
+                .run(result -> assertThat(result.getStartupFailure())
+                        .hasMessageContaining("the only CaseAuthorizer bean is not a default autowire candidate")
+                        .hasMessageNotContaining("more than one"));
+    }
+
+    @Test
+    void a_single_non_default_candidate_allowlist_is_refused_with_an_accurate_message() {
+        context.withUserConfiguration(Base.class, NonDefaultCandidateAllowlist.class)
+                .run(result -> assertThat(result.getStartupFailure())
+                        .hasMessageContaining("the only ClientAllowlist bean is not a default autowire candidate"));
+    }
+
+    /**
+     * Drives the guard on the instances the real default factories build when the lookup finds no unique
+     * deployer bean: the default resolver then holds the token-trusted fallback while a deployer authorizer
+     * exists in the context. The guard must not exempt its own defaults.
+     */
+    @Test
+    void a_default_scope_resolver_built_token_trusted_while_a_deployer_authorizer_exists_is_refused() {
+        org.springframework.beans.factory.support.DefaultListableBeanFactory factory =
+                new org.springframework.beans.factory.support.DefaultListableBeanFactory();
+        ScopeResolver defaultResolver = new SecurityWiring().dataPrismScopeResolver(
+                io.github.aindriub.dataprism.core.model.PseudonymisationVersion.HMAC_SHA256_V1,
+                defaultProperties(), nobody(CaseAuthorizer.class));
+        factory.registerSingleton("deployersAuthorizer", (CaseAuthorizer) request -> false);
+        factory.registerSingleton("dataPrismScopeResolver", defaultResolver);
+        SecurityWiring.BypassCheck check = new SecurityWiring.BypassCheck(factory,
+                nobody(SecurityWiring.LibraryVersion.class));
+        assertThatThrownBy(check::afterSingletonsInstantiated).isInstanceOfSatisfying(
+                DataPrismConfigurationException.class, e -> assertThat(e.code()).isEqualTo("CASE_AUTHORIZER_BYPASSED"));
+    }
+
+    @Test
+    void a_default_authorization_service_built_unrestricted_while_a_deployer_allowlist_exists_is_refused() {
+        org.springframework.beans.factory.support.DefaultListableBeanFactory factory =
+                new org.springframework.beans.factory.support.DefaultListableBeanFactory();
+        AuthorizationService defaultService = new SecurityWiring().dataPrismAuthorizationService(
+                new io.github.aindriub.dataprism.security.SecurityPolicy(Set.of("investigation"), java.util.Map.of()),
+                defaultProperties(), nobody(ClientAllowlist.class));
+        factory.registerSingleton("deployersAllowlist", ClientAllowlist.of(Set.of("other-client")));
+        factory.registerSingleton("dataPrismAuthorizationService", defaultService);
+        factory.registerSingleton("deployersAuthorizer", (CaseAuthorizer) request -> false);
+        SecurityWiring.BypassCheck check = new SecurityWiring.BypassCheck(factory,
+                nobody(SecurityWiring.LibraryVersion.class));
+        assertThatThrownBy(check::afterSingletonsInstantiated).isInstanceOfSatisfying(
+                DataPrismConfigurationException.class, e -> assertThat(e.code()).isEqualTo("CLIENT_ALLOWLIST_BYPASSED"));
+    }
+
+    private static DataPrismProperties defaultProperties() {
+        DataPrismProperties properties = new DataPrismProperties();
+        properties.getPrivacy().setProfile("DEFAULT");
+        properties.getPrivacy().setScopeLifetime(java.time.Duration.ofHours(8));
+        return properties;
+    }
+
+    private static <T> org.springframework.beans.factory.ObjectProvider<T> nobody(Class<T> type) {
+        return new org.springframework.beans.factory.support.DefaultListableBeanFactory().getBeanProvider(type);
+    }
+
+    @Test
     void the_scoped_proxy_allowlist_refusal_says_so() {
         context.withUserConfiguration(Base.class, InterfacesScopedAllowlist.class)
                 .run(result -> assertThat(result.getStartupFailure())
@@ -262,7 +324,10 @@ class SecurityWiringTest {
                 .run(result -> assertRefusal(result.getStartupFailure(), "CLIENT_ALLOWLIST_BYPASSED"));
     }
 
-    /** Breaks the default wiring after the fact: the default resolver ends up with the token-trusted fallback. */
+    /**
+     * Covers the swap case: the built default is replaced after the fact by one with the token-trusted fallback.
+     * The direct tests above cover a default that was itself built wrongly.
+     */
     @Configuration(proxyBeanMethods = false)
     static class TokenTrustedResolverSubstitution {
         @Bean static org.springframework.beans.factory.config.BeanPostProcessor substituteResolver() {
@@ -699,40 +764,6 @@ class SecurityWiringTest {
         context.withUserConfiguration(Base.class).run(result -> {
             assertThat(warnings()).contains("No ClientAllowlist bean is defined: every client is allowed. Supply a ClientAllowlist bean.");
         });
-    }
-
-    /*
-     * ScopeResolver and AuthorizationService are final, so neither CGLIB nor a JDK proxy can wrap them and an
-     * end-to-end proxied-default context cannot be built; this is an accepted limitation. The unwrapping the guard
-     * relies on is tested directly, and the context test below covers a proxied deployer-side CaseAuthorizer.
-     */
-    @Test
-    void unwrapping_sees_through_one_proxy_to_the_target() {
-        Runnable target = () -> { };
-        assertThat(SecurityWiring.unwrap(proxyOf(target))).isSameAs(target);
-    }
-
-    @Test
-    void unwrapping_sees_through_nested_proxies_to_the_target() {
-        Runnable target = () -> { };
-        assertThat(SecurityWiring.unwrap(proxyOf(proxyOf(proxyOf(target))))).isSameAs(target);
-    }
-
-    @Test
-    void unwrapping_leaves_an_unproxied_bean_alone() {
-        Runnable target = () -> { };
-        assertThat(SecurityWiring.unwrap(target)).isSameAs(target);
-    }
-
-    @Test
-    void a_proxy_of_a_different_object_is_not_the_target() {
-        Runnable ours = () -> { };
-        Runnable theirs = () -> { };
-        assertThat(SecurityWiring.unwrap(proxyOf(theirs))).isNotSameAs(ours);
-    }
-
-    private static Runnable proxyOf(Runnable target) {
-        return (Runnable) new ProxyFactory(target).getProxy();
     }
 
     @Test
