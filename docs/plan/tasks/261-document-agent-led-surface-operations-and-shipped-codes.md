@@ -50,4 +50,4 @@ Make the 0.8 core usable by someone who has never seen the project: the three ne
 - `docs/quickstart.md` (262).
 - `docs/data-protection.md` (214).
 - Any code, test, or design document.
-- Updating the 0.7.x security advisory GHSA-f94h-6mxv-c957 with the patched version: the 0.8.0 release-cut brief, not yet filed, owns it through PLAN.md's release-cut obligations.
+- Updating the 0.7.x security advisory GHSA-f94h-6mxv-c957: the coordinator does it (OD-290-2 (b), decided by the owner 2026-10-27), saying that every release up to and including 0.7.1 is affected, that there is no workaround, and that the fix is 0.8.0. No task proves the range or a workaround.
