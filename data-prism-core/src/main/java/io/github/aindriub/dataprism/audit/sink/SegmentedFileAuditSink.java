@@ -139,7 +139,7 @@ public final class SegmentedFileAuditSink implements AuditSink, Closeable {
         if (index < 0 || index > 9999) {
             throw new IllegalArgumentException("segment index out of range: " + index);
         }
-        return index == 0 ? segmentName(date) : PREFIX + date + String.format(".%04d", index) + SUFFIX;
+        return index == 0 ? segmentName(date) : PREFIX + date + String.format(java.util.Locale.ROOT, ".%04d", index) + SUFFIX;
     }
 
     /** The date a segment file name (either form) carries, or {@code null} if the name is not a segment's. */

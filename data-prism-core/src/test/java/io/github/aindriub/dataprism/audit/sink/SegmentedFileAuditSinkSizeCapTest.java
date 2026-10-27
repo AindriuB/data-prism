@@ -205,4 +205,42 @@ class SegmentedFileAuditSinkSizeCapTest {
                     .isInstanceOf(FileAuditSink.PoisonedException.class);
         }
     }
+
+    @Test
+    void indexedNamesAreAsciiWhateverTheDefaultLocaleIs() throws IOException {
+        java.util.Locale original = java.util.Locale.getDefault();
+        java.util.Locale.setDefault(java.util.Locale.forLanguageTag("ar-EG"));
+        try {
+            Path dir = tempDir.resolve("s");
+            try (SegmentedFileAuditSink sink = new SegmentedFileAuditSink(dir, 10)) {
+                AuditRecorder r = new AuditRecorder(sink, DAY, "w");
+                for (int i = 0; i < 3; i++) {
+                    write(r);
+                }
+            }
+            assertThat(names(dir)).containsExactly("audit-2026-03-01.0001.log", "audit-2026-03-01.0002.log",
+                    "audit-2026-03-01.log");
+            assertThat(SegmentedFileAuditSink.segmentDate(dir.resolve("audit-2026-03-01.0002.log")))
+                    .isEqualTo(LocalDate.of(2026, 3, 1));
+            assertThat(SegmentedFileAuditSink.segmentIndex(dir.resolve("audit-2026-03-01.0002.log"))).isEqualTo(2);
+
+            assertThat(io.github.aindriub.dataprism.audit.verify.AuditChainVerifier.verify(dir).writers())
+                    .singleElement().satisfies(w -> assertThat(w.sequenceCount()).isEqualTo(3));
+
+            try (SegmentedFileAuditSink again = new SegmentedFileAuditSink(dir, 1_000_000)) {
+                write(new AuditRecorder(again, DAY, "w2"));
+            }
+            assertThat(names(dir)).hasSize(3);
+            assertThat(Files.readAllLines(dir.resolve("audit-2026-03-01.0002.log"))).hasSize(2);
+
+            java.util.List<io.github.aindriub.dataprism.audit.AuditCheckpoint> anchors = new ArrayList<>();
+            java.util.List<Path> deleted = new io.github.aindriub.dataprism.audit.retention.AuditRetention(dir,
+                    java.time.Period.ofMonths(6), anchors::add,
+                    Clock.fixed(Instant.parse("2026-09-10T12:00:00Z"), ZoneOffset.UTC)).purge();
+            assertThat(deleted).hasSize(3);
+            assertThat(names(dir)).isEmpty();
+        } finally {
+            java.util.Locale.setDefault(original);
+        }
+    }
 }
