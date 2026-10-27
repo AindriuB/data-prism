@@ -166,18 +166,18 @@ class NestedTypeArgumentTest {
     }
 
     @Test
-    @DisplayName("Optional<List<Leaf>> and List<List<Leaf>> are both unclassified")
+    @DisplayName("Optional<List<Leaf>> is unclassified; List<List<Leaf>> is refused while the tree is built")
     void nestedContainersKeepTheirOutcome() {
         assertThat(code(new OptionalList("s-1", Optional.of(List.of(new Leaf(PII))))))
                 .isEqualTo("UNCLASSIFIED_STRUCTURE");
         assertThat(code(new ListList("s-1", List.of(List.of(new Leaf(PII))))))
-                .isEqualTo("UNCLASSIFIED_STRUCTURE");
+                .isEqualTo("SOURCE_MODEL_NESTED_COLLECTION_OF_RECORD");
     }
 
     @Test
-    @DisplayName("with the startup check skipped, a record behind Box<Leaf> is not scrubbed as the Leaf")
+    @DisplayName("with the startup check skipped, a record behind Box<Leaf> is refused as not declared")
     void aGenericInterfaceIsNotFollowed() {
-        assertThat(code(new BoxResponse("s-1", new BoxImpl(PII)))).isEqualTo("UNCLASSIFIED_STRUCTURE");
+        assertThat(code(new BoxResponse("s-1", new BoxImpl(PII)))).isEqualTo("SOURCE_MODEL_RECORD_NOT_DECLARED");
     }
 
     @Test

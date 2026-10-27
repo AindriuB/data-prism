@@ -1,6 +1,5 @@
 package io.github.aindriub.dataprism.example.boundary;
 
-import com.fasterxml.jackson.annotation.JsonAnyGetter;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.InternalIdentifier;
 import io.github.aindriub.dataprism.annotations.LlmExposedModel;
@@ -14,8 +13,12 @@ import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.model.Capability;
 import io.github.aindriub.dataprism.core.model.PrivacyScopeType;
 import io.github.aindriub.dataprism.core.spi.DataRequest;
+import io.github.aindriub.dataprism.core.engine.DefaultFieldMetadataResolver;
+import io.github.aindriub.dataprism.core.model.FieldMetadata;
 import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
-import io.github.aindriub.dataprism.example.DataPrismAssembly;
+import io.github.aindriub.dataprism.core.spi.FieldMetadataResolver;
+import io.github.aindriub.dataprism.core.engine.SourceTree;
+import io.github.aindriub.dataprism.example.http.UndeclaredKeyFixture;
 import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
 import io.github.aindriub.dataprism.mcp.ToolOptions;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
@@ -31,6 +34,7 @@ import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -64,22 +68,6 @@ final class PerSourceHarness {
                     suggestedAction = PrivacyAction.SYNTHESIZE) String name) {
     }
 
-    /**
-     * Refuses in scrub: the payload carries a property the model does not declare, and the default profile
-     * fails the request on an unclassified field. The key is itself identifying-looking, as a payload key can be.
-     */
-    @LlmExposedModel
-    public record Stray(
-            @InternalIdentifier String id,
-            @SensitiveData(classifications = DataClassification.PII, namespace = PrivacyNamespace.PERSON_NAME,
-                    suggestedAction = PrivacyAction.SYNTHESIZE) String badName) {
-
-        @JsonAnyGetter
-        public Map<String, Object> extras() {
-            return Map.of(STRAY_KEY, STRAY_VALUE);
-        }
-    }
-
     /** Refuses in validation: {@code note} passes the scrub as declared non-sensitive but is an address shape. */
     @LlmExposedModel
     public record Shaped(
@@ -89,7 +77,7 @@ final class PerSourceHarness {
             @NonSensitive(reason = "Test field") String note) {
     }
 
-    /** The same shape as {@link Stray} and {@link Shaped} without the offending field. */
+    /** The same shape as {@link #scrubRefusing} and {@link Shaped} without the offending field. */
     @LlmExposedModel
     public record Clean(
             @InternalIdentifier String id,
@@ -137,8 +125,41 @@ final class PerSourceHarness {
         return source(name, Plain.class, null);
     }
 
+    /**
+     * Refuses in scrub: the payload carries a property the model does not declare, and the default profile
+     * fails the request on an unclassified field. The key is itself identifying-looking, as a payload key can be.
+     * A record source can no longer carry undeclared keys (task 288, OD-288-1 (a)), so this is an exposed
+     * tree: an {@code ObjectNode} root whose declared fields are {@code id} and {@code badName}, plus the stray key.
+     */
     static DataSourceAdapter<?> scrubRefusing(String name) {
-        return source(name, Stray.class, new Stray("1", BAD_NAME));
+        ObjectNode body = SourceTree.newObject();
+        body.put("id", "1");
+        body.put(BAD_FIELD, BAD_NAME);
+        body.put(STRAY_KEY, STRAY_VALUE);
+        return source(name, ObjectNode.class, body);
+    }
+
+    /**
+     * Exposes an {@link ObjectNode} root with the fields {@link #scrubRefusing} declares, and every other model as
+     * the default resolver does. This is the exposed-tree carrier rather than a configured JSON source because the
+     * orchestrator's cross-source oracle ({@code SourceValues.prohibited}) must see the refused source's raw name
+     * ("a refused source's raw value stays prohibited"): a configured source computes its prohibited set inside its
+     * own engine, against its own catalogue, where the orchestrator cannot read it.
+     */
+    private static final class ExposedTree implements FieldMetadataResolver {
+        private final DefaultFieldMetadataResolver delegate = new DefaultFieldMetadataResolver();
+
+        @Override
+        public List<FieldMetadata> resolve(Class<?> type) {
+            return type == ObjectNode.class
+                    ? List.of(UndeclaredKeyFixture.identifier("id"), UndeclaredKeyFixture.personName(BAD_FIELD))
+                    : delegate.resolve(type);
+        }
+
+        @Override
+        public boolean exposed(Class<?> type) {
+            return type == ObjectNode.class || delegate.exposed(type);
+        }
     }
 
     static DataSourceAdapter<?> validationRefusing(String name) {
@@ -178,7 +199,8 @@ final class PerSourceHarness {
 
     static Call call(List<DataSourceAdapter<?>> adapters) {
         List<AuditEvent> events = new ArrayList<>();
-        DataPrismAssembly assembly = new DataPrismAssembly(adapters, CLOCK, events::add);
+        UndeclaredKeyFixture.Assembly assembly = new UndeclaredKeyFixture.Assembly(adapters, new ExposedTree(), CLOCK,
+                events::add, UndeclaredKeyFixture.defaultProfiles());
         AuditRecorder toolAudit = new AuditRecorder(e -> { }, CLOCK, "per-source-mcp");
         SecurityPolicy policy = new SecurityPolicy(Set.of(PURPOSE), Map.of(ROLE,
                 Set.of(Capability.GET_ENTITY_CONTEXT, Capability.EXPOSE_SOURCE_NAMES)));
