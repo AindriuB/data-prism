@@ -276,4 +276,32 @@ class DescriptorFieldMetadataResolverTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("both classifications and nonSensitive");
     }
+
+    @Test
+    @DisplayName("descriptors() returns the map the resolver was built with, unmodifiable")
+    void descriptorsAccessor() {
+        Map<String, ModelDescriptor> given = descriptors("models:\n  Some.Type:\n    exposed: true\n");
+        var resolver = new DescriptorFieldMetadataResolver(new DefaultFieldMetadataResolver(), given);
+
+        assertThat(resolver.descriptors()).isEqualTo(given);
+        assertThatThrownBy(() -> resolver.descriptors().clear()).isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test
+    @DisplayName("an engine reports its resolver by identity and its descriptors by value")
+    void engineAccessors() {
+        Map<String, ModelDescriptor> given = descriptors("models:\n  Some.Type:\n    exposed: true\n");
+        var inner = new DescriptorFieldMetadataResolver(new DefaultFieldMetadataResolver(), given);
+        var policies = new ProfilePrivacyPolicyResolver(Map.of());
+        SyntheticValueSource synthetics = (s, ns, c) -> "syn";
+
+        var withMap = new JsonTreeScrubbingEngine(inner, policies, synthetics,
+                io.github.aindriub.dataprism.core.spi.ValueTokenSource.unavailable(), given);
+        var plain = new JsonTreeScrubbingEngine(inner, policies, synthetics);
+
+        assertThat(withMap.resolver()).isSameAs(inner);
+        assertThat(withMap.descriptors()).isEqualTo(given);
+        assertThat(plain.descriptors()).isEmpty();
+        assertThatThrownBy(() -> withMap.descriptors().clear()).isInstanceOf(UnsupportedOperationException.class);
+    }
 }
