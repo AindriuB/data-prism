@@ -25,6 +25,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -59,9 +60,9 @@ class HazelcastReservationTest {
         }
     }
 
-    /** The key the scope total is stored under: the canonical input has two NULs, which no subject key can. */
+    /** The key the scope total is stored under, and the key of the scope's lock. */
     private static String totalKey(String scope) {
-        return TestMembers.SCOPE_KEYS.budget(scope, "\0total");
+        return TestMembers.SCOPE_KEYS.budgetTotal(scope);
     }
 
     // ----- boundaries
@@ -294,6 +295,126 @@ class HazelcastReservationTest {
         assertThat(budgets[1].scopeReads(SCOPE)).isEqualTo(sum);
     }
 
+
+    // ----- the total key cannot be named by a subject
+
+    @Test
+    void aSubjectIdThatLooksLikeTheTotalNeverTouchesIt() {
+        String[] lookalikes = {"\0total", "\0\0total", "total", "\0"};
+        for (int i = 0; i < lookalikes.length; i++) {
+            String lookalike = lookalikes[i];
+            String scope = "lookalike-" + i;
+            // The total exists first: a read of the lookalike subject must add exactly one to it.
+            assertThat(budgets[0].reserve(scope, "a", 50, 100, 100).granted()).isTrue();
+            assertThat(budgets[0].tryRead(scope, lookalike, 5)).isTrue();
+            assertThat(budgets[1].scopeReads(scope)).as("total after a read of %s", lookalike.replace('\0', '0'))
+                    .isEqualTo(51);
+            assertThat(budgets[1].reads(scope, lookalike)).isEqualTo(1);
+            assertThat(budgets[1].reserve(scope, "b", 50, 100, 100).refusedBy()).isEqualTo(Refusal.SCOPE_TOTAL);
+            // The lookalike first: it must not become the total.
+            String other = scope + "-first";
+            assertThat(budgets[0].tryRead(other, lookalike, 5)).isTrue();
+            assertThat(budgets[0].reserve(other, "a", 60, 100, 100).granted()).isTrue();
+            assertThat(budgets[1].scopeReads(other)).isEqualTo(61);
+            assertThat(budgets[1].reserve(other, "b", 40, 100, 100).refusedBy()).isEqualTo(Refusal.SCOPE_TOTAL);
+        }
+    }
+
+    // ----- the scope lock is what makes a reservation one unit
+
+    @Test
+    void aCountedReadThatIsHalfDoneIsNotMissedByTheTotalAnotherReservationCreates() throws Exception {
+        String total = totalKey(SCOPE);
+        CountDownLatch reached = new CountDownLatch(1);
+        CountDownLatch gate = new CountDownLatch(1);
+        var slow = new HazelcastScopeBudget(
+                pausingOn(0, key -> key.equals(total), reached, gate), LONG);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            // Has counted the subject and is about to add to the total, which does not exist yet.
+            Future<Boolean> read = pool.submit(() -> slow.tryRead(SCOPE, "y", 5));
+            assertThat(reached.await(10, TimeUnit.SECONDS)).isTrue();
+            // The first reservation of the scope builds the total from the counters. It must wait for the read:
+            // built now, the total would include the read, and the read would then add itself a second time.
+            Future<ReadReservation> reserving = pool.submit(() -> budgets[1].reserve(SCOPE, "x", 3, 10, 100));
+            assertThatThrownBy(() -> reserving.get(1, TimeUnit.SECONDS)).isInstanceOf(TimeoutException.class);
+            gate.countDown();
+            assertThat(read.get(10, TimeUnit.SECONDS)).isTrue();
+            assertThat(reserving.get(10, TimeUnit.SECONDS).granted()).isTrue();
+        } finally {
+            gate.countDown();
+            pool.shutdown();
+            assertThat(pool.awaitTermination(20, TimeUnit.SECONDS)).isTrue();
+        }
+        assertThat(budgets[0].scopeReads(SCOPE)).isEqualTo(4);
+        assertThat(budgets[0].reads(SCOPE, "x") + budgets[0].reads(SCOPE, "y")).isEqualTo(4);
+    }
+
+    @Test
+    void aReserveWaitsOnTheSubjectLockOnlyAsLongAsTheLockTimeout() throws Exception {
+        var shortBudget = new HazelcastScopeBudget(members[0], Duration.ofMillis(200));
+        IMap<String, Object> map = members[1].instance().getMap(PrivacyCluster.BUDGET_MAP);
+        String key = TestMembers.SCOPE_KEYS.budget(SCOPE, "s-1");
+        CountDownLatch locked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Thread holder = new Thread(() -> {
+            map.lock(key);
+            locked.countDown();
+            try {
+                release.await();
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            } finally {
+                map.unlock(key);
+            }
+        });
+        holder.start();
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            assertThat(locked.await(10, TimeUnit.SECONDS)).isTrue();
+            Future<ReadReservation> reserving = pool.submit(() -> shortBudget.reserve(SCOPE, "s-1", 1, 5, 5));
+            assertThatThrownBy(() -> reserving.get(5, TimeUnit.SECONDS))
+                    .isInstanceOf(java.util.concurrent.ExecutionException.class)
+                    .hasCauseInstanceOf(ClusterLockTimeoutException.class);
+        } finally {
+            release.countDown();
+            holder.join(10_000);
+            pool.shutdown();
+            assertThat(pool.awaitTermination(20, TimeUnit.SECONDS)).isTrue();
+        }
+        assertThat(budgets[0].scopeReads(SCOPE)).isZero();
+    }
+
+    // ----- forget and tracking
+
+    @Test
+    void aForgetThatFailsStillInvalidatesTheReservationsThisInstanceGranted() {
+        PrivacyCluster failing = failingOn(0, "delete", key -> true, false);
+        var budget = new HazelcastScopeBudget(failing, LONG);
+        ReadReservation held = budget.reserve(SCOPE, "s-1", 3, 10, 100);
+        assertThat(held.granted()).isTrue();
+        assertThatThrownBy(() -> budget.forget(SCOPE)).isInstanceOf(ClusterOperationRefusedException.class);
+        assertThat(budgets[1].reads(SCOPE, "s-1")).as("the delete failed, so the counts are still there")
+                .isEqualTo(3);
+        budget.release(held, 3);
+        assertThat(budgets[1].reads(SCOPE, "s-1")).isEqualTo(3);
+    }
+
+    @Test
+    void reservationsThatAreFullyReleasedLeaveNothingTrackedPerScope() {
+        for (int i = 0; i < 200; i++) {
+            String scope = "tracked-" + i;
+            ReadReservation r = budgets[0].reserve(scope, "s-1", 2, 5, 5);
+            budgets[0].release(r, 2);
+        }
+        assertThat(budgets[0].trackedScopes()).isZero();
+        ReadReservation kept = budgets[0].reserve("tracked-kept", "s-1", 2, 5, 5);
+        assertThat(budgets[0].trackedScopes()).isEqualTo(1);
+        budgets[0].forget("tracked-kept");
+        assertThat(budgets[0].trackedScopes()).isZero();
+        assertThat(kept.granted()).isTrue();
+    }
+
     // ----- cluster failures
 
     @Test
@@ -333,7 +454,7 @@ class HazelcastReservationTest {
     @Test
     void aSecondUpdateThatFailsLeavesBothCountersAsTheyWere() {
         assertThat(budgets[0].reserve(SCOPE, "s-1", 2, 10, 100).granted()).isTrue();
-        PrivacyCluster failing = failingOn(0, key -> key.equals(totalKey(SCOPE)), false);
+        PrivacyCluster failing = failingOn(0, "executeOnKey", key -> key.equals(totalKey(SCOPE)), false);
         var budget = new HazelcastScopeBudget(failing, LONG);
         assertThatThrownBy(() -> budget.reserve(SCOPE, "s-1", 3, 10, 100))
                 .isInstanceOf(ClusterOperationRefusedException.class)
@@ -345,7 +466,7 @@ class HazelcastReservationTest {
 
     @Test
     void anUndoThatAlsoFailsLeavesTheCounterOverCountedAndLogsOneLineNamingNothing() throws Exception {
-        PrivacyCluster failing = failingOn(0, key -> true, true);
+        PrivacyCluster failing = failingOn(0, "executeOnKey", key -> true, true);
         var budget = new HazelcastScopeBudget(failing, LONG);
         var recorder = new RecordingLogger();
         try (var ignored = HazelcastScopeBudget.captureTo(recorder.logger())) {
@@ -408,15 +529,35 @@ class HazelcastReservationTest {
      * match {@code failing}. With {@code letFirstThrough} the first call to match succeeds and every later one
      * fails, so an update goes through and its undo does not.
      */
-    private PrivacyCluster failingOn(int index, Predicate<String> failing, boolean letFirstThrough) {
+    private PrivacyCluster failingOn(int index, String methodName, Predicate<String> failing, boolean letFirstThrough) {
         HazelcastInstance real = members[index].instance();
         AtomicInteger seen = new AtomicInteger();
         Object map = Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{IMap.class},
                 (proxy, method, args) -> {
-                    if (method.getName().equals("executeOnKey") && failing.test((String) args[0])) {
+                    if (method.getName().equals(methodName) && failing.test((String) args[0])) {
                         if (!letFirstThrough || seen.getAndIncrement() > 0) {
                             throw new IllegalStateException("injected failure");
                         }
+                    }
+                    return invoke(method, real.getMap(PrivacyCluster.BUDGET_MAP), args);
+                });
+        HazelcastInstance instance = (HazelcastInstance) Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[]{HazelcastInstance.class}, (proxy, method, args) ->
+                        method.getName().equals("getMap") && PrivacyCluster.BUDGET_MAP.equals(args[0])
+                                ? map : invoke(method, real, args));
+        return PrivacyCluster.using(instance, false, TestMembers.KEYS);
+    }
+
+
+    /** As {@link #failingOn}, but a matching {@code executeOnKey} announces itself and waits for the gate. */
+    private PrivacyCluster pausingOn(int index, Predicate<String> pausing, CountDownLatch reached,
+                                     CountDownLatch gate) {
+        HazelcastInstance real = members[index].instance();
+        Object map = Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{IMap.class},
+                (proxy, method, args) -> {
+                    if (method.getName().equals("executeOnKey") && pausing.test((String) args[0])) {
+                        reached.countDown();
+                        if (!gate.await(20, TimeUnit.SECONDS)) throw new AssertionError("gate never opened");
                     }
                     return invoke(method, real.getMap(PrivacyCluster.BUDGET_MAP), args);
                 });

@@ -2,13 +2,12 @@ package io.github.aindriub.dataprism.hazelcast;
 
 import com.hazelcast.map.EntryProcessor;
 import com.hazelcast.map.IMap;
+import io.github.aindriub.dataprism.core.limits.ReadReservation;
 import io.github.aindriub.dataprism.core.limits.ScopeBudget;
 import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
 import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import io.github.aindriub.dataprism.core.limits.ReadReservation;
 
 import java.time.Duration;
 import java.util.Collections;
@@ -19,6 +18,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * A read budget shared across the cluster.
@@ -71,7 +71,14 @@ public final class HazelcastScopeBudget implements ScopeBudget {
     private static final int OVER = 1;
     private static final int OVERFLOW = 2;
 
+    /**
+     * The reservations this instance granted, per scope, so a forget on this instance can invalidate them. Keyed by
+     * the scope's keyed prefix, never the raw scope id. Each set holds its origins weakly, so a reservation the caller
+     * dropped does not keep itself here; a scope whose reservations are all gone or fully released has no entry.
+     */
     private final ConcurrentHashMap<String, Set<Origin>> issued = new ConcurrentHashMap<>();
+    private final AtomicInteger grants = new AtomicInteger();
+    private static final int SWEEP_EVERY = 64;
 
     /**
      * What a granted reservation carries as its origin. It points back at its own reservation, so a reservation
@@ -80,11 +87,15 @@ public final class HazelcastScopeBudget implements ScopeBudget {
      */
     private static final class Origin {
         private final HazelcastScopeBudget owner;
+        private final String scope;
+        private final AtomicInteger held;
         private volatile boolean live = true;
         private volatile ReadReservation reservation;
 
-        private Origin(HazelcastScopeBudget owner) {
+        private Origin(HazelcastScopeBudget owner, String scope, int reads) {
             this.owner = owner;
+            this.scope = scope;
+            this.held = new AtomicInteger(reads);
         }
     }
 
@@ -176,7 +187,10 @@ public final class HazelcastScopeBudget implements ScopeBudget {
         String subjectKey = keys.budget(scopeId, subjectId);
         String scopeKey = keys.budgetTotal(scopeId);
         IMap<String, Integer> counts = lockScope(scopeKey);
+        boolean subjectLocked = false;
         try {
+            lockSubject(counts, subjectKey);
+            subjectLocked = true;
             ensureTotal(counts, scopeId, scopeKey);
             int subject = counts.executeOnKey(subjectKey, new AddWithin(reads, subjectBudget));
             if (subject == OVERFLOW) {
@@ -199,18 +213,28 @@ public final class HazelcastScopeBudget implements ScopeBudget {
                 }
                 return ReadReservation.refused(scopeId, subjectId, reads, ReadReservation.Refusal.SCOPE_TOTAL);
             }
-            Origin origin = new Origin(this);
+            String scope = keys.scopePrefix(scopeId);
+            Origin origin = new Origin(this, scope, reads);
             ReadReservation granted = ReadReservation.granted(scopeId, subjectId, reads, origin);
             origin.reservation = granted;
-            Set<Origin> origins = issued.computeIfAbsent(scopeId,
-                    k -> Collections.synchronizedSet(Collections.newSetFromMap(new WeakHashMap<>())));
-            origins.add(origin);
+            issued.compute(scope, (k, origins) -> {
+                Set<Origin> set = origins != null ? origins
+                        : Collections.synchronizedSet(Collections.newSetFromMap(new WeakHashMap<>()));
+                set.add(origin);
+                return set;
+            });
+            if (grants.incrementAndGet() % SWEEP_EVERY == 0) {
+                sweepIssued();
+            }
             return granted;
         } catch (IllegalArgumentException invalid) {
             throw invalid;
         } catch (RuntimeException failed) {
             throw ClusterRefusals.mapped(failed);
         } finally {
+            if (subjectLocked) {
+                ClusterLocks.release(counts, subjectKey);
+            }
             ClusterLocks.release(counts, scopeKey);
         }
     }
@@ -218,8 +242,18 @@ public final class HazelcastScopeBudget implements ScopeBudget {
     /**
      * Gives back at most what the reservation still holds, once. A release this budget cannot match (a refused
      * reservation, one built by hand, one from another budget instance, or one from a scope this instance has since
-     * forgotten) does nothing. Taken under the scope's lock. If the cluster fails after the reads were taken out of
-     * the reservation, they stay charged: over-counted, never under-counted.
+     * forgotten) does nothing. Taken under the scope's lock, then the subject's.
+     *
+     * <p>If the cluster fails after the reads were taken out of the reservation, they stay charged: the counters keep
+     * them. The one exception is a failure of both the total's update and the restore of the subject: the subject
+     * is then under-counted by those reads, and one WARN line says so.
+     *
+     * <p><strong>Residual (OD-285-1 (a)).</strong> "A release after {@code forget} does nothing" holds for a
+     * {@code forget} made on this instance only. A {@code forget} or {@code ScopeIdentityIndex.endScope} on another
+     * member does not reach this instance's reservations; if the scope id is then reused, a release of an old
+     * reservation can subtract from the new scope's counters, clamped to what they hold. Stored scope generations
+     * (task 226) close it. Whichever task first calls {@code forget} or {@code endScope} in production must close it
+     * first or depend on 226.
      *
      * @throws ClusterLockTimeoutException if the scope's lock was not obtained within the lock timeout
      * @throws ClusterOperationRefusedException if the cluster rejected the lock
@@ -236,8 +270,12 @@ public final class HazelcastScopeBudget implements ScopeBudget {
         }
         ScopeKeys keys = cluster.scopeKeys();
         String scopeKey = keys.budgetTotal(reservation.scopeId());
+        String subjectKey = keys.budget(reservation.scopeId(), reservation.subjectId());
         IMap<String, Integer> counts = lockScope(scopeKey);
+        boolean subjectLocked = false;
         try {
+            lockSubject(counts, subjectKey);
+            subjectLocked = true;
             if (!origin.live) {
                 return;
             }
@@ -245,7 +283,9 @@ public final class HazelcastScopeBudget implements ScopeBudget {
             if (give == 0) {
                 return;
             }
-            String subjectKey = keys.budget(reservation.scopeId(), reservation.subjectId());
+            if (origin.held.addAndGet(-give) == 0) {
+                untrack(origin);
+            }
             try {
                 int back = counts.executeOnKey(subjectKey, new Subtract(give));
                 if (back > 0) {
@@ -261,8 +301,26 @@ public final class HazelcastScopeBudget implements ScopeBudget {
                         failed.getClass().getSimpleName());
             }
         } finally {
+            if (subjectLocked) {
+                ClusterLocks.release(counts, subjectKey);
+            }
             ClusterLocks.release(counts, scopeKey);
         }
+    }
+
+    /** Drops the records of scopes whose reservations have all been collected or released. */
+    private void sweepIssued() {
+        for (String scope : List.copyOf(issued.keySet())) {
+            issued.computeIfPresent(scope, (k, origins) -> origins.isEmpty() ? null : origins);
+        }
+    }
+
+    /** Stops tracking a reservation that holds nothing, and its scope if that was the last. */
+    private void untrack(Origin origin) {
+        issued.computeIfPresent(origin.scope, (k, origins) -> {
+            origins.remove(origin);
+            return origins.isEmpty() ? null : origins;
+        });
     }
 
     /** @return reads counted against the whole scope, across subjects */
@@ -275,7 +333,10 @@ public final class HazelcastScopeBudget implements ScopeBudget {
         return total != null ? total : (int) Math.min(Integer.MAX_VALUE, sumOfSubjects(counts, scopeId, scopeKey));
     }
 
-    /** Creates the scope total from the counters already there, if the scope has none. Called under the lock. */
+    /**
+     * Creates the scope total from the counters already there, if the scope has none. Called under the scope's lock,
+     * which is the lock on the total's own key, held by this thread: the write cannot wait on another holder.
+     */
     private void ensureTotal(IMap<String, Integer> counts, String scopeId, String scopeKey) {
         if (counts.get(scopeKey) == null) {
             counts.putIfAbsent(scopeKey, (int) Math.min(Integer.MAX_VALUE, sumOfSubjects(counts, scopeId, scopeKey)));
@@ -290,6 +351,20 @@ public final class HazelcastScopeBudget implements ScopeBudget {
             sum += value;
         }
         return sum;
+    }
+
+    /** Takes a subject counter's lock, inside the scope's, or throws the refusal for it. */
+    private void lockSubject(IMap<String, Integer> counts, String subjectKey) {
+        try {
+            ClusterLocks.acquire(counts, subjectKey, lockTimeout);
+        } catch (ClusterLockTimeoutException held) {
+            LOG.error("read budget lock not obtained within {}; refusing", lockTimeout);
+            throw held;
+        } catch (ClusterOperationRefusedException rejected) {
+            throw rejected;
+        } catch (RuntimeException failed) {
+            throw ClusterRefusals.mapped(failed);
+        }
     }
 
     /** Takes the scope's lock, or throws the refusal for it. */
@@ -391,27 +466,29 @@ public final class HazelcastScopeBudget implements ScopeBudget {
      */
     @Override
     public void forget(String scopeId) {
-        String scopeKey = cluster.scopeKeys().budgetTotal(scopeId);
+        ScopeKeys keys = cluster.scopeKeys();
+        String scopeKey = keys.budgetTotal(scopeId);
         IMap<String, Integer> counts = lockScope(scopeKey);
         try {
-            List<String> keys;
+            List<String> found;
             try {
-                keys = ScopeKeys.keysWithPrefix(counts, cluster.scopeKeys().scopePrefix(scopeId));
+                found = ScopeKeys.keysWithPrefix(counts, keys.scopePrefix(scopeId));
             } catch (RuntimeException failed) {
                 throw ClusterRefusals.mapped(failed);
             }
             // Each delete runs under its key's bounded lock, so a key another member holds cannot make this wait.
-            int skipped = ClusterLocks.deleteAll(counts, keys, lockTimeout);
-            Set<Origin> origins = issued.remove(scopeId);
+            int skipped = ClusterLocks.deleteAll(counts, found, lockTimeout);
+            if (skipped > 0) {
+                throw new ClusterLockTimeoutException();
+            }
+        } finally {
+            // However the sweep ended: a reservation of a scope being forgotten must not release into what is left.
+            Set<Origin> origins = issued.remove(keys.scopePrefix(scopeId));
             if (origins != null) {
                 synchronized (origins) {
                     origins.forEach(origin -> origin.live = false);
                 }
             }
-            if (skipped > 0) {
-                throw new ClusterLockTimeoutException();
-            }
-        } finally {
             ClusterLocks.release(counts, scopeKey);
         }
     }
@@ -421,6 +498,11 @@ public final class HazelcastScopeBudget implements ScopeBudget {
         Logger previous = LOG;
         LOG = replacement;
         return () -> LOG = previous;
+    }
+
+    /** How many scopes this instance holds reservation records for; for tests. */
+    int trackedScopes() {
+        return issued.size();
     }
 
     private IMap<String, Integer> counts() {

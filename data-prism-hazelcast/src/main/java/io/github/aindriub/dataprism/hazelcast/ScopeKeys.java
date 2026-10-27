@@ -65,18 +65,11 @@ final class ScopeKeys {
     /**
      * The scope total of the read budget, in the budget map, and the lock key that makes a reservation, a release,
      * a counted read and the ending of the scope one unit. It shares the scope prefix of the subject counters, so
-     * ending the scope removes it by prefix.
+     * ending the scope removes it by prefix. Its name is an HMAC under a label of its own ({@code map + "#total"}),
+     * not under the budget map's, so no subject id, whatever bytes it holds, can produce this key.
      */
     String budgetTotal(String scopeId) {
-        return names.scoped(PrivacyCluster.BUDGET_MAP, scopeId, budgetTotalCanonical(scopeId));
-    }
-
-    /**
-     * Two NULs: a subject counter's canonical input is the scope, one NUL and the subject, and neither a scope id nor
-     * a subject id contains a NUL, so no subject can name the total.
-     */
-    static String budgetTotalCanonical(String scopeId) {
-        return scopeId + SEPARATOR + SEPARATOR + "total";
+        return names.scoped(PrivacyCluster.BUDGET_MAP + "#total", scopeId, scopeId);
     }
 
     /** Scope first, so ending the scope removes its approvals by prefix. A null scope keys as empty. */
