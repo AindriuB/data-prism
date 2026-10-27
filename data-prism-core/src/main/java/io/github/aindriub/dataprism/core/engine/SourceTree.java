@@ -347,9 +347,23 @@ public final class SourceTree {
         }
     }
 
+    /** Whether the class was loaded from the same code source as {@code ValueSerializer}; a null on either side is no. */
+    private static boolean fromJacksonDatabind(Class<?> c) {
+        try {
+            var own = ValueSerializer.class.getProtectionDomain().getCodeSource();
+            var other = c.getProtectionDomain().getCodeSource();
+            return own != null && other != null && own.getLocation() != null
+                    && own.getLocation().equals(other.getLocation());
+        } catch (SecurityException e) {
+            return false;
+        }
+    }
+
     private static boolean jacksonScalar(ValueSerializer<?> serializer) {
         Class<?> c = serializer.getClass();
-        if (!c.getName().startsWith("tools.jackson.databind.")) {
+        // A name is not ownership: a user class may sit in Jackson's package. The java.time serializers are
+        // in the same jackson-databind jar, so one code source covers them all.
+        if (!c.getName().startsWith("tools.jackson.databind.") || !fromJacksonDatabind(c)) {
             return false;
         }
         return serializer instanceof StdScalarSerializer<?>

@@ -367,6 +367,9 @@ class DescriptionConformsToScrubTest {
     @JsonSerialize(using = ObjectFromEnum.class)
     enum CustomSerialized { A }
 
+    @JsonSerialize(using = tools.jackson.databind.ext.javatime.ser.SpoofJavaTimeSerializer.class)
+    enum Spoofed { A }
+
     enum MapValued {
         A;
 
@@ -404,6 +407,10 @@ class DescriptionConformsToScrubTest {
     }
 
     @LlmExposedModel
+    record SpoofEnum(@InternalIdentifier String ref, @NonSensitive(reason = "x") Spoofed e) {
+    }
+
+    @LlmExposedModel
     record MapEnum(@InternalIdentifier String ref, @NonSensitive(reason = "x") MapValued e) {
     }
 
@@ -427,7 +434,7 @@ class DescriptionConformsToScrubTest {
         List<String> problems = new ArrayList<>();
         for (Object source : List.of(new TypedLong("t-1", 7L, UUID.randomUUID()),
                 new CustomEnum("c-1", CustomSerialized.A), new MapEnum("m-1", MapValued.A),
-                new TypedEnum("e-1", Typed.A))) {
+                new TypedEnum("e-1", Typed.A), new SpoofEnum("s-1", Spoofed.A))) {
             String name = source.getClass().getSimpleName();
             for (var e : Map.of("bundled", bundled, "redacting", redactingEngine).entrySet()) {
                 try {
