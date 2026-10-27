@@ -284,4 +284,35 @@ class AuditRetentionSizeCapTest {
         assertThat(names(dir)).containsExactly("audit-2026-09-09.log");
         assertThat(store.all).hasSize(2);
     }
+
+    @Test
+    void aWriterWhoseRecordsAllSurviveInThePrefixDoesNotBlockFinishingTheDay() throws IOException {
+        Path dir = tempDir.resolve("seg");
+        writeMulti(dir, "a@2026-03-01T01:00:00Z", "b@2026-03-01T02:00:00Z", "b@2026-03-01T03:00:00Z",
+                "b@2026-03-01T04:00:00Z", "a@2026-03-02T01:00:00Z", "b@2026-03-02T02:00:00Z",
+                "a@2026-09-09T01:00:00Z");
+        AnchorStore store = new AnchorStore();
+        purgeFailingOn(new AuditRetention(dir, Period.ofMonths(6), store, NOW), "audit-2026-03-01.0001.log");
+        assertThat(names(dir)).contains("audit-2026-03-01.log", "audit-2026-03-01.0001.log")
+                .doesNotContain("audit-2026-03-01.0002.log");
+
+        new AuditRetention(dir, Period.ofMonths(6), store, NOW).purge();
+
+        assertThat(names(dir)).containsExactly("audit-2026-09-09.log");
+    }
+
+    @Test
+    void aTamperedDayWithNoAnchorsIsRefusedAndKeptNotDeletedUnverified() throws IOException {
+        Path dir = tempDir.resolve("seg");
+        writeMulti(dir, "w@2026-03-01T01:00:00Z", "w@2026-03-01T02:00:00Z", "w@2026-03-01T03:00:00Z",
+                "w@2026-03-02T01:00:00Z");
+        Path middle = dir.resolve("audit-2026-03-01.0001.log");
+        Files.writeString(middle, Files.readString(middle).replace("ALLOW", "DENY"), StandardCharsets.UTF_8);
+
+        assertThatThrownBy(() -> new AuditRetention(dir, Period.ofMonths(6), new AnchorStore(), NOW).purge())
+                .hasMessageContaining("AUDIT_RETENTION_CHAIN_UNVERIFIED");
+
+        assertThat(names(dir)).contains("audit-2026-03-01.log", "audit-2026-03-01.0001.log",
+                "audit-2026-03-01.0002.log");
+    }
 }

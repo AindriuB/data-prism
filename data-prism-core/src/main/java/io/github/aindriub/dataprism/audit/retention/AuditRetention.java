@@ -259,8 +259,9 @@ public final class AuditRetention {
      * The number of leading segments that are the remains of a day an earlier purge anchored and part
      * deleted, or 0. The oldest remaining expired day is such a day only if it has at least one parseable
      * record and every writer in it has a recorded retention anchor for this very day whose sequence is
-     * beyond that writer's last remaining record: the day was verified and anchored in full before deletion
-     * began, and records after the remainder were deleted. Anything else, including a missing or other-day
+     * at least that writer's last remaining record, and at least one writer's anchor is beyond it, which
+     * proves records were deleted. The day was verified and anchored in full before deletion began, so a
+     * writer whose records all remain loses nothing. Anything else, including a missing or other-day
      * anchor, takes the normal verification path, which refuses what it cannot vouch for.
      */
     private int partlyPurgedDayLength(List<Path> segments) {
@@ -296,12 +297,21 @@ public final class AuditRetention {
             return 0;
         }
         List<AuditCheckpoint> earlier = earlierAnchors();
+        boolean deletionProven = false;
         for (Map.Entry<String, Long> w : lastRemaining.entrySet()) {
-            boolean anchored = earlier.stream().anyMatch(a -> a.instanceId().equals(w.getKey())
-                    && day.equals(a.segmentDate()) && a.sequence() > w.getValue());
-            if (!anchored) {
+            long best = -1;
+            for (AuditCheckpoint a : earlier) {
+                if (a.instanceId().equals(w.getKey()) && day.equals(a.segmentDate())) {
+                    best = Math.max(best, a.sequence());
+                }
+            }
+            if (best < w.getValue()) {
                 return 0;
             }
+            deletionProven |= best > w.getValue();
+        }
+        if (!deletionProven) {
+            return 0;
         }
         return n;
     }
