@@ -177,6 +177,37 @@ class ClientAllowlistConfigurationTest {
     }
 
     @Test
+    void a_child_inheriting_the_parents_list_starts_and_allows_only_that_client() {
+        context.withPropertyValues(LIST + "[0]=client-1").withUserConfiguration(SecurityWiringTest.Base.class)
+                .run(parent -> {
+                    assertThat(parent).hasNotFailed();
+                    context.withPropertyValues(LIST + "[0]=client-1").withParent(parent)
+                            .withUserConfiguration(SecurityWiringTest.Base.class).run(child -> {
+                                assertThat(child).hasNotFailed();
+                                assertThat(decision(child.getBean(AuthorizationService.class)).allowed()).isTrue();
+                                assertThat(child.getBean(AuthorizationService.class)
+                                        .authorize(new AuthenticatedCaller("p", "client-2", Set.of("investigator"),
+                                                "investigation", "case-1", Instant.parse("2026-01-01T12:00:00Z")),
+                                                new io.github.aindriub.dataprism.security.ToolInvocation(
+                                                        "get_entity_context", "GET_ENTITY_CONTEXT"))
+                                        .denialCode()).isEqualTo("CLIENT_NOT_ALLOWED");
+                            });
+                });
+    }
+
+    @Test
+    void a_child_with_a_different_list_than_the_parents_is_refused() {
+        context.withPropertyValues(LIST + "[0]=client-1").withUserConfiguration(SecurityWiringTest.Base.class)
+                .run(parent -> {
+                    assertThat(parent).hasNotFailed();
+                    context.withPropertyValues(LIST + "[0]=client-2").withParent(parent)
+                            .withUserConfiguration(SecurityWiringTest.Base.class)
+                            .run(child -> SecurityWiringTest.assertRefusal(child.getStartupFailure(),
+                                    "CLIENT_ALLOWLIST_BYPASSED"));
+                });
+    }
+
+    @Test
     void a_list_and_a_hidden_type_primary_allowlist_conflict() {
         context.withPropertyValues(LIST + "[0]=only-this-client")
                 .withUserConfiguration(SecurityWiringTest.Base.class, HiddenPrimary.class)

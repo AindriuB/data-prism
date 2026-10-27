@@ -6,6 +6,11 @@ import java.util.Set;
 /**
  * Optionally restricts which client ids may call at all. Matching is exact and
  * case-sensitive; nothing is trimmed or normalised.
+ *
+ * <p>An allowlist is a value: two are equal when they allow the same set of client ids, and
+ * {@link #unrestricted()} is equal only to another unrestricted allowlist. A wiring check can therefore tell
+ * a service built with an equal allowlist (for example one built again from the same configuration in a child
+ * context) from one built with a different allowlist.
  */
 public final class ClientAllowlist {
 
@@ -40,5 +45,15 @@ public final class ClientAllowlist {
 
     public boolean permits(String clientId) {
         return allowed == null || (clientId != null && allowed.contains(clientId));
+    }
+
+    @Override
+    public boolean equals(Object other) {
+        return this == other || (other instanceof ClientAllowlist that && Objects.equals(allowed, that.allowed));
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hashCode(allowed);
     }
 }

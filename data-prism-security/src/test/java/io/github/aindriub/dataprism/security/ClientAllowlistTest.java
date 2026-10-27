@@ -39,4 +39,15 @@ class ClientAllowlistTest {
         assertThatThrownBy(() -> ClientAllowlist.of(Set.of("agent-a", " ")))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @org.junit.jupiter.api.Test
+    void equalsAndHashCodeAreOverTheAllowedSet() {
+        ClientAllowlist a = ClientAllowlist.of(Set.of("client-1", "client-2"));
+        ClientAllowlist b = ClientAllowlist.of(Set.of("client-2", "client-1"));
+        assertThat(a).isEqualTo(b).hasSameHashCodeAs(b);
+        assertThat(a).isNotEqualTo(ClientAllowlist.of(Set.of("client-1")));
+        assertThat(ClientAllowlist.unrestricted()).isEqualTo(ClientAllowlist.unrestricted());
+        assertThat(ClientAllowlist.unrestricted()).isNotEqualTo(a).isNotEqualTo(null);
+        assertThat(a).isNotEqualTo(ClientAllowlist.unrestricted());
+    }
 }

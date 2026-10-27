@@ -30,12 +30,12 @@ public final class AuthorizationService {
     }
 
     /**
-     * True only when this service applies exactly {@code allowlist}, the same instance (identity, not
-     * equality). Lets a wiring check tell a custom service built with the deployer's allowlist from one
-     * that bypasses it.
+     * True only when the allowlist this service applies equals {@code allowlist} by value (see
+     * {@link ClientAllowlist}). Lets a wiring check tell a custom service built with the deployer's allowlist
+     * from one that bypasses it.
      */
     public boolean usesClientAllowlist(ClientAllowlist allowlist) {
-        return allowlist != null && clientAllowlist == allowlist;
+        return allowlist != null && clientAllowlist.equals(allowlist);
     }
 
     public AuthorizationDecision authorize(AuthenticatedCaller caller, ToolInvocation invocation) {
