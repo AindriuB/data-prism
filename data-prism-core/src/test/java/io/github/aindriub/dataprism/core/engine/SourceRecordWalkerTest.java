@@ -901,7 +901,7 @@ class SourceRecordWalkerTest {
         }
     }
 
-    record Locked(String a, String b) {
+    public record Locked(String a, String b) {
         @Override
         public String a() {
             return b;
@@ -1282,6 +1282,26 @@ class SourceRecordWalkerTest {
                     .isInstanceOfSatisfying(PrivacyRefusedException.class,
                             e -> assertThat(e.code()).isEqualTo("SOURCE_MODEL_NOT_A_RECORD"));
         }
+    }
+
+    record PlainModel(Contact contact, List<Contact> contacts, Plain kind, Path path, Instant at, JsonNode node) {
+    }
+
+    @Test
+    @DisplayName("startup accepts a plain model: nested records, a list of records, an enum, a Path, an Instant, a JsonNode")
+    void startupAcceptsAPlainModel() {
+        assertThatCode(() -> SourceModels.require(PlainModel.class)).doesNotThrowAnyException();
+        assertThat(SourceTree.of(new PlainModel(new Contact("n"), List.of(new Contact("m")), Plain.ALPHA,
+                Path.of("x"), Instant.parse("2026-10-27T12:00:00Z"), SourceTree.newObject()))
+                .propertyNames()).containsExactly("contact", "contacts", "kind", "path", "at", "node");
+    }
+
+    @Test
+    @DisplayName("the inspecting reader builds a record's serializer; the leaf reader refuses the record and a user class")
+    void theTwoReadersDiffer() {
+        assertThat(SourceTree.referenceTree(new Contact("n")).get("name").asString()).isEqualTo("n");
+        assertThatThrownBy(() -> SourceTree.leaf(new Contact("n"), false)).isInstanceOf(PrivacyRefusedException.class);
+        assertThatThrownBy(() -> SourceTree.leaf(new JsonValued(), false)).isInstanceOf(PrivacyRefusedException.class);
     }
 
     public static class SpoofHolder {

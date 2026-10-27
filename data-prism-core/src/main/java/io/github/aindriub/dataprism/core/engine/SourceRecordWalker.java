@@ -25,7 +25,6 @@ import java.lang.invoke.MethodType;
 import java.lang.reflect.Array;
 import java.lang.reflect.Field;
 import java.lang.reflect.GenericArrayType;
-import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.RecordComponent;
 import java.lang.reflect.Type;
@@ -823,10 +822,8 @@ final class SourceRecordWalker {
                 if (handles.readable()) {
                     value = (Object) handles.getters()[i].invokeExact(v);
                 } else {
-                    // Field access is denied: whatever the accessors return is prohibited.
-                    Method accessor = handles.components()[i].getAccessor();
-                    accessor.setAccessible(true);
-                    value = accessor.invoke(v);
+                    // Field access is denied: whatever the (public) accessors return is prohibited.
+                    value = handles.components()[i].getAccessor().invoke(v);
                 }
                 collectAll(value, depth + 1);
             } catch (VirtualMachineError e) {

@@ -109,7 +109,7 @@ class SourceTreeReadersArchitectureTest {
         for (JavaClass c : classes) {
             String outer = c.getFullName().contains("$") ? c.getFullName().substring(0, c.getFullName().indexOf('$'))
                     : c.getFullName();
-            if (!classNames.contains(outer)) {
+            if (!classNames.contains(outer) && !classNames.contains(c.getFullName())) {
                 continue;
             }
             for (JavaMethodCall call : c.getMethodCallsFromSelf()) {
