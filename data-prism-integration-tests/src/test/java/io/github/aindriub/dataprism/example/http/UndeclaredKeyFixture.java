@@ -179,7 +179,11 @@ public final class UndeclaredKeyFixture {
                     "/" + name + "/{subject}", Duration.ofSeconds(5));
             ConfiguredJsonSource source = new ConfiguredJsonSource(transport, "fixture-v1", "id", catalogue);
             sources.put(name, source);
-            return new ConfiguredJsonDataSourceAdapter(source, RestClient.create());
+            // The plain HttpURLConnection factory: a JDK HttpClient would initialise the JVM-wide default SSLContext, which
+            // McpHttpEndToEndTest shares a fork with and sets itself.
+            RestClient client = RestClient.builder()
+                    .requestFactory(new org.springframework.http.client.SimpleClientHttpRequestFactory()).build();
+            return new ConfiguredJsonDataSourceAdapter(source, client);
         }
 
         /** Every source registered so far, by name. */

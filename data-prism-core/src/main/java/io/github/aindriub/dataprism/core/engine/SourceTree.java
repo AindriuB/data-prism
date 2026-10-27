@@ -76,40 +76,31 @@ import java.util.Set;
 /**
  * Reads source objects into trees, and builds the nodes that replace them.
  *
- * <p>The one mapper on the trusted side, and it never serialises anything. Three
- * places need to turn a source record into a tree — the scrubbing engine, the
- * prohibited-value extractor and the correlation service — and each having its
- * own mapper meant three objects that an architecture rule had to name
- * individually, which is a rule that gets weaker every time someone adds a
- * fourth.
+ * <p>The engine builds the tree of a source record itself ({@link SourceRecordWalker}): each record component is
+ * read from the record's private field and written under the component's own name, so no Jackson annotation,
+ * accessor or serializer can move a value out from under its own classification. Jackson is handed only scalar
+ * leaf values whose whole object graph is JDK classes, through {@link #leaf}.
  *
- * <p>The rule that matters is that exactly one mapper <em>writes</em> what a model
- * sees, so the scrubbing module cannot be bypassed. Keeping the reading side to a
- * single object here lets that rule stay short: this class reads and
- * {@code DataPrismObjectMapper} writes, a few classes build a YAML mapper to read
- * an operator-written configuration file at startup, and anything else
- * constructing or obtaining a mapper is a finding.
+ * <p>Two private readers share one configuration, which starts from the Jackson 2 settings so leaf values are
+ * unchanged, with one deliberate exception (D-173-1): java.time types are ISO-8601 text and an {@code Optional}
+ * is unwrapped (empty is null).
+ * <ul>
+ * <li>The <em>leaf reader</em> is guarded: while a serializer is built for any class it refuses every record,
+ * every class not loaded by the bootstrap or platform loader, every class-level serializer annotation and every
+ * bean, reference-type or container serializer. It is the only reader whose {@code valueToTree} main code calls,
+ * and only from {@link #leaf}.
+ * <li>The <em>inspecting reader</em> never writes a source value. Startup uses it to look serializers up
+ * ({@link #refuseIfReadByGetters}, {@link #writtenAsStructure}), and the parity oracle reaches its output through
+ * the test seam {@link #referenceTree}, which no main class calls.
+ * </ul>
  *
- * <p>A source model must be a record (D-173-2), read by its components only: an extra getter on a
- * record is not a property. Reading anything by getters or fields follows conventions that differ
- * between Jackson majors, so the property names a rule matches would depend on the library version.
- * The top-level object must be a record (or a Jackson tree node), and nested values may be records,
- * enums, JDK value types with a dedicated serializer (String, numbers, dates, Locale, UUID, URI...),
- * tree nodes, or collections, maps, optionals and arrays of those; map keys must have a defined text
- * form. Any other class, at any depth, is refused with {@link SourceModels#CODE}: a user class, a user
- * subclass of a collection or map, a class with its own class-level serializer, an enum written as an
- * object, and a JDK class that would be read by getters (a Throwable can carry personal data in its
- * message). A model author's explicit choices stay allowed: {@code @JsonSerialize(using/keyUsing)} on a
- * record or one of its components, {@code @JsonAnyGetter} and {@code @JsonValue}; the engine still
- * classifies their output and a bean looked up through them is refused. A property that is not backed by a record
- * component (an annotated method on the record or an interface it implements) is refused. {@link SourceModels#require} checks the declared types at startup and this class checks the
- * actual object graph.
+ * <p>The rule that matters is that exactly one mapper <em>writes</em> what a model sees, so the scrubbing module
+ * cannot be bypassed: this class reads and {@code DataPrismObjectMapper} writes, a few classes build a YAML mapper
+ * to read an operator-written configuration file at startup, and anything else constructing or obtaining a mapper
+ * is a finding. {@code SourceTreeReadersArchitectureTest} pins which methods may write with which reader.
  *
- * <p>Within that shape the mapper starts from the Jackson 2 settings so values are unchanged,
- * with one deliberate exception (D-173-1): Jackson 2's plain mapper refused java.time types,
- * {@code Optional} and {@code OptionalInt}. They are now accepted and passed to the engine,
- * java.time as ISO-8601 text and an {@code Optional} unwrapped (empty is null). That is a
- * change, not a pin back to Jackson 2.
+ * <p>The top-level object must be a record or a Jackson tree node. {@link SourceModels#require} checks the
+ * declared types at startup and the walker checks the actual object graph.
  */
 public final class SourceTree {
 

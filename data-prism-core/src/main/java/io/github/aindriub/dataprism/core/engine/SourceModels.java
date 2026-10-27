@@ -51,12 +51,11 @@ import java.util.stream.BaseStream;
  * depend on the library version. A record has exactly one reading. Such a class is refused with
  * {@link #CODE}, naming the class's simple name only, never a value.
  *
- * <p>A model author's explicit choices stay allowed: a {@code @JsonSerialize(using/keyUsing)} on a record
- * component or record class, {@code @JsonAnyGetter} and {@code @JsonValue}. The engine still classifies
- * what they produce, and any bean looked up through them is refused. A property the
- * serializer emits that is not backed by a record component (an annotated method on the record or on an
- * interface it implements, however inherited) is refused, since the property name it implies depends on
- * the Jackson major.
+ * <p>The engine builds the tree of a source record itself ({@link SourceRecordWalker}), so a Jackson
+ * annotation on a record has no effect on it. Startup still looks at what the inspecting reader would have
+ * written: a property that is not backed by a record component (an annotated method on the record or on an
+ * interface it implements) is refused here until the startup refusal of Jackson annotations replaces that
+ * check.
  *
  * <p>{@link #require(Class)} checks the declared types at startup. A component declared as
  * {@code Object} or an interface can hold a bean at runtime, so {@link SourceTree#of} checks the
@@ -106,16 +105,6 @@ public final class SourceModels {
             throw refusal(type);
         }
         walk(type, new HashSet<>(), null);
-    }
-
-    /**
-     * The top-level object must be a record, or a Jackson tree node (a configured JSON source reads its
-     * payload as one); its components are checked as the tree is built.
-     */
-    static void refuseUnlessRecord(Class<?> type) {
-        if (!type.isRecord() && !JsonNode.class.isAssignableFrom(type)) {
-            throw refusal(type);
-        }
     }
 
     /**
