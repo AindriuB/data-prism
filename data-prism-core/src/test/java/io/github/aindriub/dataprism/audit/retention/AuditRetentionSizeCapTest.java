@@ -33,6 +33,7 @@ class AuditRetentionSizeCapTest {
     Path tempDir;
 
     private final List<AuditCheckpoint> anchors = new ArrayList<>();
+    private io.github.aindriub.dataprism.audit.AuditChainMode mode = io.github.aindriub.dataprism.audit.AuditChainMode.unkeyed();
 
     /** One record per segment (10-byte cap): each day lists the instants of its records. */
     private List<AuditEvent> write(Path dir, String... instants) throws IOException {
@@ -194,7 +195,7 @@ class AuditRetentionSizeCapTest {
             for (String entry : entries) {
                 String[] parts = entry.split("@");
                 now[0] = Instant.parse(parts[1]);
-                byWriter.computeIfAbsent(parts[0], w -> new AuditRecorder(sink, clock, w)).record("p", "c", "t",
+                byWriter.computeIfAbsent(parts[0], w -> new AuditRecorder(sink, clock, w, null, null, mode)).record("p", "c", "t",
                         "E", "ps", "fp", "D", "s", "i", "CASE", "ALLOW", Set.of("a:ANSWERED"), Set.of(), "corr");
             }
         }
@@ -373,5 +374,70 @@ class AuditRetentionSizeCapTest {
 
         assertThat(names(dir)).contains("audit-2026-03-01.log", "audit-2026-03-01.0001.log",
                 "audit-2026-03-01.0002.log");
+    }
+
+    @Test
+    void aRewrittenSequenceInAnAnchoredIntactDayIsRefusedNotFinished() throws IOException {
+        Path dir = tempDir.resolve("seg");
+        writeMulti(dir, "w@2026-03-01T01:00:00Z", "w@2026-03-01T02:00:00Z", "w@2026-03-01T03:00:00Z",
+                "w@2026-03-02T01:00:00Z");
+        FlakyAnchorStore store = new FlakyAnchorStore();
+        store.failFor = LocalDate.of(2026, 3, 2);
+        assertThatThrownBy(() -> new AuditRetention(dir, Period.ofMonths(6), store, NOW).purge())
+                .hasMessageContaining("AUDIT_RETENTION_ANCHOR_FAILED");
+        Path last = dir.resolve("audit-2026-03-01.0002.log");
+        AuditEvent e = io.github.aindriub.dataprism.audit.format.AuditRecordFormat.parse(
+                Files.readAllLines(last).get(0));
+        AuditEvent forged = new AuditEvent(e.eventId(), e.timestamp(), e.principalId(), e.clientId(), e.tool(),
+                e.entityType(), e.subjectPseudonym(), e.parameterFingerprint(), e.privacyProfile(), e.scopeId(),
+                e.purpose(), e.caseId(), e.policyDecision(), e.sourceSystems(), e.rejectedArguments(),
+                e.correlationId(), e.instanceId(), e.sequence() - 1, e.previousHash(), e.eventHash(),
+                e.recordVersion(), e.fieldDispositions(), e.approvalId(), e.approverId(),
+                e.externalCorrelationId());
+        Files.writeString(last, io.github.aindriub.dataprism.audit.format.AuditRecordFormat.serialize(forged)
+                + "\n", StandardCharsets.UTF_8);
+        store.failFor = null;
+
+        assertThatThrownBy(() -> new AuditRetention(dir, Period.ofMonths(6), store, NOW).purge())
+                .hasMessageContaining("AUDIT_RETENTION_CHAIN_UNVERIFIED");
+
+        assertThat(names(dir)).contains("audit-2026-03-01.log", "audit-2026-03-01.0001.log",
+                "audit-2026-03-01.0002.log");
+    }
+
+    @Test
+    void aTamperedHashInAPartlyDeletedPrefixIsRefusedAndKept() throws IOException {
+        Path dir = tempDir.resolve("seg");
+        writeMulti(dir, "w@2026-03-01T01:00:00Z", "w@2026-03-01T02:00:00Z", "w@2026-03-01T03:00:00Z",
+                "w@2026-03-02T01:00:00Z");
+        AnchorStore store = new AnchorStore();
+        purgeFailingOn(new AuditRetention(dir, Period.ofMonths(6), store, NOW), "audit-2026-03-01.0001.log");
+        Path first = dir.resolve("audit-2026-03-01.log");
+        Files.writeString(first, Files.readString(first).replace("ALLOW", "DENY"), StandardCharsets.UTF_8);
+
+        assertThatThrownBy(() -> new AuditRetention(dir, Period.ofMonths(6), store, NOW).purge())
+                .hasMessageContaining("AUDIT_RETENTION_CHAIN_UNVERIFIED");
+
+        assertThat(names(dir)).contains("audit-2026-03-01.log", "audit-2026-03-01.0001.log");
+    }
+
+    @Test
+    void aTamperedPartlyDeletedPrefixIsRefusedInKeyedModeToo() throws IOException {
+        io.github.aindriub.dataprism.audit.AuditChainKey key =
+                new io.github.aindriub.dataprism.audit.AuditChainKey("k1", new byte[32]);
+        mode = io.github.aindriub.dataprism.audit.AuditChainMode.keyed(key);
+        Path dir = tempDir.resolve("seg");
+        writeMulti(dir, "w@2026-03-01T01:00:00Z", "w@2026-03-01T02:00:00Z", "w@2026-03-01T03:00:00Z",
+                "w@2026-03-02T01:00:00Z");
+        AnchorStore store = new AnchorStore();
+        AuditRetention failing = new AuditRetention(dir, Period.ofMonths(6), store, NOW, false, List.of(key), false);
+        purgeFailingOn(failing, "audit-2026-03-01.0001.log");
+        Path first = dir.resolve("audit-2026-03-01.log");
+        Files.writeString(first, Files.readString(first).replace("ALLOW", "DENY"), StandardCharsets.UTF_8);
+
+        assertThatThrownBy(() -> new AuditRetention(dir, Period.ofMonths(6), store, NOW, false, List.of(key),
+                false).purge()).hasMessageContaining("AUDIT_RETENTION_CHAIN_UNVERIFIED");
+
+        assertThat(names(dir)).contains("audit-2026-03-01.log", "audit-2026-03-01.0001.log");
     }
 }

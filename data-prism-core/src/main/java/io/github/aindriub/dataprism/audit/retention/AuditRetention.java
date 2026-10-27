@@ -36,13 +36,13 @@ import java.util.stream.Stream;
  * sequence and a hash. Anchors are written first, and if any anchor write
  * fails nothing is deleted, with one exception: a day an earlier purge anchored
  * and only part deleted is finished first (its remaining segments are removed
- * without re-verifying them, because the day was verified and anchored before
- * its deletion began). A failure after that names the finished day in its message.
+ * only after they verify as a chain on their own, never joined to the next day, and start where an
+ * earlier anchor says they should). A failure after that names the finished day in its message.
  *
  * <p>Trust assumption: the retention anchor store is trusted. Anyone who can
- * write to it can authorise the deletion of a day it anchors, unverified; that
- * was already so for the anchors that vouch for a chain's start, and finishing
- * a partly purged day does not widen who can write them.
+ * write to it can vouch for a chain's start and can make a day look partly
+ * purged; that was already so for the anchors that vouch for a chain's start.
+ * A day recognised as partly purged is still verified before it is deleted.
  */
 public final class AuditRetention {
 
@@ -161,7 +161,7 @@ public final class AuditRetention {
 
         segments.sort(SegmentedFileAuditSink.SEGMENT_ORDER);
         List<Path> deleted = new ArrayList<>();
-        // A day an earlier run anchored and then failed to finish deleting is finished first, unverified.
+        // A day an earlier run anchored and then failed to finish deleting is finished first, once its remainder verifies on its own.
         int partial = partlyPurgedDayLength(segments);
         String finishedDay = null;
         if (partial > 0) {
@@ -252,9 +252,8 @@ public final class AuditRetention {
 
     /**
      * Deletes one day's segments, highest index first, and returns them in index order. If a delete fails,
-     * what remains is a prefix of the day. The next purge does not re-verify that prefix against its
-     * neighbours; it recognises it by the day's own anchors (see {@link #partlyPurgedDayLength}) and
-     * finishes it.
+     * what remains is a prefix of the day. The next purge recognises the prefix by the day's own
+     * anchors, verifies it on its own, and finishes it (see {@link #partlyPurgedDayLength}).
      */
     private List<Path> deleteDay(List<Path> day) {
         for (int i = day.size() - 1; i >= 0; i--) {
@@ -272,8 +271,10 @@ public final class AuditRetention {
      * deleted, or 0. The oldest remaining expired day is such a day only if it has at least one parseable
      * record and every writer in it has a recorded retention anchor for this very day whose sequence is
      * at least that writer's last remaining record, and at least one writer's anchor is beyond it, which
-     * proves records were deleted. The day was verified and anchored in full before deletion began, so a
-     * writer whose records all remain loses nothing. Anything else, including a missing or other-day
+     * proves records were deleted. A writer whose records all remain loses nothing. The anchors say the day
+     * was once verified, not that its files are unchanged, so the remaining segments must then verify as
+     * a chain on their own (never joined to the next day, under the same chain keys as the normal path)
+     * and each writer's first remaining record must start at GENESIS or follow an earlier anchor. Anything else, including a missing or other-day
      * anchor, takes the normal verification path, which refuses what it cannot vouch for.
      */
     private int partlyPurgedDayLength(List<Path> segments) {
@@ -323,6 +324,22 @@ public final class AuditRetention {
             deletionProven |= best > w.getValue();
         }
         if (!deletionProven) {
+            return 0;
+        }
+        // The anchors only say the day was once verified. The files may have been edited since, so the
+        // remainder must verify as a chain on its own (never joined to the next day) and start where it
+        // should before anything in it is deleted unread.
+        List<Path> prefix = segments.subList(0, n);
+        AuditChainVerifier.VerificationReport report;
+        try {
+            report = AuditChainVerifier.verifySegments(prefix, new ArrayList<>(), chainKeys, allowUnkeyedWriters);
+        } catch (IOException e) {
+            throw new RetentionException(ANCHOR_FAILED + ": could not read the expiring segments", e);
+        }
+        // A structural anomaly (a duplicate sequence, say) is a refusal here too: a clean partial deletion
+        // never leaves one, and a rewritten sequence number shows up as exactly that.
+        if (firstBadOffset(report) >= 0 || report.hasStructuralAnomaly()
+                || firstUnanchoredStart(prefix, earlier) >= 0) {
             return 0;
         }
         return n;
@@ -385,7 +402,10 @@ public final class AuditRetention {
             }
         }
         for (AuditChainVerifier.StructuralAnomaly a : report.anomalies()) {
-            if (a.type().isBreak()) {
+            // A duplicate sequence is not counted as a break by the verifier, but purge must not erase it: a
+            // rewritten sequence number looks exactly like one, and the break that follows is blamed on a
+            // later record, which would let the altered day be deleted.
+            if (a.type().isBreak() || a.type() == AuditChainVerifier.AnomalyType.DUPLICATE_SEQUENCE) {
                 bad = Math.min(bad, a.primaryOffset());
             }
         }
