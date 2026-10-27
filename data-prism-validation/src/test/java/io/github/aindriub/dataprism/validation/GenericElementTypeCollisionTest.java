@@ -265,13 +265,13 @@ class GenericElementTypeCollisionTest {
     }
 
     @Test
-    @DisplayName("with the startup check skipped, a non-generic record behind Box<Leaf> is refused as unclassified")
+    @DisplayName("with the startup check skipped, a non-generic record behind Box<Leaf> is refused as not declared")
     void boxBehindGenericInterfaceWithoutStartupCheck() throws Exception {
         var o = run(new BoxResponse("r-1", new BoxImpl(ENVELOPE_EMAIL, ENVELOPE_NAME)), false);
         // Runs both validators when the engine releases anything: neither may be the only guard.
         assertNotReleased(o, ENVELOPE_EMAIL);
         assertNotReleased(o, ENVELOPE_NAME);
-        assertThat(o.refusal()).isEqualTo("UNCLASSIFIED_STRUCTURE");
+        assertThat(o.refusal()).isEqualTo("SOURCE_MODEL_RECORD_NOT_DECLARED");
         assertThat(o.output()).isNull();
     }
 }

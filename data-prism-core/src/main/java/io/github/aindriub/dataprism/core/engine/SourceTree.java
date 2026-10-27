@@ -619,7 +619,15 @@ public final class SourceTree {
             }
             return LEAF.getNodeFactory().stringNode(written.propertyNames().iterator().next());
         }
-        JsonNode written = LEAF.valueToTree(value);
+        return checkedLeaf(LEAF.valueToTree(value), value.getClass());
+    }
+
+    /**
+     * The leaf result check: a scalar node, a null node, or a {@code POJONode} whose held object's class is
+     * exactly {@code byte[]} (checked before anything else is called on it). Anything else, an object, an
+     * array or any other embedded object, is refused.
+     */
+    static JsonNode checkedLeaf(JsonNode written, Class<?> source) {
         Class<?> c = written.getClass();
         boolean scalar = c == StringNode.class || c == IntNode.class || c == LongNode.class
                 || c == ShortNode.class || c == FloatNode.class || c == DoubleNode.class
@@ -627,7 +635,7 @@ public final class SourceTree {
                 || c == NullNode.class || c == BinaryNode.class
                 || (c == POJONode.class && ((POJONode) written).getPojo().getClass() == byte[].class);
         if (!scalar) {
-            throw SourceModels.refusalAt(value.getClass(), "$");
+            throw SourceModels.refusalAt(source, "$");
         }
         return written;
     }

@@ -222,6 +222,16 @@ final class SourceRecordWalker {
             return nodes().nullNode();
         }
         Class<?> c = v.getClass();
+        // A position that declares a record holds that record or nothing: a heap-polluted list that holds a
+        // string where Contact was declared is refused, not written as a string. (A record value is judged by
+        // the ordered rules in record().)
+        if (!c.isRecord()) {
+            Class<?> declared = rawOf(pos.declared());
+            if (declared != null && declared.isRecord()) {
+                throw refuse(SourceModels.RECORD_NOT_DECLARED_CODE, pos,
+                        name(declared) + " is declared here, and this is not one", v);
+            }
+        }
         if (v instanceof JsonNode node) {
             return jsonNode(node, pos);
         }
@@ -565,7 +575,9 @@ final class SourceRecordWalker {
         }
         if (c == DecimalNode.class) {
             BigDecimal number = n.decimalValue();
-            return number.getClass() == BigDecimal.class ? f.numberNode(number) : foreignNode(pos, foreign);
+            // Trailing zeros are stripped, as the reader the base commit used wrote them (1.50 is 1.5).
+            return number.getClass() == BigDecimal.class ? f.numberNode(number.stripTrailingZeros())
+                    : foreignNode(pos, foreign);
         }
         if (c == BigIntegerNode.class) {
             BigInteger number = n.bigIntegerValue();
