@@ -25,10 +25,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.provider.ValueSource;
-import org.junit.jupiter.params.ParameterizedTest;
 import org.slf4j.LoggerFactory;
 import org.springframework.aop.framework.ProxyFactory;
+import org.springframework.beans.factory.NoUniqueBeanDefinitionException;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
@@ -43,7 +42,11 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** A deployer's own CaseAuthorizer and ClientAllowlist beans are used, not silently replaced. */
+/**
+ * A deployer's own CaseAuthorizer and ClientAllowlist beans are used, not silently replaced. Both come through
+ * Spring's single injection, so none, many or a non-candidate is Spring's to refuse; what is checked here is the
+ * outcome.
+ */
 class SecurityWiringTest {
 
     private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
@@ -53,6 +56,13 @@ class SecurityWiringTest {
     private final WebApplicationContextRunner context = new WebApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
             .withPropertyValues(valid());
+
+    /** The allowlist decision is made, so a test about the case authoriser is not refused for the other. */
+    private final WebApplicationContextRunner forCase = context
+            .withPropertyValues("dataprism.security-policy.client-allowlist=unrestricted");
+    /** The case decision is made, so a test about the allowlist is not refused for the other. */
+    private final WebApplicationContextRunner forAllowlist = context
+            .withPropertyValues("dataprism.security-policy.case-authorisation=token-trusted");
 
     private Logger log;
     private ListAppender<ILoggingEvent> appender;
@@ -73,7 +83,7 @@ class SecurityWiringTest {
 
     @Test
     void a_user_case_authorizer_that_refuses_is_used() {
-        context.withUserConfiguration(Base.class, RefusingCaseAuthorizer.class).run(result -> {
+        forCase.withUserConfiguration(Base.class, RefusingCaseAuthorizer.class).run(result -> {
             assertThat(result).hasNotFailed();
             ScopeResolver resolver = result.getBean(ScopeResolver.class);
             AuthorizationDecision decision = result.getBean(AuthorizationService.class)
@@ -82,13 +92,13 @@ class SecurityWiringTest {
             assertThatThrownBy(() -> resolver.resolve(CALLER, decision, CLOCK))
                     .isInstanceOfSatisfying(SecurityRefusedException.class,
                             e -> assertThat(e.code()).isEqualTo(ScopeResolver.CASE_NOT_AUTHORISED));
-            assertThat(warnings()).noneMatch(w -> w.contains("CaseAuthorizer"));
+            assertThat(warnings()).noneMatch(w -> w.contains("case-authorisation"));
         });
     }
 
     @Test
     void a_user_client_allowlist_is_used() {
-        context.withUserConfiguration(Base.class, RestrictiveAllowlist.class).run(result -> {
+        forAllowlist.withUserConfiguration(Base.class, RestrictiveAllowlist.class).run(result -> {
             assertThat(result).hasNotFailed();
             AuthorizationDecision decision = result.getBean(AuthorizationService.class)
                     .authorize(CALLER, new ToolInvocation("get_entity_context", "GET_ENTITY_CONTEXT"));
@@ -97,75 +107,322 @@ class SecurityWiringTest {
         });
     }
 
+    // ---- each refusal also fires under lazy initialisation ----
+
     @Test
-    void a_release_without_a_case_authorizer_is_refused_under_global_lazy_initialisation() {
-        withVersion("0.8.0").withPropertyValues("spring.main.lazy-initialization=true")
+    void a_missing_case_authorizer_is_refused_under_global_lazy_initialisation() {
+        forCase.withPropertyValues("spring.main.lazy-initialization=true")
                 .withInitializer(SecurityWiringTest::applyLazyInitialisation)
                 .withUserConfiguration(Base.class)
                 .run(result -> assertRefusal(result.getStartupFailure(), "MISSING_CASE_AUTHORIZER"));
     }
 
     @Test
+    void a_missing_client_allowlist_is_refused_under_global_lazy_initialisation() {
+        forAllowlist.withPropertyValues("spring.main.lazy-initialization=true")
+                .withInitializer(SecurityWiringTest::applyLazyInitialisation)
+                .withUserConfiguration(Base.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "MISSING_CLIENT_ALLOWLIST"));
+    }
+
+    @Test
     void a_bypassing_scope_resolver_is_refused_under_global_lazy_initialisation() {
-        context.withPropertyValues("spring.main.lazy-initialization=true")
+        forCase.withPropertyValues("spring.main.lazy-initialization=true")
                 .withInitializer(SecurityWiringTest::applyLazyInitialisation)
                 .withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, OwnScopeResolver.class)
                 .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
     }
 
     @Test
-    void two_case_authorizers_are_refused_under_global_lazy_initialisation() {
-        context.withPropertyValues("spring.main.lazy-initialization=true")
-                .withInitializer(SecurityWiringTest::applyLazyInitialisation)
-                .withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, SecondCaseAuthorizer.class)
-                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CASE_AUTHORIZER"));
-    }
-
-    @Test
     void a_bypassing_authorization_service_is_refused_under_global_lazy_initialisation() {
-        context.withPropertyValues("spring.main.lazy-initialization=true")
+        forAllowlist.withPropertyValues("spring.main.lazy-initialization=true")
                 .withInitializer(SecurityWiringTest::applyLazyInitialisation)
                 .withUserConfiguration(Base.class, RestrictiveAllowlist.class, OwnAuthorizationService.class)
                 .run(result -> assertRefusal(result.getStartupFailure(), "CLIENT_ALLOWLIST_BYPASSED"));
     }
 
     @Test
-    void two_client_allowlists_are_refused_under_global_lazy_initialisation() {
-        context.withPropertyValues("spring.main.lazy-initialization=true")
-                .withInitializer(SecurityWiringTest::applyLazyInitialisation)
-                .withUserConfiguration(Base.class, RestrictiveAllowlist.class, SecondAllowlist.class)
-                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CLIENT_ALLOWLIST"));
+    void a_bypassing_scope_resolver_is_refused_under_boots_lazy_initialisation() {
+        forCase.withInitializer(SecurityWiringTest::applyBootLazyInitialisation)
+                .withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, OwnScopeResolver.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
     }
 
     @Test
-    void a_bypassing_scope_resolver_is_refused_under_boots_lazy_initialisation() {
-        context.withInitializer(SecurityWiringTest::applyBootLazyInitialisation)
-                .withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, OwnScopeResolver.class)
-                .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
+    void a_scope_resolver_that_skips_the_default_is_refused_when_no_authorizer_exists_under_lazy_initialisation() {
+        forCase.withPropertyValues("spring.main.lazy-initialization=true")
+                .withInitializer(SecurityWiringTest::applyLazyInitialisation)
+                .withUserConfiguration(Base.class, OwnScopeResolver.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "MISSING_CASE_AUTHORIZER"));
+    }
+
+    @Test
+    void an_authorization_service_that_skips_the_default_is_refused_when_no_allowlist_exists_under_lazy_initialisation() {
+        forAllowlist.withPropertyValues("spring.main.lazy-initialization=true")
+                .withInitializer(SecurityWiringTest::applyLazyInitialisation)
+                .withUserConfiguration(Base.class, OwnAuthorizationService.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "MISSING_CLIENT_ALLOWLIST"));
     }
 
     private static void applyBootLazyInitialisation(org.springframework.context.ConfigurableApplicationContext ctx) {
         ctx.addBeanFactoryPostProcessor(new org.springframework.boot.LazyInitializationBeanFactoryPostProcessor());
     }
 
-    private static org.springframework.context.ConfigurableApplicationContext parentWith(Class<?>... configurations) {
-        org.springframework.context.annotation.AnnotationConfigApplicationContext parent =
-                new org.springframework.context.annotation.AnnotationConfigApplicationContext(configurations);
-        return parent;
+    // ---- outcome check ----
+
+    @Test
+    void an_application_scope_resolver_without_the_injected_authorizer_is_refused() {
+        forCase.withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, OwnScopeResolver.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
     }
 
     @Test
-    void a_case_authorizer_in_the_parent_context_counts_and_satisfies_the_release_gate() {
+    void an_application_authorization_service_without_the_injected_allowlist_is_refused() {
+        forAllowlist.withUserConfiguration(Base.class, RestrictiveAllowlist.class, OwnAuthorizationService.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CLIENT_ALLOWLIST_BYPASSED"));
+    }
+
+    @Test
+    void an_application_scope_resolver_built_with_the_injected_authorizer_starts() {
+        forCase.withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, WiredScopeResolver.class)
+                .run(result -> {
+                    assertThat(result).hasNotFailed();
+                    assertThat(result.getBean(ScopeResolver.class).usesCaseAuthorizer(
+                            result.getBean(CaseAuthorizer.class))).isTrue();
+                });
+    }
+
+    @Test
+    void an_application_authorization_service_built_with_the_injected_allowlist_starts() {
+        forAllowlist.withUserConfiguration(Base.class, RestrictiveAllowlist.class, WiredAuthorizationService.class)
+                .run(result -> {
+                    assertThat(result).hasNotFailed();
+                    assertThat(result.getBean(AuthorizationService.class).usesClientAllowlist(
+                            result.getBean(ClientAllowlist.class))).isTrue();
+                });
+    }
+
+    @Test
+    void an_application_scope_resolver_that_skips_the_default_is_refused_when_no_authorizer_exists() {
+        forCase.withUserConfiguration(Base.class, OwnScopeResolver.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "MISSING_CASE_AUTHORIZER"));
+    }
+
+    @Test
+    void an_application_authorization_service_that_skips_the_default_is_refused_when_no_allowlist_exists() {
+        forAllowlist.withUserConfiguration(Base.class, OwnAuthorizationService.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "MISSING_CLIENT_ALLOWLIST"));
+    }
+
+    @Test
+    void a_scope_resolver_built_with_a_different_authorizer_while_a_bean_exists_is_refused() {
+        forCase.withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, OtherAuthorizerScopeResolver.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
+    }
+
+    @Test
+    void our_own_scope_resolver_replaced_after_the_fact_by_a_token_trusted_one_is_refused() {
+        forCase.withUserConfiguration(Base.class, RefusingCaseAuthorizer.class,
+                TokenTrustedResolverSubstitution.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
+    }
+
+    @Test
+    void our_own_authorization_service_replaced_after_the_fact_by_an_unrestricted_one_is_refused() {
+        forAllowlist.withUserConfiguration(Base.class, RestrictiveAllowlist.class,
+                UnrestrictedServiceSubstitution.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CLIENT_ALLOWLIST_BYPASSED"));
+    }
+
+    @Test
+    void a_same_named_scope_resolver_while_a_case_authorizer_exists_refuses_startup() {
+        forCase.withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, SameNamedScopeResolver.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
+    }
+
+    @Test
+    void a_factory_bean_scope_resolver_while_a_case_authorizer_exists_refuses_startup() {
+        forCase.withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, FactoryScopeResolver.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
+    }
+
+    @Test
+    void a_same_named_authorization_service_while_a_client_allowlist_exists_refuses_startup() {
+        forAllowlist.withUserConfiguration(Base.class, RestrictiveAllowlist.class, SameNamedAuthorizationService.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CLIENT_ALLOWLIST_BYPASSED"));
+    }
+
+    @Test
+    void a_factory_bean_authorization_service_while_a_client_allowlist_exists_refuses_startup() {
+        forAllowlist.withUserConfiguration(Base.class, RestrictiveAllowlist.class, FactoryAuthorizationService.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CLIENT_ALLOWLIST_BYPASSED"));
+    }
+
+    // ---- single injection: cardinality, candidates, scope ----
+
+    @Test
+    void two_case_authorizers_fail_with_springs_own_error() {
+        forCase.withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, SecondCaseAuthorizer.class)
+                .run(result -> assertThat(rootCause(result.getStartupFailure()))
+                        .isInstanceOf(NoUniqueBeanDefinitionException.class)
+                        .hasMessageContaining("refusing").hasMessageContaining("secondRefusing"));
+    }
+
+    @Test
+    void two_client_allowlists_fail_with_springs_own_error() {
+        forAllowlist.withUserConfiguration(Base.class, RestrictiveAllowlist.class, SecondAllowlist.class)
+                .run(result -> assertThat(rootCause(result.getStartupFailure()))
+                        .isInstanceOf(NoUniqueBeanDefinitionException.class)
+                        .hasMessageContaining("allowlist").hasMessageContaining("secondAllowlist"));
+    }
+
+    @Test
+    void two_case_authorizers_fail_with_springs_own_error_under_lazy_initialisation() {
+        forCase.withPropertyValues("spring.main.lazy-initialization=true")
+                .withInitializer(SecurityWiringTest::applyLazyInitialisation)
+                .withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, SecondCaseAuthorizer.class)
+                .run(result -> assertThat(rootCause(result.getStartupFailure()))
+                        .isInstanceOf(NoUniqueBeanDefinitionException.class));
+    }
+
+    @Test
+    void two_client_allowlists_fail_with_springs_own_error_under_lazy_initialisation() {
+        forAllowlist.withPropertyValues("spring.main.lazy-initialization=true")
+                .withInitializer(SecurityWiringTest::applyLazyInitialisation)
+                .withUserConfiguration(Base.class, RestrictiveAllowlist.class, SecondAllowlist.class)
+                .run(result -> assertThat(rootCause(result.getStartupFailure()))
+                        .isInstanceOf(NoUniqueBeanDefinitionException.class));
+    }
+
+    @Test
+    void two_case_authorizers_with_one_primary_start_and_every_resolver_holds_the_primary() {
+        forCase.withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, PrimaryCaseAuthorizer.class,
+                WiredScopeResolver.class)
+                .run(result -> {
+                    assertThat(result).hasNotFailed();
+                    CaseAuthorizer primary = result.getBean("primaryAuthorizer", CaseAuthorizer.class);
+                    result.getBeansOfType(ScopeResolver.class).values()
+                            .forEach(resolver -> assertThat(resolver.usesCaseAuthorizer(primary)).isTrue());
+                });
+    }
+
+    @Test
+    void two_client_allowlists_with_one_primary_start_and_every_service_holds_the_primary() {
+        forAllowlist.withUserConfiguration(Base.class, RestrictiveAllowlist.class, PrimaryAllowlist.class,
+                WiredAuthorizationService.class)
+                .run(result -> {
+                    assertThat(result).hasNotFailed();
+                    ClientAllowlist primary = result.getBean("primaryAllowlist", ClientAllowlist.class);
+                    result.getBeansOfType(AuthorizationService.class).values()
+                            .forEach(service -> assertThat(service.usesClientAllowlist(primary)).isTrue());
+                });
+    }
+
+    @Test
+    void a_case_authorizer_that_is_not_an_autowire_candidate_counts_as_none() {
+        forCase.withUserConfiguration(Base.class, NonCandidateAuthorizer.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "MISSING_CASE_AUTHORIZER"));
+    }
+
+    @Test
+    void a_case_authorizer_that_is_not_a_default_candidate_counts_as_none() {
+        forCase.withUserConfiguration(Base.class, NonDefaultCandidateAuthorizer.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "MISSING_CASE_AUTHORIZER"));
+    }
+
+    @Test
+    void a_client_allowlist_that_is_not_an_autowire_candidate_counts_as_none() {
+        forAllowlist.withUserConfiguration(Base.class, NonCandidateAllowlist.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "MISSING_CLIENT_ALLOWLIST"));
+    }
+
+    @Test
+    void a_client_allowlist_that_is_not_a_default_candidate_counts_as_none() {
+        forAllowlist.withUserConfiguration(Base.class, NonDefaultCandidateAllowlist.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "MISSING_CLIENT_ALLOWLIST"));
+    }
+
+    @Test
+    void a_prototype_case_authorizer_is_refused_with_the_singleton_message() {
+        forCase.withUserConfiguration(Base.class, PrototypeCaseAuthorizer.class).run(result -> {
+            assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED");
+            assertThat(result.getStartupFailure()).hasMessageContaining("singleton");
+        });
+    }
+
+    @Test
+    void a_prototype_client_allowlist_is_refused_with_the_singleton_message() {
+        forAllowlist.withUserConfiguration(Base.class, PrototypeAllowlist.class).run(result -> {
+            assertRefusal(result.getStartupFailure(), "CLIENT_ALLOWLIST_BYPASSED");
+            assertThat(result.getStartupFailure()).hasMessageContaining("singleton");
+        });
+    }
+
+    @Test
+    void a_target_class_scoped_proxy_case_authorizer_starts() {
+        forCase.withUserConfiguration(Base.class, TargetClassScopedAuthorizer.class)
+                .run(result -> assertThat(result).hasNotFailed());
+    }
+
+    @Test
+    void an_interfaces_scoped_proxy_case_authorizer_starts() {
+        forCase.withUserConfiguration(Base.class, InterfacesScopedAuthorizer.class)
+                .run(result -> assertThat(result).hasNotFailed());
+    }
+
+    @Test
+    void a_scoped_proxy_case_authorizer_still_refuses_a_bypassing_resolver() {
+        forCase.withUserConfiguration(Base.class, TargetClassScopedAuthorizer.class, OwnScopeResolver.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
+    }
+
+    @Test
+    void an_interfaces_scoped_proxy_allowlist_fails_startup() {
+        forAllowlist.withUserConfiguration(Base.class, InterfacesScopedAllowlist.class)
+                .run(result -> assertThat(result).hasFailed());
+    }
+
+    @Test
+    void a_bean_merely_named_like_a_scoped_target_is_an_ordinary_bean() {
+        forCase.withUserConfiguration(Base.class, FakeScopedTargetAuthorizer.class)
+                .run(result -> {
+                    assertThat(result).hasNotFailed();
+                    assertThat(result.getBean(ScopeResolver.class).usesCaseAuthorizer(
+                            result.getBean("scopedTarget.extra", CaseAuthorizer.class))).isTrue();
+                });
+    }
+
+    @Test
+    void an_allowlist_merely_named_like_a_scoped_target_is_an_ordinary_bean() {
+        forAllowlist.withUserConfiguration(Base.class, FakeScopedTargetAllowlist.class)
+                .run(result -> {
+                    assertThat(result).hasNotFailed();
+                    assertThat(result.getBean(AuthorizationService.class).usesClientAllowlist(
+                            result.getBean("scopedTarget.extraAllow", ClientAllowlist.class))).isTrue();
+                });
+    }
+
+    // ---- parent and child ----
+
+    private static org.springframework.context.ConfigurableApplicationContext parentWith(Class<?>... configurations) {
+        return new org.springframework.context.annotation.AnnotationConfigApplicationContext(configurations);
+    }
+
+    @Test
+    void auto_configuration_in_the_child_only_uses_the_bean_in_the_parent() {
         try (var parent = parentWith(RefusingCaseAuthorizer.class)) {
-            withVersion("0.8.0").withParent(parent).withUserConfiguration(Base.class)
-                    .run(result -> assertThat(result).hasNotFailed());
+            forCase.withParent(parent).withUserConfiguration(Base.class).run(result -> {
+                assertThat(result).hasNotFailed();
+                assertThat(result.getBean(ScopeResolver.class).usesCaseAuthorizer(
+                        parent.getBean(CaseAuthorizer.class))).isTrue();
+            });
         }
     }
 
     @Test
     void a_scope_resolver_that_bypasses_a_parent_contexts_case_authorizer_is_refused() {
         try (var parent = parentWith(RefusingCaseAuthorizer.class)) {
-            context.withParent(parent).withUserConfiguration(Base.class, OwnScopeResolver.class)
+            forCase.withParent(parent).withUserConfiguration(Base.class, OwnScopeResolver.class)
                     .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
         }
     }
@@ -173,7 +430,7 @@ class SecurityWiringTest {
     @Test
     void a_parent_contexts_scope_resolver_that_ignores_the_childs_case_authorizer_is_refused() {
         try (var parent = parentWith(OwnScopeResolverParent.class)) {
-            context.withParent(parent).withUserConfiguration(Base.class, RefusingCaseAuthorizer.class)
+            forCase.withParent(parent).withUserConfiguration(Base.class, RefusingCaseAuthorizer.class)
                     .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
         }
     }
@@ -181,153 +438,116 @@ class SecurityWiringTest {
     @Test
     void a_parent_contexts_authorization_service_that_ignores_the_childs_allowlist_is_refused() {
         try (var parent = parentWith(OwnAuthorizationServiceParent.class)) {
-            context.withParent(parent).withUserConfiguration(Base.class, RestrictiveAllowlist.class)
+            forAllowlist.withParent(parent).withUserConfiguration(Base.class, RestrictiveAllowlist.class)
                     .run(result -> assertRefusal(result.getStartupFailure(), "CLIENT_ALLOWLIST_BYPASSED"));
         }
     }
 
     @Test
-    void a_target_class_scoped_proxy_case_authorizer_starts_in_a_release() {
-        withVersion("0.8.0").withUserConfiguration(Base.class, TargetClassScopedAuthorizer.class)
-                .run(result -> assertThat(result).hasNotFailed());
+    void a_case_authorizer_in_each_of_two_auto_configured_contexts_refuses_the_child() {
+        forCase.withUserConfiguration(Base.class, RefusingCaseAuthorizer.class).run(parent -> {
+            assertThat(parent).hasNotFailed();
+            forCase.withParent(parent).withUserConfiguration(Base.class, SecondCaseAuthorizer.class)
+                    .run(child -> assertRefusal(child.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
+        });
     }
 
     @Test
-    void an_interfaces_scoped_proxy_case_authorizer_starts_in_a_release() {
-        withVersion("0.8.0").withUserConfiguration(Base.class, InterfacesScopedAuthorizer.class)
-                .run(result -> assertThat(result).hasNotFailed());
+    void a_client_allowlist_in_each_of_two_auto_configured_contexts_refuses_the_child() {
+        forAllowlist.withUserConfiguration(Base.class, RestrictiveAllowlist.class).run(parent -> {
+            assertThat(parent).hasNotFailed();
+            forAllowlist.withParent(parent).withUserConfiguration(Base.class, SecondAllowlist.class)
+                    .run(child -> assertRefusal(child.getStartupFailure(), "CLIENT_ALLOWLIST_BYPASSED"));
+        });
     }
 
     @Test
-    void a_scoped_proxy_case_authorizer_still_refuses_a_bypassing_resolver() {
-        withVersion("0.8.0").withUserConfiguration(Base.class, TargetClassScopedAuthorizer.class,
-                OwnScopeResolver.class)
-                .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
+    void token_trusted_in_the_parent_and_a_bean_only_in_the_child_is_a_conflict_in_the_child() {
+        forCase.withPropertyValues("dataprism.security-policy.case-authorisation=token-trusted")
+                .withUserConfiguration(Base.class).run(parent -> {
+                    assertThat(parent).hasNotFailed();
+                    forCase.withParent(parent).withUserConfiguration(Base.class, RefusingCaseAuthorizer.class)
+                            .run(child -> assertRefusal(child.getStartupFailure(), "CASE_AUTHORISATION_CONFLICT"));
+                });
+    }
+
+    // ---- unchanged behaviour ----
+
+    @Test
+    void a_throwing_case_authorizer_is_logged_by_class_name_only() {
+        String sentinel = "sentinel-case-and-principal";
+        Logger resolverLog = (Logger) LoggerFactory.getLogger(ScopeResolver.class);
+        ListAppender<ILoggingEvent> resolverAppender = new ListAppender<>();
+        resolverAppender.start();
+        resolverLog.addAppender(resolverAppender);
+        try {
+            forCase.withUserConfiguration(Base.class, ThrowingCaseAuthorizer.class).run(result -> {
+                AuthorizationDecision decision = result.getBean(AuthorizationService.class)
+                        .authorize(CALLER, new ToolInvocation("get_entity_context", "GET_ENTITY_CONTEXT"));
+                assertThatThrownBy(() -> result.getBean(ScopeResolver.class).resolve(CALLER, decision, CLOCK))
+                        .isInstanceOf(SecurityRefusedException.class);
+            });
+            assertThat(resolverAppender.list).isNotEmpty();
+            assertThat(resolverAppender.list).allSatisfy(e -> {
+                assertThat(e.getFormattedMessage()).doesNotContain(sentinel).contains("IllegalStateException");
+                assertThat(e.getThrowableProxy()).isNull();
+            });
+        } finally {
+            resolverLog.detachAppender(resolverAppender);
+        }
     }
 
     @Test
-    void a_bean_merely_named_like_a_scoped_target_does_not_hide_from_the_count() {
-        withVersion("0.8.0").withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, FakeScopedTargetAuthorizer.class)
-                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CASE_AUTHORIZER"));
+    void an_application_bean_shadowing_the_bypass_check_refuses_startup() {
+        forCase.withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, ShadowingBypassCheck.class)
+                .run(result -> {
+                    assertThat(result).hasFailed();
+                    // bean-definition overriding is off, so the same-named bean is rejected outright
+                    assertThat(result.getStartupFailure()).isInstanceOf(
+                            org.springframework.beans.factory.support.BeanDefinitionOverrideException.class);
+                    assertThat(result.getStartupFailure().getMessage()).contains("dataPrismSecurityBypassCheck");
+                });
     }
 
+    /*
+     * Real proxying of ScopeResolver and AuthorizationService is impossible (both final), so a post-processor
+     * that wraps the deployer-side CaseAuthorizer (an interface, so JDK-proxyable) is the closest end-to-end
+     * stand-in: the wired resolver must still use it and the bypass guard must not misread it as a replacement.
+     */
     @Test
-    void an_allowlist_merely_named_like_a_scoped_target_does_not_hide_from_the_count() {
-        context.withUserConfiguration(Base.class, RestrictiveAllowlist.class, FakeScopedTargetAllowlist.class)
-                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CLIENT_ALLOWLIST"));
-    }
-
-    @Test
-    void an_interfaces_scoped_proxy_allowlist_is_refused() {
-        context.withUserConfiguration(Base.class, InterfacesScopedAllowlist.class)
-                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CLIENT_ALLOWLIST"));
-    }
-
-    @Test
-    void a_case_authorizer_that_is_not_an_autowire_candidate_next_to_a_real_one_is_refused() {
-        withVersion("0.8.0").withUserConfiguration(Base.class, RefusingCaseAuthorizer.class,
-                NonCandidateAuthorizer.class)
-                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CASE_AUTHORIZER"));
-    }
-
-    @Test
-    void a_case_authorizer_that_is_not_a_default_candidate_is_refused_in_a_release() {
-        withVersion("0.8.0").withUserConfiguration(Base.class, NonDefaultCandidateAuthorizer.class)
-                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CASE_AUTHORIZER"));
-    }
-
-    @Test
-    void a_client_allowlist_that_is_not_a_default_candidate_is_refused() {
-        context.withUserConfiguration(Base.class, NonDefaultCandidateAllowlist.class)
-                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CLIENT_ALLOWLIST"));
-    }
-
-    @Test
-    void a_single_non_default_candidate_authorizer_is_refused_with_an_accurate_message() {
-        withVersion("0.8.0").withUserConfiguration(Base.class, NonDefaultCandidateAuthorizer.class)
-                .run(result -> assertThat(result.getStartupFailure())
-                        .hasMessageContaining("the only CaseAuthorizer bean is not a default autowire candidate")
-                        .hasMessageNotContaining("more than one"));
-    }
-
-    @Test
-    void a_single_non_default_candidate_allowlist_is_refused_with_an_accurate_message() {
-        context.withUserConfiguration(Base.class, NonDefaultCandidateAllowlist.class)
-                .run(result -> assertThat(result.getStartupFailure())
-                        .hasMessageContaining("the only ClientAllowlist bean is not a default autowire candidate"));
+    void a_proxied_case_authorizer_is_still_consulted_and_does_not_trip_the_bypass_guard() {
+        forCase.withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, ProxyingPostProcessor.class)
+                .run(result -> {
+                    assertThat(result).hasNotFailed();
+                    assertThat(java.lang.reflect.Proxy.isProxyClass(result.getBean(CaseAuthorizer.class).getClass()))
+                            .isTrue();
+                    ScopeResolver resolver = result.getBean(ScopeResolver.class);
+                    AuthorizationDecision decision = result.getBean(AuthorizationService.class)
+                            .authorize(CALLER, new ToolInvocation("get_entity_context", "GET_ENTITY_CONTEXT"));
+                    assertThatThrownBy(() -> resolver.resolve(CALLER, decision, CLOCK))
+                            .isInstanceOfSatisfying(SecurityRefusedException.class,
+                                    e -> assertThat(e.code()).isEqualTo(ScopeResolver.CASE_NOT_AUTHORISED));
+                });
     }
 
     /**
-     * Drives the guard on the instances the real default factories build when the lookup finds no unique
-     * deployer bean: the default resolver then holds the token-trusted fallback while a deployer authorizer
-     * exists in the context. The guard must not exempt its own defaults.
+     * Marks every definition lazy that has not said otherwise. Boot's own lazy-initialisation post-processor
+     * happens to leave SmartInitializingSingleton beans alone; this one does not, so the guard must opt out
+     * itself rather than rely on that.
      */
-    @Test
-    void a_default_scope_resolver_built_token_trusted_while_a_deployer_authorizer_exists_is_refused() {
-        org.springframework.beans.factory.support.DefaultListableBeanFactory factory =
-                new org.springframework.beans.factory.support.DefaultListableBeanFactory();
-        ScopeResolver defaultResolver = new SecurityWiring().dataPrismScopeResolver(
-                io.github.aindriub.dataprism.core.model.PseudonymisationVersion.HMAC_SHA256_V1,
-                defaultProperties(), nobody(CaseAuthorizer.class));
-        factory.registerSingleton("deployersAuthorizer", (CaseAuthorizer) request -> false);
-        factory.registerSingleton("dataPrismScopeResolver", defaultResolver);
-        SecurityWiring.BypassCheck check = new SecurityWiring.BypassCheck(factory,
-                nobody(SecurityWiring.LibraryVersion.class));
-        assertThatThrownBy(check::afterSingletonsInstantiated).isInstanceOfSatisfying(
-                DataPrismConfigurationException.class, e -> assertThat(e.code()).isEqualTo("CASE_AUTHORIZER_BYPASSED"));
+    private static void applyLazyInitialisation(org.springframework.context.ConfigurableApplicationContext ctx) {
+        ctx.addBeanFactoryPostProcessor(factory -> {
+            for (String name : factory.getBeanDefinitionNames()) {
+                if (factory.getBeanDefinition(name) instanceof org.springframework.beans.factory.support.AbstractBeanDefinition definition
+                        && definition.getLazyInit() == null) {
+                    definition.setLazyInit(true);
+                }
+            }
+        });
     }
 
-    @Test
-    void a_default_authorization_service_built_unrestricted_while_a_deployer_allowlist_exists_is_refused() {
-        org.springframework.beans.factory.support.DefaultListableBeanFactory factory =
-                new org.springframework.beans.factory.support.DefaultListableBeanFactory();
-        AuthorizationService defaultService = new SecurityWiring().dataPrismAuthorizationService(
-                new io.github.aindriub.dataprism.security.SecurityPolicy(Set.of("investigation"), java.util.Map.of()),
-                defaultProperties(), nobody(ClientAllowlist.class));
-        factory.registerSingleton("deployersAllowlist", ClientAllowlist.of(Set.of("other-client")));
-        factory.registerSingleton("dataPrismAuthorizationService", defaultService);
-        factory.registerSingleton("deployersAuthorizer", (CaseAuthorizer) request -> false);
-        SecurityWiring.BypassCheck check = new SecurityWiring.BypassCheck(factory,
-                nobody(SecurityWiring.LibraryVersion.class));
-        assertThatThrownBy(check::afterSingletonsInstantiated).isInstanceOfSatisfying(
-                DataPrismConfigurationException.class, e -> assertThat(e.code()).isEqualTo("CLIENT_ALLOWLIST_BYPASSED"));
-    }
+    // ---- fixtures ----
 
-    private static DataPrismProperties defaultProperties() {
-        DataPrismProperties properties = new DataPrismProperties();
-        properties.getPrivacy().setProfile("DEFAULT");
-        properties.getPrivacy().setScopeLifetime(java.time.Duration.ofHours(8));
-        return properties;
-    }
-
-    private static <T> org.springframework.beans.factory.ObjectProvider<T> nobody(Class<T> type) {
-        return new org.springframework.beans.factory.support.DefaultListableBeanFactory().getBeanProvider(type);
-    }
-
-    @Test
-    void the_scoped_proxy_allowlist_refusal_says_so() {
-        context.withUserConfiguration(Base.class, InterfacesScopedAllowlist.class)
-                .run(result -> assertThat(result.getStartupFailure())
-                        .hasMessageContaining("scoped-proxy ClientAllowlist in INTERFACES mode"));
-    }
-
-    @Test
-    void our_own_scope_resolver_built_without_the_deployers_authorizer_is_refused() {
-        withVersion("0.8.0").withUserConfiguration(Base.class, RefusingCaseAuthorizer.class,
-                TokenTrustedResolverSubstitution.class)
-                .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
-    }
-
-    @Test
-    void our_own_authorization_service_built_without_the_deployers_allowlist_is_refused() {
-        context.withUserConfiguration(Base.class, RestrictiveAllowlist.class, UnrestrictedServiceSubstitution.class)
-                .run(result -> assertRefusal(result.getStartupFailure(), "CLIENT_ALLOWLIST_BYPASSED"));
-    }
-
-    /**
-     * Covers the swap case: the built default is replaced after the fact by one with the token-trusted fallback.
-     * The direct tests above cover a default that was itself built wrongly.
-     */
     @Configuration(proxyBeanMethods = false)
     static class TokenTrustedResolverSubstitution {
         @Bean static org.springframework.beans.factory.config.BeanPostProcessor substituteResolver() {
@@ -432,44 +652,6 @@ class SecurityWiringTest {
         CaseAuthorizer scopedAuthorizer() { return new ConcreteCaseAuthorizer(); }
     }
 
-    @Test
-    void a_case_authorizer_in_each_of_parent_and_child_is_ambiguous() {
-        try (var parent = parentWith(RefusingCaseAuthorizer.class)) {
-            context.withParent(parent).withUserConfiguration(Base.class, SecondCaseAuthorizer.class)
-                    .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CASE_AUTHORIZER"));
-        }
-    }
-
-    @Test
-    void a_prototype_case_authorizer_is_refused() {
-        context.withUserConfiguration(Base.class, PrototypeCaseAuthorizer.class)
-                .run(result -> assertRefusal(result.getStartupFailure(), "NON_SINGLETON_CASE_AUTHORIZER"));
-    }
-
-    @Test
-    void a_prototype_client_allowlist_is_refused() {
-        context.withUserConfiguration(Base.class, PrototypeAllowlist.class)
-                .run(result -> assertRefusal(result.getStartupFailure(), "NON_SINGLETON_CLIENT_ALLOWLIST"));
-    }
-
-    @Test
-    void a_version_resource_present_more_than_once_is_unknown_and_so_forbidden() throws Exception {
-        java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("dp-version");
-        try {
-            java.nio.file.Path meta = java.nio.file.Files.createDirectories(dir.resolve("META-INF/data-prism"));
-            java.nio.file.Files.writeString(meta.resolve("version.properties"), "version=0.0.1-SNAPSHOT\n");
-            try (java.net.URLClassLoader loader = new java.net.URLClassLoader(new java.net.URL[] {dir.toUri().toURL()},
-                    SecurityWiring.class.getClassLoader())) {
-                assertThat(SecurityWiring.embeddedVersion(SecurityWiring.class.getClassLoader())).isNotNull();
-                assertThat(SecurityWiring.embeddedVersion(loader)).isNull();
-            }
-        } finally {
-            try (var walk = java.nio.file.Files.walk(dir)) {
-                walk.sorted(java.util.Comparator.reverseOrder()).forEach(path -> path.toFile().delete());
-            }
-        }
-    }
-
     @Configuration(proxyBeanMethods = false)
     static class PrototypeCaseAuthorizer {
         @Bean @org.springframework.context.annotation.Scope("prototype")
@@ -482,194 +664,21 @@ class SecurityWiringTest {
         ClientAllowlist prototypeAllowlist() { return ClientAllowlist.of(Set.of("other-client")); }
     }
 
-    /**
-     * Marks every definition lazy that has not said otherwise. Boot's own lazy-initialisation post-processor
-     * happens to leave SmartInitializingSingleton beans alone; this one does not, so the guard must opt out
-     * itself rather than rely on that.
-     */
-    private static void applyLazyInitialisation(org.springframework.context.ConfigurableApplicationContext ctx) {
-        ctx.addBeanFactoryPostProcessor(factory -> {
-            for (String name : factory.getBeanDefinitionNames()) {
-                if (factory.getBeanDefinition(name) instanceof org.springframework.beans.factory.support.AbstractBeanDefinition definition
-                        && definition.getLazyInit() == null) {
-                    definition.setLazyInit(true);
-                }
-            }
-        });
-    }
-
-    @Test
-    void two_case_authorizers_refuse_startup() {
-        context.withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, SecondCaseAuthorizer.class)
-                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CASE_AUTHORIZER"));
-    }
-
-    @Test
-    void two_client_allowlists_refuse_startup() {
-        context.withUserConfiguration(Base.class, RestrictiveAllowlist.class, SecondAllowlist.class)
-                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CLIENT_ALLOWLIST"));
-    }
-
-    @Test
-    void two_case_authorizers_refuse_startup_even_when_a_custom_resolver_uses_one() {
-        withVersion("0.8.0").withUserConfiguration(Base.class, RefusingCaseAuthorizer.class,
-                        SecondCaseAuthorizer.class, WiredToFirstScopeResolver.class)
-                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CASE_AUTHORIZER"));
-    }
-
-    @Test
-    void two_client_allowlists_refuse_startup_even_when_a_custom_service_uses_one() {
-        withVersion("0.8.0").withUserConfiguration(Base.class, RefusingCaseAuthorizer.class,
-                        RestrictiveAllowlist.class, SecondAllowlist.class, WiredToFirstAuthorizationService.class)
-                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CLIENT_ALLOWLIST"));
+    @Configuration(proxyBeanMethods = false)
+    static class PrimaryCaseAuthorizer {
+        @Bean @org.springframework.context.annotation.Primary CaseAuthorizer primaryAuthorizer() { return request -> false; }
     }
 
     @Configuration(proxyBeanMethods = false)
-    static class WiredToFirstScopeResolver {
-        @Bean ScopeResolver firstScopeResolver(io.github.aindriub.dataprism.core.model.PseudonymisationVersion version,
-                @org.springframework.beans.factory.annotation.Qualifier("refusing") CaseAuthorizer authorizer) {
-            return new ScopeResolver(version, java.time.Duration.ofHours(1),
-                    new io.github.aindriub.dataprism.security.PurposeValidator(Set.of("investigation")), authorizer);
+    static class PrimaryAllowlist {
+        @Bean @org.springframework.context.annotation.Primary ClientAllowlist primaryAllowlist() {
+            return ClientAllowlist.of(Set.of("primary-client"));
         }
     }
 
     @Configuration(proxyBeanMethods = false)
-    static class WiredToFirstAuthorizationService {
-        @Bean AuthorizationService firstAuthorizationService(io.github.aindriub.dataprism.security.SecurityPolicy policy,
-                DataPrismProperties properties,
-                @org.springframework.beans.factory.annotation.Qualifier("allowlist") ClientAllowlist allowlist) {
-            return new AuthorizationService(policy, properties.getPrivacy().getProfile(),
-                    io.github.aindriub.dataprism.core.model.PrivacyScopeType.INVESTIGATION, allowlist);
-        }
-    }
-
-    @Test
-    void with_none_present_the_token_is_trusted_and_one_warning_is_logged() {
-        context.withUserConfiguration(Base.class).run(result -> {
-            assertThat(result).hasNotFailed();
-            ScopeResolver resolver = result.getBean(ScopeResolver.class);
-            AuthorizationDecision decision = result.getBean(AuthorizationService.class)
-                    .authorize(CALLER, new ToolInvocation("get_entity_context", "GET_ENTITY_CONTEXT"));
-            assertThat(decision.allowed()).isTrue();
-            assertThat(resolver.resolve(CALLER, decision, CLOCK)).isNotNull();
-            assertThat(warnings()).filteredOn(w -> w.contains("CaseAuthorizer")).hasSize(1)
-                    .allMatch(w -> w.contains("without assignment checks"));
-        });
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = {"0.8.0", "0.8.0-RC1", "1.0.0"})
-    void the_fallback_is_refused_at_runtime_in_a_release(String version) {
-        withVersion(version).withUserConfiguration(Base.class).run(result -> {
-            assertRefusal(result.getStartupFailure(), "MISSING_CASE_AUTHORIZER");
-            assertThat(result.getStartupFailure())
-                    .hasMessageContaining("a CaseAuthorizer bean is required from 0.8.0");
-            if (!version.equals("0.8.0")) {
-                assertThat(result.getStartupFailure()).hasMessageNotContaining(version);
-            }
-        });
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = {"0.8.0-SNAPSHOT", "0.7.1"})
-    void the_fallback_starts_with_a_warning_before_a_release(String version) {
-        withVersion(version).withUserConfiguration(Base.class).run(result -> {
-            assertThat(result).hasNotFailed();
-            assertThat(warnings()).filteredOn(w -> w.contains("CaseAuthorizer")).hasSize(1);
-        });
-    }
-
-    @Test
-    void an_unknown_version_is_refused_as_a_release() {
-        context.withBean(SecurityWiring.LibraryVersion.class, () -> () -> null)
-                .withUserConfiguration(Base.class)
-                .run(result -> assertRefusal(result.getStartupFailure(), "MISSING_CASE_AUTHORIZER"));
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = {"", "garbage", "0.8", "99999999999.0.0", "0.99999999999.0", "0.8.99999999999", "1.0.0-"})
-    void an_unparseable_or_oversized_version_is_forbidden(String version) {
-        assertThat(SecurityWiring.fallbackForbidden(version)).isTrue();
-    }
-
-    @Test
-    void the_real_embedded_version_is_the_maven_project_version() {
-        String expected = System.getProperty("dataprism.expectedVersion");
-        assertThat(expected).isNotBlank().doesNotContain("${");
-        assertThat(SecurityWiring.embeddedVersion()).isEqualTo(expected);
-    }
-
-    @Test
-    void without_injection_the_real_version_is_used_and_the_gate_matches_it() {
-        boolean forbidden = SecurityWiring.fallbackForbidden(System.getProperty("dataprism.expectedVersion"));
-        context.withUserConfiguration(Base.class).run(result -> {
-            if (forbidden) {
-                assertRefusal(result.getStartupFailure(), "MISSING_CASE_AUTHORIZER");
-            } else {
-                assertThat(result).hasNotFailed();
-            }
-        });
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = {"0.8.0", "1.0.0"})
-    void an_application_scope_resolver_without_a_case_authorizer_is_refused_in_a_release(String version) {
-        withVersion(version).withUserConfiguration(Base.class, OwnScopeResolver.class)
-                .run(result -> assertRefusal(result.getStartupFailure(), "MISSING_CASE_AUTHORIZER"));
-    }
-
-    @Test
-    void an_application_scope_resolver_without_a_case_authorizer_starts_before_a_release() {
-        withVersion("0.8.0-SNAPSHOT").withUserConfiguration(Base.class, OwnScopeResolver.class)
-                .run(result -> assertThat(result).hasNotFailed());
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = {"0.8.0", "0.8.0-RC1", "1.0.0", "0.8.0-SNAPSHOT", "0.7.1"})
-    void with_a_case_authorizer_bean_every_version_starts(String version) {
-        withVersion(version).withUserConfiguration(Base.class, RefusingCaseAuthorizer.class)
-                .run(result -> assertThat(result).hasNotFailed());
-    }
-
-    private WebApplicationContextRunner withVersion(String version) {
-        return context.withBean(SecurityWiring.LibraryVersion.class, () -> () -> version);
-    }
-
-    @Test
-    void replacing_the_scope_resolver_while_a_case_authorizer_exists_refuses_startup() {
-        context.withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, OwnScopeResolver.class)
-                .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
-    }
-
-    @Test
-    void a_scope_resolver_built_with_the_deployers_case_authorizer_starts_in_a_release() {
-        withVersion("0.8.0").withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, WiredScopeResolver.class)
-                .run(result -> {
-                    assertThat(result).hasNotFailed();
-                    assertThat(result.getBean(ScopeResolver.class).usesCaseAuthorizer(
-                            result.getBean(CaseAuthorizer.class))).isTrue();
-                });
-    }
-
-    @Test
-    void a_scope_resolver_built_with_a_different_authorizer_while_a_bean_exists_refuses_startup() {
-        withVersion("0.8.0").withUserConfiguration(Base.class, RefusingCaseAuthorizer.class,
-                        OtherAuthorizerScopeResolver.class)
-                .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
-    }
-
-    @Test
-    void an_authorization_service_built_with_the_deployers_client_allowlist_starts() {
-        withVersion("0.8.0").withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, RestrictiveAllowlist.class,
-                        WiredAuthorizationService.class)
-                .run(result -> assertThat(result).hasNotFailed());
-    }
-
-    @Test
-    void an_authorization_service_built_with_a_different_allowlist_while_a_bean_exists_refuses_startup() {
-        withVersion("0.8.0").withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, RestrictiveAllowlist.class,
-                        OwnAuthorizationService.class)
-                .run(result -> assertRefusal(result.getStartupFailure(), "CLIENT_ALLOWLIST_BYPASSED"));
+    static class NonCandidateAllowlist {
+        @Bean(autowireCandidate = false) ClientAllowlist hiddenAllowlist2() { return ClientAllowlist.of(Set.of("x")); }
     }
 
     @Configuration(proxyBeanMethods = false)
@@ -699,105 +708,6 @@ class SecurityWiringTest {
         }
     }
 
-    @Test
-    void replacing_the_authorization_service_while_a_client_allowlist_exists_refuses_startup() {
-        context.withUserConfiguration(Base.class, RestrictiveAllowlist.class, OwnAuthorizationService.class)
-                .run(result -> assertRefusal(result.getStartupFailure(), "CLIENT_ALLOWLIST_BYPASSED"));
-    }
-
-    @Test
-    void a_same_named_scope_resolver_while_a_case_authorizer_exists_refuses_startup() {
-        context.withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, SameNamedScopeResolver.class)
-                .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
-    }
-
-    @Test
-    void a_factory_bean_scope_resolver_while_a_case_authorizer_exists_refuses_startup() {
-        context.withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, FactoryScopeResolver.class)
-                .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
-    }
-
-    @Test
-    void a_same_named_authorization_service_while_a_client_allowlist_exists_refuses_startup() {
-        context.withUserConfiguration(Base.class, RestrictiveAllowlist.class, SameNamedAuthorizationService.class)
-                .run(result -> assertRefusal(result.getStartupFailure(), "CLIENT_ALLOWLIST_BYPASSED"));
-    }
-
-    @Test
-    void a_factory_bean_authorization_service_while_a_client_allowlist_exists_refuses_startup() {
-        context.withUserConfiguration(Base.class, RestrictiveAllowlist.class, FactoryAuthorizationService.class)
-                .run(result -> assertRefusal(result.getStartupFailure(), "CLIENT_ALLOWLIST_BYPASSED"));
-    }
-
-    @Test
-    void a_throwing_case_authorizer_is_logged_by_class_name_only() {
-        String sentinel = "sentinel-case-and-principal";
-        Logger resolverLog = (Logger) LoggerFactory.getLogger(ScopeResolver.class);
-        ListAppender<ILoggingEvent> resolverAppender = new ListAppender<>();
-        resolverAppender.start();
-        resolverLog.addAppender(resolverAppender);
-        try {
-            context.withUserConfiguration(Base.class, ThrowingCaseAuthorizer.class).run(result -> {
-                AuthorizationDecision decision = result.getBean(AuthorizationService.class)
-                        .authorize(CALLER, new ToolInvocation("get_entity_context", "GET_ENTITY_CONTEXT"));
-                assertThatThrownBy(() -> result.getBean(ScopeResolver.class).resolve(CALLER, decision, CLOCK))
-                        .isInstanceOf(SecurityRefusedException.class);
-            });
-            assertThat(resolverAppender.list).isNotEmpty();
-            assertThat(resolverAppender.list).allSatisfy(e -> {
-                assertThat(e.getFormattedMessage()).doesNotContain(sentinel).contains("IllegalStateException");
-                assertThat(e.getThrowableProxy()).isNull();
-            });
-        } finally {
-            resolverLog.detachAppender(resolverAppender);
-        }
-    }
-
-    @Test
-    void replacing_either_with_no_such_bean_present_is_allowed() {
-        context.withUserConfiguration(Base.class, OwnScopeResolver.class, OwnAuthorizationService.class)
-                .run(result -> assertThat(result).hasNotFailed());
-    }
-
-    @Test
-    void the_unrestricted_allowlist_fallback_logs_one_fixed_warning() {
-        context.withUserConfiguration(Base.class).run(result -> {
-            assertThat(warnings()).contains("No ClientAllowlist bean is defined: every client is allowed. Supply a ClientAllowlist bean.");
-        });
-    }
-
-    @Test
-    void an_application_bean_shadowing_the_bypass_check_refuses_startup() {
-        context.withUserConfiguration(Base.class, ShadowingBypassCheck.class).run(result -> {
-            assertThat(result).hasFailed();
-            // bean-definition overriding is off, so the same-named bean is rejected outright
-            assertThat(result.getStartupFailure()).isInstanceOf(
-                    org.springframework.beans.factory.support.BeanDefinitionOverrideException.class);
-            assertThat(result.getStartupFailure().getMessage()).contains("dataPrismSecurityBypassCheck");
-        });
-    }
-
-    /*
-     * Real proxying of ScopeResolver and AuthorizationService is impossible (both final), so a post-processor
-     * that wraps the deployer-side CaseAuthorizer (an interface, so JDK-proxyable) is the closest end-to-end
-     * stand-in: the wired resolver must still use it and the bypass guard must not misread it as a replacement.
-     */
-    @Test
-    void a_proxied_case_authorizer_is_still_consulted_and_does_not_trip_the_bypass_guard() {
-        context.withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, ProxyingPostProcessor.class)
-                .run(result -> {
-                    assertThat(result).hasNotFailed();
-                    assertThat(java.lang.reflect.Proxy.isProxyClass(result.getBean(CaseAuthorizer.class).getClass()))
-                            .isTrue();
-                    ScopeResolver resolver = result.getBean(ScopeResolver.class);
-                    AuthorizationDecision decision = result.getBean(AuthorizationService.class)
-                            .authorize(CALLER, new ToolInvocation("get_entity_context", "GET_ENTITY_CONTEXT"));
-                    assertThatThrownBy(() -> resolver.resolve(CALLER, decision, CLOCK))
-                            .isInstanceOfSatisfying(SecurityRefusedException.class,
-                                    e -> assertThat(e.code()).isEqualTo(ScopeResolver.CASE_NOT_AUTHORISED));
-                });
-    }
-
     @Configuration(proxyBeanMethods = false)
     static class ProxyingPostProcessor {
         @Bean
@@ -823,7 +733,7 @@ class SecurityWiringTest {
         @Bean("dataPrismSecurityBypassCheck") Object shadow() { return new Object(); }
     }
 
-    private static void assertRefusal(Throwable failure, String code) {
+    static void assertRefusal(Throwable failure, String code) {
         assertThat(failure).isNotNull();
         Throwable t = failure;
         while (t != null && !(t instanceof DataPrismConfigurationException)) {

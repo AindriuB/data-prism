@@ -22,6 +22,10 @@ dataprism:
       roles: roles
       investigation: case_id
   security-policy:
+    # A real deployment supplies a CaseAuthorizer bean and lists its allowed clients in allowed-clients;
+    # this fixture trusts the token and allows every client.
+    case-authorisation: token-trusted
+    client-allowlist: unrestricted
     purposes:
       - investigation
     roles:

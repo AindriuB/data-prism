@@ -4,8 +4,12 @@ import io.github.aindriub.dataprism.core.limits.ScopeBudget;
 import io.github.aindriub.dataprism.core.policy.PrivacyPolicyResolver;
 import io.github.aindriub.dataprism.core.spi.IdentityResolver;
 import io.github.aindriub.dataprism.reidentification.ReidentificationService;
+import io.github.aindriub.dataprism.security.CaseAuthorizer;
+import io.github.aindriub.dataprism.security.ClientAllowlist;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.McpTransportContextExtractor;
+import org.springframework.beans.factory.BeanFactoryUtils;
+import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -13,6 +17,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 import org.springframework.util.ClassUtils;
+
+import java.util.Arrays;
 
 
 
@@ -43,6 +49,36 @@ class Preflights {
                 throw new DataPrismConfigurationException("MISSING_IDENTITY_RESOLVER", "provide an IdentityResolver bean");
             }
         };
+    }
+
+    /**
+     * The case-authorisation and client-allowlist settings, refused before any singleton exists: an unsupported
+     * or malformed value, and a setting that defines the bean together with an application bean of the same type.
+     * Run here rather than when the default resolver or service is built, so that the refusal does not depend on
+     * which bean happens to be created first. The settings' own beans are not counted as application beans.
+     */
+    @Bean
+    static BeanFactoryPostProcessor dataPrismSecurityPolicyPreflight(Environment environment) {
+        return factory -> {
+            SecurityPolicyProperties decisions = SecurityPolicyProperties.decisionsFrom(environment);
+            decisions.validateDecisions();
+            if (decisions.tokenTrusted() && hasOtherBean(factory, CaseAuthorizer.class, "dataPrismCaseAuthorizer")) {
+                throw new DataPrismConfigurationException("CASE_AUTHORISATION_CONFLICT",
+                        "dataprism.security-policy.case-authorisation=token-trusted and a CaseAuthorizer bean are "
+                                + "both present; remove the setting to use the bean, or remove the bean");
+            }
+            if (decisions.clientAllowlistSet() && hasOtherBean(factory, ClientAllowlist.class, "dataPrismClientAllowlist")) {
+                throw new DataPrismConfigurationException("CLIENT_ALLOWLIST_CONFLICT",
+                        "dataprism.security-policy.allowed-clients or client-allowlist and a ClientAllowlist bean "
+                                + "are both present; remove the setting to use the bean, or remove the bean");
+            }
+        };
+    }
+
+    /** Whether a bean of the type other than the settings' own, in this context or an ancestor, is defined. */
+    private static boolean hasOtherBean(ListableBeanFactory factory, Class<?> type, String ownName) {
+        return Arrays.stream(BeanFactoryUtils.beanNamesForTypeIncludingAncestors(factory, type, true, false))
+                .anyMatch(name -> !name.equals(ownName));
     }
 
     /** Resolve this before singleton creation, same reasoning as {@link #dataPrismIdentityResolverPreflight()}. */

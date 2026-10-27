@@ -127,6 +127,9 @@ dataprism.security.jwt.issuer | java.lang.String | rw | null
 dataprism.security.jwt.issuer-discovery-uri | java.lang.String | rw | null
 dataprism.security.jwt.jwk-set-uri | java.lang.String | rw | null
 dataprism.security-policy | bean | rw
+dataprism.security-policy.allowed-clients | java.util.List<java.lang.String> | rw | null
+dataprism.security-policy.case-authorisation | java.lang.String | rw | null
+dataprism.security-policy.client-allowlist | java.lang.String | rw | null
 dataprism.security-policy.purposes | java.util.List<java.lang.String> | rw | []
 dataprism.security-policy.roles | java.util.Map<java.lang.String,java.util.List<java.lang.String>> | rw | {}
 dataprism.sources | java.util.Map<java.lang.String,bean> | rw | {}

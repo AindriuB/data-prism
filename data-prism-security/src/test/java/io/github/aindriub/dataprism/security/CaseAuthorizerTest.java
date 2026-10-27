@@ -16,4 +16,11 @@ class CaseAuthorizerTest {
 
         assertThat(CaseAuthorizer.tokenTrusted().isAuthorised(request)).isTrue();
     }
+
+    @Test
+    @DisplayName("tokenTrusted returns the same instance on every call")
+    void tokenTrustedIsOneInstance() {
+        assertThat(CaseAuthorizer.tokenTrusted())
+                .isSameAs(CaseAuthorizer.tokenTrusted());
+    }
 }
