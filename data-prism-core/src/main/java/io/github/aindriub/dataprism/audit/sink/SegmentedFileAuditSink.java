@@ -35,7 +35,25 @@ public final class SegmentedFileAuditSink implements AuditSink, Closeable {
 
     private static final String PREFIX = "audit-";
     private static final String SUFFIX = ".log";
-    private static final Pattern SEGMENT_NAME = Pattern.compile("audit-(\\d{4}-\\d{2}-\\d{2})\\.log");
+    private static final Pattern SEGMENT_NAME =
+            Pattern.compile("audit-(\\d{4}-\\d{2}-\\d{2})(?:\\.(\\d{4}))?\\.log");
+
+    /**
+     * Orders segment files by day, then by index within the day (the unindexed first segment before
+     * {@code .0001}, {@code .0002}, ...). Names that are not segments sort last, by name.
+     */
+    public static final java.util.Comparator<Path> SEGMENT_ORDER = (a, b) -> {
+        LocalDate da = segmentDate(a);
+        LocalDate db = segmentDate(b);
+        if (da == null || db == null) {
+            if (da == null && db == null) {
+                return a.getFileName().toString().compareTo(b.getFileName().toString());
+            }
+            return da == null ? 1 : -1;
+        }
+        int c = da.compareTo(db);
+        return c != 0 ? c : Integer.compare(segmentIndex(a), segmentIndex(b));
+    };
 
     /** Opens the channel for one segment; replaceable in tests to inject write failures. */
     @FunctionalInterface
@@ -47,12 +65,32 @@ public final class SegmentedFileAuditSink implements AuditSink, Closeable {
     private final ChannelOpener opener;
     private final String suffix;
     private final java.util.function.Function<AuditEvent, String> renderer;
+    private final long maxSegmentBytes;
     private FileAuditSink current;
     private LocalDate currentDate;
+    private int currentIndex;
+    private long currentSize;
     private volatile RuntimeException poisonedBy;
 
     public SegmentedFileAuditSink(Path directory) {
         this(directory, APPEND_OPENER);
+    }
+
+    /**
+     * As {@link #SegmentedFileAuditSink(Path)}, but a day's segment is capped at {@code maxSegmentBytes}:
+     * the first is {@code audit-YYYY-MM-DD.log}, later ones {@code audit-YYYY-MM-DD.NNNN.log}. Before a
+     * write that would take the current segment past the cap, it is closed and the next opened; a record
+     * larger than the cap is written whole into a fresh segment, never split. The hash chain is unaffected.
+     */
+    public SegmentedFileAuditSink(Path directory, long maxSegmentBytes) {
+        this(directory, APPEND_OPENER, SUFFIX, AuditRecordFormat::serialize, requirePositive(maxSegmentBytes));
+    }
+
+    private static long requirePositive(long maxSegmentBytes) {
+        if (maxSegmentBytes <= 0) {
+            throw new IllegalArgumentException("maxSegmentBytes must be positive: " + maxSegmentBytes);
+        }
+        return maxSegmentBytes;
     }
 
     /** Opens a segment create-and-append. */
@@ -63,12 +101,23 @@ public final class SegmentedFileAuditSink implements AuditSink, Closeable {
         this(directory, opener, SUFFIX, AuditRecordFormat::serialize);
     }
 
+    SegmentedFileAuditSink(Path directory, ChannelOpener opener, long maxSegmentBytes) {
+        this(directory, opener, SUFFIX, AuditRecordFormat::serialize, requirePositive(maxSegmentBytes));
+    }
+
     /**
      * Segments named {@code audit-YYYY-MM-DD<suffix>}, each line produced by {@code renderer}. Used by
      * {@link SegmentedJsonAuditSink}; the date, fsync and poisoning behaviour are this class's.
      */
     SegmentedFileAuditSink(Path directory, ChannelOpener opener, String suffix,
                            java.util.function.Function<AuditEvent, String> renderer) {
+        this(directory, opener, suffix, renderer, 0);
+    }
+
+    private SegmentedFileAuditSink(Path directory, ChannelOpener opener, String suffix,
+                                   java.util.function.Function<AuditEvent, String> renderer,
+                                   long maxSegmentBytes) {
+        this.maxSegmentBytes = maxSegmentBytes;
         this.directory = directory;
         this.opener = opener;
         this.suffix = suffix;
@@ -85,7 +134,15 @@ public final class SegmentedFileAuditSink implements AuditSink, Closeable {
         return PREFIX + date + SUFFIX;
     }
 
-    /** The date a segment file name carries, or {@code null} if the name is not a segment's. */
+    /** The segment file name for {@code date} and {@code index}: index 0 is the unindexed first segment. */
+    public static String segmentName(LocalDate date, int index) {
+        if (index < 0 || index > 9999) {
+            throw new IllegalArgumentException("segment index out of range: " + index);
+        }
+        return index == 0 ? segmentName(date) : PREFIX + date + String.format(".%04d", index) + SUFFIX;
+    }
+
+    /** The date a segment file name (either form) carries, or {@code null} if the name is not a segment's. */
     public static LocalDate segmentDate(Path file) {
         Matcher m = SEGMENT_NAME.matcher(file.getFileName().toString());
         if (!m.matches()) {
@@ -96,6 +153,16 @@ public final class SegmentedFileAuditSink implements AuditSink, Closeable {
         } catch (RuntimeException e) {
             return null;
         }
+    }
+
+    /** The index within its day: 0 for {@code audit-YYYY-MM-DD.log}, n for {@code .NNNN.log}, -1 if not a segment. */
+    public static int segmentIndex(Path file) {
+        if (segmentDate(file) == null) {
+            return -1;
+        }
+        Matcher m = SEGMENT_NAME.matcher(file.getFileName().toString());
+        m.matches();
+        return m.group(2) == null ? 0 : Integer.parseInt(m.group(2));
     }
 
     @Override
@@ -113,16 +180,44 @@ public final class SegmentedFileAuditSink implements AuditSink, Closeable {
                 date = currentDate;
             }
             if (current == null || !date.equals(currentDate)) {
-                switchTo(date);
+                switchTo(date, firstIndex(date));
             }
-            current.recordLine(renderer.apply(event));
+            String line = renderer.apply(event);
+            if (maxSegmentBytes > 0) {
+                long bytes = line.getBytes(java.nio.charset.StandardCharsets.UTF_8).length + 1L;
+                if (currentSize > 0 && currentSize + bytes > maxSegmentBytes) {
+                    switchTo(currentDate, currentIndex + 1);
+                }
+                current.recordLine(line);
+                currentSize += bytes;
+                return;
+            }
+            current.recordLine(line);
         } catch (RuntimeException e) {
             poisonedBy = e;
             throw e;
         }
     }
 
-    private void switchTo(LocalDate date) {
+    /** Without a cap, always the unindexed segment; with one, the highest index already on disk for the day. */
+    private int firstIndex(LocalDate date) {
+        if (maxSegmentBytes <= 0) {
+            return 0;
+        }
+        int highest = 0;
+        try (java.util.stream.Stream<Path> files = Files.list(directory)) {
+            for (Path f : (Iterable<Path>) files::iterator) {
+                if (date.equals(segmentDate(f))) {
+                    highest = Math.max(highest, segmentIndex(f));
+                }
+            }
+        } catch (IOException e) {
+            throw new FileAuditSink.OpenFailedException("AUDIT_SINK_OPEN_FAILED", directory, e);
+        }
+        return highest;
+    }
+
+    private void switchTo(LocalDate date, int index) {
         if (current != null) {
             try {
                 current.close();
@@ -132,11 +227,16 @@ public final class SegmentedFileAuditSink implements AuditSink, Closeable {
                 current = null;
             }
         }
-        Path segment = directory.resolve(PREFIX + date + suffix);
+        if (index > 9999) {
+            throw new FileAuditSink.OpenFailedException("AUDIT_SINK_OPEN_FAILED", directory,
+                    new IOException("too many segments for " + date));
+        }
+        Path segment = directory.resolve(maxSegmentBytes > 0 ? segmentName(date, index) : PREFIX + date + suffix);
         try {
             FileChannel channel = opener.open(segment);
             try {
                 FileAuditSink.terminateTornTail(segment, channel);
+                currentSize = maxSegmentBytes > 0 ? channel.size() : 0;
             } catch (IOException | RuntimeException e) {
                 FileAuditSink.closeQuietly(channel);
                 throw e;
@@ -146,6 +246,7 @@ public final class SegmentedFileAuditSink implements AuditSink, Closeable {
             throw new FileAuditSink.OpenFailedException("AUDIT_SINK_OPEN_FAILED", segment, e);
         }
         currentDate = date;
+        currentIndex = index;
     }
 
     @Override

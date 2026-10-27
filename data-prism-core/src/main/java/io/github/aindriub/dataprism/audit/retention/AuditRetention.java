@@ -131,20 +131,19 @@ public final class AuditRetention {
         LocalDate today = clock.instant().atZone(ZoneOffset.UTC).toLocalDate();
         LocalDate cutoff = cutoff(today, retention, allowBelowMinimum);
 
-        Map<LocalDate, Path> expired = new java.util.TreeMap<>();
+        List<Path> segments = new ArrayList<>();
         try (Stream<Path> files = Files.list(directory)) {
             files.filter(Files::isRegularFile).forEach(f -> {
                 LocalDate date = SegmentedFileAuditSink.segmentDate(f);
                 if (date != null && date.isBefore(cutoff) && date.isBefore(today)) {
-                    expired.put(date, f);
+                    segments.add(f);
                 }
             });
         } catch (IOException e) {
             throw new RetentionException(ANCHOR_FAILED + ": could not list " + directory, e);
         }
 
-        List<LocalDate> dates = new ArrayList<>(expired.keySet());
-        List<Path> segments = new ArrayList<>(expired.values());
+        segments.sort(SegmentedFileAuditSink.SEGMENT_ORDER);
         int verified = segments.size();
         String unverified = null;
         if (!segments.isEmpty()) {
@@ -180,9 +179,23 @@ public final class AuditRetention {
             }
         }
 
+        // A day's segments are one unit: purge all of them or none, so a refusal inside a day keeps the day.
+        while (verified > 0 && verified < segments.size()
+                && SegmentedFileAuditSink.segmentDate(segments.get(verified - 1))
+                .equals(SegmentedFileAuditSink.segmentDate(segments.get(verified)))) {
+            verified--;
+        }
+
         List<AuditCheckpoint> toAnchor = new ArrayList<>();
-        for (int i = 0; i < verified; i++) {
-            toAnchor.addAll(anchorsFor(segments.get(i), dates.get(i)));
+        int from = 0;
+        while (from < verified) {
+            LocalDate day = SegmentedFileAuditSink.segmentDate(segments.get(from));
+            int to = from;
+            while (to < verified && day.equals(SegmentedFileAuditSink.segmentDate(segments.get(to)))) {
+                to++;
+            }
+            toAnchor.addAll(anchorsFor(segments.subList(from, to), day));
+            from = to;
         }
         for (AuditCheckpoint anchor : toAnchor) {
             try {
@@ -272,13 +285,16 @@ public final class AuditRetention {
         return bad == Long.MAX_VALUE ? -1 : bad;
     }
 
-    private List<AuditCheckpoint> anchorsFor(Path segment, LocalDate segmentDate) {
+    /** Anchors for one day: each writer's last record across all of the day's segments. */
+    private List<AuditCheckpoint> anchorsFor(List<Path> daySegments, LocalDate segmentDate) {
         Map<String, AuditEvent> lastPerWriter = new LinkedHashMap<>();
-        List<String> lines;
-        try {
-            lines = Files.readAllLines(segment, java.nio.charset.StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new RetentionException(ANCHOR_FAILED + ": could not read " + segment, e);
+        List<String> lines = new ArrayList<>();
+        for (Path segment : daySegments) {
+            try {
+                lines.addAll(Files.readAllLines(segment, java.nio.charset.StandardCharsets.UTF_8));
+            } catch (IOException e) {
+                throw new RetentionException(ANCHOR_FAILED + ": could not read " + segment, e);
+            }
         }
         for (String line : lines) {
             if (line.isEmpty()) {
