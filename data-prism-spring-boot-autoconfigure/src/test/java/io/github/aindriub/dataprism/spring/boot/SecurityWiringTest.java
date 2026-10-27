@@ -121,6 +121,367 @@ class SecurityWiringTest {
                 .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CASE_AUTHORIZER"));
     }
 
+    @Test
+    void a_bypassing_authorization_service_is_refused_under_global_lazy_initialisation() {
+        context.withPropertyValues("spring.main.lazy-initialization=true")
+                .withInitializer(SecurityWiringTest::applyLazyInitialisation)
+                .withUserConfiguration(Base.class, RestrictiveAllowlist.class, OwnAuthorizationService.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CLIENT_ALLOWLIST_BYPASSED"));
+    }
+
+    @Test
+    void two_client_allowlists_are_refused_under_global_lazy_initialisation() {
+        context.withPropertyValues("spring.main.lazy-initialization=true")
+                .withInitializer(SecurityWiringTest::applyLazyInitialisation)
+                .withUserConfiguration(Base.class, RestrictiveAllowlist.class, SecondAllowlist.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CLIENT_ALLOWLIST"));
+    }
+
+    @Test
+    void a_bypassing_scope_resolver_is_refused_under_boots_lazy_initialisation() {
+        context.withInitializer(SecurityWiringTest::applyBootLazyInitialisation)
+                .withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, OwnScopeResolver.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
+    }
+
+    private static void applyBootLazyInitialisation(org.springframework.context.ConfigurableApplicationContext ctx) {
+        ctx.addBeanFactoryPostProcessor(new org.springframework.boot.LazyInitializationBeanFactoryPostProcessor());
+    }
+
+    private static org.springframework.context.ConfigurableApplicationContext parentWith(Class<?>... configurations) {
+        org.springframework.context.annotation.AnnotationConfigApplicationContext parent =
+                new org.springframework.context.annotation.AnnotationConfigApplicationContext(configurations);
+        return parent;
+    }
+
+    @Test
+    void a_case_authorizer_in_the_parent_context_counts_and_satisfies_the_release_gate() {
+        try (var parent = parentWith(RefusingCaseAuthorizer.class)) {
+            withVersion("0.8.0").withParent(parent).withUserConfiguration(Base.class)
+                    .run(result -> assertThat(result).hasNotFailed());
+        }
+    }
+
+    @Test
+    void a_scope_resolver_that_bypasses_a_parent_contexts_case_authorizer_is_refused() {
+        try (var parent = parentWith(RefusingCaseAuthorizer.class)) {
+            context.withParent(parent).withUserConfiguration(Base.class, OwnScopeResolver.class)
+                    .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
+        }
+    }
+
+    @Test
+    void a_parent_contexts_scope_resolver_that_ignores_the_childs_case_authorizer_is_refused() {
+        try (var parent = parentWith(OwnScopeResolverParent.class)) {
+            context.withParent(parent).withUserConfiguration(Base.class, RefusingCaseAuthorizer.class)
+                    .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
+        }
+    }
+
+    @Test
+    void a_parent_contexts_authorization_service_that_ignores_the_childs_allowlist_is_refused() {
+        try (var parent = parentWith(OwnAuthorizationServiceParent.class)) {
+            context.withParent(parent).withUserConfiguration(Base.class, RestrictiveAllowlist.class)
+                    .run(result -> assertRefusal(result.getStartupFailure(), "CLIENT_ALLOWLIST_BYPASSED"));
+        }
+    }
+
+    @Test
+    void a_target_class_scoped_proxy_case_authorizer_starts_in_a_release() {
+        withVersion("0.8.0").withUserConfiguration(Base.class, TargetClassScopedAuthorizer.class)
+                .run(result -> assertThat(result).hasNotFailed());
+    }
+
+    @Test
+    void an_interfaces_scoped_proxy_case_authorizer_starts_in_a_release() {
+        withVersion("0.8.0").withUserConfiguration(Base.class, InterfacesScopedAuthorizer.class)
+                .run(result -> assertThat(result).hasNotFailed());
+    }
+
+    @Test
+    void a_scoped_proxy_case_authorizer_still_refuses_a_bypassing_resolver() {
+        withVersion("0.8.0").withUserConfiguration(Base.class, TargetClassScopedAuthorizer.class,
+                OwnScopeResolver.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
+    }
+
+    @Test
+    void a_bean_merely_named_like_a_scoped_target_does_not_hide_from_the_count() {
+        withVersion("0.8.0").withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, FakeScopedTargetAuthorizer.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CASE_AUTHORIZER"));
+    }
+
+    @Test
+    void an_allowlist_merely_named_like_a_scoped_target_does_not_hide_from_the_count() {
+        context.withUserConfiguration(Base.class, RestrictiveAllowlist.class, FakeScopedTargetAllowlist.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CLIENT_ALLOWLIST"));
+    }
+
+    @Test
+    void an_interfaces_scoped_proxy_allowlist_is_refused() {
+        context.withUserConfiguration(Base.class, InterfacesScopedAllowlist.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CLIENT_ALLOWLIST"));
+    }
+
+    @Test
+    void a_case_authorizer_that_is_not_an_autowire_candidate_next_to_a_real_one_is_refused() {
+        withVersion("0.8.0").withUserConfiguration(Base.class, RefusingCaseAuthorizer.class,
+                NonCandidateAuthorizer.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CASE_AUTHORIZER"));
+    }
+
+    @Test
+    void a_case_authorizer_that_is_not_a_default_candidate_is_refused_in_a_release() {
+        withVersion("0.8.0").withUserConfiguration(Base.class, NonDefaultCandidateAuthorizer.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CASE_AUTHORIZER"));
+    }
+
+    @Test
+    void a_client_allowlist_that_is_not_a_default_candidate_is_refused() {
+        context.withUserConfiguration(Base.class, NonDefaultCandidateAllowlist.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CLIENT_ALLOWLIST"));
+    }
+
+    @Test
+    void a_single_non_default_candidate_authorizer_is_refused_with_an_accurate_message() {
+        withVersion("0.8.0").withUserConfiguration(Base.class, NonDefaultCandidateAuthorizer.class)
+                .run(result -> assertThat(result.getStartupFailure())
+                        .hasMessageContaining("the only CaseAuthorizer bean is not a default autowire candidate")
+                        .hasMessageNotContaining("more than one"));
+    }
+
+    @Test
+    void a_single_non_default_candidate_allowlist_is_refused_with_an_accurate_message() {
+        context.withUserConfiguration(Base.class, NonDefaultCandidateAllowlist.class)
+                .run(result -> assertThat(result.getStartupFailure())
+                        .hasMessageContaining("the only ClientAllowlist bean is not a default autowire candidate"));
+    }
+
+    /**
+     * Drives the guard on the instances the real default factories build when the lookup finds no unique
+     * deployer bean: the default resolver then holds the token-trusted fallback while a deployer authorizer
+     * exists in the context. The guard must not exempt its own defaults.
+     */
+    @Test
+    void a_default_scope_resolver_built_token_trusted_while_a_deployer_authorizer_exists_is_refused() {
+        org.springframework.beans.factory.support.DefaultListableBeanFactory factory =
+                new org.springframework.beans.factory.support.DefaultListableBeanFactory();
+        ScopeResolver defaultResolver = new SecurityWiring().dataPrismScopeResolver(
+                io.github.aindriub.dataprism.core.model.PseudonymisationVersion.HMAC_SHA256_V1,
+                defaultProperties(), nobody(CaseAuthorizer.class));
+        factory.registerSingleton("deployersAuthorizer", (CaseAuthorizer) request -> false);
+        factory.registerSingleton("dataPrismScopeResolver", defaultResolver);
+        SecurityWiring.BypassCheck check = new SecurityWiring.BypassCheck(factory,
+                nobody(SecurityWiring.LibraryVersion.class));
+        assertThatThrownBy(check::afterSingletonsInstantiated).isInstanceOfSatisfying(
+                DataPrismConfigurationException.class, e -> assertThat(e.code()).isEqualTo("CASE_AUTHORIZER_BYPASSED"));
+    }
+
+    @Test
+    void a_default_authorization_service_built_unrestricted_while_a_deployer_allowlist_exists_is_refused() {
+        org.springframework.beans.factory.support.DefaultListableBeanFactory factory =
+                new org.springframework.beans.factory.support.DefaultListableBeanFactory();
+        AuthorizationService defaultService = new SecurityWiring().dataPrismAuthorizationService(
+                new io.github.aindriub.dataprism.security.SecurityPolicy(Set.of("investigation"), java.util.Map.of()),
+                defaultProperties(), nobody(ClientAllowlist.class));
+        factory.registerSingleton("deployersAllowlist", ClientAllowlist.of(Set.of("other-client")));
+        factory.registerSingleton("dataPrismAuthorizationService", defaultService);
+        factory.registerSingleton("deployersAuthorizer", (CaseAuthorizer) request -> false);
+        SecurityWiring.BypassCheck check = new SecurityWiring.BypassCheck(factory,
+                nobody(SecurityWiring.LibraryVersion.class));
+        assertThatThrownBy(check::afterSingletonsInstantiated).isInstanceOfSatisfying(
+                DataPrismConfigurationException.class, e -> assertThat(e.code()).isEqualTo("CLIENT_ALLOWLIST_BYPASSED"));
+    }
+
+    private static DataPrismProperties defaultProperties() {
+        DataPrismProperties properties = new DataPrismProperties();
+        properties.getPrivacy().setProfile("DEFAULT");
+        properties.getPrivacy().setScopeLifetime(java.time.Duration.ofHours(8));
+        return properties;
+    }
+
+    private static <T> org.springframework.beans.factory.ObjectProvider<T> nobody(Class<T> type) {
+        return new org.springframework.beans.factory.support.DefaultListableBeanFactory().getBeanProvider(type);
+    }
+
+    @Test
+    void the_scoped_proxy_allowlist_refusal_says_so() {
+        context.withUserConfiguration(Base.class, InterfacesScopedAllowlist.class)
+                .run(result -> assertThat(result.getStartupFailure())
+                        .hasMessageContaining("scoped-proxy ClientAllowlist in INTERFACES mode"));
+    }
+
+    @Test
+    void our_own_scope_resolver_built_without_the_deployers_authorizer_is_refused() {
+        withVersion("0.8.0").withUserConfiguration(Base.class, RefusingCaseAuthorizer.class,
+                TokenTrustedResolverSubstitution.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
+    }
+
+    @Test
+    void our_own_authorization_service_built_without_the_deployers_allowlist_is_refused() {
+        context.withUserConfiguration(Base.class, RestrictiveAllowlist.class, UnrestrictedServiceSubstitution.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CLIENT_ALLOWLIST_BYPASSED"));
+    }
+
+    /**
+     * Covers the swap case: the built default is replaced after the fact by one with the token-trusted fallback.
+     * The direct tests above cover a default that was itself built wrongly.
+     */
+    @Configuration(proxyBeanMethods = false)
+    static class TokenTrustedResolverSubstitution {
+        @Bean static org.springframework.beans.factory.config.BeanPostProcessor substituteResolver() {
+            return new org.springframework.beans.factory.config.BeanPostProcessor() {
+                @Override public Object postProcessAfterInitialization(Object bean, String name) {
+                    if (bean instanceof ScopeResolver && name.equals("dataPrismScopeResolver")) {
+                        return new OwnScopeResolver().ownScopeResolver(
+                                io.github.aindriub.dataprism.core.model.PseudonymisationVersion.HMAC_SHA256_V1);
+                    }
+                    return bean;
+                }
+            };
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class UnrestrictedServiceSubstitution {
+        @Bean static org.springframework.beans.factory.config.BeanPostProcessor substituteService() {
+            return new org.springframework.beans.factory.config.BeanPostProcessor() {
+                @Override public Object postProcessAfterInitialization(Object bean, String name) {
+                    if (bean instanceof AuthorizationService && name.equals("dataPrismAuthorizationService")) {
+                        return new AuthorizationService(
+                                new io.github.aindriub.dataprism.security.SecurityPolicy(Set.of("investigation"),
+                                        java.util.Map.of()), "DEFAULT",
+                                io.github.aindriub.dataprism.core.model.PrivacyScopeType.INVESTIGATION,
+                                ClientAllowlist.unrestricted());
+                    }
+                    return bean;
+                }
+            };
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class NonDefaultCandidateAuthorizer {
+        @Bean(defaultCandidate = false) CaseAuthorizer hiddenFromUnqualified() { return request -> false; }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class NonDefaultCandidateAllowlist {
+        @Bean(defaultCandidate = false) ClientAllowlist hiddenAllowlist() { return ClientAllowlist.of(Set.of("x")); }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class FakeScopedTargetAuthorizer {
+        @Bean("scopedTarget.extra") CaseAuthorizer extra() { return request -> false; }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class FakeScopedTargetAllowlist {
+        @Bean("scopedTarget.extraAllow") ClientAllowlist extraAllow() { return ClientAllowlist.of(Set.of("x")); }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class InterfacesScopedAllowlist {
+        @Bean @org.springframework.context.annotation.Scope(value = "request",
+                proxyMode = org.springframework.context.annotation.ScopedProxyMode.INTERFACES)
+        ClientAllowlist scopedAllowlist() { return ClientAllowlist.of(Set.of("x")); }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class NonCandidateAuthorizer {
+        @Bean(autowireCandidate = false) CaseAuthorizer hidden() { return request -> false; }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class OwnScopeResolverParent {
+        @Bean ScopeResolver parentScopeResolver() {
+            return new ScopeResolver(io.github.aindriub.dataprism.core.model.PseudonymisationVersion.HMAC_SHA256_V1,
+                    java.time.Duration.ofHours(1),
+                    new io.github.aindriub.dataprism.security.PurposeValidator(Set.of("investigation")),
+                    CaseAuthorizer.tokenTrusted());
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class OwnAuthorizationServiceParent {
+        @Bean AuthorizationService parentAuthorizationService() {
+            return new AuthorizationService(
+                    new io.github.aindriub.dataprism.security.SecurityPolicy(Set.of("investigation"), java.util.Map.of()),
+                    "DEFAULT", io.github.aindriub.dataprism.core.model.PrivacyScopeType.INVESTIGATION,
+                    ClientAllowlist.unrestricted());
+        }
+    }
+
+    public static class ConcreteCaseAuthorizer implements CaseAuthorizer {
+        @Override public boolean isAuthorised(io.github.aindriub.dataprism.security.CaseAccessRequest request) {
+            return false;
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class TargetClassScopedAuthorizer {
+        @Bean @org.springframework.web.context.annotation.RequestScope
+        ConcreteCaseAuthorizer scopedAuthorizer() { return new ConcreteCaseAuthorizer(); }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class InterfacesScopedAuthorizer {
+        @Bean @org.springframework.context.annotation.Scope(value = "request",
+                proxyMode = org.springframework.context.annotation.ScopedProxyMode.INTERFACES)
+        CaseAuthorizer scopedAuthorizer() { return new ConcreteCaseAuthorizer(); }
+    }
+
+    @Test
+    void a_case_authorizer_in_each_of_parent_and_child_is_ambiguous() {
+        try (var parent = parentWith(RefusingCaseAuthorizer.class)) {
+            context.withParent(parent).withUserConfiguration(Base.class, SecondCaseAuthorizer.class)
+                    .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CASE_AUTHORIZER"));
+        }
+    }
+
+    @Test
+    void a_prototype_case_authorizer_is_refused() {
+        context.withUserConfiguration(Base.class, PrototypeCaseAuthorizer.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "NON_SINGLETON_CASE_AUTHORIZER"));
+    }
+
+    @Test
+    void a_prototype_client_allowlist_is_refused() {
+        context.withUserConfiguration(Base.class, PrototypeAllowlist.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "NON_SINGLETON_CLIENT_ALLOWLIST"));
+    }
+
+    @Test
+    void a_version_resource_present_more_than_once_is_unknown_and_so_forbidden() throws Exception {
+        java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("dp-version");
+        try {
+            java.nio.file.Path meta = java.nio.file.Files.createDirectories(dir.resolve("META-INF/data-prism"));
+            java.nio.file.Files.writeString(meta.resolve("version.properties"), "version=0.0.1-SNAPSHOT\n");
+            try (java.net.URLClassLoader loader = new java.net.URLClassLoader(new java.net.URL[] {dir.toUri().toURL()},
+                    SecurityWiring.class.getClassLoader())) {
+                assertThat(SecurityWiring.embeddedVersion(SecurityWiring.class.getClassLoader())).isNotNull();
+                assertThat(SecurityWiring.embeddedVersion(loader)).isNull();
+            }
+        } finally {
+            try (var walk = java.nio.file.Files.walk(dir)) {
+                walk.sorted(java.util.Comparator.reverseOrder()).forEach(path -> path.toFile().delete());
+            }
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class PrototypeCaseAuthorizer {
+        @Bean @org.springframework.context.annotation.Scope("prototype")
+        CaseAuthorizer prototypeAuthorizer() { return request -> false; }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class PrototypeAllowlist {
+        @Bean @org.springframework.context.annotation.Scope("prototype")
+        ClientAllowlist prototypeAllowlist() { return ClientAllowlist.of(Set.of("other-client")); }
+    }
+
     /**
      * Marks every definition lazy that has not said otherwise. Boot's own lazy-initialisation post-processor
      * happens to leave SmartInitializingSingleton beans alone; this one does not, so the guard must opt out
@@ -403,40 +764,6 @@ class SecurityWiringTest {
         context.withUserConfiguration(Base.class).run(result -> {
             assertThat(warnings()).contains("No ClientAllowlist bean is defined: every client is allowed. Supply a ClientAllowlist bean.");
         });
-    }
-
-    /*
-     * ScopeResolver and AuthorizationService are final, so neither CGLIB nor a JDK proxy can wrap them and an
-     * end-to-end proxied-default context cannot be built; this is an accepted limitation. The unwrapping the guard
-     * relies on is tested directly, and the context test below covers a proxied deployer-side CaseAuthorizer.
-     */
-    @Test
-    void unwrapping_sees_through_one_proxy_to_the_target() {
-        Runnable target = () -> { };
-        assertThat(SecurityWiring.unwrap(proxyOf(target))).isSameAs(target);
-    }
-
-    @Test
-    void unwrapping_sees_through_nested_proxies_to_the_target() {
-        Runnable target = () -> { };
-        assertThat(SecurityWiring.unwrap(proxyOf(proxyOf(proxyOf(target))))).isSameAs(target);
-    }
-
-    @Test
-    void unwrapping_leaves_an_unproxied_bean_alone() {
-        Runnable target = () -> { };
-        assertThat(SecurityWiring.unwrap(target)).isSameAs(target);
-    }
-
-    @Test
-    void a_proxy_of_a_different_object_is_not_the_target() {
-        Runnable ours = () -> { };
-        Runnable theirs = () -> { };
-        assertThat(SecurityWiring.unwrap(proxyOf(theirs))).isNotSameAs(ours);
-    }
-
-    private static Runnable proxyOf(Runnable target) {
-        return (Runnable) new ProxyFactory(target).getProxy();
     }
 
     @Test
