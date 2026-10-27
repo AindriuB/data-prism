@@ -485,14 +485,39 @@ class KeyedAuditChainTest {
 
     @Test
     void aForgedWriterWithABadCheckpointIsNotLabelledAsAKeyedWriter() throws IOException {
-        // Keyed chain, last record re-hashed UNKEYED: key A fails on a hash, unkeyed fails the checkpoint.
+        // Keyed chain, last record (sequence 5) re-hashed UNKEYED and by someone else: key A fails on that
+        // hash, and the unkeyed replay fails the checkpoint. No replay owns a checkpoint break, so the writer is
+        // reported as verifying under none of the supplied keys, at sequence 5, and carries no key label.
         Path[] files = badCheckpointChain("f-cp", AuditChainMode.keyed(KEY_A), null);
         VerificationReport report = AuditChainVerifier.verify(files[0], files[1], Period.ofMonths(6),
                 List.of(KEY_A), false);
         assertThat(report.hasBreak()).isTrue();
         assertThat(report.writers()).singleElement().satisfies(w -> {
             assertThat(w.keyId()).isEmpty();
-            assertThat(w.firstBreak().orElseThrow().reason()).doesNotContain("checkpoint file recorded");
+            assertThat(w.firstBreak().orElseThrow().sequence()).isEqualTo(5);
+            assertThat(w.firstBreak().orElseThrow().reason()).contains("verifies under none of the supplied keys")
+                    .doesNotContain("checkpoint file recorded");
+        });
+    }
+
+    @Test
+    void aCheckpointBreakWhereNoReplayRecomputedAnythingGetsNoKeyLabel() throws IOException {
+        Path path = tempDir.resolve("lone-cp.log");
+        Path cp = tempDir.resolve("lone-cp.jsonl");
+        AuditEvent draft = new AuditEvent("e-1", FIXED.instant(), "p", "c", "t", "E", "s", "f", "D", "sc", "i", "C",
+                "ALLOW", Set.of(), Set.of(), "co", "forged/1", 1, "f".repeat(64), "x");
+        AuditEvent forged = copy(draft, "p", "f".repeat(64), AuditEventHash.compute(draft, KEY_A));
+        Files.write(path, ("torn fragment\r\n" + AuditRecordFormat.serialize(forged) + "\n")
+                .getBytes(StandardCharsets.UTF_8));
+        Files.writeString(cp, new AuditCheckpoint(AuditCheckpoint.Kind.PERIODIC, "forged/1", 1, "a".repeat(64),
+                FIXED.instant()).toJsonLine() + "\n");
+
+        VerificationReport report = AuditChainVerifier.verify(path, cp, Period.ofMonths(6), List.of(KEY_A), false);
+
+        assertThat(report.writers()).singleElement().satisfies(w -> {
+            assertThat(w.broken()).isTrue();
+            assertThat(w.firstBreak().orElseThrow().reason()).contains("checkpoint file recorded");
+            assertThat(w.keyId()).isEmpty();
         });
     }
 

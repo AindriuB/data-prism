@@ -376,7 +376,9 @@ public final class AuditChainVerifier {
                             best = k;
                         }
                     }
-                    chosen = keyed.get(best).report().writers().get(i).withKey(Optional.of(keys.get(best).id()), false);
+                    // A replay that recomputed nothing verified nothing under its key, so it gets no label.
+                    chosen = keyed.get(best).report().writers().get(i)
+                            .withKey(most > 0 ? Optional.of(keys.get(best).id()) : Optional.empty(), false);
                 } else if (!plain.broken() && allowUnkeyedWriters) {
                     chosen = plain.withKey(Optional.empty(), true);
                 } else if (!plain.broken()) {
