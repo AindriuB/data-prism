@@ -22,6 +22,7 @@ import io.github.aindriub.dataprism.validation.LlmResponseValidator;
 import io.github.aindriub.dataprism.validation.RawValueLeakValidator;
 import io.github.aindriub.dataprism.validation.SensitivePatternValidator;
 import org.springframework.aop.framework.AopProxyUtils;
+import org.springframework.beans.factory.BeanFactoryUtils;
 import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -75,14 +76,14 @@ class PrivacyEngineWiring implements SmartInitializingSingleton {
         if (built == null) {
             throw replaced();
         }
-        String[] names = beanFactory.getBeanNamesForType(FieldMetadataResolver.class, true, true);
+        String[] names = BeanFactoryUtils.beanNamesForTypeIncludingAncestors(beanFactory, FieldMetadataResolver.class, true, true);
         if (names.length != 1 || !RESOLVER_BEAN.equals(names[0]) || beanFactory.containsBean("&" + names[0])
                 || !beanFactory.isSingleton(names[0])
                 || unwrap(beanFactory.getBean(names[0])) != built) {
             throw replaced();
         }
-        for (JsonTreeScrubbingEngine engine : beanFactory.getBeansOfType(JsonTreeScrubbingEngine.class, true, true)
-                .values()) {
+        for (JsonTreeScrubbingEngine engine : BeanFactoryUtils
+                .beansOfTypeIncludingAncestors(beanFactory, JsonTreeScrubbingEngine.class, true, true).values()) {
             JsonTreeScrubbingEngine target = (JsonTreeScrubbingEngine) unwrap(engine);
             if (unwrap(target.resolver()) != built || !target.descriptors().equals(built.descriptors())) {
                 throw replaced();

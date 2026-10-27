@@ -234,6 +234,18 @@ class ScrubberDescriptorWiringTest {
         refuses(OwnDefaultResolver.class, "spring.main.lazy-initialization=true");
     }
 
+    @Test
+    void refuses_a_parent_context_engine_built_with_the_default_resolver() throws Exception {
+        new WebApplicationContextRunner().withUserConfiguration(EngineWithDefaultResolver.class)
+                .run(parent -> withFile().withParent(parent).run(ScrubberDescriptorWiringTest::refused));
+    }
+
+    @Test
+    void a_child_without_a_file_starts_under_a_parent_engine() {
+        new WebApplicationContextRunner().withUserConfiguration(EngineWithDefaultResolver.class)
+                .run(parent -> base.withParent(parent).run(result -> assertThat(result).hasNotFailed()));
+    }
+
     // ---- accepted ----
 
     @Test
