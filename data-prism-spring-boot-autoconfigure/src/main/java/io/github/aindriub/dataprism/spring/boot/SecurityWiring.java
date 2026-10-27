@@ -11,12 +11,18 @@ import io.github.aindriub.dataprism.security.SecurityPolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.aop.framework.AopProxyUtils;
+import org.springframework.aop.scope.ScopedProxyFactoryBean;
 import org.springframework.aop.scope.ScopedProxyUtils;
+import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.BeanFactoryUtils;
+import org.springframework.beans.factory.HierarchicalBeanFactory;
 import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.SmartInitializingSingleton;
+import org.springframework.beans.factory.config.BeanDefinition;
+import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
@@ -24,10 +30,10 @@ import org.springframework.context.annotation.Lazy;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -48,14 +54,20 @@ import java.util.stream.Collectors;
  * that bean, would silently bypass the deployer's check, so startup refuses
  * ({@code CASE_AUTHORIZER_BYPASSED}, {@code CLIENT_ALLOWLIST_BYPASSED}). The test is identity:
  * {@link ScopeResolver#usesCaseAuthorizer} and {@link AuthorizationService#usesClientAllowlist}.
+ * Limit: the guard inspects {@link ScopeResolver} and {@link AuthorizationService} beans. An application
+ * {@code HttpTransport} built by hand around its own resolver is not inspected, because {@code HttpTransport}
+ * exposes none.
  *
  * <p>Supported custom configuration: define the {@link CaseAuthorizer} bean and a {@link ScopeResolver}
  * bean constructed with that injected bean (likewise {@link ClientAllowlist} and
  * {@link AuthorizationService}). It starts in every version, including 0.8.0 and later, where the
  * {@link CaseAuthorizer} bean is required. A resolver built with another authorizer or
  * {@code CaseAuthorizer.tokenTrusted()} is refused while the bean exists. A request- or session-scoped
- * {@link CaseAuthorizer} or {@link ClientAllowlist} behind a scoped proxy is supported: the proxy is the bean,
- * its {@code scopedTarget.*} twin is not counted, and the proxy is a singleton, so the identity checks hold.
+ * {@link CaseAuthorizer} behind a scoped proxy (TARGET_CLASS or INTERFACES) is supported: the proxy is the
+ * bean, its genuine {@code scopedTarget.*} twin is not counted, and the proxy is a singleton, so the identity
+ * checks hold. The guard counts the same autowire candidates the defaults inject; any other bean of the type,
+ * including a bean merely named {@code scopedTarget.*} or one with autowire-candidate off, refuses as ambiguous.
+ * An INTERFACES-mode scoped proxy of the final {@link ClientAllowlist} cannot be typed as one and is refused.
  *
  * <p>The token-trusted {@link CaseAuthorizer} fallback (no bean) is for development only. From version
  * 0.8.0 on, a build refuses to start with it ({@code MISSING_CASE_AUTHORIZER}), whoever built the
@@ -175,20 +187,30 @@ class SecurityWiring {
         }
 
         /**
-         * One lookup for a deployer-supplied type: refuses more than one bean, and any bean that is not a
-         * singleton (an identity check cannot hold for a prototype or scoped bean).
+         * One lookup for a deployer-supplied type, deciding with the resolution the defaults use: the candidates
+         * are the beans of the type, ancestors included, that are autowire candidates, which is what
+         * {@code getIfUnique} sees. More than one candidate refuses, as does a non-singleton one. Any other bean
+         * of the type is refused unless it is the {@code scopedTarget.*} twin of a genuine scoped proxy that is
+         * itself a candidate; a name alone proves nothing.
          */
         private <T> Map<String, T> lookup(Class<T> type, String codeStem, String simpleName, String applies) {
-            // A scoped proxy is the bean the defaults inject; its scopedTarget.* twin is not a candidate.
-            String[] names = Arrays.stream(
-                    BeanFactoryUtils.beanNamesForTypeIncludingAncestors(beanFactory, type, true, true))
-                    .filter(name -> !ScopedProxyUtils.isScopedTarget(name)).toArray(String[]::new);
-            if (names.length > 1) {
-                throw new DataPrismConfigurationException("AMBIGUOUS_" + codeStem,
-                        "more than one " + simpleName + " bean is defined; define exactly one, so that it is "
-                                + "unambiguous " + applies);
+            String[] all = BeanFactoryUtils.beanNamesForTypeIncludingAncestors(beanFactory, type, true, true);
+            Set<String> candidates = new LinkedHashSet<>();
+            for (String name : all) {
+                BeanDefinition definition = definitionOf(name);
+                if (definition == null || definition.isAutowireCandidate()) {
+                    candidates.add(name);
+                }
             }
-            for (String name : names) {
+            for (String name : all) {
+                if (!candidates.contains(name) && !isGenuineScopedTarget(name, candidates)) {
+                    throw ambiguous(codeStem, simpleName, applies);
+                }
+            }
+            if (candidates.size() > 1) {
+                throw ambiguous(codeStem, simpleName, applies);
+            }
+            for (String name : candidates) {
                 if (!beanFactory.isSingleton(name)) {
                     throw new DataPrismConfigurationException("NON_SINGLETON_" + codeStem,
                             "the " + simpleName + " bean is not a singleton; define it as a singleton, so that "
@@ -196,10 +218,42 @@ class SecurityWiring {
                 }
             }
             Map<String, T> beans = new LinkedHashMap<>();
-            for (String name : names) {
+            for (String name : candidates) {
                 beans.put(name, beanFactory.getBean(name, type));
             }
             return beans;
+        }
+
+        private static DataPrismConfigurationException ambiguous(String codeStem, String simpleName, String applies) {
+            return new DataPrismConfigurationException("AMBIGUOUS_" + codeStem,
+                    "more than one " + simpleName + " bean is defined; define exactly one, so that it is "
+                            + "unambiguous " + applies);
+        }
+
+        private boolean isGenuineScopedTarget(String name, Set<String> candidates) {
+            if (!ScopedProxyUtils.isScopedTarget(name)) {
+                return false;
+            }
+            String original = ScopedProxyUtils.getOriginalBeanName(name);
+            BeanDefinition proxy = definitionOf(original);
+            return candidates.contains(original) && proxy != null
+                    && ScopedProxyFactoryBean.class.getName().equals(proxy.getBeanClassName());
+        }
+
+        /** The definition of the named bean in this factory or the nearest ancestor holding it; null if none. */
+        private BeanDefinition definitionOf(String name) {
+            BeanFactory current = beanFactory;
+            while (current != null) {
+                BeanFactory factory = current instanceof ConfigurableApplicationContext context
+                        ? context.getBeanFactory() : current;
+                if (factory instanceof ConfigurableListableBeanFactory configurable
+                        && configurable.containsBeanDefinition(name)) {
+                    return configurable.getBeanDefinition(name);
+                }
+                current = current instanceof HierarchicalBeanFactory hierarchical
+                        ? hierarchical.getParentBeanFactory() : null;
+            }
+            return null;
         }
     }
 

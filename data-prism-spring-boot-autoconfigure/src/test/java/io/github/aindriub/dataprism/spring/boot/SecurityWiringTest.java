@@ -205,6 +205,53 @@ class SecurityWiringTest {
                 .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
     }
 
+    @Test
+    void a_bean_merely_named_like_a_scoped_target_does_not_hide_from_the_count() {
+        withVersion("0.8.0").withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, FakeScopedTargetAuthorizer.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CASE_AUTHORIZER"));
+    }
+
+    @Test
+    void an_allowlist_merely_named_like_a_scoped_target_does_not_hide_from_the_count() {
+        context.withUserConfiguration(Base.class, RestrictiveAllowlist.class, FakeScopedTargetAllowlist.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CLIENT_ALLOWLIST"));
+    }
+
+    @Test
+    void an_interfaces_scoped_proxy_allowlist_is_refused() {
+        context.withUserConfiguration(Base.class, InterfacesScopedAllowlist.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CLIENT_ALLOWLIST"));
+    }
+
+    @Test
+    void a_case_authorizer_that_is_not_an_autowire_candidate_next_to_a_real_one_is_refused() {
+        withVersion("0.8.0").withUserConfiguration(Base.class, RefusingCaseAuthorizer.class,
+                NonCandidateAuthorizer.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CASE_AUTHORIZER"));
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class FakeScopedTargetAuthorizer {
+        @Bean("scopedTarget.extra") CaseAuthorizer extra() { return request -> false; }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class FakeScopedTargetAllowlist {
+        @Bean("scopedTarget.extraAllow") ClientAllowlist extraAllow() { return ClientAllowlist.of(Set.of("x")); }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class InterfacesScopedAllowlist {
+        @Bean @org.springframework.context.annotation.Scope(value = "request",
+                proxyMode = org.springframework.context.annotation.ScopedProxyMode.INTERFACES)
+        ClientAllowlist scopedAllowlist() { return ClientAllowlist.of(Set.of("x")); }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class NonCandidateAuthorizer {
+        @Bean(autowireCandidate = false) CaseAuthorizer hidden() { return request -> false; }
+    }
+
     @Configuration(proxyBeanMethods = false)
     static class OwnScopeResolverParent {
         @Bean ScopeResolver parentScopeResolver() {
