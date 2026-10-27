@@ -1,6 +1,5 @@
 package io.github.aindriub.dataprism.example.http;
 
-import com.fasterxml.jackson.annotation.JsonAnyGetter;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.InternalIdentifier;
 import io.github.aindriub.dataprism.annotations.LlmExposedModel;
@@ -16,7 +15,6 @@ import io.github.aindriub.dataprism.core.model.PrivacyScopeType;
 import io.github.aindriub.dataprism.core.policy.PrivacyProfile;
 import io.github.aindriub.dataprism.core.spi.DataRequest;
 import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
-import io.github.aindriub.dataprism.example.DataPrismAssembly;
 import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
 import io.github.aindriub.dataprism.mcp.ToolOptions;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
@@ -33,6 +31,8 @@ import io.modelcontextprotocol.spec.McpSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
+import io.github.aindriub.dataprism.core.engine.SourceTree;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
@@ -63,33 +63,19 @@ class KeyShapeLeakScanTest {
     private static final String OTHER_MARKER = "other-source-marker-77";
 
     @LlmExposedModel
-    record Keyed(@InternalIdentifier String id,
-                 @NonSensitive(reason = "carrier for undeclared properties; none are declared") @JsonAnyGetter
-                 Map<String, Object> extra) {
-    }
-
-    @LlmExposedModel
     record Plain(@InternalIdentifier String id,
                  @NonSensitive(reason = "fixed marker proving this source was returned") String marker) {
     }
 
-    private static DataSourceAdapter<Keyed> keyed() {
-        return new DataSourceAdapter<>() {
-            @Override
-            public String sourceName() {
-                return "keyed-api";
-            }
-
-            @Override
-            public Class<Keyed> responseType() {
-                return Keyed.class;
-            }
-
-            @Override
-            public Keyed fetch(DataRequest request) {
-                return new Keyed("123", Map.of(KEY, "benign-note"));
-            }
-        };
+    /**
+     * A source keyed by an email-shaped string. A record source can no longer carry undeclared keys (task 288,
+     * OD-288-1 (a)), so this is a configured JSON source whose body holds the key beside the declared identifier.
+     */
+    private static DataSourceAdapter<?> keyed() {
+        ObjectNode body = SourceTree.newObject();
+        body.put("id", "123");
+        body.put(KEY, "benign-note");
+        return UndeclaredKeyFixture.UPSTREAM.source("keyed-api", body, UndeclaredKeyFixture.identifier("id"));
     }
 
     private static DataSourceAdapter<Plain> plain() {
@@ -146,7 +132,8 @@ class KeyShapeLeakScanTest {
         Map<String, PrivacyProfile> profiles = Map.of("DEFAULT", new PrivacyProfile("DEFAULT",
                 PrivacyProfile.UnclassifiedBehaviour.PASS_THROUGH_UNSAFE,
                 Map.of(DataClassification.PII, PrivacyProfile.ClassificationRule.of(PrivacyAction.REDACT))));
-        DataPrismAssembly assembly = new DataPrismAssembly(adapters, CLOCK, sink, "DEFAULT", "en", profiles);
+        UndeclaredKeyFixture.Assembly assembly = new UndeclaredKeyFixture.Assembly(adapters,
+                UndeclaredKeyFixture.UPSTREAM.sources(), CLOCK, sink, profiles);
         SecurityPolicy policy = new SecurityPolicy(Set.of(purpose),
                 Map.of(role, Set.of(Capability.GET_ENTITY_CONTEXT)));
         AuthorizationService authorization =

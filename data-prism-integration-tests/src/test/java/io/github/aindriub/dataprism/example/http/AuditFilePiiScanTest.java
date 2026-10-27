@@ -471,7 +471,9 @@ class AuditFilePiiScanTest {
             assertThat(lines.stream().map(AuditRecordFormat::parse).map(AuditEvent::policyDecision))
                     .as(behaviour.name()).contains("DENY:" + (behaviour
                             == io.github.aindriub.dataprism.core.policy.PrivacyProfile.UnclassifiedBehaviour.FAIL_REQUEST
-                            ? "UNKNOWN_FIELD" : "VALIDATION_FAILED"));
+                            // A configured JSON source's own engine refuses a pass-through leak with the raw-value
+                            // validator's code (task 288, OD-288-1 (a)); it used to reach the orchestrator's pass.
+                            ? "UNKNOWN_FIELD" : "RAW_SOURCE_VALUE"));
             List<String> leaked = new ArrayList<>();
             for (String line : lines) {
                 leaked.addAll(leaksIn(AuditRecordFormat.parse(line), List.of(UndeclaredKeyFixture.TOKEN)));
