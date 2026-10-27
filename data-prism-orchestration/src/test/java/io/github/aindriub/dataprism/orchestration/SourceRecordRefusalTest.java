@@ -620,4 +620,125 @@ class SourceRecordRefusalTest {
                 .contains("java.lang.IllegalStateException").doesNotContain(EMAIL);
         assertThat(event.getThrowableProxy()).isNull();
     }
+
+    // ---- the eight holder subclasses, beside a well-formed source ----------------------------------
+
+    private void hold(AtomicBoolean entered) {
+        entered.set(true);
+        try {
+            release.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    final class StampedSub extends java.util.concurrent.atomic.AtomicStampedReference<Object> {
+        final AtomicBoolean entered = new AtomicBoolean();
+
+        StampedSub(Object v) {
+            super(v, 0);
+        }
+
+        @Override
+        public Object getReference() {
+            hold(entered);
+            return null;
+        }
+    }
+
+    final class MarkableSub extends java.util.concurrent.atomic.AtomicMarkableReference<Object> {
+        final AtomicBoolean entered = new AtomicBoolean();
+
+        MarkableSub(Object v) {
+            super(v, false);
+        }
+
+        @Override
+        public Object getReference() {
+            hold(entered);
+            return null;
+        }
+    }
+
+    final class ResultFuture extends CompletableFuture<Object> {
+        final AtomicBoolean entered = new AtomicBoolean();
+
+        @Override
+        public Object resultNow() {
+            hold(entered);
+            return null;
+        }
+    }
+
+    final class TaskSub extends java.util.concurrent.FutureTask<Object> {
+        final AtomicBoolean entered = new AtomicBoolean();
+        volatile boolean armed;
+
+        TaskSub(Object v) {
+            super(() -> v);
+        }
+
+        @Override
+        public State state() {
+            if (armed) {
+                hold(entered);
+            }
+            return super.state();
+        }
+    }
+
+    final class RawResultTask extends java.util.concurrent.ForkJoinTask<Object> {
+        final AtomicBoolean entered = new AtomicBoolean();
+        volatile boolean armed;
+
+        @Override
+        public Object getRawResult() {
+            if (armed) {
+                hold(entered);
+            }
+            return null;
+        }
+
+        @Override
+        protected void setRawResult(Object value) {
+        }
+
+        @Override
+        protected boolean exec() {
+            return true;
+        }
+    }
+
+    @Test
+    @DisplayName("each holder subclass at an Object position refuses its source alone and is never entered")
+    void holderSubclassesRefuseTheirSourceAlone() {
+        Contact record = new Contact(EMAIL);
+        StampedSub stamped = new StampedSub(record);
+        MarkableSub markable = new MarkableSub(record);
+        StateFuture byState = new StateFuture();
+        byState.complete(record);
+        ResultFuture byResult = new ResultFuture();
+        byResult.complete(record);
+        TaskSub task = new TaskSub(record);
+        task.run();
+        task.armed = true;
+        RawResultTask fork = new RawResultTask();
+        fork.invoke();
+        fork.armed = true;
+        java.util.concurrent.atomic.AtomicReference<Object> reference =
+                new java.util.concurrent.atomic.AtomicReference<>(record) {
+                };
+        java.util.concurrent.atomic.AtomicReferenceArray<Object> array =
+                new java.util.concurrent.atomic.AtomicReferenceArray<>(new Object[]{record}) {
+                };
+        List<AtomicBoolean> flags = List.of(stamped.entered, markable.entered, byState.entered, byResult.entered,
+                task.entered, fork.entered);
+        for (Object holder : List.of(stamped, markable, byState, byResult, task, fork, reference, array)) {
+            var source = new Holder("a-1", holder);
+            Run run = assertTimeoutPreemptively(Duration.ofSeconds(10), () -> run(source));
+            assertRefusedAlone(run, "SOURCE_MODEL_NOT_A_RECORD");
+            assertThat(prohibited(source)).as(holder.getClass().getName()).doesNotContain(EMAIL);
+        }
+        assertThat(flags).allSatisfy(flag -> assertThat(flag).isFalse());
+    }
 }

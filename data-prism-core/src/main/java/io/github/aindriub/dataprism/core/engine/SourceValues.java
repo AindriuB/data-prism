@@ -110,17 +110,32 @@ public final class SourceValues {
         return md.valueType() == java.util.Optional.class && stated ? elementType : md.valueType();
     }
 
+    /**
+     * The base64 text the output carries for a binary value: a {@code BinaryNode}, or a {@code POJONode} holding
+     * exactly a {@code byte[]}. Null for anything else.
+     */
+    static String binaryText(JsonNode node) {
+        if (node instanceof tools.jackson.databind.node.POJONode pojo) {
+            Object held = pojo.getPojo();
+            return held != null && held.getClass() == byte[].class
+                    ? java.util.Base64.getEncoder().encodeToString((byte[]) held) : null;
+        }
+        return node.isBinary() ? java.util.Base64.getEncoder().encodeToString(node.binaryValue()) : null;
+    }
+
     /** Every scalar under this node, so a sensitive collection contributes each element. */
     private static void addScalars(JsonNode node, Set<String> out) {
-        if (node instanceof tools.jackson.databind.node.POJONode pojo) {
+        if (node instanceof tools.jackson.databind.node.POJONode) {
             // Only a byte[] leaf is expected; anything else records nothing rather than throwing.
-            if (pojo.getPojo() != null && pojo.getPojo().getClass() == byte[].class) {
-                out.add(java.util.Base64.getEncoder().encodeToString((byte[]) pojo.getPojo()));
+            String text = binaryText(node);
+            if (text != null) {
+                out.add(text);
             }
             return;
         }
-        if (node.isBinary()) {
-            out.add(java.util.Base64.getEncoder().encodeToString(node.binaryValue()));
+        String binary = binaryText(node);
+        if (binary != null) {
+            out.add(binary);
             return;
         }
         if (node.isValueNode()) {

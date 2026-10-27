@@ -669,8 +669,11 @@ final class SourceRecordWalker {
                 throw SKIP;
             }
             if (refused != null) {
+                // Same code and detail; the path is this position's, since the guard that raised it knew only "$".
+                String message = refused.getMessage();
+                int detail = message.indexOf(": ");
                 throw new PrivacyRefusedException(refused.code(), pos.path(),
-                        "a value at this position is not a record or a supported scalar");
+                        detail < 0 ? message : message.substring(detail + 2));
             }
             LOG.error("A source value could not be read: code={} path={} cause={}",
                     SourceModels.VALUE_READ_FAILED_CODE, pos.path(), e.getClass().getName());
@@ -782,7 +785,10 @@ final class SourceRecordWalker {
             } else if (!SourceModels.referenceOrSingleUse(c) && !(v instanceof Collection) && !(v instanceof Map)
                     && LEAF_CLASS.get(c)) {
                 JsonNode leaf = SourceTree.leaf(c == byte[].class ? ((byte[]) v).clone() : v, false);
-                if (leaf.getClass() != tools.jackson.databind.node.POJONode.class) {
+                String binary = SourceValues.binaryText(leaf);
+                if (binary != null) {
+                    addText(binary);
+                } else if (leaf.getClass() != tools.jackson.databind.node.POJONode.class) {
                     addText(leaf.asString());
                 }
             }

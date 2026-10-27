@@ -519,4 +519,13 @@ class SourceRecordProhibitedValuesTest {
         }
         assertThat(within(new WithNode("1", root))).contains(EMAIL);
     }
+
+    record Blob(byte[] bytes) {
+    }
+
+    @Test
+    @DisplayName("a byte[] under a refused position puts its base64 text in the set")
+    void aByteArrayUnderARefusedPositionIsCollected() {
+        assertThat(within(new Any("r", new Blob(new byte[]{1, 2, 3})))).contains("AQID");
+    }
 }
