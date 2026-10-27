@@ -71,8 +71,12 @@ spec:
       # serviceAccountName: data-prism-discovery   # API mode only
       containers:
         - name: data-prism
-          # Pin a released tag; never "latest" in production.
-          image: ghcr.io/aindriub/data-prism-server:0.7.0
+          # Pin a released tag; never "latest" in production. 0.8.0 is the first
+          # release that reads the cluster-key and name-key settings below and
+          # the two security-policy settings; it is published by the 0.8.0
+          # release, so this tag does not exist until then. An older image
+          # ignores the keys.
+          image: ghcr.io/aindriub/data-prism-server:0.8.0
           ports:
             - name: mcp
               containerPort: 8080
@@ -80,6 +84,15 @@ spec:
               containerPort: 5701
           # --8<-- [start:k8s-join]
           env:
+            # A real deployment supplies a CaseAuthorizer bean (an extension jar on
+            # loader.path) and lists its allowed clients in
+            # DATAPRISM_SECURITYPOLICY_ALLOWEDCLIENTS_0 and following, instead of
+            # these two settings. They are the explicit opt-out: this deployment
+            # trusts the case claim in the token and allows every client.
+            - name: DATAPRISM_SECURITYPOLICY_CASEAUTHORISATION
+              value: token-trusted
+            - name: DATAPRISM_SECURITYPOLICY_CLIENTALLOWLIST
+              value: unrestricted
             - name: DATAPRISM_HAZELCAST_TOPOLOGY
               value: embedded
             - name: DATAPRISM_HAZELCAST_CLUSTERNAME

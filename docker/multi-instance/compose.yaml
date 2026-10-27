@@ -12,7 +12,9 @@
 # Run from the repository root, building the images locally:
 #   docker compose -f docker/multi-instance/compose.yaml \
 #     -f docker/multi-instance/compose.build.yaml up --build
-# or, with published images:
+# or, with published images (0.8.0 or later: an older image ignores the
+# cluster-key and name-key settings below, and does not read the
+# security-policy settings baked into the server image's application.yaml):
 #   docker compose -f docker/multi-instance/compose.yaml up
 #
 # Requires Docker Compose >= 2.24.4: `ports: !override` needs 2.24.4 and

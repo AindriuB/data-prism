@@ -6,6 +6,8 @@ dataPrismAuditEventListeners | io.github.aindriub.dataprism.audit.AuditEventList
 dataPrismAuditMaintenance | io.github.aindriub.dataprism.spring.boot.AuditMaintenance
 dataPrismAuditRecorder | io.github.aindriub.dataprism.audit.AuditRecorder
 dataPrismAuthorizationService | io.github.aindriub.dataprism.security.AuthorizationService
+dataPrismCaseAuthorizer | io.github.aindriub.dataprism.security.CaseAuthorizer
+dataPrismClientAllowlist | io.github.aindriub.dataprism.security.ClientAllowlist
 dataPrismClock | java.time.Clock
 dataPrismClusterApprovalStore | io.github.aindriub.dataprism.oversight.ApprovalStore
 dataPrismClusterCallerRateLimiter | io.github.aindriub.dataprism.oversight.CallerRateLimiter
@@ -37,6 +39,7 @@ dataPrismScrubber | io.github.aindriub.dataprism.core.engine.JsonTreeScrubbingEn
 dataPrismSecretKeyProvider | io.github.aindriub.dataprism.core.spi.SecretKeyProvider
 dataPrismSecurityBypassCheck | io.github.aindriub.dataprism.spring.boot.SecurityWiring$BypassCheck
 dataPrismSecurityPolicy | io.github.aindriub.dataprism.security.SecurityPolicy
+dataPrismSecurityPolicyPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
 dataPrismSensitivePatternValidator | io.github.aindriub.dataprism.validation.LlmResponseValidator
 dataPrismSharedBudgetPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
 dataPrismStdioTransportRefused | java.lang.Object

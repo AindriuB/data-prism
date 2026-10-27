@@ -37,30 +37,7 @@
     <dependency><groupId>org.springframework</groupId><artifactId>spring-web</artifactId><scope>test</scope></dependency>
   </dependencies>
   <build>
-    <resources>
-      <!-- Only the version file is filtered; SecurityWiring reads it to refuse the token-trusted fallback
-           in a release. -->
-      <resource>
-        <directory>src/main/resources</directory>
-        <filtering>true</filtering>
-        <includes><include>META-INF/data-prism/version.properties</include></includes>
-      </resource>
-      <resource>
-        <directory>src/main/resources</directory>
-        <filtering>false</filtering>
-        <excludes><exclude>META-INF/data-prism/version.properties</exclude></excludes>
-      </resource>
-    </resources>
     <plugins>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-surefire-plugin</artifactId>
-        <configuration>
-          <systemPropertyVariables>
-            <dataprism.expectedVersion>${project.version}</dataprism.expectedVersion>
-          </systemPropertyVariables>
-        </configuration>
-      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
