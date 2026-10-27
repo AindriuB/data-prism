@@ -1,10 +1,14 @@
 # 230 — Wire the remaining cluster-security settings, the `clusterSecurity` health contributor and tamper reporting into Spring
 
+Deferred 2026-10-23, owner decision (b): 1.0 supports multiple instances on a trusted network only, and cluster security for untrusted networks is deferred past 1.0 (D-RM-1 (a) as amended; `docs/plan/PLAN.md`, "After 1.0: untrusted-network clusters"). This brief is kept as written for that milestone. Its dependencies, wave and base branch below are those of the 0.8 plan and must be re-planned when the milestone opens; read the 1.0 briefs 225, 227, 228 and 284 to 287 first, because they changed some of the files named here.
+
+What moved out for 1.0: the `clusterSecurity` readiness contributor, the `builtHere` / `isFrameworkCluster` unification, the `ClusterLegacyGaugeTest` recording fix and the `lock-timeout` pass-through are task 286; the `INVALID_CLUSTER_INTERFACE` wording is task 284 (`docs/configuration.md`) and task 286 (the contract register). Still deferred here: the `security.pause-lease`, `clock-skew-tolerance`, `unverified-member.*`, `local-floor.enabled` and `isolation.attestation` properties (1.0 runs on the `ClusterSecuritySettings` defaults; `dataprism.hazelcast.trusted-network` from 284 is the 1.0 declaration in place of the attestation), the tamper reporter, and the link-key check values on member cards.
+
 **Repo:** `.`
-**Release:** 0.8.0
+**Release:** after 1.0 (untrusted-network clusters); was 0.8.0
 **Base branch:** the 0.8 integration branch, at a commit that contains 229 and core task 255.
 **Depends on:** 222 (the key groups and `validateCluster`), 229 (every reader of the settings exists), 255 (core plan; serialised with 254 and 255 on the shared Spring files below, and the link keys whose check values the member card carries)
-**Wave:** 12 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
+**Wave:** none (deferred past 1.0; was a 0.8 wave)
 **Decisions:** OD-215-6 decided 2026-10-20 (b)+(c): tamper is a metric plus a rate-bounded WARN log with no audit record; `isolation.attestation` is kept, reported on health and in one startup log line, with no audit record.
 **Owns:**
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/HazelcastProperties.java *(the `security.pause-lease`, `clock-skew-tolerance`, `unverified-member.*`, `local-floor.enabled` and `isolation.attestation` properties only)*

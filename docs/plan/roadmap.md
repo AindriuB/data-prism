@@ -57,7 +57,7 @@ Features:
 
 Readiness:
 
-- Cluster security build from the approved sealed-state design (215 plans implementation tasks); 204/205/212 are superseded alternatives.
+- Cluster security build from the approved sealed-state design (215 plans implementation tasks); 204/205/212 are superseded alternatives. **Amended 2026-10-23 (owner decision (b), D-RM-1 (a) as amended in `PLAN.md`):** 1.0 supports multiple instances on a trusted network only. 0.8 builds member cards and the sentinel (227), the sealed pause document (228), sealed identity and re-identification entries (225) and trusted-network guardrails (284, 287); sealed approvals and counters, rolling key rotation, the shared link limiter and the adversarial suite move after 1.0 (`PLAN.md`, "After 1.0: untrusted-network clusters").
 - Case-authorisation SPI and client allowlist (203/210).
 - Optional keyed audit chains and size-capped segments (206/207/211).
 - FREE_TEXT classification and recogniser SPI/wiring (208).

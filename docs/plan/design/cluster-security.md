@@ -10,6 +10,8 @@ Status: **approved.** The owner confirmed the sealed-state design on 2026-10-19
 re-identification values, separate cluster and name keys, no isolation-only
 mode, no Enterprise feature. Every choice that was the owner's to make is marked
 **OD-n** and collected in section 6.2, each with options and a recommendation.
+**Amended 2026-10-23 (owner decision (b), D-RM-1 (a) as amended in `PLAN.md`):** 1.0 builds only part of this design and supports a trusted network only: member cards and the sentinel (227), the pause document (228), and sealed identity and re-identification entries (225), behind trusted-network guardrails (284, 287; `PUBLIC_MEMBER_INTERFACE` is built with a private-range rule instead of the attestation rule). Sealed approvals and counters (224, 226), rotation (229), the settings, health and tamper wiring (230, partly moved to 286), the verification suite (231) and the shared link limiter (264) are deferred past 1.0 (`docs/plan/tasks/deferred/`). Sections that describe them describe the post-1.0 design, not 1.0.
+
 The owner delegated every decision in section 6.2 to its recommendation on 2026-10-09 ("i trust your recommendations"); each is marked "Decided (owner delegated)" there, with the options kept visible. Where the text
 says "recommended" it means the author's recommendation, not a decision.
 
