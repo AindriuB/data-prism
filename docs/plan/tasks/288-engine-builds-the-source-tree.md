@@ -83,7 +83,7 @@ The scrubber applies a holding field's policy to whatever tree it is given and d
   - the content of a holder type, only from this closed allowlist, walked by the same rules:
     - `AtomicReference`, `AtomicReferenceArray`, `AtomicStampedReference` and `AtomicMarkableReference`, through their plain non-blocking getters;
     - `Optional`, `OptionalInt`, `OptionalLong` and `OptionalDouble`;
-    - a `java.util.concurrent.Future` only when `state() == Future.State.SUCCESS`, through `resultNow()`. A Future that is running, failed or cancelled is not read: no `get()`, no waiting, nothing that throws `CancellationException` or `ExecutionException`.
+    - a Future only when its class is exactly `CompletableFuture`, `FutureTask` or `ForkJoinTask` (or a JDK subclass of one), loaded by the bootstrap or platform class loader, and `state() == Future.State.SUCCESS`, through `resultNow()`. A Future that is running, failed or cancelled is not read: no `get()`, no waiting, nothing that throws `CancellationException` or `ExecutionException`. A user class implementing `Future` is never read, not even `state()`, because the default `state()` calls `isDone()` and then `get()`, and a user `isDone()` can lie; its position is prohibited-unknown.
   
   Nothing else is read. That covers `ThreadLocal` (whose `get()` would read the orchestrator's own thread and could run a `withInitial` supplier), `java.lang.ref.Reference` and its subclasses (no `get()`, and nothing reconstructed through them), the internals of a user class, the content of a `POJONode`, and single-use values. Each such position is recorded as prohibited-unknown: nothing under it is added to the set, and the scrub of that source refuses inside the per-source `try`, so the source emits nothing. Every getter call on the allowlist is wrapped: a `RuntimeException` or `Error` other than `VirtualMachineError` from it is caught, and the position becomes prohibited-unknown. So nothing escapes `prohibited`, and it never blocks.
 
@@ -167,7 +167,9 @@ Line numbers are as on `origin/wave/0.8-wave4` (de5cf9dc).
   - a `ThreadLocal.withInitial` whose supplier counts its calls: the count stays zero;
   - a completed `CompletableFuture` holding a record: the record's email is in the prohibited set.
 
-  Mutant killed: reading a Future with `get()`. The unfinished case then hangs past the timeout.
+  - a user class implementing `Future` whose `isDone()` returns `true` and whose `get()` blocks: `prohibited` returns at once and never calls either.
+
+  Each case runs under `assertTimeoutPreemptively` (or `@Timeout` with `threadMode = SEPARATE_THREAD`), so a blocking mutant fails the test on its own thread instead of hanging the build. Mutants killed: reading a JDK Future with `get()` (the unfinished case times out); reading any `Future` by its `state()` (the user-class case times out).
 - [ ] **Single-use types (re-review P3).** A model with a `Stream<String>` component and one with an `Iterator<String>` component are refused by `SourceModels.require` and, built directly, by `SourceTree.of`, with `SOURCE_MODEL_NOT_A_RECORD`. The two-source test gains a case where source `a` returns a `Stream` holder: `prohibited` does not consume it (a test stream that counts its terminal operations shows zero), `a` is `REFUSED`, and `b` is `ANSWERED`.
 - [ ] **Position rule.** `SourceRecordWalkerTest` covers:
   - a record at each of `Object`, an interface the record implements, `java.lang.Record`, `List<?>`, a raw `List` and `Optional<Object>`;
