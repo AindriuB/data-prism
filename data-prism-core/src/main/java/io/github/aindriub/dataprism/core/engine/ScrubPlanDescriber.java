@@ -308,7 +308,8 @@ final class ScrubPlanDescriber {
             return new Shape(mayBeScalar || !plain(owner, md, nested) ? Kind.OMIT : Kind.RECORD, array, nested);
         }
         if (nested.isPrimitive() || nested.isEnum() || scalar(nested)) {
-            return overridden(owner, md) ? new Shape(Kind.DYNAMIC, array, null) : new Shape(Kind.SCALAR, array, null);
+            return SourceTree.readsAsPlainScalar(owner, md.fieldName(), nested)
+                    ? new Shape(Kind.SCALAR, array, null) : new Shape(Kind.DYNAMIC, array, null);
         }
         if (Map.class.isAssignableFrom(nested) || concrete(nested) && !platform(nested)) {
             if (mayBeScalar) {

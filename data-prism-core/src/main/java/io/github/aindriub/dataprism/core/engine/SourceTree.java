@@ -34,9 +34,13 @@ import tools.jackson.databind.ser.BeanSerializer;
 import tools.jackson.databind.ser.UnrolledBeanSerializer;
 import tools.jackson.databind.ser.ValueSerializerModifier;
 import tools.jackson.databind.ser.bean.BeanSerializerBase;
+import tools.jackson.databind.ser.jdk.EnumSerializer;
+import tools.jackson.databind.ser.jdk.JDKStringLikeSerializer;
 import tools.jackson.databind.ser.jdk.JavaUtilCalendarSerializer;
 import tools.jackson.databind.ser.jdk.JavaUtilDateSerializer;
+import tools.jackson.databind.ser.jdk.NumberSerializer;
 import tools.jackson.databind.ser.std.StdContainerSerializer;
+import tools.jackson.databind.ser.std.StdScalarSerializer;
 import tools.jackson.databind.ser.std.ToStringSerializer;
 import tools.jackson.databind.type.CollectionLikeType;
 import tools.jackson.databind.type.CollectionType;
@@ -318,6 +322,46 @@ public final class SourceTree {
         }
     }
 
+    /**
+     * Whether this reader writes {@code type}, held by the record component {@code component} of
+     * {@code holder}, as one JSON scalar. An allowlist: the holding property has no serializer, shape or
+     * type-information override, the type has no type serializer of its own, and the serializer Jackson
+     * contextualises for the type is one of its own scalar serializers (string, number, boolean, date and
+     * time, UUID, string-like, enum). An enum with a custom serializer, a {@code @JsonValue} or type
+     * information fails this, as does anything unrecognised or whose lookup throws (fail closed).
+     */
+    static boolean readsAsPlainScalar(Class<?> holder, String component, Class<?> type) {
+        try {
+            if (overridesSerialization(holder, component)) {
+                return false;
+            }
+            var context = READER._serializationContext();
+            JavaType javaType = context.constructType(type);
+            if (context.findTypeSerializer(javaType) != null) {
+                return false;
+            }
+            ValueSerializer<?> serializer = contextual(context, context.findValueSerializer(javaType));
+            return serializer != null && jacksonScalar(serializer);
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    private static boolean jacksonScalar(ValueSerializer<?> serializer) {
+        Class<?> c = serializer.getClass();
+        if (!c.getName().startsWith("tools.jackson.databind.")) {
+            return false;
+        }
+        return serializer instanceof StdScalarSerializer<?>
+                || serializer instanceof ToStringSerializer
+                || serializer instanceof EnumSerializer
+                || serializer instanceof JDKStringLikeSerializer
+                || serializer instanceof NumberSerializer
+                || serializer instanceof JavaUtilDateSerializer
+                || serializer instanceof JavaUtilCalendarSerializer
+                || c.getName().startsWith("tools.jackson.databind.ext.javatime.ser.");
+    }
+
     private static boolean overrides(BeanPropertyWriter writer) {
         var member = writer.getMember();
         if (member == null) {
@@ -328,7 +372,7 @@ public final class SourceTree {
             return type == JsonSerialize.class || type == JsonRawValue.class || type == JsonValue.class
                     || type == JsonUnwrapped.class;
         });
-        if (annotated) {
+        if (annotated || writer.getTypeSerializer() != null) {
             return true;
         }
         var shape = writer.findPropertyFormat(READER.serializationConfig(), member.getRawType()).getShape();
