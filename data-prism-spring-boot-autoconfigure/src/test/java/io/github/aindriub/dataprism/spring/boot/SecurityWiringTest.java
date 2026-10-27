@@ -123,14 +123,16 @@ class SecurityWiringTest {
 
     @Test
     void a_bypassing_authorization_service_is_refused_under_global_lazy_initialisation() {
-        context.withInitializer(SecurityWiringTest::applyBootLazyInitialisation)
+        context.withPropertyValues("spring.main.lazy-initialization=true")
+                .withInitializer(SecurityWiringTest::applyLazyInitialisation)
                 .withUserConfiguration(Base.class, RestrictiveAllowlist.class, OwnAuthorizationService.class)
                 .run(result -> assertRefusal(result.getStartupFailure(), "CLIENT_ALLOWLIST_BYPASSED"));
     }
 
     @Test
     void two_client_allowlists_are_refused_under_global_lazy_initialisation() {
-        context.withInitializer(SecurityWiringTest::applyBootLazyInitialisation)
+        context.withPropertyValues("spring.main.lazy-initialization=true")
+                .withInitializer(SecurityWiringTest::applyLazyInitialisation)
                 .withUserConfiguration(Base.class, RestrictiveAllowlist.class, SecondAllowlist.class)
                 .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CLIENT_ALLOWLIST"));
     }
@@ -166,6 +168,80 @@ class SecurityWiringTest {
             context.withParent(parent).withUserConfiguration(Base.class, OwnScopeResolver.class)
                     .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
         }
+    }
+
+    @Test
+    void a_parent_contexts_scope_resolver_that_ignores_the_childs_case_authorizer_is_refused() {
+        try (var parent = parentWith(OwnScopeResolverParent.class)) {
+            context.withParent(parent).withUserConfiguration(Base.class, RefusingCaseAuthorizer.class)
+                    .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
+        }
+    }
+
+    @Test
+    void a_parent_contexts_authorization_service_that_ignores_the_childs_allowlist_is_refused() {
+        try (var parent = parentWith(OwnAuthorizationServiceParent.class)) {
+            context.withParent(parent).withUserConfiguration(Base.class, RestrictiveAllowlist.class)
+                    .run(result -> assertRefusal(result.getStartupFailure(), "CLIENT_ALLOWLIST_BYPASSED"));
+        }
+    }
+
+    @Test
+    void a_target_class_scoped_proxy_case_authorizer_starts_in_a_release() {
+        withVersion("0.8.0").withUserConfiguration(Base.class, TargetClassScopedAuthorizer.class)
+                .run(result -> assertThat(result).hasNotFailed());
+    }
+
+    @Test
+    void an_interfaces_scoped_proxy_case_authorizer_starts_in_a_release() {
+        withVersion("0.8.0").withUserConfiguration(Base.class, InterfacesScopedAuthorizer.class)
+                .run(result -> assertThat(result).hasNotFailed());
+    }
+
+    @Test
+    void a_scoped_proxy_case_authorizer_still_refuses_a_bypassing_resolver() {
+        withVersion("0.8.0").withUserConfiguration(Base.class, TargetClassScopedAuthorizer.class,
+                OwnScopeResolver.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class OwnScopeResolverParent {
+        @Bean ScopeResolver parentScopeResolver() {
+            return new ScopeResolver(io.github.aindriub.dataprism.core.model.PseudonymisationVersion.HMAC_SHA256_V1,
+                    java.time.Duration.ofHours(1),
+                    new io.github.aindriub.dataprism.security.PurposeValidator(Set.of("investigation")),
+                    CaseAuthorizer.tokenTrusted());
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class OwnAuthorizationServiceParent {
+        @Bean AuthorizationService parentAuthorizationService() {
+            return new AuthorizationService(
+                    new io.github.aindriub.dataprism.security.SecurityPolicy(Set.of("investigation"), java.util.Map.of()),
+                    "DEFAULT", io.github.aindriub.dataprism.core.model.PrivacyScopeType.INVESTIGATION,
+                    ClientAllowlist.unrestricted());
+        }
+    }
+
+    public static class ConcreteCaseAuthorizer implements CaseAuthorizer {
+        @Override public boolean isAuthorised(io.github.aindriub.dataprism.security.CaseAccessRequest request) {
+            return false;
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class TargetClassScopedAuthorizer {
+        @Bean @org.springframework.web.context.annotation.RequestScope
+        ConcreteCaseAuthorizer scopedAuthorizer() { return new ConcreteCaseAuthorizer(); }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class InterfacesScopedAuthorizer {
+        @Bean @org.springframework.context.annotation.Scope(value = "request",
+                proxyMode = org.springframework.context.annotation.ScopedProxyMode.INTERFACES)
+        CaseAuthorizer scopedAuthorizer() { return new ConcreteCaseAuthorizer(); }
     }
 
     @Test

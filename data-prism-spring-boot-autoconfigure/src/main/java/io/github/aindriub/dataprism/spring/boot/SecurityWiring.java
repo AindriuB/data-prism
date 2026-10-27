@@ -11,6 +11,7 @@ import io.github.aindriub.dataprism.security.SecurityPolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.aop.framework.AopProxyUtils;
+import org.springframework.aop.scope.ScopedProxyUtils;
 import org.springframework.beans.factory.BeanFactoryUtils;
 import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -23,8 +24,10 @@ import org.springframework.context.annotation.Lazy;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -50,13 +53,16 @@ import java.util.stream.Collectors;
  * bean constructed with that injected bean (likewise {@link ClientAllowlist} and
  * {@link AuthorizationService}). It starts in every version, including 0.8.0 and later, where the
  * {@link CaseAuthorizer} bean is required. A resolver built with another authorizer or
- * {@code CaseAuthorizer.tokenTrusted()} is refused while the bean exists.
+ * {@code CaseAuthorizer.tokenTrusted()} is refused while the bean exists. A request- or session-scoped
+ * {@link CaseAuthorizer} or {@link ClientAllowlist} behind a scoped proxy is supported: the proxy is the bean,
+ * its {@code scopedTarget.*} twin is not counted, and the proxy is a singleton, so the identity checks hold.
  *
  * <p>The token-trusted {@link CaseAuthorizer} fallback (no bean) is for development only. From version
  * 0.8.0 on, a build refuses to start with it ({@code MISSING_CASE_AUTHORIZER}), whoever built the
  * {@link ScopeResolver}. The version is embedded at build time in {@code META-INF/data-prism/version.properties}
  * and read from this library's own class loader resource; if it is missing, present more than once on the
- * class path, or unparseable it counts as a release. Only an explicit {@code -SNAPSHOT} or a release below 0.8.0 keeps the fallback, with its WARN.
+ * class path, or unparseable it counts as a release. Only an explicit {@code -SNAPSHOT} or a release below
+ * 0.8.0 keeps the fallback, with its WARN.
  */
 @Configuration(proxyBeanMethods = false)
 class SecurityWiring {
@@ -173,7 +179,10 @@ class SecurityWiring {
          * singleton (an identity check cannot hold for a prototype or scoped bean).
          */
         private <T> Map<String, T> lookup(Class<T> type, String codeStem, String simpleName, String applies) {
-            String[] names = BeanFactoryUtils.beanNamesForTypeIncludingAncestors(beanFactory, type, true, true);
+            // A scoped proxy is the bean the defaults inject; its scopedTarget.* twin is not a candidate.
+            String[] names = Arrays.stream(
+                    BeanFactoryUtils.beanNamesForTypeIncludingAncestors(beanFactory, type, true, true))
+                    .filter(name -> !ScopedProxyUtils.isScopedTarget(name)).toArray(String[]::new);
             if (names.length > 1) {
                 throw new DataPrismConfigurationException("AMBIGUOUS_" + codeStem,
                         "more than one " + simpleName + " bean is defined; define exactly one, so that it is "
@@ -186,7 +195,11 @@ class SecurityWiring {
                                     + "the check can be compared by identity");
                 }
             }
-            return BeanFactoryUtils.beansOfTypeIncludingAncestors(beanFactory, type, true, true);
+            Map<String, T> beans = new LinkedHashMap<>();
+            for (String name : names) {
+                beans.put(name, beanFactory.getBean(name, type));
+            }
+            return beans;
         }
     }
 
