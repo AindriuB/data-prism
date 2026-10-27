@@ -121,6 +121,103 @@ class SecurityWiringTest {
                 .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CASE_AUTHORIZER"));
     }
 
+    @Test
+    void a_bypassing_authorization_service_is_refused_under_global_lazy_initialisation() {
+        context.withInitializer(SecurityWiringTest::applyBootLazyInitialisation)
+                .withUserConfiguration(Base.class, RestrictiveAllowlist.class, OwnAuthorizationService.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CLIENT_ALLOWLIST_BYPASSED"));
+    }
+
+    @Test
+    void two_client_allowlists_are_refused_under_global_lazy_initialisation() {
+        context.withInitializer(SecurityWiringTest::applyBootLazyInitialisation)
+                .withUserConfiguration(Base.class, RestrictiveAllowlist.class, SecondAllowlist.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CLIENT_ALLOWLIST"));
+    }
+
+    @Test
+    void a_bypassing_scope_resolver_is_refused_under_boots_lazy_initialisation() {
+        context.withInitializer(SecurityWiringTest::applyBootLazyInitialisation)
+                .withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, OwnScopeResolver.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
+    }
+
+    private static void applyBootLazyInitialisation(org.springframework.context.ConfigurableApplicationContext ctx) {
+        ctx.addBeanFactoryPostProcessor(new org.springframework.boot.LazyInitializationBeanFactoryPostProcessor());
+    }
+
+    private static org.springframework.context.ConfigurableApplicationContext parentWith(Class<?>... configurations) {
+        org.springframework.context.annotation.AnnotationConfigApplicationContext parent =
+                new org.springframework.context.annotation.AnnotationConfigApplicationContext(configurations);
+        return parent;
+    }
+
+    @Test
+    void a_case_authorizer_in_the_parent_context_counts_and_satisfies_the_release_gate() {
+        try (var parent = parentWith(RefusingCaseAuthorizer.class)) {
+            withVersion("0.8.0").withParent(parent).withUserConfiguration(Base.class)
+                    .run(result -> assertThat(result).hasNotFailed());
+        }
+    }
+
+    @Test
+    void a_scope_resolver_that_bypasses_a_parent_contexts_case_authorizer_is_refused() {
+        try (var parent = parentWith(RefusingCaseAuthorizer.class)) {
+            context.withParent(parent).withUserConfiguration(Base.class, OwnScopeResolver.class)
+                    .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
+        }
+    }
+
+    @Test
+    void a_case_authorizer_in_each_of_parent_and_child_is_ambiguous() {
+        try (var parent = parentWith(RefusingCaseAuthorizer.class)) {
+            context.withParent(parent).withUserConfiguration(Base.class, SecondCaseAuthorizer.class)
+                    .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CASE_AUTHORIZER"));
+        }
+    }
+
+    @Test
+    void a_prototype_case_authorizer_is_refused() {
+        context.withUserConfiguration(Base.class, PrototypeCaseAuthorizer.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "NON_SINGLETON_CASE_AUTHORIZER"));
+    }
+
+    @Test
+    void a_prototype_client_allowlist_is_refused() {
+        context.withUserConfiguration(Base.class, PrototypeAllowlist.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "NON_SINGLETON_CLIENT_ALLOWLIST"));
+    }
+
+    @Test
+    void a_version_resource_present_more_than_once_is_unknown_and_so_forbidden() throws Exception {
+        java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("dp-version");
+        try {
+            java.nio.file.Path meta = java.nio.file.Files.createDirectories(dir.resolve("META-INF/data-prism"));
+            java.nio.file.Files.writeString(meta.resolve("version.properties"), "version=0.0.1-SNAPSHOT\n");
+            try (java.net.URLClassLoader loader = new java.net.URLClassLoader(new java.net.URL[] {dir.toUri().toURL()},
+                    SecurityWiring.class.getClassLoader())) {
+                assertThat(SecurityWiring.embeddedVersion(SecurityWiring.class.getClassLoader())).isNotNull();
+                assertThat(SecurityWiring.embeddedVersion(loader)).isNull();
+            }
+        } finally {
+            try (var walk = java.nio.file.Files.walk(dir)) {
+                walk.sorted(java.util.Comparator.reverseOrder()).forEach(path -> path.toFile().delete());
+            }
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class PrototypeCaseAuthorizer {
+        @Bean @org.springframework.context.annotation.Scope("prototype")
+        CaseAuthorizer prototypeAuthorizer() { return request -> false; }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class PrototypeAllowlist {
+        @Bean @org.springframework.context.annotation.Scope("prototype")
+        ClientAllowlist prototypeAllowlist() { return ClientAllowlist.of(Set.of("other-client")); }
+    }
+
     /**
      * Marks every definition lazy that has not said otherwise. Boot's own lazy-initialisation post-processor
      * happens to leave SmartInitializingSingleton beans alone; this one does not, so the guard must opt out

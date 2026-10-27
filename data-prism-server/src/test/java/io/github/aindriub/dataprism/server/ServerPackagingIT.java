@@ -19,6 +19,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.jar.JarFile;
@@ -49,16 +50,33 @@ class ServerPackagingIT {
         Path artifact = Path.of("target", "data-prism-server-" + VERSION + ".jar").toAbsolutePath();
         String nested = "BOOT-INF/lib/data-prism-spring-boot-autoconfigure-" + VERSION + ".jar";
         String found = null;
-        try (JarFile jar = new JarFile(artifact.toFile());
-                ZipInputStream outer = new ZipInputStream(jar.getInputStream(jar.getEntry(nested)))) {
-            for (ZipEntry e = outer.getNextEntry(); e != null; e = outer.getNextEntry()) {
-                if (e.getName().equals("META-INF/data-prism/version.properties")) {
-                    java.util.Properties p = new java.util.Properties();
-                    p.load(outer);
-                    found = p.getProperty("version");
+        String resource = "META-INF/data-prism/version.properties";
+        List<String> hits = new ArrayList<>();
+        try (JarFile jar = new JarFile(artifact.toFile())) {
+            assertThat(jar.getEntry(nested)).as("nested jar " + nested + " is in the packaged jar").isNotNull();
+            if (jar.getEntry("BOOT-INF/classes/" + resource) != null) {
+                hits.add("BOOT-INF/classes/" + resource);
+            }
+            for (ZipEntry lib : Collections.list(jar.entries())) {
+                if (!lib.getName().startsWith("BOOT-INF/lib/") || !lib.getName().endsWith(".jar")) {
+                    continue;
+                }
+                try (ZipInputStream outer = new ZipInputStream(jar.getInputStream(lib))) {
+                    for (ZipEntry e = outer.getNextEntry(); e != null; e = outer.getNextEntry()) {
+                        if (e.getName().equals(resource)) {
+                            hits.add(lib.getName());
+                            if (lib.getName().equals(nested)) {
+                                java.util.Properties p = new java.util.Properties();
+                                p.load(outer);
+                                found = p.getProperty("version");
+                            }
+                        }
+                    }
                 }
             }
         }
+        // A same-named file earlier on the class path would decide the release gate, so there must be one.
+        assertThat(hits).containsExactly(nested);
         assertThat(found).isEqualTo(VERSION);
     }
 
