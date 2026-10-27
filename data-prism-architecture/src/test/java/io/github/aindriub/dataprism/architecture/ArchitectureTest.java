@@ -612,6 +612,17 @@ class ArchitectureTest {
     }
 
     private static DescribedPredicate<JavaMethodCall> methodHandleFieldAccess() {
+        return methodHandleFieldAccess(SOURCE_RECORD_WALKER);
+    }
+
+    private static boolean isOrNestedIn(String name, String outer) {
+        return name.equals(outer) || name.startsWith(outer + "$");
+    }
+
+    static final String SOURCE_RECORD_WALKER = "io.github.aindriub.dataprism.core.engine.SourceRecordWalker";
+
+    /** As above; {@code reader} alone may call the read-only {@code unreflectGetter} (task 288 reads record fields). */
+    static DescribedPredicate<JavaMethodCall> methodHandleFieldAccess(String reader) {
         return DescribedPredicate.describe("use MethodHandles or VarHandle field access", call -> {
             String owner = call.getTarget().getOwner().getFullName();
             String name = call.getTarget().getName();
@@ -620,7 +631,8 @@ class ArchitectureTest {
                     && (name.equals("findGetter") || name.equals("findSetter")
                     || name.equals("findStaticGetter") || name.equals("findStaticSetter")
                     || name.equals("findVarHandle") || name.equals("findStaticVarHandle")
-                    || name.equals("unreflectGetter") || name.equals("unreflectSetter")
+                    || (name.equals("unreflectGetter") && !isOrNestedIn(call.getOriginOwner().getFullName(), reader))
+                    || name.equals("unreflectSetter")
                     || name.equals("unreflectVarHandle")));
         });
     }

@@ -223,6 +223,34 @@ class SourceTreeReadersArchitectureTest {
         }
     }
 
+    static final class GetterReader {
+        Object read(java.lang.invoke.MethodHandles.Lookup lookup, java.lang.reflect.Field field)
+                throws IllegalAccessException {
+            return lookup.unreflectGetter(field);
+        }
+    }
+
+    static final class SetterReader {
+        Object write(java.lang.invoke.MethodHandles.Lookup lookup, java.lang.reflect.Field field)
+                throws IllegalAccessException {
+            return lookup.unreflectSetter(field);
+        }
+    }
+
+    private static boolean violates(Class<?> type, String exempt) {
+        return !fixture(type).stream().flatMap(c -> c.getMethodCallsFromSelf().stream())
+                .filter(ArchitectureTest.methodHandleFieldAccess(exempt)::test).toList().isEmpty();
+    }
+
+    @Test
+    @DisplayName("the unreflectGetter exemption is narrow: only the named reader, and never a setter")
+    void theGetterExemptionIsNarrow() {
+        assertThat(violates(GetterReader.class, "some.Other")).isTrue();
+        assertThat(violates(GetterReader.class, GetterReader.class.getName())).isFalse();
+        assertThat(violates(SetterReader.class, SetterReader.class.getName())).isTrue();
+        assertThat(ArchitectureTest.SOURCE_RECORD_WALKER).isEqualTo(WALKER);
+    }
+
     private static JavaClasses fixture(Class<?>... types) {
         return new ClassFileImporter().importClasses(types);
     }
