@@ -40,7 +40,8 @@ class ClientAllowlistTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
-    @org.junit.jupiter.api.Test
+    @Test
+    @DisplayName("equality and hash code are over the allowed set")
     void equalsAndHashCodeAreOverTheAllowedSet() {
         ClientAllowlist a = ClientAllowlist.of(Set.of("client-1", "client-2"));
         ClientAllowlist b = ClientAllowlist.of(Set.of("client-2", "client-1"));

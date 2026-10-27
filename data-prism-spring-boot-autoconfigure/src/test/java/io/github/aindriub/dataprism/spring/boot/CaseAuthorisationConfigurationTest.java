@@ -15,10 +15,12 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.FactoryBean;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -167,17 +169,35 @@ class CaseAuthorisationConfigurationTest {
                         "CASE_AUTHORISATION_CONFLICT"));
     }
 
+    @Test
+    void a_non_singleton_factory_bean_is_not_asked_for_its_product_at_startup() {
+        context.withPropertyValues(SETTING + "=token-trusted")
+                .withUserConfiguration(SecurityWiringTest.Base.class, Boom.class)
+                .run(result -> assertThat(result).hasNotFailed());
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class Boom {
+        @Bean static FactoryBean<CharSequence> boom() {
+            return new FactoryBean<>() {
+                public CharSequence getObject() { throw new IllegalStateException("not ready"); }
+                public Class<?> getObjectType() { return CharSequence.class; }
+                public boolean isSingleton() { return false; }
+            };
+        }
+    }
+
     @Configuration(proxyBeanMethods = false)
     static class HiddenPrimary {
-        @Bean @org.springframework.context.annotation.Primary Object hidden() {
+        @Bean @Primary Object hidden() {
             return (CaseAuthorizer) request -> true;
         }
     }
 
     @Configuration(proxyBeanMethods = false)
     static class NullTypeFactory {
-        @Bean org.springframework.beans.factory.FactoryBean<Object> hiddenFactory() {
-            return new org.springframework.beans.factory.FactoryBean<>() {
+        @Bean FactoryBean<Object> hiddenFactory() {
+            return new FactoryBean<>() {
                 public Object getObject() { return (CaseAuthorizer) request -> true; }
                 public Class<?> getObjectType() { return null; }
             };

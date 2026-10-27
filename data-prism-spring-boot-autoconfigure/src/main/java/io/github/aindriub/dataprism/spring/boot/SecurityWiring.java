@@ -10,7 +10,9 @@ import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.SecurityPolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.BeanFactoryUtils;
+import org.springframework.beans.factory.HierarchicalBeanFactory;
 import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.beans.factory.NoUniqueBeanDefinitionException;
 import org.springframework.beans.factory.ObjectProvider;
@@ -19,13 +21,13 @@ import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.config.NamedBeanHolder;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Condition;
 import org.springframework.context.annotation.ConditionContext;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
-import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.env.Environment;
 import org.springframework.core.type.AnnotatedTypeMetadata;
 
@@ -40,7 +42,8 @@ import java.util.stream.Collectors;
  * decisions: a {@link CaseAuthorizer} bean or {@code dataprism.security-policy.case-authorisation=token-trusted},
  * and a {@link ClientAllowlist} bean, {@code dataprism.security-policy.allowed-clients} or
  * {@code dataprism.security-policy.client-allowlist=unrestricted}. Neither has a default; a setting together with
- * an application bean is refused before any bean exists (see {@link Preflights}).
+ * an application bean is refused before any bean exists (see {@link Preflights}), and again by
+ * {@link BypassCheck} on the real instances, which catches a bean declared as another type.
  *
  * <p>The default {@link ScopeResolver} and {@link AuthorizationService} take the deployer's bean through the one
  * injection Spring itself uses, so none, many or a non-candidate is Spring's to refuse: two beans fail with
@@ -50,8 +53,9 @@ import java.util.stream.Collectors;
  * <p>What is checked after that is the outcome ({@link BypassCheck}): the bean Spring would inject must be a
  * singleton (or a scoped proxy), and every {@link ScopeResolver} and {@link AuthorizationService} in the context
  * and its ancestors must hold it, or startup is refused ({@code CASE_AUTHORIZER_BYPASSED},
- * {@code CLIENT_ALLOWLIST_BYPASSED}). The test is identity: {@link ScopeResolver#usesCaseAuthorizer} and
- * {@link AuthorizationService#usesClientAllowlist}. An application that replaces either with one built around
+ * {@code CLIENT_ALLOWLIST_BYPASSED}). The test is identity for the authoriser ({@link ScopeResolver#usesCaseAuthorizer})
+ * and value equality for the allowlist ({@link AuthorizationService#usesClientAllowlist}), so a service shared
+ * from a parent context that holds an equal allowlist passes. An application that replaces either with one built around
  * another authoriser or allowlist is refused; one built with the injected bean starts. A request- or
  * session-scoped {@link CaseAuthorizer} behind a scoped proxy is supported, because the proxy is a singleton.
  *
@@ -72,8 +76,9 @@ class SecurityWiring {
     /**
      * Once every singleton exists, checks the outcome rather than the wiring: the {@link CaseAuthorizer} and
      * {@link ClientAllowlist} that Spring injects must be held by every {@link ScopeResolver} or
-     * {@link AuthorizationService} in the context, the defaults included. It compares instances, not names, so a
-     * same-named or FactoryBean-produced replacement is seen as itself.
+     * {@link AuthorizationService} in the context, the defaults included. It compares what each holds, not names, so a
+     * same-named or FactoryBean-produced replacement is seen as itself; names decide only whether the settings'
+     * own bean is the one resolved.
      */
     static final class BypassCheck implements SmartInitializingSingleton {
         private final ConfigurableListableBeanFactory beanFactory;
@@ -147,9 +152,9 @@ class SecurityWiring {
             if (!ownName.equals(resolved.getBeanName())) {
                 return false;
             }
-            org.springframework.beans.factory.BeanFactory current = beanFactory;
+            BeanFactory current = beanFactory;
             while (current != null) {
-                org.springframework.beans.factory.BeanFactory factory = current instanceof ConfigurableApplicationContext c
+                BeanFactory factory = current instanceof ConfigurableApplicationContext c
                         ? c.getBeanFactory() : current;
                 if (factory instanceof ConfigurableListableBeanFactory configurable) {
                     for (String name : configurable.getBeanDefinitionNames()) {
@@ -157,13 +162,16 @@ class SecurityWiring {
                                 || configurable.containsSingleton("&" + name))) {
                             continue;
                         }
-                        Object instance = configurable.getBean(name);
-                        if (type.isInstance(instance)) {
+                        Class<?> declared = configurable.getType(name);
+                        // Only a bean whose type is unknown is created to be looked at; a known type is judged
+                        // without running a FactoryBean's getObject().
+                        if (declared != null ? type.isAssignableFrom(declared)
+                                : type.isInstance(configurable.getBean(name))) {
                             return false;
                         }
                     }
                 }
-                current = factory instanceof org.springframework.beans.factory.HierarchicalBeanFactory h
+                current = factory instanceof HierarchicalBeanFactory h
                         ? h.getParentBeanFactory() : null;
             }
             return true;
