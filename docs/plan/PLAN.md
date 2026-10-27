@@ -171,7 +171,7 @@ Owner decisions of 2026-10-27 on PR #161 (the scalar-record re-plan). Task 270 i
 
 Follow-ups from the re-plan:
 
-- Write the 0.8.x byte-cap task (OD-291-2 (b)); depends on 291; on landing, narrow the 'single large value can exhaust memory' residual in docs.
+- Write the 0.8.x byte-cap task (OD-291-2 (b)); depends on 291; on landing, add the byte cap to the docs' memory clause; the clause stays, since neither cap is a memory limit (a walk can exhaust a small or busy heap before either cap is reached, and concurrent walks add up).
 - 246 owns a `SourceFanOut` root-type check: an adapter that returns a record other than its `responseType()`. Refused `POJONode` and user-class contents also do not reach the prohibited set.
 - The earlier item "an older `SOURCE_MODEL_*` refusal thrown from `prohibited` fails the whole request" is closed by 288: `prohibited` never throws.
 - Existing bug on wave4 and `main` (filed 2026-10-27 for the coordinator to plan; no task file yet): an interrupted request thread poisons the audit sink. `FileAuditSink.recordLine` (`FileAuditSink.java:158-163`) and `SegmentedFileAuditSink.java:117-119` write through a `FileChannel`, and `FileChannel.write` on an interrupted thread closes the channel and throws `ClosedByInterruptException`. The sink then stores `poisonedBy`, and every later request is refused with `AUDIT_SINK_POISONED` until a restart. `SourceFanOut.java:158-161` restores the interrupt flag on a request thread, so one interrupted fan-out can trigger it. Fix direction: the audit write must survive an interrupt, for example by clearing the flag and restoring it around the write, or by a write path that cannot be interrupted. A genuine I/O failure must still poison the sink.
