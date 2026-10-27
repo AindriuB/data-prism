@@ -1,6 +1,9 @@
 package io.github.aindriub.dataprism.core.engine;
 
 import io.github.aindriub.dataprism.annotations.DataClassification;
+import io.github.aindriub.dataprism.annotations.InternalIdentifier;
+import io.github.aindriub.dataprism.annotations.LlmExposedModel;
+import io.github.aindriub.dataprism.annotations.NonSensitive;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.core.descriptor.DescriptorFieldMetadataResolver;
@@ -16,7 +19,11 @@ import io.github.aindriub.dataprism.core.spi.FieldMetadataResolver;
 import io.github.aindriub.dataprism.core.spi.ValueTokenSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import tools.jackson.core.JsonGenerator;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.SerializationContext;
+import tools.jackson.databind.ValueSerializer;
+import tools.jackson.databind.annotation.JsonSerialize;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -324,5 +331,33 @@ class DescriptionConformsToScrubTest {
                 assertNeverContradicts(engine, profile, source);
             }
         }
+    }
+
+    /** A serializer that writes an object from a String component. */
+    static final class ObjectFromString extends ValueSerializer<String> {
+        @Override
+        public void serialize(String value, JsonGenerator gen, SerializationContext ctxt) {
+            gen.writeStartObject();
+            gen.writeStringProperty("inner", value);
+            gen.writeEndObject();
+        }
+    }
+
+    @LlmExposedModel
+    record ObjectNote(@InternalIdentifier String ref,
+                      @NonSensitive(reason = "x") @JsonSerialize(using = ObjectFromString.class) String note) {
+    }
+
+    @Test
+    @DisplayName("a String component whose serializer writes an object is never described under its scalar policy")
+    void scalarComponentWithObjectSerializer() {
+        var redacting = new PrivacyProfile("DEFAULT", PrivacyProfile.UnclassifiedBehaviour.REDACT_AND_WARN, Map.of());
+        var redactingEngine = new JsonTreeScrubbingEngine(new DefaultFieldMetadataResolver(),
+                new ProfilePrivacyPolicyResolver(Map.of("DEFAULT", redacting)), (s, ns, c) -> "syn", TOKENS);
+        var source = new ObjectNote("n-1", "secret text");
+        assertNeverContradicts(engine(new DefaultFieldMetadataResolver()), "DEFAULT", source);
+        assertNeverContradicts(redactingEngine, "DEFAULT", source);
+        assertThat(redactingEngine.describe(ObjectNote.class, ScrubPlanDescriberTest.context("DEFAULT"), false)
+                .orElseThrow().fields()).noneMatch(f -> f.path().equals("note"));
     }
 }

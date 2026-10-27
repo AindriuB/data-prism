@@ -1,49 +1,56 @@
 package io.github.aindriub.dataprism.core.engine;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonRawValue;
+import com.fasterxml.jackson.annotation.JsonUnwrapped;
+import com.fasterxml.jackson.annotation.JsonValue;
 import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 import tools.jackson.core.JacksonException;
+import tools.jackson.core.JsonGenerator;
 import tools.jackson.databind.BeanDescription;
 import tools.jackson.databind.BeanProperty;
-import tools.jackson.core.JsonGenerator;
 import tools.jackson.databind.JavaType;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.MapperFeature;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.SerializationConfig;
 import tools.jackson.databind.SerializationContext;
+import tools.jackson.databind.ValueSerializer;
+import tools.jackson.databind.annotation.JsonSerialize;
+import tools.jackson.databind.cfg.DateTimeFeature;
 import tools.jackson.databind.cfg.MapperConfig;
 import tools.jackson.databind.introspect.Annotated;
 import tools.jackson.databind.introspect.AnnotatedClass;
 import tools.jackson.databind.introspect.AnnotationIntrospectorPair;
 import tools.jackson.databind.introspect.JacksonAnnotationIntrospector;
 import tools.jackson.databind.introspect.NopAnnotationIntrospector;
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.MapperFeature;
-import tools.jackson.databind.type.CollectionLikeType;
-import tools.jackson.databind.type.CollectionType;
-import tools.jackson.databind.type.MapLikeType;
-import tools.jackson.databind.type.MapType;
-import tools.jackson.databind.SerializationConfig;
-import tools.jackson.databind.ValueSerializer;
-import com.fasterxml.jackson.annotation.JsonFormat;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.module.SimpleModule;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.node.StringNode;
 import tools.jackson.databind.ser.BeanPropertyWriter;
-import tools.jackson.databind.ser.std.StdContainerSerializer;
 import tools.jackson.databind.ser.BeanSerializer;
 import tools.jackson.databind.ser.UnrolledBeanSerializer;
 import tools.jackson.databind.ser.ValueSerializerModifier;
 import tools.jackson.databind.ser.bean.BeanSerializerBase;
-import tools.jackson.databind.module.SimpleModule;
 import tools.jackson.databind.ser.jdk.JavaUtilCalendarSerializer;
 import tools.jackson.databind.ser.jdk.JavaUtilDateSerializer;
+import tools.jackson.databind.ser.std.StdContainerSerializer;
 import tools.jackson.databind.ser.std.ToStringSerializer;
+import tools.jackson.databind.type.CollectionLikeType;
+import tools.jackson.databind.type.CollectionType;
+import tools.jackson.databind.type.MapLikeType;
+import tools.jackson.databind.type.MapType;
 import tools.jackson.databind.util.StdDateFormat;
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.cfg.DateTimeFeature;
-import tools.jackson.databind.json.JsonMapper;
-import tools.jackson.databind.node.ArrayNode;
-import tools.jackson.databind.node.ObjectNode;
-import tools.jackson.databind.node.StringNode;
 
+import java.lang.reflect.RecordComponent;
 import java.time.Month;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * Reads source objects into trees, and builds the nodes that replace them.
@@ -282,6 +289,55 @@ public final class SourceTree {
         }
     }
 
+    /**
+     * Whether the holding property of {@code component} on {@code holder} carries a serializer or shape
+     * override as Jackson merged it (on the component, its accessor, an interface, or inside a
+     * meta-annotation): a {@code @JsonSerialize}, {@code @JsonRawValue}, {@code @JsonValue} or
+     * {@code @JsonUnwrapped}, or a format shape other than natural, any or scalar. A value so held may be written
+     * as an object whatever its declared type. If the lookup throws, or the property cannot be found,
+     * the answer is true (fail closed).
+     */
+    static boolean overridesSerialization(Class<?> holder, String component) {
+        try {
+            if (!holder.isRecord()) {
+                return true;
+            }
+            var context = READER._serializationContext();
+            if (!(context.findValueSerializer(holder) instanceof BeanSerializerBase bean)) {
+                return true;
+            }
+            for (var properties = bean.properties(); properties.hasNext(); ) {
+                var writer = properties.next();
+                if (writer.getName().equals(component)) {
+                    return !(writer instanceof BeanPropertyWriter bpw) || overrides(bpw);
+                }
+            }
+            return true;
+        } catch (RuntimeException e) {
+            return true;
+        }
+    }
+
+    private static boolean overrides(BeanPropertyWriter writer) {
+        var member = writer.getMember();
+        if (member == null) {
+            return true;
+        }
+        boolean annotated = member.annotations().anyMatch(a -> {
+            Class<?> type = a.annotationType();
+            return type == JsonSerialize.class || type == JsonRawValue.class || type == JsonValue.class
+                    || type == JsonUnwrapped.class;
+        });
+        if (annotated) {
+            return true;
+        }
+        var shape = writer.findPropertyFormat(READER.serializationConfig(), member.getRawType()).getShape();
+        return shape != JsonFormat.Shape.ANY && shape != JsonFormat.Shape.NATURAL
+                && shape != JsonFormat.Shape.STRING && shape != JsonFormat.Shape.NUMBER
+                && shape != JsonFormat.Shape.NUMBER_INT && shape != JsonFormat.Shape.NUMBER_FLOAT
+                && shape != JsonFormat.Shape.BOOLEAN;
+    }
+
     /** The serializer as the writer would use it, or null when it cannot be contextualised. */
     private static ValueSerializer<?> contextual(SerializationContext context, ValueSerializer<?> serializer) {
         return serializer == null ? null : serializer.createContextual(context, null);
@@ -329,11 +385,11 @@ public final class SourceTree {
         if (bean.usesObjectId() || bean.getFilterId() != null || bean.isUnwrappingSerializer()) {
             return false;
         }
-        java.util.Set<String> components = new java.util.HashSet<>();
-        for (java.lang.reflect.RecordComponent rc : type.getRecordComponents()) {
+        Set<String> components = new HashSet<>();
+        for (RecordComponent rc : type.getRecordComponents()) {
             components.add(rc.getName());
         }
-        java.util.Set<String> written = new java.util.HashSet<>();
+        Set<String> written = new HashSet<>();
         for (var properties = bean.properties(); properties.hasNext(); ) {
             var writer = properties.next();
             if (!(writer instanceof BeanPropertyWriter)) {
