@@ -1,0 +1,71 @@
+# 291 — Cap the node count of a source tree
+
+**Repo:** `.`
+**Release:** 0.8.0
+**Base branch:** `origin/wave/0.8-wave4` once 288, 289 and 290 have merged into it. One PR for this task, targeting `wave/0.8-wave4`.
+**Depends on:** 288 (the walker this caps, `SourceRecordWalker.java`, and its two-source test), 289 (both edit `SourceTree.java`: 289 deletes the describe-only methods, this task adds one code constant), 290 (both insert into `CHANGELOG.md` `[Unreleased]`, and this task narrows the trust-model wording 290 writes in `docs/architecture.md` and `docs/extending.md`)
+**Wave:** 7 (filed 2026-10-27). Not wave 6: its Owns meet 289 on `SourceTree.java` and 290 on `CHANGELOG.md`, `docs/architecture.md` and `docs/extending.md`. They are disjoint from 208, 228, 246, 262 and 284 in wave 6 (and from 227, which PLAN.md places in wave 5), and from 211, 229, 247 and 256 in wave 7 (see "Owns" for the two near misses).
+**Decisions:**
+- **OD-288-6 decided (b) by the owner, 2026-10-27.** A fixed node cap in both walks of a source value, with a new code, `SOURCE_TREE_TOO_LARGE`. One adapter whose iterator never ends costs that source, not the process. Options (a), accept and document, and (c), a cap derived from `maxResponseBytes`, were not chosen (288, Out of scope).
+- **A constant, not a property (planner, at filing, on the codebase's conventions).** Checked on de5cf9dc: per-request limits are deployer properties (`dataprism.limits.*` in `LimitsProperties.java:14-25`, carried as `RequestLimits` and checked on the assembled response at `DefaultContextOrchestrator.java:250-257`), while bounds on how far the engine walks a structure are constants (`JsonTreeScrubbingEngine.MAX_DEPTH`, `SourceValues.MAX_DEPTH`, `ChainableFields.MAX_VISITS`, `ScrubPlanDescriber.MAX_VISITS`). The node cap is a bound of the second kind, and `SourceTree.of(Object)` has no access to `RequestLimits` (288). So it is a constant, and no property is added.
+- **The register row is written by 290 (planner, at filing).** `docs/plan/design/contract-register.md` is 211's in wave 7, so this task cannot own it. 290 writes the 3.1 row for `SOURCE_TREE_TOO_LARGE` from this brief, where the code string, trigger, path and message are fixed ("The cap"), the same way 290 writes 210's rows. This task checks that row against its constant (Acceptance) and does not edit the register.
+
+**Owns:**
+- data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/SourceRecordWalker.java *(288's new class: the node counter and the cap in `of`'s walk and in the lenient walk)*
+- data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/SourceTree.java *(insertion only: the public `SOURCE_TREE_TOO_LARGE` constant beside 288's code constants)*
+- data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/SourceValues.java *(the lenient walk's cap only, and only if 288 left any of the lenient walk in this file; otherwise not edited)*
+- data-prism-core/src/test/java/io/github/aindriub/dataprism/core/engine/SourceTreeNodeCapTest.java *(new)*
+- data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/SourceTreeNodeCapRefusalTest.java *(new: the two-source test, built with `DataPrismAssembly`'s three-argument constructor so that it adds no `new DefaultContextOrchestrator(` or `new RequestLimits(` call site, which 247 and 246 own)*
+- CHANGELOG.md *(`[Unreleased]`, insertions only: one Breaking line)*
+- docs/architecture.md *(the "Trust model for source adapters" paragraph 290 appends to boundary 2: its "bounded in depth, not in size" clause and its memory-exhaustion clause only)*
+- docs/extending.md *(the box's trust-model sentence 290 adds: its "exhaust memory" clause only)*
+
+Near misses checked at filing: 247 (wave 7) owns every `new DefaultContextOrchestrator(` call site, and 246 (wave 6) every `new RequestLimits(` call site, so the two-source test goes through `DataPrismAssembly`, whose internals those tasks update, rather than a new orchestration test. 211 (wave 7) owns `contract-register.md`, hence the third decision above.
+
+## Goal
+288's walkers are bounded in depth but not in size, so a source value that never ends (a JDK collection over an adapter's own iterator that never stops) grows the tree until the process runs out of memory, which fails every concurrent request rather than one source. Cap the number of nodes either walk reads from one source value, refuse that source alone with `SOURCE_TREE_TOO_LARGE` when `of` reaches it, and stop the lenient walk at the cap without throwing.
+
+## The cap
+- **The constant.** `SourceRecordWalker.MAX_NODES = 1_000_000`, package-private, `static final`, one per source value: each call of `SourceTree.of(Object)` and each call of `SourceValues.prohibited` starts its own count at zero.
+- **What counts.** Every position the walk enters counts one before anything is read from it: the root, each record, each component value, each collection or array element, each map entry, each `JsonNode` (container or scalar), each leaf, and each `null`. The count is checked before the read that would enter a new position, so for an iterator the walker calls `hasNext()` and, if the next position would exceed the cap, stops before calling `next()`. So `next()` is called at most `MAX_NODES` times in one walk, whatever the value holds.
+- **In `of`.** Entering a position beyond the cap throws `PrivacyRefusedException` with code `SOURCE_TREE_TOO_LARGE` (the public constant `SourceTree.SOURCE_TREE_TOO_LARGE`), path `$`, and the fixed message "the source value has more nodes than the engine reads". The message carries no count, no class name and no value. It is the walker's own refusal, so 288's per-position read wrap ("Read failures") passes it through unchanged and never turns it into `SOURCE_VALUE_READ_FAILED`. It runs inside the orchestrator's per-source `try`, so that source alone is `REFUSED:SOURCE_TREE_TOO_LARGE` and the other sources still answer.
+- **In the lenient walk.** Reaching the cap stops the whole walk: the position where it stopped is recorded as prohibited-unknown, everything already added stays in the set, nothing more is read (no sibling, no parent's next element), and `prohibited` returns. It throws nothing, as 288's Guarantee 3 requires.
+- **Order with the other bounds.** Whichever of `TOO_DEEP` and `SOURCE_TREE_TOO_LARGE` the walk reaches first is the refusal. 288's other refusals are unchanged.
+- **Configured JSON sources.** Their bodies pass through the same walks (288, "`JsonNode` normalisation"; `ConfiguredJsonScrubbingEngine.java:95-99`), so a body over the cap is refused the same way. The engine is not edited.
+
+## Context
+Line numbers are as on `origin/wave/0.8-wave4` (de5cf9dc) unless they name 288.
+- docs/plan/tasks/288-engine-builds-the-source-tree.md: "Depth", "Read failures", "Guarantee 3", "`SourceValues.prohibited`" ("Bounded"), and Out of scope (the trust-model residual and the OD-288-6 entry). Read 288's Outcome for where the lenient walk and the depth count ended up.
+- data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/DefaultContextOrchestrator.java:387 (`SourceValues.prohibited`, outside the per-source `try`), :389-397 (the per-source `try`), :198 (`correlate`, only on sources not refused).
+- data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/JsonTreeScrubbingEngine.java:72 and ChainableFields.java:63-66: how walk bounds are held.
+- data-prism-integration-tests/src/main/java/io/github/aindriub/dataprism/example/DataPrismAssembly.java:76 (the three-argument constructor), and `EndToEndTest` for a test that builds it.
+- docs/plan/tasks/290-refuse-jackson-annotations-on-source-models.md: the trust-model paragraph and sentence whose clauses this task narrows, and the register row it writes for this code.
+- Fixture values use `example.invalid` and invented names only (repository rule 3).
+
+## Acceptance
+- [ ] Tests are written first and fail on the base commit; the Outcome names them and shows the failing output (on the base commit the endless-iterator tests end by the timeout below or by an `OutOfMemoryError` on the timed thread).
+- [ ] **An endless value is refused, not run out of memory (`SourceTreeNodeCapTest`).** A record with a `@SensitiveData List<String> items` component (sensitive, so that `prohibited` collects it) holds `Collections.unmodifiableList(endless)`, where `endless` is a test `AbstractList` whose `iterator()` yields the same `String` instance (`"item@example.invalid"`) forever and counts its `next()` calls. The JDK wrapper is what makes the walker iterate it (288, OD-288-2 (b)); a user `List` subclass on its own is refused by class before it is iterated. `SourceTree.of` throws `PrivacyRefusedException` with code exactly `SOURCE_TREE_TOO_LARGE`, path `$` and the message above; `next()` was called at most `MAX_NODES` times; no `OutOfMemoryError` is thrown. `SourceValues.prohibited` on the same value returns without throwing, its set holds `"item@example.invalid"`, and `next()` was again called at most `MAX_NODES` times. Each call runs under `assertTimeoutPreemptively(Duration.ofSeconds(60), ...)`, so a mutant without the cap fails on the timeout or an `OutOfMemoryError` instead of hanging the build.
+- [ ] **The boundary.** Using the counting rule above, a value with exactly `MAX_NODES` nodes passes `of` and equals the tree it had before this task, and the same value with one more element is refused with `SOURCE_TREE_TOO_LARGE`. The test computes the element count from `MAX_NODES` and the rule, not from a literal.
+- [ ] **`JsonNode` content counts.** A `JsonNode` component whose `ArrayNode` holds `MAX_NODES` `IntNode`s is refused by `of` and returns from `prohibited`: the cap applies to `JsonNode` content as to collections.
+- [ ] **Another source still answers (`SourceTreeNodeCapRefusalTest`).** A `DataPrismAssembly` with two sources: `a` returns the endless record above, `b` a well-formed record holding a `@NonSensitive` value. The request returns a response: `a` is `REFUSED` with disposition `REFUSED:SOURCE_TREE_TOO_LARGE`, `b` is `ANSWERED` with its value, and no `OutOfMemoryError` is thrown. The call runs under `assertTimeoutPreemptively`, as above.
+- [ ] **Not turned into a read failure.** A test where the cap is reached inside a position that 288's read wrap covers (an element of a JDK collection) asserts the code is `SOURCE_TREE_TOO_LARGE`, not `SOURCE_VALUE_READ_FAILED`.
+- [ ] **Mutation proofs, each recorded in the Outcome with the test that fails:**
+  - remove the cap from both walks: the endless-iterator tests fail on the timeout or with an `OutOfMemoryError`, and the build does not hang;
+  - remove it from the lenient walk only: the `prohibited` half fails the same way;
+  - check the cap after `next()` instead of before it, or with `>` where the rule needs `>=` (or the reverse): the boundary test fails;
+  - let the lenient walk continue with the next sibling after the cap: the `next()` count assertion on `prohibited` fails;
+  - let the per-position wrap catch the cap refusal: the read-failure test fails.
+- [ ] **Code.** `SourceTree.SOURCE_TREE_TOO_LARGE` is a `public static final String` equal to `"SOURCE_TREE_TOO_LARGE"`, and every test asserts that exact string. The contract-register 3.1 row 290 wrote for it matches this task's code string, trigger, path and message; if it does not, the implementer reports the difference to the coordinator and does not edit the register.
+- [ ] **`CHANGELOG.md` `[Unreleased]`, Breaking, one line:** a source whose value holds more than 1,000,000 nodes (records, elements, map entries, `JsonNode`s and leaves, each counted once) is refused with `SOURCE_TREE_TOO_LARGE`; that source alone is refused and the others still answer. No other line is added or changed.
+- [ ] **Docs: the trust-model wording 290 wrote ("exhaust memory"), narrowed here.** In `docs/architecture.md`'s "Trust model for source adapters" paragraph, "bounded in depth, not in size" becomes bounded in depth and in node count (1,000,000 nodes per source value), and the memory clause of the residual changes from "can exhaust the process's memory (an iterator that never ends)" to: an iterator that never ends is stopped at the node cap and refuses that source with `SOURCE_TREE_TOO_LARGE`; a callback can still stall a request. In `docs/extending.md`, the box's trust-model sentence changes "can stall a request or exhaust memory" to "can stall a request, and a value over 1,000,000 nodes is refused" (or equivalent wording with the same two facts). No other sentence in either file changes. `mkdocs build --strict` and every `docs-site/hooks/check_*.py` pass (install PyYAML first if `docs-site/requirements.txt` still lacks it).
+- [ ] The Outcome carries "for the migration notes", for 261: the code, its trigger and the cap's value.
+- [ ] Every existing test in the touched modules passes, 288's depth and read-failure tests included, unchanged.
+- [ ] `./mvnw -B -pl data-prism-core,data-prism-orchestration,data-prism-integration-tests -am verify` passes.
+
+## Out of scope
+- Making the cap a property, or deriving it from `maxResponseBytes` (option (c), not chosen).
+- A cap on bytes, on string length, or on time spent in a callback: a callback that blocks still stalls the request (288's residual).
+- `JsonTreeScrubbingEngine` (271's in wave 5), `ConfiguredJsonScrubbingEngine`, `DefaultContextOrchestrator`, `RequestLimits` and `LimitsProperties`: the cap lives in the walker only.
+- `docs/plan/design/contract-register.md` (290 writes the row; 211 owns the file in this wave) and `docs/migration-0.8.md` (261).
+- Any other wording in the trust-model paragraph or the `docs/extending.md` box (290).
+- A value that is under the cap when scrubbed but over it when `NamespaceCorrelationService.correlate` reads it again (only possible through a residual callback): that refusal fails the request closed, as 288 states for any refusal there.
