@@ -11,7 +11,7 @@
   - **Class path (every documented deployment, the Boot fat jar included).** The model and `data-prism-core` are each in an unnamed module, which reads every module and opens every package, so the lookup succeeds. Checked on 2026-10-27 with a probe on JDK 25: a record with swapped explicit accessors, in the same class loader and in a second, unrelated class loader (a different unnamed module), read correctly by field in both.
   - **Module path.** `data-prism-core` has no `module-info` and no `Automatic-Module-Name`, so there it is an automatic module, which reads every module. A model in a named module must `opens <package>` to it (a qualified `opens ... to <core's automatic name>` works too, but the name is derived from the jar file name, so an unqualified `opens` is what the docs recommend). Otherwise the record is refused with `SOURCE_MODEL_NOT_READABLE`, at startup and at scrub time.
 - **Fallback.** If the parity tests below show a divergence that is not listed as intended, stop and report it to the coordinator; do not change the oracle. The documented fallback is 270's runtime serializer verification as filed at 446dc216 (`docs/plan/tasks/retired/270-classified-records-must-serialise-as-objects.md`, "Definitions").
-- **OD-288-1 is open** (below). The Owns entries marked "as OD-288-1 decides" depend on it.
+- **OD-288-1 decided (a) by the owner, 2026-10-27:** `@JsonAnyGetter` is refused (290), not honoured. Record sources cannot carry undeclared keys: the walker emits exactly the declared components, and undeclared-key handling remains for `JsonNode` roots (configured JSON sources) only. The Owns entries marked "OD-288-1 (a)" are the fixture rework below.
 - **Coordinator decision, 2026-10-27, pending owner confirmation:** `SOURCE_MODEL_MAP_OF_RECORD` and `SOURCE_MODEL_NESTED_COLLECTION_OF_RECORD` are now also scrub-time refusals, so that startup and scrub agree and the walker fails closed. Until the owner confirms, this stands.
 - **Round-3 review of dc1a4e18 (2026-10-27, internal), answered here:** the lenient walk reads reference types only from a closed allowlist and never blocks or runs user code (P2); the architecture test pins the inspecting reader and every serialising call (Low); a declared `Iterable` is walked by its type argument (Low).
 - **Re-review of f7e30ac1 (2026-10-27, internal, FIX), answered here:** two readers, so the guard cannot break startup or the oracle (P2); one leaf rule shared by startup and scrub, with `Path` a leaf (P2); `recordsEnumsJdkTypesAndTreeNodesAreAllowed` in Changed expectations (P2); the lenient walk never throws for any walker refusal (P3); single-use types refused before anything reads them (P3); node normalisation tests strengthened (P3); the unreadable-record residual stated exactly and filed (P3).
@@ -32,12 +32,12 @@
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/core/engine/DescriptionConformsToScrubTest.java, ScrubPlanDescriberTest.java *(only the cases whose scrub-side expectation changes under the walker; 289 rewrites both files afterwards)*
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/core/engine/spoof/** and data-prism-core/src/test/java/tools/jackson/spoof/** *(new test-only fixtures: a user class in a `tools.jackson.*` package)*
 - data-prism-validation/src/test/java/io/github/aindriub/dataprism/validation/NestedContainerLeakTest.java *(the expected codes at :162-163 and :205-210 only, as listed under "Changed expectations")*
-- data-prism-core/src/test/java/io/github/aindriub/dataprism/core/engine/UndeclaredKeyRefusalTest.java, UndeclaredPropertyNameTest.java, ScrubDispositionsTest.java *(as OD-288-1 decides)*
+- data-prism-core/src/test/java/io/github/aindriub/dataprism/core/engine/UndeclaredKeyRefusalTest.java, UndeclaredPropertyNameTest.java, ScrubDispositionsTest.java *(OD-288-1 (a): the fixture rework below)*
 - data-prism-orchestration/src/test/java/io/github/aindriub/dataprism/orchestration/SourceRecordRefusalTest.java *(new: the two-source test; no main code in `data-prism-orchestration` changes)*
-- data-prism-orchestration/src/test/java/io/github/aindriub/dataprism/orchestration/UndeclaredKeyRefusalPathTest.java *(as OD-288-1 decides)*
-- data-prism-mcp/src/test/java/io/github/aindriub/dataprism/mcp/UndeclaredKeyToolRefusalTest.java *(as OD-288-1 decides)*
-- data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/http/UndeclaredKeyFixture.java, AuditFieldDispositionTest.java, KeyShapeLeakScanTest.java, AuditFilePiiScanTest.java, PiiLogScanTest.java, UndeclaredNameToolResultScanTest.java *(as OD-288-1 decides; fixture records and expected outcomes only)*
-- data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/boundary/** *(as OD-288-1 decides; fixture records and expected outcomes only)*
+- data-prism-orchestration/src/test/java/io/github/aindriub/dataprism/orchestration/UndeclaredKeyRefusalPathTest.java *(OD-288-1 (a): the fixture rework below)*
+- data-prism-mcp/src/test/java/io/github/aindriub/dataprism/mcp/UndeclaredKeyToolRefusalTest.java *(OD-288-1 (a): the fixture rework below)*
+- data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/http/UndeclaredKeyFixture.java, AuditFieldDispositionTest.java, KeyShapeLeakScanTest.java, AuditFilePiiScanTest.java, PiiLogScanTest.java, UndeclaredNameToolResultScanTest.java *(OD-288-1 (a): the fixture rework below; fixtures, sources and expected outcomes only)*
+- data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/boundary/** *(OD-288-1 (a): the fixture rework below; fixtures, sources and expected outcomes only)*
 
 ## Goal
 The scrubber applies a holding field's policy to whatever tree it is given and descends only into JSON objects. Today that tree is whatever Jackson writes, so any Jackson feature that changes the written shape (`@JsonValue`, a custom serializer, an array shape, an object id, a type wrapper, a `@JsonProperty` name swap) can move a sensitive value out from under its own classification. Make that impossible instead of detecting it: the engine walks the record itself, reading each component's value by its own rules and writing it under the component's own name. Jackson is handed only JDK scalar values, never a value whose graph can hold a user class or a record.
@@ -87,7 +87,7 @@ The scrubber applies a holding field's policy to whatever tree it is given and d
   
   Nothing else is read. That covers `ThreadLocal` (whose `get()` would read the orchestrator's own thread and could run a `withInitial` supplier), `java.lang.ref.Reference` and its subclasses (no `get()`, and nothing reconstructed through them), the internals of a user class, the content of a `POJONode`, and single-use values. Each such position is recorded as prohibited-unknown: nothing under it is added to the set, and the scrub of that source refuses inside the per-source `try`, so the source emits nothing. Every getter call on the allowlist is wrapped: a `RuntimeException` or `Error` other than `VirtualMachineError` from it is caught, and the position becomes prohibited-unknown. So nothing escapes `prohibited`, and it never blocks.
 
-## OD-288-1 (open): `@JsonAnyGetter` open models
+## OD-288-1: decided (a) by the owner, 2026-10-27 — `@JsonAnyGetter` open models
 The walker ignores `@JsonAnyGetter`, and the owner's refusal list (290) refuses it. Today it is the only way a record source puts undeclared keys into its tree. `docs/extending.md:364-366` documents it as allowed, and nine fixtures in four modules use it: `UndeclaredKeyRefusalTest`, `UndeclaredPropertyNameTest`, `ScrubDispositionsTest` (`Open`, :58-59, used at :131-133), `UndeclaredKeyRefusalPathTest`, `UndeclaredKeyToolRefusalTest`, `UndeclaredKeyFixture`, `PerSourceHarness`, `AuditFieldDispositionTest` and `KeyShapeLeakScanTest`.
 
 The facts (corrected 2026-10-27 after the internal review of 058d0f89): under the walker, the map is written as an ordinary component under its own name. The scrubber never descends into a `Map` component, because a `Map` is not `descendable` (`FieldMetadataResolver.java:35`). It takes the unclassified-structure path in `JsonTreeScrubbingEngine.scrubNestedObject` (:370-396 on wave4). So the keys never reach the undeclared-key handling (`UNKNOWN_FIELD`, `<undeclared-N>` placeholders, `$.<undeclared>` paths) at all:
@@ -95,9 +95,39 @@ The facts (corrected 2026-10-27 after the internal review of 058d0f89): under th
 - `extra` marked `@NonSensitive`: the profile's `unclassified` setting decides the whole map. Under DEFAULT it refuses with `UNCLASSIFIED_STRUCTURE`; a `REDACT` setting replaces the map with the marker; a pass-through setting releases the map whole, keys included.
 
 For a record source, the undeclared-key handling becomes unreachable. It stays reachable through `JsonNode` roots: configured JSON sources, and a test resolver that exposes the tree.
-- **(a) Refuse it, as decided; rework the fixtures.** Each of the nine either becomes a `JsonNode`-root source (with `ConfiguredJsonFieldMetadataResolver` or a test resolver that exposes the tree), so that its undeclared-key assertions still mean something, or keeps a record with a `Map<String, Object>` component and asserts the outcomes above instead. The Outcome says which for each. Cost: an adopter's open root model loses its extra keys' per-key handling. They must classify the holding map field as a whole, or move to a configured JSON source.
-- **(b) Keep it, by the engine's own rule.** The walker flattens one `Map<String, ?>` component marked `@JsonAnyGetter` into its record's object, writing keys as for any map and refusing a key equal to a component name. The keys then reach the undeclared-key handling at the record's level, as today. 290 exempts `@JsonAnyGetter` on such a component. The nine fixtures pass unmodified. Cost: the engine reads one Jackson annotation, and the collision rule is a new check to get right.
+- **(a) Refuse it; rework the fixtures. Decided.** Each of the nine either becomes a `JsonNode`-root source (with `ConfiguredJsonFieldMetadataResolver` or a test resolver that exposes the tree), so that its undeclared-key assertions still mean something, or keeps a record with a `Map<String, Object>` component and asserts the outcomes above instead. The Outcome says which for each. Cost: an adopter's open root model loses its extra keys' per-key handling. They must classify the holding map field as a whole, or move to a configured JSON source.
+- **(b) Keep it, by the engine's own rule. Not chosen.** The walker flattens one `Map<String, ?>` component marked `@JsonAnyGetter` into its record's object, writing keys as for any map and refusing a key equal to a component name. The keys then reach the undeclared-key handling at the record's level, as today. 290 exempts `@JsonAnyGetter` on such a component. The nine fixtures pass unmodified. Cost: the engine reads one Jackson annotation, and the collision rule is a new check to get right.
 - **Recommendation: (a).** It is what the owner listed, it leaves no Jackson annotation with meaning, and the collision case (an extra key named like a `@NonSensitive` component) is a value swap that (a) cannot express at all. Today's behaviour on that collision is itself unchecked (270, Out of scope).
+- **Decided: (a), by the owner, 2026-10-27.**
+
+### The fixture rework (OD-288-1 (a))
+Two kinds of `JsonNode` root keep undeclared-key coverage:
+- **configured JSON source:** a source scrubbed by `ConfiguredJsonScrubbingEngine` under `ConfiguredJsonFieldMetadataResolver`, where the module already depends on `data-prism-connectors-rest`;
+- **exposed tree:** elsewhere, a `JsonNode` root scrubbed by `JsonTreeScrubbingEngine` with a test `FieldMetadataResolver` that exposes `ObjectNode` and declares the same fields the record declared, which is what a configured JSON source does.
+
+Each fixture's declared fields, keys, values and profile stay as they are; only the carrier changes from a record with an any-getter to a tree with the same keys.
+
+| # | Fixture (file) | Goes to | What it keeps covering |
+|---|---|---|---|
+| 1 | `UndeclaredKeyRefusalTest.Open` (core) | exposed tree | `UNKNOWN_FIELD` and `UNCLASSIFIED_STRUCTURE` under an undeclared key name the placeholder `$.<undeclared>`, never the key. The `RefusalPaths` and `FieldMetadata` cases use no fixture and are unchanged |
+| 2 | `UndeclaredPropertyNameTest.Open` and `Mixed` (core) | exposed tree | placeholder numbering by raw key order, insertion-order independence, a placeholder never overwriting a declared property, `DROP_AND_WARN`, `PASS_THROUGH_UNSAFE` keeping the raw key, `FAIL_REQUEST`, dispositions keeping one `<undeclared>` segment |
+| 3 | `ScrubDispositionsTest.Open` (core, :58-59, :131-133) | exposed tree | an undeclared key's name never reaches dispositions (`/<undeclared>` only) |
+| 4 | `UndeclaredKeyRefusalPathTest` (orchestration) | exposed tree, through the orchestrator | `UNKNOWN_FIELD` and the pass-through `VALIDATION_FAILED` path render the placeholder; no digits from a bracketed key |
+| 5 | `UndeclaredKeyToolRefusalTest` (mcp) | exposed tree, through both tools | `UNKNOWN_FIELD`, `VALIDATION_FAILED` and `UNCLASSIFIED_STRUCTURE` refusal texts name the code and not the key; no digits from a bracketed key |
+| 6 | `UndeclaredKeyFixture` (integration-tests), and its users `AuditFilePiiScanTest`, `PiiLogScanTest`, `UndeclaredNameToolResultScanTest` | configured JSON source | no undeclared key name in the audit file, the logs or the tool result |
+| 7 | `PerSourceHarness.Stray` (integration-tests boundary; any-getter on a method), and its users `AllSourcesRefusedPinTest`, `PerSourceResultsTest`, `RefusedDispositionLogCompatibilityTest` | configured JSON source | a per-source refusal in scrub (`UNKNOWN_FIELD`) with an identifying-looking key. The pinned log lines in `RefusedDispositionLogCompatibilityTest` do not change |
+| 8 | `AuditFieldDispositionTest` (integration-tests), its DENY case at :124 | configured JSON source | a DENY from an undeclared payload key records a fixed `REFUSED` key, never the payload key. The ALLOW case at :64 uses no any-getter and is unchanged |
+| 9 | `KeyShapeLeakScanTest` (integration-tests) | configured JSON source | a source keyed by an email-shaped string is refused `VALIDATION_FAILED` alone, and is `REFUSED` and absent next to a clean source |
+
+Every behaviour the nine cover today is still tested by at least one fixture with a `JsonNode` root. No assertion about undeclared-key handling is deleted. If a test cannot keep its assertion on a `JsonNode` root, the implementer stops and reports it rather than weakening it.
+
+**The new outcome for a record** is asserted once, in `SourceRecordWalkerTest`. A record whose extra keys sit in a `Map<String, Object>` component, or in a `JsonNode` component, is never descended into:
+- unannotated, the scrub refuses with `UNDECLARED_FIELD` at `$.extra`;
+- `@NonSensitive`, the profile's `unclassified` setting decides the whole value: `UNCLASSIFIED_STRUCTURE` under DEFAULT, the marker under `REDACT_AND_WARN`, the whole value, keys included, under `PASS_THROUGH_UNSAFE`;
+- no key appears in a refusal path, message or disposition;
+- a record with `@JsonAnyGetter`, on a component or on a method, emits exactly its components. 290 then refuses it at startup.
+
+SourceModelsTest's `WithAny` (an any-getter on a method) is covered under "Changed expectations". The `@JsonAnyGetter(enabled=false)` cases at :420-496 are 290's.
 
 ## Context
 Line numbers are as on `origin/wave/0.8-wave4` (de5cf9dc).
@@ -155,7 +185,7 @@ Line numbers are as on `origin/wave/0.8-wave4` (de5cf9dc).
 - [ ] **Changed expectations** (review P2; every other assertion in these files is unchanged):
   - `SourceModelsTest`:
     - :137-148 `recordsEnumsJdkTypesAndTreeNodesAreAllowed`: the `require` assertion is unchanged; `SourceTree.of` on `Allowed`, whose `Object any` holds an `Inner` record, now refuses with `SOURCE_MODEL_RECORD_NOT_DECLARED` at `$.any`, so the test's `of` part is split out with that expectation, and its other tree assertions move to a value with `any` holding a non-record.
-    - :243-248 `recordComponentAnnotationsStillApply`: `Annotated`'s tree has `a`, `b`, `c`; under OD-288-1 (a), `WithAny`'s tree has `a` and the map component under its own name; `Valued`'s tree is an object.
+    - :243-248 `recordComponentAnnotationsStillApply`: `Annotated`'s tree has `a`, `b`, `c`; `WithAny`'s tree has `a` only, because its any-getter is a method, which the walker never calls (OD-288-1 (a)); `Valued`'s tree is an object.
     - :250-255 `enumsAreAllowedUnlessReadByGetters`: `ValueEnum.A` is `"A"`, `RenamedEnum.B` is `"B"`; `ObjectEnum` is still refused at startup, and at scrub time its value is written by `name()`.
     - :354-357 and :397-407: the runtime `SourceTree.of` refusals of foreign properties become trees of the components only. The `require` refusals at the same lines are unchanged.
     - :420-430 `aComponentSerializerAndAnIgnoredComponentStillPass`: the tree has `secret` with the raw value and `hidden`.
@@ -166,7 +196,7 @@ Line numbers are as on `origin/wave/0.8-wave4` (de5cf9dc).
     - :205-210, `Object=[[Leaf]]` and `List<Object>=[[Leaf]]`: `SOURCE_MODEL_RECORD_NOT_DECLARED`, not `UNCLASSIFIED_STRUCTURE`;
     - :213-223, `Optional<List<Leaf>>`, `Optional<Leaf[]>` and `List<Optional<Leaf>>`: unchanged, accepted at startup and `UNCLASSIFIED_STRUCTURE` at scrub (the unwrap order above);
     - every shape still releases no invented value.
-- [ ] **Undeclared keys** (as OD-288-1 decides). Under (a): each of the nine fixtures is reworked as OD-288-1 (a) describes, and the Outcome lists each fixture, which way it went, and each changed assertion. Under (b): those tests pass unmodified, and a key equal to a component name is refused.
+- [ ] **Undeclared keys (OD-288-1 (a)).** Each of the nine fixtures goes where the fixture table says, and its assertions about undeclared-key handling pass unchanged on the `JsonNode` root. No `@JsonAnyGetter` remains on any record in the touched test sources (`rg -n JsonAnyGetter` lists only 290's refusal fixtures and `SourceModelsTest`). `SourceRecordWalkerTest` asserts the record outcome listed under the table. The Outcome lists each fixture, the carrier it moved to, and any assertion whose wording changed.
 - [ ] **Deleted.** `CheckedKey` and the record branch of `refuseSerializer` are gone. `RecordsOnly` and `ClassLevelSerializers` survive only as the leaf guard, and a test shows the guard is consulted on the leaf path.
 - [ ] **Codes.** Each refusal test asserts the exact code string: `SOURCE_MODEL_RECORD_NOT_DECLARED`, `SOURCE_MODEL_NOT_READABLE`, `SOURCE_MODEL_FOREIGN_NODE` or `SOURCE_TREE_NOT_COMPONENT_EXACT`, each a public constant on `SourceModels` or `SourceTree`. Their contract-register rows and CHANGELOG lines are 290's; the Outcome gives each code's trigger and message for them.
 - [ ] Every existing test in the touched modules passes, except the cases this task owns and names in its Outcome.
