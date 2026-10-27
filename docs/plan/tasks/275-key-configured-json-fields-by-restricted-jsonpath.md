@@ -3,7 +3,7 @@
 **Repo:** `.`
 **Release:** 0.9.0 (changes the `json-sources:` grammar; must land before the 0.9.0 freeze)
 **Base branch:** `origin/main` once 273 and 274 have merged
-**Depends on:** 274 (the parser, path set and walker), 273 (both edit `freeze/codes.txt` and the contract register), 249 (configured-source descriptions, chainable fields and several files), 251 (link issuance from chainable fields), 270 and 271 (PR #161: classified-record shapes and the descriptor map; 249 depends on 271)
+**Depends on:** 274 (the parser, path set and walker), 273 (both edit `freeze/codes.txt` and the contract register), 249 (configured-source descriptions, chainable fields and several files), 251 (link issuance from chainable fields), 290 and 271 (PR #161: the source-model rule and the descriptor map; 249 depends on 271. 290 replaces the retired 270 on 2026-10-27 and depends on 288; configured JSON trees pass through 288's walker unchanged, so this is an ordering edge only)
 **Wave:** 16 (0.9 starter onboarding; filed 2026-10-23 from `docs/plan/specs/2026-10-23-starter-onboarding.md`)
 **Decisions:** OD-275-1 is open (below). The grammar itself, and "JSONPath only, no nested-YAML alternative", are owner decisions already made in the spec, section 2.
 **Owns:**
