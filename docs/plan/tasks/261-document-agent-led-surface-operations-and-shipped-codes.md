@@ -4,7 +4,7 @@
 **Release:** 0.8.0
 **Executor:** `scribe` (docs only; no code)
 **Base branch:** the 0.8 integration branch once every dependency has merged
-**Depends on:** 266 (serialised on `CHANGELOG.md`: 266 forward-ports the `[0.7.1]` section to `main` directly below `[Unreleased]`), 238, 244, 245, 246, 247, 249, 250, 253, 255, 256, 230 (sealed-cluster plan; 230 adds rows to `docs/configuration.md` and otherwise could run alongside this task, since both follow 255; its startup codes also belong in the startup-refusal index), 270, 271 and 272 (each leaves migration notes in its Outcome for `docs/migration-0.8.md`; added 2026-10-23), 291 (its Outcome carries the `SOURCE_TREE_TOO_LARGE` migration note; added 2026-10-27)
+**Depends on:** 266 (serialised on `CHANGELOG.md`: 266 forward-ports the `[0.7.1]` section to `main` directly below `[Unreleased]`), 238, 244, 245, 246, 247, 249, 250, 253, 255, 256, 230 (sealed-cluster plan; 230 adds rows to `docs/configuration.md` and otherwise could run alongside this task, since both follow 255; its startup codes also belong in the startup-refusal index), 270, 271 and 272 (each leaves migration notes in its Outcome for `docs/migration-0.8.md`; added 2026-10-23), 291, or its deferral or withdrawal recorded by the coordinator (291's Outcome carries the `SOURCE_TREE_TOO_LARGE` migration note; if 291 is deferred past 0.8.0 or withdrawn, the coordinator's record of that is what this task waits for, and no note is written; added 2026-10-27, made "or its deferral or withdrawal" at the internal review of c47bd335..4859aa40)
 **Wave:** 13 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Owns:**
 - docs/tools.md
