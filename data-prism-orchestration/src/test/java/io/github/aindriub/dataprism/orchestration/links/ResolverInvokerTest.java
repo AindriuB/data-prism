@@ -337,6 +337,7 @@ class ResolverInvokerTest {
     }
 
     @Test
+    @Timeout(30)
     void theInvokerNeverCallsNameAndTheLatencyTagIsConstant() {
         CountDownLatch nameCalled = new CountDownLatch(1);
         KeyResolver blockingName = new KeyResolver() {

@@ -13,14 +13,15 @@ import io.github.aindriub.dataprism.core.policy.EffectivePrivacyPolicy;
 import io.github.aindriub.dataprism.core.policy.PrivacyPolicyResolver;
 import io.github.aindriub.dataprism.core.spi.FieldMetadataResolver;
 import io.github.aindriub.dataprism.core.spi.KeyNamespace;
-
 import tools.jackson.databind.annotation.JsonSerialize;
 
+import java.lang.ref.Reference;
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.RecordComponent;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -30,6 +31,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -289,7 +291,7 @@ final class ScrubPlanDescriber {
         Class<?> value = md.valueType();
         if (value == byte[].class || value == char[].class) {
             // Written as one string (base64 for bytes), not as an array of elements.
-            return new Shape(Kind.SCALAR, false, null);
+            return overridden(owner, md) ? new Shape(Kind.DYNAMIC, false, null) : new Shape(Kind.SCALAR, false, null);
         }
         boolean array = value != null && (value.isArray() || Collection.class.isAssignableFrom(value));
         Class<?> nested = nestedType(md, array);
@@ -299,14 +301,15 @@ final class ScrubPlanDescriber {
             return new Shape(Kind.DYNAMIC, array, null);
         }
         if (nested == byte[].class || nested == char[].class) {
-            return new Shape(Kind.SCALAR, array, null);
+            return overridden(owner, md) ? new Shape(Kind.DYNAMIC, array, null) : new Shape(Kind.SCALAR, array, null);
         }
         boolean mayBeScalar = mayBeScalar(owner, md, nested);
         if (resolver.descendable(nested)) {
             return new Shape(mayBeScalar || !plain(owner, md, nested) ? Kind.OMIT : Kind.RECORD, array, nested);
         }
         if (nested.isPrimitive() || nested.isEnum() || scalar(nested)) {
-            return new Shape(Kind.SCALAR, array, null);
+            return SourceTree.readsAsPlainScalar(owner, md.fieldName(), nested)
+                    ? new Shape(Kind.SCALAR, array, null) : new Shape(Kind.DYNAMIC, array, null);
         }
         if (Map.class.isAssignableFrom(nested) || concrete(nested) && !platform(nested)) {
             if (mayBeScalar) {
@@ -316,6 +319,15 @@ final class ScrubPlanDescriber {
                     ? Kind.STRUCTURE : Kind.OMIT, array, null);
         }
         return new Shape(Kind.DYNAMIC, array, null);
+    }
+
+    /**
+     * Whether the holding component carries a serializer or shape override, as Jackson merges them, so
+     * that a scalar-typed value may be written as an object. Such a field is dynamic: the agreement rule
+     * decides, which usually omits it.
+     */
+    private static boolean overridden(Class<?> owner, FieldMetadata md) {
+        return SourceTree.overridesSerialization(owner, md.fieldName());
     }
 
     /** Whether the scrubber's own reader writes the type as a plain object of its components. */
@@ -360,7 +372,7 @@ final class ScrubPlanDescriber {
                 }
             }
         }
-        List<AnnotatedElement> holders = new java.util.ArrayList<>();
+        List<AnnotatedElement> holders = new ArrayList<>();
         if (owner.isRecord()) {
             for (RecordComponent rc : owner.getRecordComponents()) {
                 if (rc.getName().equals(md.fieldName())) {
@@ -401,8 +413,8 @@ final class ScrubPlanDescriber {
                 && type != Object.class
                 && type != Optional.class
                 // A reference to a value is written as that value, so it is not a scalar of its own.
-                && !java.util.concurrent.atomic.AtomicReference.class.isAssignableFrom(type)
-                && !java.lang.ref.Reference.class.isAssignableFrom(type)
+                && !AtomicReference.class.isAssignableFrom(type)
+                && !Reference.class.isAssignableFrom(type)
                 && !type.isInterface()
                 || Number.class.isAssignableFrom(type) || CharSequence.class.isAssignableFrom(type);
     }

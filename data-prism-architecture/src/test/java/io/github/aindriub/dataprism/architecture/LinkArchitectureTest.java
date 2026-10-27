@@ -501,7 +501,7 @@ class LinkArchitectureTest {
     }
 
     @Test
-    void bypassRuleFailsOnALimiterImplementedOutsideHazelcastAndPassesTheHazelcastFloorFixture() {
+    void bypassRuleFailsOnALimiterImplementedOutsideHazelcastAndOnTheFloorFixtureUntilTheAllowListExists() {
         assertThat(evaluate(noBypass(outsideLinkAnd(
                 FixtureImplementsTheLimiterOutsideHazelcast.class)),
                 FixtureImplementsTheLimiterOutsideHazelcast.class).hasViolation()).isTrue();

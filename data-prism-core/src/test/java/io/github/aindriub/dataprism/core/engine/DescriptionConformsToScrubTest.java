@@ -1,6 +1,9 @@
 package io.github.aindriub.dataprism.core.engine;
 
 import io.github.aindriub.dataprism.annotations.DataClassification;
+import io.github.aindriub.dataprism.annotations.InternalIdentifier;
+import io.github.aindriub.dataprism.annotations.LlmExposedModel;
+import io.github.aindriub.dataprism.annotations.NonSensitive;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.core.descriptor.DescriptorFieldMetadataResolver;
@@ -16,11 +19,18 @@ import io.github.aindriub.dataprism.core.spi.FieldMetadataResolver;
 import io.github.aindriub.dataprism.core.spi.ValueTokenSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.annotation.JsonValue;
+import tools.jackson.core.JsonGenerator;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.SerializationContext;
+import tools.jackson.databind.ValueSerializer;
+import tools.jackson.databind.annotation.JsonSerialize;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
@@ -324,5 +334,132 @@ class DescriptionConformsToScrubTest {
                 assertNeverContradicts(engine, profile, source);
             }
         }
+    }
+
+    /** A serializer that writes an object from a String component. */
+    static final class ObjectFromString extends ValueSerializer<String> {
+        @Override
+        public void serialize(String value, JsonGenerator gen, SerializationContext ctxt) {
+            gen.writeStartObject();
+            gen.writeStringProperty("inner", value);
+            gen.writeEndObject();
+        }
+    }
+
+    @LlmExposedModel
+    record ObjectNote(@InternalIdentifier String ref,
+                      @NonSensitive(reason = "x") @JsonSerialize(using = ObjectFromString.class) String note) {
+    }
+
+    @Test
+    @DisplayName("a String component whose serializer writes an object is never described under its scalar policy")
+    void scalarComponentWithObjectSerializer() {
+        var redacting = new PrivacyProfile("DEFAULT", PrivacyProfile.UnclassifiedBehaviour.REDACT_AND_WARN, Map.of());
+        var redactingEngine = new JsonTreeScrubbingEngine(new DefaultFieldMetadataResolver(),
+                new ProfilePrivacyPolicyResolver(Map.of("DEFAULT", redacting)), (s, ns, c) -> "syn", TOKENS);
+        var source = new ObjectNote("n-1", "secret text");
+        assertNeverContradicts(engine(new DefaultFieldMetadataResolver()), "DEFAULT", source);
+        assertNeverContradicts(redactingEngine, "DEFAULT", source);
+        assertThat(redactingEngine.describe(ObjectNote.class, ScrubPlanDescriberTest.context("DEFAULT"), false)
+                .orElseThrow().fields()).noneMatch(f -> f.path().equals("note"));
+    }
+
+    @JsonSerialize(using = ObjectFromEnum.class)
+    enum CustomSerialized { A }
+
+    @JsonSerialize(using = tools.jackson.databind.ext.javatime.ser.SpoofJavaTimeSerializer.class)
+    enum Spoofed { A }
+
+    enum MapValued {
+        A;
+
+        @JsonValue
+        Map<String, String> value() {
+            return Map.of("k", name());
+        }
+    }
+
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.WRAPPER_ARRAY)
+    enum Typed { A }
+
+    enum Plain { A }
+
+    /** Writes an object from an enum constant. */
+    static final class ObjectFromEnum extends ValueSerializer<Enum<?>> {
+        @Override
+        public void serialize(Enum<?> value, JsonGenerator gen, SerializationContext ctxt) {
+            gen.writeStartObject();
+            gen.writeStringProperty("inner", value.name());
+            gen.writeEndObject();
+        }
+    }
+
+    @LlmExposedModel
+    record TypedLong(@InternalIdentifier String ref,
+                     @NonSensitive(reason = "x") @JsonTypeInfo(use = JsonTypeInfo.Id.NAME,
+                             include = JsonTypeInfo.As.WRAPPER_OBJECT) Long n,
+                     @NonSensitive(reason = "x") @JsonTypeInfo(use = JsonTypeInfo.Id.CLASS,
+                             include = JsonTypeInfo.As.PROPERTY) UUID u) {
+    }
+
+    @LlmExposedModel
+    record CustomEnum(@InternalIdentifier String ref, @NonSensitive(reason = "x") CustomSerialized e) {
+    }
+
+    @LlmExposedModel
+    record SpoofEnum(@InternalIdentifier String ref, @NonSensitive(reason = "x") Spoofed e) {
+    }
+
+    @LlmExposedModel
+    record MapEnum(@InternalIdentifier String ref, @NonSensitive(reason = "x") MapValued e) {
+    }
+
+    @LlmExposedModel
+    record TypedEnum(@InternalIdentifier String ref, @NonSensitive(reason = "x") Typed e) {
+    }
+
+    @LlmExposedModel
+    record PlainScalars(@InternalIdentifier String ref, @NonSensitive(reason = "x") String s,
+                        @NonSensitive(reason = "x") Long n, @NonSensitive(reason = "x") UUID u,
+                        @NonSensitive(reason = "x") Plain e) {
+    }
+
+    @Test
+    @DisplayName("scalar-typed values written with type information or an enum with its own serializer are never described under their scalar policy")
+    void scalarsWithTypeInformationOrCustomEnums() {
+        var redacting = new PrivacyProfile("DEFAULT", PrivacyProfile.UnclassifiedBehaviour.REDACT_AND_WARN, Map.of());
+        var redactingEngine = new JsonTreeScrubbingEngine(new DefaultFieldMetadataResolver(),
+                new ProfilePrivacyPolicyResolver(Map.of("DEFAULT", redacting)), (s, ns, c) -> "syn", TOKENS);
+        var bundled = engine(new DefaultFieldMetadataResolver());
+        List<String> problems = new ArrayList<>();
+        for (Object source : List.of(new TypedLong("t-1", 7L, UUID.randomUUID()),
+                new CustomEnum("c-1", CustomSerialized.A), new MapEnum("m-1", MapValued.A),
+                new TypedEnum("e-1", Typed.A), new SpoofEnum("s-1", Spoofed.A))) {
+            String name = source.getClass().getSimpleName();
+            for (var e : Map.of("bundled", bundled, "redacting", redactingEngine).entrySet()) {
+                try {
+                    assertNeverContradicts(e.getValue(), "DEFAULT", source);
+                } catch (AssertionError | RuntimeException ex) {
+                    problems.add(name + " under " + e.getKey() + ": " + ex.getMessage());
+                }
+                if (e.getValue().describe(source.getClass(), ScrubPlanDescriberTest.context("DEFAULT"), false)
+                        .orElseThrow().fields().stream().anyMatch(f -> f.protection() == Protection.VERBATIM)) {
+                    problems.add(name + " under " + e.getKey() + " described VERBATIM");
+                }
+            }
+        }
+        assertThat(problems).isEmpty();
+    }
+
+    @Test
+    @DisplayName("plain String, Long, UUID and enum fields are still described")
+    void plainScalarsStayDescribed() {
+        for (String profile : BOTH) {
+            assertConforms(new DefaultFieldMetadataResolver(), profile,
+                    new PlainScalars("p-1", "s", 7L, UUID.randomUUID(), Plain.A));
+        }
+        assertThat(engine(new DefaultFieldMetadataResolver())
+                .describe(PlainScalars.class, ScrubPlanDescriberTest.context("DEFAULT"), false).orElseThrow().fields())
+                .extracting(FieldProtection::path).contains("s", "n", "u", "e");
     }
 }
