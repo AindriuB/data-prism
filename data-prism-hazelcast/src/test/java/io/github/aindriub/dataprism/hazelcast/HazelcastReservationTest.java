@@ -279,8 +279,13 @@ class HazelcastReservationTest {
     void forgetRacingReserveNeverLeavesASubjectCounterMissingFromTheTotal() throws Exception {
         int subjects = 8;
         AtomicBoolean done = new AtomicBoolean();
+        AtomicReference<Throwable> forgetFailure = new AtomicReference<>();
         Thread forgetter = new Thread(() -> {
-            while (!done.get()) budgets[1].forget(SCOPE);
+            try {
+                while (!done.get()) budgets[1].forget(SCOPE);
+            } catch (Throwable failure) {
+                forgetFailure.set(failure);
+            }
         });
         forgetter.start();
         try {
@@ -290,6 +295,7 @@ class HazelcastReservationTest {
             done.set(true);
             forgetter.join(20_000);
         }
+        assertThat(forgetFailure.get()).as("the forgetting thread's failure").isNull();
         int sum = 0;
         for (int i = 0; i < subjects; i++) sum += budgets[0].reads(SCOPE, "s-" + i);
         assertThat(budgets[1].scopeReads(SCOPE)).isEqualTo(sum);
@@ -462,6 +468,24 @@ class HazelcastReservationTest {
                         .isEqualTo("CLUSTER_OPERATION_REFUSED"));
         assertThat(budgets[1].reads(SCOPE, "s-1")).isEqualTo(2);
         assertThat(budgets[1].scopeReads(SCOPE)).isEqualTo(2);
+    }
+
+    @Test
+    void aReadWhoseTotalUpdateFailsIsUndoneRefusedAndLoggedWithoutNamingAnything() throws Exception {
+        assertThat(budgets[0].reserve("scope-secret", "other", 1, 10, 100).granted()).isTrue();
+        PrivacyCluster failing = failingOn(0, "executeOnKey",
+                key -> key.equals(totalKey("scope-secret")), false);
+        var budget = new HazelcastScopeBudget(failing, LONG);
+        var recorder = new RecordingLogger();
+        try (var ignored = HazelcastScopeBudget.captureTo(recorder.logger())) {
+            assertThat(budget.tryRead("scope-secret", "subject-secret", 5)).isFalse();
+        }
+        assertThat(budgets[1].reads("scope-secret", "subject-secret")).isZero();
+        assertThat(budgets[1].scopeReads("scope-secret")).isEqualTo(1);
+        assertThat(recorder.lines()).hasSize(1).allSatisfy(line -> {
+            assertThat(line.level()).isEqualTo(Level.ERROR);
+            assertThat(line.message()).doesNotContain("scope-secret", "subject-secret");
+        });
     }
 
     @Test

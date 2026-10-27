@@ -152,7 +152,9 @@ public final class HazelcastScopeBudget implements ScopeBudget {
                         return true;
                     }
                 } catch (RuntimeException totalFailed) {
-                    // Falls through to the undo: a read that cannot reach the total is not counted.
+                    // Falls through to the undo: a read that cannot reach the total is not counted. Logged as any
+                    // other cluster failure of a read is, so it cannot pass for an exhausted budget.
+                    refuse(totalFailed);
                 }
                 undo(counts, subjectKey, 1);
                 return false;
