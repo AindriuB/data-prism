@@ -151,6 +151,39 @@ class CaseAuthorisationConfigurationTest {
                 .map(ILoggingEvent::getFormattedMessage).toList();
     }
 
+    @Test
+    void the_property_and_a_hidden_type_primary_authorizer_conflict() {
+        context.withPropertyValues(SETTING + "=token-trusted")
+                .withUserConfiguration(SecurityWiringTest.Base.class, HiddenPrimary.class)
+                .run(result -> SecurityWiringTest.assertRefusal(result.getStartupFailure(),
+                        "CASE_AUTHORISATION_CONFLICT"));
+    }
+
+    @Test
+    void the_property_and_a_null_typed_factory_bean_authorizer_conflict() {
+        context.withPropertyValues(SETTING + "=token-trusted")
+                .withUserConfiguration(SecurityWiringTest.Base.class, NullTypeFactory.class)
+                .run(result -> SecurityWiringTest.assertRefusal(result.getStartupFailure(),
+                        "CASE_AUTHORISATION_CONFLICT"));
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class HiddenPrimary {
+        @Bean @org.springframework.context.annotation.Primary Object hidden() {
+            return (CaseAuthorizer) request -> true;
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class NullTypeFactory {
+        @Bean org.springframework.beans.factory.FactoryBean<Object> hiddenFactory() {
+            return new org.springframework.beans.factory.FactoryBean<>() {
+                public Object getObject() { return (CaseAuthorizer) request -> true; }
+                public Class<?> getObjectType() { return null; }
+            };
+        }
+    }
+
     @Configuration(proxyBeanMethods = false)
     static class Refusing {
         @Bean CaseAuthorizer refusing() { return request -> false; }

@@ -176,6 +176,39 @@ class ClientAllowlistConfigurationTest {
                 .map(ILoggingEvent::getFormattedMessage).toList();
     }
 
+    @Test
+    void a_list_and_a_hidden_type_primary_allowlist_conflict() {
+        context.withPropertyValues(LIST + "[0]=only-this-client")
+                .withUserConfiguration(SecurityWiringTest.Base.class, HiddenPrimary.class)
+                .run(result -> SecurityWiringTest.assertRefusal(result.getStartupFailure(),
+                        "CLIENT_ALLOWLIST_CONFLICT"));
+    }
+
+    @Test
+    void unrestricted_and_a_null_typed_factory_bean_allowlist_conflict() {
+        context.withPropertyValues(UNRESTRICTED + "=unrestricted")
+                .withUserConfiguration(SecurityWiringTest.Base.class, NullTypeFactory.class)
+                .run(result -> SecurityWiringTest.assertRefusal(result.getStartupFailure(),
+                        "CLIENT_ALLOWLIST_CONFLICT"));
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class HiddenPrimary {
+        @Bean @org.springframework.context.annotation.Primary Object hidden() {
+            return ClientAllowlist.unrestricted();
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class NullTypeFactory {
+        @Bean org.springframework.beans.factory.FactoryBean<Object> hiddenFactory() {
+            return new org.springframework.beans.factory.FactoryBean<>() {
+                public Object getObject() { return ClientAllowlist.unrestricted(); }
+                public Class<?> getObjectType() { return null; }
+            };
+        }
+    }
+
     @Configuration(proxyBeanMethods = false)
     static class Restrictive {
         @Bean ClientAllowlist allowlist() { return ClientAllowlist.of(Set.of("other-client")); }

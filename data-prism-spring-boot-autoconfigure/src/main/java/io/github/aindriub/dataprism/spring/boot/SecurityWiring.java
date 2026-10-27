@@ -25,6 +25,8 @@ import org.springframework.context.annotation.ConditionContext;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.core.env.Environment;
 import org.springframework.core.type.AnnotatedTypeMetadata;
 
 import java.util.Collection;
@@ -61,6 +63,8 @@ import java.util.stream.Collectors;
 class SecurityWiring {
     private static final Logger LOG = LoggerFactory.getLogger(SecurityWiring.class);
 
+    private static final String CASE_AUTHORIZER_BEAN = "dataPrismCaseAuthorizer";
+    private static final String CLIENT_ALLOWLIST_BEAN = "dataPrismClientAllowlist";
     private static final String CASE_SETTING = "dataprism.security-policy.case-authorisation";
     private static final String ALLOWED_CLIENTS_SETTING = "dataprism.security-policy.allowed-clients";
     private static final String CLIENT_ALLOWLIST_SETTING = "dataprism.security-policy.client-allowlist";
@@ -73,9 +77,11 @@ class SecurityWiring {
      */
     static final class BypassCheck implements SmartInitializingSingleton {
         private final ConfigurableListableBeanFactory beanFactory;
+        private final Environment environment;
 
-        BypassCheck(ConfigurableListableBeanFactory beanFactory) {
+        BypassCheck(ConfigurableListableBeanFactory beanFactory, Environment environment) {
             this.beanFactory = beanFactory;
+            this.environment = environment;
         }
 
         @Override
@@ -83,6 +89,13 @@ class SecurityWiring {
             NamedBeanHolder<CaseAuthorizer> authorizer = resolve(CaseAuthorizer.class, "MISSING_CASE_AUTHORIZER",
                     "no CaseAuthorizer bean is available, so a ScopeResolver that skips the default has none to "
                             + "consult; supply a CaseAuthorizer bean, or set " + CASE_SETTING + "=token-trusted");
+            SecurityPolicyProperties decisions = SecurityPolicyProperties.decisionsFrom(environment);
+            if (decisions.tokenTrusted()
+                    && !isOnlyInstance(authorizer, CaseAuthorizer.class, CASE_AUTHORIZER_BEAN)) {
+                throw new DataPrismConfigurationException("CASE_AUTHORISATION_CONFLICT",
+                        CASE_SETTING + "=token-trusted and an application CaseAuthorizer are both present; remove "
+                                + "the setting to use the bean, or remove the bean");
+            }
             requireSingleton(authorizer.getBeanName(), "CASE_AUTHORIZER_BYPASSED", "CaseAuthorizer");
             if (bypasses(all(ScopeResolver.class), resolver -> resolver.usesCaseAuthorizer(authorizer.getBeanInstance()))) {
                 throw new DataPrismConfigurationException("CASE_AUTHORIZER_BYPASSED",
@@ -94,6 +107,13 @@ class SecurityWiring {
                     "no ClientAllowlist bean is available, so an AuthorizationService that skips the default has "
                             + "none to consult; supply a ClientAllowlist bean, or set " + ALLOWED_CLIENTS_SETTING
                             + " or " + CLIENT_ALLOWLIST_SETTING + "=unrestricted");
+            if (decisions.clientAllowlistSet()
+                    && !isOnlyInstance(allowlist, ClientAllowlist.class, CLIENT_ALLOWLIST_BEAN)) {
+                throw new DataPrismConfigurationException("CLIENT_ALLOWLIST_CONFLICT",
+                        ALLOWED_CLIENTS_SETTING + " or " + CLIENT_ALLOWLIST_SETTING + " and an application "
+                                + "ClientAllowlist are both present; remove the setting to use the bean, or "
+                                + "remove the bean");
+            }
             requireSingleton(allowlist.getBeanName(), "CLIENT_ALLOWLIST_BYPASSED", "ClientAllowlist");
             if (bypasses(all(AuthorizationService.class), service -> service.usesClientAllowlist(allowlist.getBeanInstance()))) {
                 throw new DataPrismConfigurationException("CLIENT_ALLOWLIST_BYPASSED",
@@ -117,6 +137,38 @@ class SecurityWiring {
             }
         }
 
+        /**
+         * When the settings define the bean, the resolved bean must be theirs and no other instance of the type
+         * may exist in this context or an ancestor. Judged on the real instances, so a bean declared as another
+         * type, or a FactoryBean with no object type, cannot slip past the preflight's type prediction. Only
+         * singletons already created are looked at; a bean of the settings' own name in an ancestor is theirs too.
+         */
+        private <T> boolean isOnlyInstance(NamedBeanHolder<T> resolved, Class<T> type, String ownName) {
+            if (!ownName.equals(resolved.getBeanName())) {
+                return false;
+            }
+            org.springframework.beans.factory.BeanFactory current = beanFactory;
+            while (current != null) {
+                org.springframework.beans.factory.BeanFactory factory = current instanceof ConfigurableApplicationContext c
+                        ? c.getBeanFactory() : current;
+                if (factory instanceof ConfigurableListableBeanFactory configurable) {
+                    for (String name : configurable.getBeanDefinitionNames()) {
+                        if (name.equals(ownName) || !(configurable.containsSingleton(name)
+                                || configurable.containsSingleton("&" + name))) {
+                            continue;
+                        }
+                        Object instance = configurable.getBean(name);
+                        if (type.isInstance(instance)) {
+                            return false;
+                        }
+                    }
+                }
+                current = factory instanceof org.springframework.beans.factory.HierarchicalBeanFactory h
+                        ? h.getParentBeanFactory() : null;
+            }
+            return true;
+        }
+
         private void requireSingleton(String name, String code, String simpleName) {
             if (!beanFactory.isSingleton(name)) {
                 throw new DataPrismConfigurationException(code, "the " + simpleName + " bean is not a singleton, "
@@ -132,8 +184,9 @@ class SecurityWiring {
 
     @Lazy(false)
     @Bean
-    static BypassCheck dataPrismSecurityBypassCheck(ConfigurableListableBeanFactory beanFactory) {
-        return new BypassCheck(beanFactory);
+    static BypassCheck dataPrismSecurityBypassCheck(ConfigurableListableBeanFactory beanFactory,
+            Environment environment) {
+        return new BypassCheck(beanFactory, environment);
     }
 
     /**

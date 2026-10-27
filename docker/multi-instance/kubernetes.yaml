@@ -84,11 +84,14 @@ spec:
               containerPort: 5701
           # --8<-- [start:k8s-join]
           env:
-            # A real deployment supplies a CaseAuthorizer bean (an extension jar on
-            # loader.path) and lists its allowed clients in
-            # DATAPRISM_SECURITYPOLICY_ALLOWEDCLIENTS_0 and following, instead of
-            # these two settings. They are the explicit opt-out: this deployment
-            # trusts the case claim in the token and allows every client.
+            # The image bakes in case-authorisation: token-trusted and client-allowlist:
+            # unrestricted (/app/config/application.yaml), and these two variables
+            # repeat them. This deployment therefore trusts the case claim in the
+            # token and allows every client. A real deployment supplies a
+            # CaseAuthorizer bean and lists its allowed clients; for that, build
+            # your own image or override /app/config/application.yaml, and drop
+            # these two variables. Setting a list or a CaseAuthorizer on top of
+            # the baked-in settings is refused as a conflict.
             - name: DATAPRISM_SECURITYPOLICY_CASEAUTHORISATION
               value: token-trusted
             - name: DATAPRISM_SECURITYPOLICY_CLIENTALLOWLIST
