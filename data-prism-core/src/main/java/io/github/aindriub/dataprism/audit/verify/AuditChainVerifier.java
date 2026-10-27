@@ -155,7 +155,7 @@ public final class AuditChainVerifier {
 
     /**
      * Reads {@code path}: a single file as is, or a directory as every {@code audit-YYYY-MM-DD.log}
-     * segment in date order. A non-final segment that ends without a newline (a torn write) has the
+     * or {@code audit-YYYY-MM-DD.NNNN.log} segment in (date, index) order. A non-final segment that ends without a newline (a torn write) has the
      * writer's torn-tail terminator ({@code "\r\n"}) added so its fragment cannot fuse with the next segment's first record; it then reads as an
      * interrupted-write fragment. Byte offsets in a directory report are into that concatenation.
      */
@@ -163,16 +163,16 @@ public final class AuditChainVerifier {
         if (!Files.isDirectory(path)) {
             return Files.readAllBytes(path);
         }
-        java.util.TreeMap<java.time.LocalDate, Path> segments = new java.util.TreeMap<>();
+        List<Path> segments = new ArrayList<>();
         try (java.util.stream.Stream<Path> files = Files.list(path)) {
             files.filter(Files::isRegularFile).forEach(f -> {
-                java.time.LocalDate date = SegmentedFileAuditSink.segmentDate(f);
-                if (date != null) {
-                    segments.put(date, f);
+                if (SegmentedFileAuditSink.segmentDate(f) != null) {
+                    segments.add(f);
                 }
             });
         }
-        return join(new ArrayList<>(segments.values()), null);
+        segments.sort(SegmentedFileAuditSink.SEGMENT_ORDER);
+        return join(segments, null);
     }
 
     private static byte[] join(List<Path> segments, List<Long> starts) throws IOException {
