@@ -494,7 +494,7 @@ class SourceRecordRefusalTest {
         Run run = run(source);
 
         assertRefusedAlone(run, "SOURCE_VALUE_READ_FAILED");
-        assertThat(zone.calls.get()).as("the throw came from inside the leaf reader").isPositive();
+        assertThat(zone.calls.get()).as("the throw came from inside the leaf reader: once in prohibited, once in scrub").isEqualTo(2);
         assertThat(prohibited(source)).isNotNull();
     }
 

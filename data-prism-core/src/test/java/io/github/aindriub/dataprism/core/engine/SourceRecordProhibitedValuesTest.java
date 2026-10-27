@@ -527,5 +527,6 @@ class SourceRecordProhibitedValuesTest {
     @DisplayName("a byte[] under a refused position puts its base64 text in the set")
     void aByteArrayUnderARefusedPositionIsCollected() {
         assertThat(within(new Any("r", new Blob(new byte[]{1, 2, 3})))).contains("AQID");
+        assertThat(within(new Any("r", List.of(new Blob(new byte[]{1, 2, 3}))))).contains("AQID");
     }
 }

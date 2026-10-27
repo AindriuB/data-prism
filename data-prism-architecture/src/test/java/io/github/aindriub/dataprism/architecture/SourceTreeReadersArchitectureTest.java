@@ -230,6 +230,15 @@ class SourceTreeReadersArchitectureTest {
         }
     }
 
+    static final class GetterReaderHolder {
+        static final class Nested {
+            Object read(java.lang.invoke.MethodHandles.Lookup lookup, java.lang.reflect.Field field)
+                    throws IllegalAccessException {
+                return lookup.unreflectGetter(field);
+            }
+        }
+    }
+
     static final class SetterReader {
         Object write(java.lang.invoke.MethodHandles.Lookup lookup, java.lang.reflect.Field field)
                 throws IllegalAccessException {
@@ -248,6 +257,10 @@ class SourceTreeReadersArchitectureTest {
         assertThat(violates(GetterReader.class, "some.Other")).isTrue();
         assertThat(violates(GetterReader.class, GetterReader.class.getName())).isFalse();
         assertThat(violates(SetterReader.class, SetterReader.class.getName())).isTrue();
+        // A class declared inside the reader is covered; a top-level class merely named like one is not.
+        assertThat(violates(GetterReaderHolder.Nested.class, GetterReaderHolder.class.getName())).isFalse();
+        assertThat(violates(SourceTreeReadersArchitectureTest$GetterReaderHolder$Impostor.class,
+                GetterReaderHolder.class.getName())).isTrue();
         assertThat(ArchitectureTest.SOURCE_RECORD_WALKER).isEqualTo(WALKER);
     }
 
@@ -292,5 +305,13 @@ class SourceTreeReadersArchitectureTest {
         assertThat(serialisingCalls(fixture(Serialises.class), Set.of(Serialises.class.getName()),
                 Set.of("valueToTree", "convertValue", "writeValueAsString", "writeValueAsBytes", "writerThenWrite",
                         "writerForThenWrite", "serializeValue"))).isEmpty();
+    }
+}
+
+/** Top-level, with a $ in its name: it must not pass for a class nested in GetterReaderHolder. */
+final class SourceTreeReadersArchitectureTest$GetterReaderHolder$Impostor {
+    Object read(java.lang.invoke.MethodHandles.Lookup lookup, java.lang.reflect.Field field)
+            throws IllegalAccessException {
+        return lookup.unreflectGetter(field);
     }
 }

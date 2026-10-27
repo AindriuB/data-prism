@@ -615,8 +615,14 @@ class ArchitectureTest {
         return methodHandleFieldAccess(SOURCE_RECORD_WALKER);
     }
 
-    private static boolean isOrNestedIn(String name, String outer) {
-        return name.equals(outer) || name.startsWith(outer + "$");
+    /** Whether {@code type} is {@code outer} or declared inside it; a top-level class merely named with a $ is not. */
+    private static boolean isOrNestedIn(JavaClass type, String outer) {
+        for (JavaClass c = type; c != null; c = c.getEnclosingClass().orElse(null)) {
+            if (c.getFullName().equals(outer)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     static final String SOURCE_RECORD_WALKER = "io.github.aindriub.dataprism.core.engine.SourceRecordWalker";
@@ -631,7 +637,7 @@ class ArchitectureTest {
                     && (name.equals("findGetter") || name.equals("findSetter")
                     || name.equals("findStaticGetter") || name.equals("findStaticSetter")
                     || name.equals("findVarHandle") || name.equals("findStaticVarHandle")
-                    || (name.equals("unreflectGetter") && !isOrNestedIn(call.getOriginOwner().getFullName(), reader))
+                    || (name.equals("unreflectGetter") && !isOrNestedIn(call.getOriginOwner(), reader))
                     || name.equals("unreflectSetter")
                     || name.equals("unreflectVarHandle")));
         });
