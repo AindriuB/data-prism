@@ -562,6 +562,10 @@ Proposed startup refusals (closing tables, then task briefs):
 | `BLANK_ALLOWED_CLIENT` | proposed | 0.8 | t210:56 | task 210 brief | a blank entry in the allowlist |
 | `AMBIGUOUS_CASE_AUTHORIZER` | proposed | 0.8 | spring-boot-autoconfigure:SecurityWiring.java | 203 review round 10 (PR #163) | more than one `CaseAuthorizer` bean; refused by `BypassCheck` whoever built the resolver, and by the default factory through `getIfUnique` |
 | `AMBIGUOUS_CLIENT_ALLOWLIST` | proposed | 0.8 | spring-boot-autoconfigure:SecurityWiring.java | 203 review round 10 (PR #163) | more than one `ClientAllowlist` bean; refused by `BypassCheck` whoever built the service, and by the default factory through `getIfUnique` |
+| `CASE_AUTHORIZER_BYPASSED` | proposed | 0.8 | spring-boot-autoconfigure:SecurityWiring.java | 203 review rounds 2 and 12 (PR #163) | a `ScopeResolver` that does not use the single deployer `CaseAuthorizer` bean |
+| `CLIENT_ALLOWLIST_BYPASSED` | proposed | 0.8 | spring-boot-autoconfigure:SecurityWiring.java | 203 review rounds 2 and 12 (PR #163) | an `AuthorizationService` that does not use the single deployer `ClientAllowlist` bean |
+| `NON_SINGLETON_CASE_AUTHORIZER` | proposed | 0.8 | spring-boot-autoconfigure:SecurityWiring.java | 203 review round 12 (PR #163) | the deployer `CaseAuthorizer` bean is not a singleton; refused by `BypassCheck` |
+| `NON_SINGLETON_CLIENT_ALLOWLIST` | proposed | 0.8 | spring-boot-autoconfigure:SecurityWiring.java | 203 review round 12 (PR #163) | the deployer `ClientAllowlist` bean is not a singleton; refused by `BypassCheck` |
 | `AUDIT_HMAC_REQUIRES_HASH_CHAINED` | proposed | 0.8 | t211:44 | task 211 brief (D-1.0-4) | `dataprism.audit.hmac-key` set without `sink=hash-chained` |
 | `AUDIT_HMAC_KEY_UNRESOLVED` | proposed | 0.8 | t211:44 | task 211 brief (D-1.0-4) | the key reference resolves to nothing |
 | `AUDIT_HMAC_KEY_TOO_SHORT` | proposed | 0.8 | t211:44 | task 211 brief (D-1.0-4) | key material under 32 bytes |

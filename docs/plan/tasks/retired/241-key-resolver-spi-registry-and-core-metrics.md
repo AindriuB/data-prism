@@ -69,3 +69,5 @@ Follow-ups. The `SourceFanOut` starvation is now task 272 (PR #161). The test na
 **Review round 6 (PR #163; reviewer ids 163-1 to 163-19).** The resolver tests are bounded and check that the slot is returned.
 
 **Review round 8 (PR #163; reviewer ids 163-1 to 163-14).** The deadline-clamp test has a 30-second bound.
+
+**Review round 12 (PR #163).** `KeyResolverArchitectureTest` walks enclosing classes.

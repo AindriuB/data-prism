@@ -81,3 +81,5 @@ Follow-ups. With only `--allow-unkeyed-writers`, a broken writer is still counte
 **Review round 7 (PR #163; reviewer ids 163-1 to 163-12).** A checkpoint mismatch is detected per key, and the writer is labelled with the furthest key.
 
 **Review round 8 (PR #163; reviewer ids 163-1 to 163-14).** A checkpoint mismatch labels a writer only when the checkpoint is that writer's reported break; otherwise the unkeyed and forger messages apply. The comment is reworded, and tests cover the break reason and key order.
+
+**Review round 12 (PR #163).** `AuditChainVerifier` gives no key label when `most == 0`.

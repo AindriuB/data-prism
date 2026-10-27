@@ -12,6 +12,7 @@
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/JsonTreeScrubbingEngine.java *(the `describe` override only)*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/ScrubPlanDescriber.java *(new)*
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/core/engine/ScrubPlanDescriberTest.java *(new)*
+- data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/SourceTree.java *(`readsAsPlainBean`, `readsAsPlainScalar`, `overridesSerialization` and their private helpers only; added 2026-10-23, widened in review round 12)*
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/core/engine/DescriptionConformsToScrubTest.java *(new)*
 
 ## Goal
@@ -69,3 +70,5 @@ Follow-ups. `profileChangesDescription` only asserts `isNotEqualTo`. `Optional<L
 **Review round 7 (PR #163; reviewer ids 163-1 to 163-12).** A throwing `available()` warns once per source class, then logs at DEBUG.
 
 **Review round 8 (PR #163; reviewer ids 163-1 to 163-14).** Warn-once is now an `AtomicBoolean`.
+
+**Review round 12 (PR #163).** `SourceTree.readsAsPlainScalar` is an allowlist of Jackson scalar serializers, checked by code source, with `overridesSerialization` and an `@JsonFormat` shape check; `ScrubPlanDescriber.shapeOf` uses it. Owns is extended to `SourceTree.java` for these (coordinator decision, 2026-10-23). Follow-ups: `SourceTree.overrides` ignores `@JsonFormat` features such as `WRITE_SINGLE_ELEM_ARRAYS_UNWRAPPED`, so a one-element list is described as `field[]` but emitted as `field`; the shape-check Javadoc does not match the code (STRING, NUMBER and BOOLEAN are allowed, SCALAR is treated as an override); `SourceTree` builds two serialization contexts and re-reads `ValueSerializer`'s code source for every scalar field; `overridesSerialization` duplicates the holder-writer lookup in `readsAsPlainBean` and `plainHolder`.
