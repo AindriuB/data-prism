@@ -230,6 +230,82 @@ class SecurityWiringTest {
                 .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CASE_AUTHORIZER"));
     }
 
+    @Test
+    void a_case_authorizer_that_is_not_a_default_candidate_is_refused_in_a_release() {
+        withVersion("0.8.0").withUserConfiguration(Base.class, NonDefaultCandidateAuthorizer.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CASE_AUTHORIZER"));
+    }
+
+    @Test
+    void a_client_allowlist_that_is_not_a_default_candidate_is_refused() {
+        context.withUserConfiguration(Base.class, NonDefaultCandidateAllowlist.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "AMBIGUOUS_CLIENT_ALLOWLIST"));
+    }
+
+    @Test
+    void the_scoped_proxy_allowlist_refusal_says_so() {
+        context.withUserConfiguration(Base.class, InterfacesScopedAllowlist.class)
+                .run(result -> assertThat(result.getStartupFailure())
+                        .hasMessageContaining("scoped-proxy ClientAllowlist in INTERFACES mode"));
+    }
+
+    @Test
+    void our_own_scope_resolver_built_without_the_deployers_authorizer_is_refused() {
+        withVersion("0.8.0").withUserConfiguration(Base.class, RefusingCaseAuthorizer.class,
+                TokenTrustedResolverSubstitution.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
+    }
+
+    @Test
+    void our_own_authorization_service_built_without_the_deployers_allowlist_is_refused() {
+        context.withUserConfiguration(Base.class, RestrictiveAllowlist.class, UnrestrictedServiceSubstitution.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CLIENT_ALLOWLIST_BYPASSED"));
+    }
+
+    /** Breaks the default wiring after the fact: the default resolver ends up with the token-trusted fallback. */
+    @Configuration(proxyBeanMethods = false)
+    static class TokenTrustedResolverSubstitution {
+        @Bean static org.springframework.beans.factory.config.BeanPostProcessor substituteResolver() {
+            return new org.springframework.beans.factory.config.BeanPostProcessor() {
+                @Override public Object postProcessAfterInitialization(Object bean, String name) {
+                    if (bean instanceof ScopeResolver && name.equals("dataPrismScopeResolver")) {
+                        return new OwnScopeResolver().ownScopeResolver(
+                                io.github.aindriub.dataprism.core.model.PseudonymisationVersion.HMAC_SHA256_V1);
+                    }
+                    return bean;
+                }
+            };
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class UnrestrictedServiceSubstitution {
+        @Bean static org.springframework.beans.factory.config.BeanPostProcessor substituteService() {
+            return new org.springframework.beans.factory.config.BeanPostProcessor() {
+                @Override public Object postProcessAfterInitialization(Object bean, String name) {
+                    if (bean instanceof AuthorizationService && name.equals("dataPrismAuthorizationService")) {
+                        return new AuthorizationService(
+                                new io.github.aindriub.dataprism.security.SecurityPolicy(Set.of("investigation"),
+                                        java.util.Map.of()), "DEFAULT",
+                                io.github.aindriub.dataprism.core.model.PrivacyScopeType.INVESTIGATION,
+                                ClientAllowlist.unrestricted());
+                    }
+                    return bean;
+                }
+            };
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class NonDefaultCandidateAuthorizer {
+        @Bean(defaultCandidate = false) CaseAuthorizer hiddenFromUnqualified() { return request -> false; }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class NonDefaultCandidateAllowlist {
+        @Bean(defaultCandidate = false) ClientAllowlist hiddenAllowlist() { return ClientAllowlist.of(Set.of("x")); }
+    }
+
     @Configuration(proxyBeanMethods = false)
     static class FakeScopedTargetAuthorizer {
         @Bean("scopedTarget.extra") CaseAuthorizer extra() { return request -> false; }

@@ -21,6 +21,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
+import org.springframework.beans.factory.support.AbstractBeanDefinition;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
@@ -164,7 +165,7 @@ class SecurityWiring {
                                 + "available in a release");
             }
             Collection<CaseAuthorizer> authorizerBeans = authorizers.values();
-            if (!authorizerBeans.isEmpty() && bypasses(all(ScopeResolver.class), scopeResolver,
+            if (!authorizerBeans.isEmpty() && bypasses(all(ScopeResolver.class),
                     resolver -> authorizerBeans.stream().anyMatch(resolver::usesCaseAuthorizer))) {
                 throw new DataPrismConfigurationException("CASE_AUTHORIZER_BYPASSED",
                         "a ScopeResolver bean replaces the default and is not built with the CaseAuthorizer bean, "
@@ -172,7 +173,7 @@ class SecurityWiring {
                                 + "injected CaseAuthorizer bean, or remove your ScopeResolver");
             }
             Collection<ClientAllowlist> allowlistBeans = allowlists.values();
-            if (!allowlistBeans.isEmpty() && bypasses(all(AuthorizationService.class), authorizationService,
+            if (!allowlistBeans.isEmpty() && bypasses(all(AuthorizationService.class),
                     service -> allowlistBeans.stream().anyMatch(service::usesClientAllowlist))) {
                 throw new DataPrismConfigurationException("CLIENT_ALLOWLIST_BYPASSED",
                         "an AuthorizationService bean replaces the default and is not built with the ClientAllowlist "
@@ -198,12 +199,17 @@ class SecurityWiring {
             Set<String> candidates = new LinkedHashSet<>();
             for (String name : all) {
                 BeanDefinition definition = definitionOf(name);
-                if (definition == null || definition.isAutowireCandidate()) {
+                if (definition == null || (definition.isAutowireCandidate() && isDefaultCandidate(definition))) {
                     candidates.add(name);
                 }
             }
             for (String name : all) {
                 if (!candidates.contains(name) && !isGenuineScopedTarget(name, candidates)) {
+                    if (isOrphanScopedTarget(name)) {
+                        throw new DataPrismConfigurationException("AMBIGUOUS_" + codeStem,
+                                "a scoped-proxy " + simpleName + " in INTERFACES mode cannot be used; "
+                                        + simpleName + " is final, so use a singleton");
+                    }
                     throw ambiguous(codeStem, simpleName, applies);
                 }
             }
@@ -228,6 +234,21 @@ class SecurityWiring {
             return new DataPrismConfigurationException("AMBIGUOUS_" + codeStem,
                     "more than one " + simpleName + " bean is defined; define exactly one, so that it is "
                             + "unambiguous " + applies);
+        }
+
+        /** True for the target of a scoped proxy whose proxy bean is not itself of the looked-up type. */
+        private boolean isOrphanScopedTarget(String name) {
+            if (!ScopedProxyUtils.isScopedTarget(name)) {
+                return false;
+            }
+            BeanDefinition proxy = definitionOf(ScopedProxyUtils.getOriginalBeanName(name));
+            return proxy != null && ScopedProxyFactoryBean.class.getName().equals(proxy.getBeanClassName());
+        }
+
+        /** Spring's {@code defaultCandidate=false} hides a bean from unqualified injection, as the defaults do. */
+        private static boolean isDefaultCandidate(BeanDefinition definition) {
+            return !(definition instanceof AbstractBeanDefinition abstractDefinition)
+                    || abstractDefinition.isDefaultCandidate();
         }
 
         private boolean isGenuineScopedTarget(String name, Set<String> candidates) {
@@ -265,11 +286,11 @@ class SecurityWiring {
     }
 
     /**
-     * True when any instance is not our default (looking through AOP proxies, nested ones too, to the target)
-     * and does not use the deployer's bean.
+     * True when any instance, ours included, does not use the deployer's bean. This is a consistency check on
+     * the outcome: whatever the lookups decided, the resolver or service in use must hold the deployer's bean.
      */
-    private static <T> boolean bypasses(Collection<T> instances, Object ours, Predicate<T> usesDeployersBean) {
-        return instances.stream().anyMatch(instance -> unwrap(instance) != ours && !usesDeployersBean.test(instance));
+    private static <T> boolean bypasses(Collection<T> instances, Predicate<T> usesDeployersBean) {
+        return instances.stream().anyMatch(instance -> !usesDeployersBean.test(instance));
     }
 
     /**
