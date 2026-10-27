@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.OptionalInt;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -301,7 +302,6 @@ class HazelcastReservationTest {
         assertThat(budgets[1].scopeReads(SCOPE)).isEqualTo(sum);
     }
 
-
     // ----- the total key cannot be named by a subject
 
     @Test
@@ -380,7 +380,7 @@ class HazelcastReservationTest {
             assertThat(locked.await(10, TimeUnit.SECONDS)).isTrue();
             Future<ReadReservation> reserving = pool.submit(() -> shortBudget.reserve(SCOPE, "s-1", 1, 5, 5));
             assertThatThrownBy(() -> reserving.get(5, TimeUnit.SECONDS))
-                    .isInstanceOf(java.util.concurrent.ExecutionException.class)
+                    .isInstanceOf(ExecutionException.class)
                     .hasCauseInstanceOf(ClusterLockTimeoutException.class);
         } finally {
             release.countDown();
@@ -571,7 +571,6 @@ class HazelcastReservationTest {
                                 ? map : invoke(method, real, args));
         return PrivacyCluster.using(instance, false, TestMembers.KEYS);
     }
-
 
     /** As {@link #failingOn}, but a matching {@code executeOnKey} announces itself and waits for the gate. */
     private PrivacyCluster pausingOn(int index, Predicate<String> pausing, CountDownLatch reached,

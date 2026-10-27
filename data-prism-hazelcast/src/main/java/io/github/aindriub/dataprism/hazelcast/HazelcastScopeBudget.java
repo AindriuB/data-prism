@@ -246,9 +246,10 @@ public final class HazelcastScopeBudget implements ScopeBudget {
      * reservation, one built by hand, one from another budget instance, or one from a scope this instance has since
      * forgotten) does nothing. Taken under the scope's lock, then the subject's.
      *
-     * <p>If the cluster fails after the reads were taken out of the reservation, they stay charged: the counters keep
-     * them. The one exception is a failure of both the total's update and the restore of the subject: the subject
-     * is then under-counted by those reads, and one WARN line says so.
+     * <p>The subject counter is lowered first, then the total. If the cluster fails after the reads were taken out
+     * of the reservation, they stay charged: a failed total update is followed by putting the reads back on the
+     * subject. If that restore fails too, the subject count is accurate (the reads really were returned) and the
+     * total stays over-counted by them, which fails closed; one WARN line says so.
      *
      * <p><strong>Residual (OD-285-1 (a)).</strong> "A release after {@code forget} does nothing" holds for a
      * {@code forget} made on this instance only. A {@code forget} or {@code ScopeIdentityIndex.endScope} on another
@@ -400,7 +401,7 @@ public final class HazelcastScopeBudget implements ScopeBudget {
         try {
             counts.executeOnKey(key, new AddWithin(reads, Integer.MAX_VALUE));
         } catch (RuntimeException restoreFailed) {
-            LOG.warn("read budget restore failed; a counter is left under-counted: {}",
+            LOG.warn("read budget restore failed; the scope total is left over-counted: {}",
                     restoreFailed.getClass().getSimpleName());
         }
     }
