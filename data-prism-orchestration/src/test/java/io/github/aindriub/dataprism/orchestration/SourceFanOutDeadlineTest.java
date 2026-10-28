@@ -64,7 +64,7 @@ class SourceFanOutDeadlineTest {
     /** Blocks until released or interrupted, and says what happened. */
     private static final class Blocking implements DataSourceAdapter<String> {
         private final String name;
-                final CountDownLatch entered = new CountDownLatch(1);
+        final CountDownLatch entered = new CountDownLatch(1);
         final CountDownLatch release = new CountDownLatch(1);
         final AtomicInteger calls = new AtomicInteger();
         final AtomicBoolean interrupted = new AtomicBoolean();
@@ -157,6 +157,13 @@ class SourceFanOutDeadlineTest {
         two.order = order;
         List<DataSourceAdapter<?>> adapters = List.of(one, two);
         var limits = limits(1, Duration.ofSeconds(1), Duration.ofSeconds(10));
+        Instant later = clock.instant().plusMillis(1700);
+        var sawLater = new CountDownLatch(1);
+        fanOut.tickObserver(seen -> {
+            if (!seen.isBefore(later)) {
+                sawLater.countDown();
+            }
+        });
 
         var running = run(fanOut, adapters, limits);
         var first = order.poll(WAIT_SECONDS, TimeUnit.SECONDS);
@@ -167,6 +174,10 @@ class SourceFanOutDeadlineTest {
         assertThat(second).isNotNull();
         // 1.7 s since the fan-out began, 0.9 s since the second call did.
         clock.advance(Duration.ofMillis(900));
+        // The waiter has now read the moved clock, and its pass applied the timeouts: only then is the
+        // second call released, so a timeout measured from the fan-out's start would already have fired.
+        await(sawLater);
+        assertThat(second.interrupted.get()).isFalse();
         second.release.countDown();
 
         var execution = await(running);

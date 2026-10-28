@@ -70,6 +70,7 @@ public final class SourceFanOut {
     private final PrivacyMetrics metrics;
     private final CorrelationMdc mdc;
     private volatile Consumer<Semaphore> bulkheadObserver = bulkhead -> { };
+    private volatile Consumer<Instant> tickObserver = now -> { };
 
     /** @param options the metrics and MDC; {@link SourceFanOutOptions#defaults()} for neither */
     public SourceFanOut(SourceCircuitBreaker breaker, Clock clock, SourceFanOutOptions options) {
@@ -83,6 +84,15 @@ public final class SourceFanOut {
     /** Test hook: sees the bulkhead of every request, so a test can assert no permit leaked. */
     void bulkheadObserver(Consumer<Semaphore> observer) {
         this.bulkheadObserver = Objects.requireNonNull(observer, "observer");
+    }
+
+    /**
+     * Test hook: told the clock reading of each pass of the waiting loop, after that pass has
+     * applied the per-source timeouts, so a test knows the waiter has seen a moved clock
+     * and has not timed anything out, without sleeping.
+     */
+    void tickObserver(Consumer<Instant> observer) {
+        this.tickObserver = Objects.requireNonNull(observer, "observer");
     }
 
     /**
@@ -242,6 +252,7 @@ public final class SourceFanOut {
                                 "no answer within " + limits.perSourceTimeout().toMillis() + "ms");
                     }
                 }
+                tickObserver.accept(now);
                 Call done = finished.poll(TICK_MILLIS, TimeUnit.MILLISECONDS);
                 while (done != null) {
                     if (!resolved.containsKey(done) && done.state.get() == STARTED) {

@@ -90,8 +90,17 @@ public class LimitsProperties {
         positive(maxConcurrency, "max-concurrency");
         positive(scopeReadBudget, "scope-read-budget");
         return new RequestLimits(maxSources, maxRecords, (int) maxResponseSize.toBytes(), perSourceTimeout,
-                maxConcurrency, scopeReadBudget, RequestLimits.DEFAULT.requestTimeout(),
+                maxConcurrency, scopeReadBudget, requestTimeout(),
                 RequestLimits.DEFAULT.scopeTotalReadBudget());
+    }
+
+    /**
+     * The overall deadline, until it is bound from configuration (task 254): the default, or the
+     * per-source timeout where that is longer, so a raised {@code per-source-timeout} still starts.
+     */
+    private Duration requestTimeout() {
+        Duration floor = RequestLimits.DEFAULT.requestTimeout();
+        return perSourceTimeout.compareTo(floor) > 0 ? perSourceTimeout : floor;
     }
 
     private static void positive(int value, String name) {

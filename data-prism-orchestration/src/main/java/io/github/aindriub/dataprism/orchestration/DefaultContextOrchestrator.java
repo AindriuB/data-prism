@@ -472,7 +472,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
             budget.release(reservation, unused);
         } catch (RuntimeException e) {
             // The reads stay charged: stricter, never looser. Nothing to refuse for.
-            LOG.warn("could not give back {} unused read(s)", unused, e);
+            LOG.warn("could not give back {} unused read(s): {}", unused, e.getClass().getSimpleName());
         }
     }
 
