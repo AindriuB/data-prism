@@ -106,6 +106,9 @@ public final class SensitivePatternValidator implements LlmResponseValidator {
                 if (recognised != null && recognised.isEmpty()) {
                     continue;
                 }
+            } catch (StackOverflowError e) {
+                // Runaway recursion in a recogniser (e.g. regex backtracking) is its failure, not ours.
+                names = null;
             } catch (VirtualMachineError e) {
                 throw e;
             } catch (Exception | Error e) {

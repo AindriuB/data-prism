@@ -127,6 +127,18 @@ class SensitivePatternValidatorRecogniserTest {
         assertThat(r.violations().toString()).doesNotContain(SENTINEL);
     }
 
+    private static Set<DataClassification> recurseForever(String v) {
+        return recurseForever(v + "x");
+    }
+
+    @Test
+    @DisplayName("a recogniser that overflows the stack refuses rather than escaping validate")
+    void stackOverflowRefuses() {
+        ValidationResult r = run(List.of(SensitivePatternValidatorRecogniserTest::recurseForever), note("x"), Set.of());
+        assertThat(r.violations()).isNotEmpty().allSatisfy(v ->
+                assertThat(v.code()).isEqualTo(SensitivePatternValidator.FREE_TEXT_RECOGNISER_FAILED));
+    }
+
     @Test
     @DisplayName("a null element in the returned set is a failure, not an exception")
     void nullElementRefuses() {
