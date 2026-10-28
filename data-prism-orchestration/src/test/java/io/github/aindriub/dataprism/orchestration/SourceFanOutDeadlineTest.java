@@ -62,7 +62,7 @@ class SourceFanOutDeadlineTest {
     }
 
     /** Blocks until released or interrupted, and says what happened. */
-    private static final class Blocking implements DataSourceAdapter<String> {
+    static final class Blocking implements DataSourceAdapter<String> {
         private final String name;
         final CountDownLatch entered = new CountDownLatch(1);
         final CountDownLatch release = new CountDownLatch(1);
@@ -124,7 +124,7 @@ class SourceFanOutDeadlineTest {
     }
 
     private static RequestLimits limits(int concurrency, Duration perSource, Duration request) {
-        return new RequestLimits(8, 500, 512 * 1024, perSource, concurrency, 100, request, 50_000);
+        return TestLimits.defaults().perSourceTimeout(perSource).maxConcurrency(concurrency).requestTimeout(request).build();
     }
 
     private static <T> T await(CompletableFuture<T> future) throws Exception {
@@ -233,7 +233,7 @@ class SourceFanOutDeadlineTest {
     }
 
     @Test
-    @DisplayName("a call that ignores its interrupt does not hold fetchAll past the cancellation interval")
+    @DisplayName("a call that ignores its interrupt does not hold fetchAll past the cancellation interval, and nothing it makes later reaches the response")
     void anAdapterThatIgnoresInterruptDoesNotHangTheRequest() throws Exception {
         var clock = new MutableClock();
         var fanOut = new SourceFanOut(SourceCircuitBreaker.disabled(), clock, SourceFanOutOptions.defaults());
@@ -243,13 +243,21 @@ class SourceFanOutDeadlineTest {
 
         var future = run(fanOut, adapters, limits);
         await(deaf.entered);
+        long before = System.nanoTime();
         clock.advance(Duration.ofSeconds(10));
-        try {
-            var execution = await(future);
-            assertThat(outcomeOf(execution, "deaf").status()).isEqualTo(SourceOutcome.Status.TIMED_OUT);
-        } finally {
-            deaf.stop.countDown();
-        }
+        var execution = await(future);
+        Duration returned = Duration.ofNanos(System.nanoTime() - before);
+
+        // The request returned while the call was still running: bounded by the unwind interval, not by the call.
+        assertThat(returned).isLessThan(Duration.ofSeconds(2));
+        assertThat(deaf.finished.getCount()).as("the call is a leftover").isEqualTo(1);
+        assertThat(outcomeOf(execution, "deaf").status()).isEqualTo(SourceOutcome.Status.TIMED_OUT);
+        deaf.stop.countDown();
+        await(deaf.finished);
+        assertThat(execution.results()).singleElement().satisfies(f -> {
+            assertThat(f.record()).as("what the leftover produced did not reach the response").isNull();
+            assertThat(f.outcome().status()).isEqualTo(SourceOutcome.Status.TIMED_OUT);
+        });
     }
 
     /** Waits on a latch with no regard for interrupts, until the test stops it. */
@@ -257,6 +265,7 @@ class SourceFanOutDeadlineTest {
         private final String name;
         final CountDownLatch entered = new CountDownLatch(1);
         final CountDownLatch stop = new CountDownLatch(1);
+        final CountDownLatch finished = new CountDownLatch(1);
 
         BlockingForever(String name) {
             this.name = name;
@@ -275,14 +284,18 @@ class SourceFanOutDeadlineTest {
         @Override
         public String fetch(DataRequest request) {
             entered.countDown();
-            while (stop.getCount() > 0) {
-                try {
-                    stop.await();
-                } catch (InterruptedException ignored) {
-                    // keeps waiting
+            try {
+                while (stop.getCount() > 0) {
+                    try {
+                        stop.await();
+                    } catch (InterruptedException ignored) {
+                        // keeps waiting
+                    }
                 }
+                return "late";
+            } finally {
+                finished.countDown();
             }
-            return "late";
         }
     }
 
@@ -293,8 +306,7 @@ class SourceFanOutDeadlineTest {
         var calls = new AtomicInteger();
         List<DataSourceAdapter<?>> adapters = List.of(new Counting("a", calls, "A"),
                 new Counting("b", calls, "B"), new Counting("c", calls, "C"));
-        var limits = new RequestLimits(2, 500, 512 * 1024, Duration.ofSeconds(3), 4, 100,
-                Duration.ofSeconds(10), 50_000);
+        var limits = TestLimits.defaults().maxSources(2).build();
 
         assertThatThrownBy(() -> fanOut.fetchAll(adapters, askAll(adapters), limits))
                 .isInstanceOfSatisfying(PrivacyRefusedException.class,
@@ -316,8 +328,7 @@ class SourceFanOutDeadlineTest {
         clock.advance(Duration.ofMinutes(2));
 
         List<DataSourceAdapter<?>> three = List.of(flaky, new Counting("b", calls, "B"), new Counting("c", calls, "C"));
-        var narrow = new RequestLimits(2, 500, 512 * 1024, Duration.ofSeconds(3), 4, 100,
-                Duration.ofSeconds(10), 50_000);
+        var narrow = TestLimits.defaults().maxSources(2).build();
         assertThatThrownBy(() -> fanOut.fetchAll(three, askAll(three), narrow))
                 .isInstanceOf(PrivacyRefusedException.class);
         clock.advance(Duration.ofMinutes(2));

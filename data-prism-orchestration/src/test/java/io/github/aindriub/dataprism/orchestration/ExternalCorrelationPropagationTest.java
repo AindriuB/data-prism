@@ -101,8 +101,7 @@ class ExternalCorrelationPropagationTest {
                 new PassThroughIdentityResolver(),
                 new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), SourceFanOutOptions.defaults()),
                 new InMemoryScopeBudget(),
-                new RequestLimits(8, 500, 512 * 1024, java.time.Duration.ofSeconds(3), 4, 1_000,
-                        java.time.Duration.ofSeconds(10), 50_000), new NamespaceCorrelationService(resolver),
+                TestLimits.defaults().scopeReadBudget(1_000).build(), new NamespaceCorrelationService(resolver),
                 new SourceAliasing(new HmacValueTokenSource(KEYS)), PrivacyMetrics.none());
     }
 

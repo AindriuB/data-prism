@@ -86,7 +86,7 @@ class ConfiguredJsonSourcesLimitsTest {
 
     private static RequestLimits with(int maxSources, int scopeReadBudget) {
         RequestLimits d = RequestLimits.DEFAULT;
-        return new RequestLimits(maxSources, d.maxRecords(), d.maxResponseBytes(), Duration.ofSeconds(3),
+        return new RequestLimits(maxSources, d.maxRecords(), d.maxResponseBytes(), d.perSourceTimeout(),
                 d.maxConcurrency(), scopeReadBudget, d.requestTimeout(), d.scopeTotalReadBudget());
     }
 

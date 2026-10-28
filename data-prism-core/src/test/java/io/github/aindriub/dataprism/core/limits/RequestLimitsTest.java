@@ -58,4 +58,37 @@ class RequestLimitsTest {
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("scopeTotalReadBudget")
                 .hasMessageNotContaining("4242");
     }
+
+    @Test
+    @DisplayName("a missing deadline is refused, naming the component")
+    void deadlineMustBePresent() {
+        assertThatThrownBy(() -> with(Duration.ofSeconds(3), null, 1))
+                .isInstanceOf(NullPointerException.class).hasMessageContaining("requestTimeout");
+    }
+
+    @Test
+    @DisplayName("a zero per-source timeout is refused, naming the component and not the value")
+    void perSourceTimeoutMustBePositive() {
+        assertThatThrownBy(() -> with(Duration.ZERO, Duration.ofSeconds(10), 1))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("perSourceTimeout")
+                .hasMessageNotContaining("PT0S");
+        assertThatThrownBy(() -> with(Duration.ofSeconds(-9), Duration.ofSeconds(10), 1))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("perSourceTimeout")
+                .hasMessageNotContaining("-9").hasMessageNotContaining("PT-9S");
+    }
+
+    @Test
+    @DisplayName("a zero deadline names the component and not the value")
+    void zeroDeadlineMessage() {
+        assertThatThrownBy(() -> with(Duration.ofSeconds(3), Duration.ZERO, 1))
+                .hasMessageContaining("requestTimeout").hasMessageNotContaining("PT0S");
+    }
+
+    @Test
+    @DisplayName("a deadline below the per-source timeout names neither value")
+    void deadlineBelowPerSourceMessage() {
+        assertThatThrownBy(() -> with(Duration.ofSeconds(37), Duration.ofSeconds(23), 1))
+                .hasMessageContaining("requestTimeout").hasMessageContaining("perSourceTimeout")
+                .hasMessageNotContaining("37").hasMessageNotContaining("23");
+    }
 }

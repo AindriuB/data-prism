@@ -28,12 +28,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.lang.reflect.Field;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -63,7 +66,7 @@ class PerSourceBudgetChargeTest {
         final AtomicInteger reserveCalls = new AtomicInteger();
         final AtomicInteger tryReadCalls = new AtomicInteger();
         volatile boolean throwOnReserve;
-        final List<Integer> reserved = java.util.Collections.synchronizedList(new ArrayList<>());
+        final List<Integer> reserved = Collections.synchronizedList(new ArrayList<>());
 
         @Override
         public boolean tryRead(String scopeId, String subjectId, int budget) {
@@ -143,8 +146,7 @@ class PerSourceBudgetChargeTest {
     }
 
     private static RequestLimits limits(int maxSources, int subjectBudget, int scopeTotal) {
-        return new RequestLimits(maxSources, 500, 512 * 1024, Duration.ofSeconds(3), 4, subjectBudget,
-                Duration.ofSeconds(10), scopeTotal);
+        return TestLimits.defaults().maxSources(maxSources).scopeReadBudget(subjectBudget).scopeTotalReadBudget(scopeTotal).build();
     }
 
     private static DefaultContextOrchestrator orchestrator(List<? extends DataSourceAdapter<?>> adapters,
@@ -228,6 +230,8 @@ class PerSourceBudgetChargeTest {
         assertThat(sources).allSatisfy(s -> assertThat(s.calls.get()).isZero());
         assertThat(budget.reserveCalls.get()).isZero();
         assertThat(budget.tryReadCalls.get()).isZero();
+        assertThat(budget.reads("S", "1")).as("no read was charged").isZero();
+        assertThat(budget.scopeReads("S")).isZero();
     }
 
     @Test
@@ -347,8 +351,7 @@ class PerSourceBudgetChargeTest {
             });
         }
         var budget = new CountingBudget();
-        var limits = new RequestLimits(8, 500, 512 * 1024, Duration.ofSeconds(3), 1, 100,
-                Duration.ofSeconds(10), 50_000);
+        var limits = TestLimits.defaults().maxConcurrency(1).build();
         var orchestrator = orchestrator(all, budget, limits, fanOut);
 
         var running = CompletableFuture.runAsync(() -> assertThatThrownBy(() ->
@@ -361,6 +364,7 @@ class PerSourceBudgetChargeTest {
         assertThat(budget.reserved).containsExactly(3);
         assertThat(calls.get()).as("only one source got the single permit").isEqualTo(1);
         assertThat(budget.reads("S", "1")).as("only the read that started stays charged").isEqualTo(1);
+        assertThat(issued(budget, "S")).as("a partly used reservation is settled too").isZero();
     }
 
     private static SourceCircuitBreaker breakerOpenPastCooldown(SourceFanOutDeadlineTest.MutableClock clock) {
@@ -402,5 +406,56 @@ class PerSourceBudgetChargeTest {
 
         assertThat(sources.get(0).calls.get()).isZero();
         assertThat(breaker.admit("s").holdsTrial()).as("the trial was not left taken").isTrue();
+    }
+
+    /** How many reservations the in-memory budget still tracks for a scope. */
+    private static int issued(CountingBudget budget, String scope) throws Exception {
+        Field scopes = InMemoryScopeBudget.class.getDeclaredField("scopes");
+        scopes.setAccessible(true);
+        Object state = ((Map<?, ?>) scopes.get(budget.delegate)).get(scope);
+        if (state == null) {
+            return 0;
+        }
+        Field issued = state.getClass().getDeclaredField("issued");
+        issued.setAccessible(true);
+        return ((Set<?>) issued.get(state)).size();
+    }
+
+    @Test
+    @DisplayName("a request that uses every read leaves no reservation tracked")
+    void fullyUsedReservationsAreNotKept() throws Exception {
+        var budget = new CountingBudget();
+        var sources = List.of(new Source("a", false), new Source("b", false), new Source("c", false));
+        var orchestrator = orchestrator(sources, budget, limits(8, 1_000, 50_000), plainFanOut());
+
+        for (int request = 0; request < 25; request++) {
+            orchestrator.buildContext(ContextRequest.of("THING", "1"), context("S"), caller());
+        }
+
+        assertThat(budget.reads("S", "1")).as("every read stays charged").isEqualTo(75);
+        assertThat(issued(budget, "S")).isZero();
+    }
+
+    @Test
+    @DisplayName("an execution that fails gives every read back, hands back the half-open trial, and tracks nothing")
+    void failedExecutionSettlesEverything() throws Exception {
+        var clock = new SourceFanOutDeadlineTest.MutableClock();
+        var breaker = breakerOpenPastCooldown(clock);
+        var fanOut = new SourceFanOut(breaker, clock, SourceFanOutOptions.defaults());
+        fanOut.bulkheadObserver(bulkhead -> {
+            throw new IllegalStateException("observer failed");
+        });
+        var budget = new CountingBudget();
+        var sources = List.of(new Source("s", false), new Source("t", false));
+
+        assertThatThrownBy(() -> orchestrator(sources, budget, limits(8, 100, 50_000), fanOut)
+                .buildContext(ContextRequest.of("THING", "1"), context("S"), caller()))
+                .isInstanceOf(RuntimeException.class);
+
+        assertThat(sources).allSatisfy(s -> assertThat(s.calls.get()).isZero());
+        assertThat(budget.reserved).containsExactly(2);
+        assertThat(budget.reads("S", "1")).as("sources never called cost nothing").isZero();
+        assertThat(issued(budget, "S")).isZero();
+        assertThat(breaker.admit("s").holdsTrial()).as("the trial is free again").isTrue();
     }
 }

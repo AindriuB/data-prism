@@ -67,8 +67,8 @@ class SourceFanOutTest {
     }
 
     private static RequestLimits limits(int maxSources, Duration timeout, int concurrency) {
-        return new RequestLimits(maxSources, 500, 512 * 1024, timeout, concurrency, 100,
-                timeout.compareTo(Duration.ofSeconds(10)) > 0 ? timeout : Duration.ofSeconds(10), 50_000);
+        return TestLimits.defaults().maxSources(maxSources).perSourceTimeout(timeout).maxConcurrency(concurrency)
+                .requestTimeout(timeout.compareTo(Duration.ofSeconds(10)) > 0 ? timeout : Duration.ofSeconds(10)).build();
     }
 
     private SourceFanOut fanOut() {

@@ -68,7 +68,7 @@ class ResponseLimitsTest {
                 (subject, namespace, context) -> "SUBJ-1", new ParameterFingerprinter(KEYS),
                 new AuditRecorder(events::add, CLOCK, "limits-test"), new PassThroughIdentityResolver(),
                 new SourceFanOut(SourceCircuitBreaker.disabled(), CLOCK, SourceFanOutOptions.defaults()),
-                new InMemoryScopeBudget(), new RequestLimits(8, records, bytes, Duration.ofSeconds(3), 4, 100, Duration.ofSeconds(10), 50_000),
+                new InMemoryScopeBudget(), TestLimits.defaults().maxRecords(records).maxResponseBytes(bytes).build(),
                 (raw, context) -> List.of(), new SourceAliasing(new HmacValueTokenSource(KEYS)), PrivacyMetrics.none());
         return orchestrator.buildContext(ContextRequest.of("PARCEL", "fixture-1"), CONTEXT, CALLER);
     }

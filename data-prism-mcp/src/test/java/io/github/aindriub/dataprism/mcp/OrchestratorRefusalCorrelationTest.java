@@ -172,7 +172,7 @@ class OrchestratorRefusalCorrelationTest {
         ScopeBudget exhausted = new ScopeBudget() {
             @Override
             public boolean tryRead(String scopeId, String subjectId, int budget) {
-                return false;
+                throw new AssertionError("the fan-out reserves reads; it no longer calls tryRead");
             }
 
             @Override

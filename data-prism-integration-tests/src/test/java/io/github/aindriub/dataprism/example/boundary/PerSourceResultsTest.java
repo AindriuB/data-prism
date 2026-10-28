@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PerSourceResultsTest {
 
     private static final Set<String> CODES = Set.of("ANSWERED", "NO_DATA", "TIMED_OUT", "FAILED", "CIRCUIT_OPEN",
-            "SKIPPED_OVER_LIMIT", "REFUSED");
+            "REFUSED");
 
     @Test
     @DisplayName("two sources using the same field name keep both values, each under its own source")

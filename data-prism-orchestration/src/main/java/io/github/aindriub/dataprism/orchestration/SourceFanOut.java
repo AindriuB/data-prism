@@ -7,21 +7,24 @@ import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.limits.RequestLimits;
 import io.github.aindriub.dataprism.core.correlation.CorrelationMdc;
 import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
@@ -45,18 +48,25 @@ import java.util.function.Consumer;
  * gap; failing the whole request because one system is slow would make the
  * platform less available than the systems behind it.
  *
+ * <p>What the breaker and the metrics are told follows what was learned about the
+ * source. An answer, an error, and a call that outran its own per-source timeout
+ * are outcomes of the source. A call cut short by the overall deadline before its
+ * own timeout, a call interrupted because the caller gave up, and a source never
+ * called say nothing about it: the breaker records nothing (and gets back any
+ * half-open trial it was given), and no error is counted.
+ *
  * <p>The work is in two steps so that a caller can charge a budget between
  * them: {@link #plan} decides which sources will be called (and refuses a
  * selection that is too large), {@link #execute} calls them. {@link #fetchAll}
  * is both, for a caller that charges nothing.
  *
- * <p>Waiting is by short real-time slices against the injected clock, so a
- * test that moves the clock is noticed within a slice, and a production clock
- * costs nothing noticeable.
+ * <p>The thread that waits looks at the injected clock in short real-time slices,
+ * so a test that moves the clock is noticed within a slice, and a production clock
+ * costs nothing noticeable. A call waiting for a permit makes one bounded wait.
  */
 public final class SourceFanOut {
 
-    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(SourceFanOut.class);
+    private static final Logger LOG = LoggerFactory.getLogger(SourceFanOut.class);
 
     /** How often the waiting thread looks at the clock when nothing has finished. */
     private static final long TICK_MILLIS = 5;
@@ -73,6 +83,11 @@ public final class SourceFanOut {
     private final CorrelationMdc mdc;
     private volatile Consumer<Semaphore> bulkheadObserver = bulkhead -> { };
     private volatile Consumer<Instant> tickObserver = now -> { };
+    /**
+     * Running calls per configured source name, process-wide for this fan-out (one per deployment); an entry
+     * is removed when it reaches zero. Task 272's shared pool may replace it.
+     */
+    private final ConcurrentHashMap<String, Load> load = new ConcurrentHashMap<>();
 
     /** @param options the metrics and MDC; {@link SourceFanOutOptions#defaults()} for neither */
     public SourceFanOut(SourceCircuitBreaker breaker, Clock clock, SourceFanOutOptions options) {
@@ -98,19 +113,59 @@ public final class SourceFanOut {
     }
 
     /**
+     * What is running for one source: all its calls, including leftovers that ignored their interrupt and
+     * outlived their request, and how many of those hold a half-open trial.
+     */
+    private record Load(int running, int trials) {
+    }
+
+    /** Test hook: calls running for a source, leftovers included. */
+    int running(String sourceName) {
+        Load load = this.load.get(sourceName);
+        return load == null ? 0 : load.running();
+    }
+
+    /** Test hook: how many sources have anything running; an entry is removed when its count reaches zero. */
+    int trackedSources() {
+        return load.size();
+    }
+
+    private void began(String sourceName, boolean trial) {
+        load.merge(sourceName, new Load(1, trial ? 1 : 0),
+                (a, b) -> new Load(a.running() + b.running(), a.trials() + b.trials()));
+    }
+
+    private void ended(String sourceName, boolean trial) {
+        load.computeIfPresent(sourceName, (k, l) -> {
+            Load next = new Load(l.running() - 1, l.trials() - (trial ? 1 : 0));
+            return next.running() <= 0 ? null : next;
+        });
+    }
+
+    /**
+     * Whether the source cannot take a new call: it already has {@code maxConcurrency} calls running, or the
+     * trial call of its breaker is still running. Both include calls that outlived their request.
+     */
+    private boolean busy(String sourceName, RequestLimits limits) {
+        Load load = this.load.get(sourceName);
+        return load != null && (load.running() >= limits.maxConcurrency() || load.trials() > 0);
+    }
+
+    /**
      * The sources one request will call, decided but not yet called.
      *
      * @param callable    the adapters to call, in the order given
-     * @param circuitOpen the sources not called because their breaker is open
+     * @param notCalled   the sources reported without being called: their breaker is open, or they are still
+     *                    busy with earlier calls
      * @param requests    the request to put to each source, keyed by source name
      * @param trials      the half-open trials this plan took, by source name. Each is ended by a
      *                    recorded outcome, or handed back if the source is not called
      */
-    public record Plan(List<DataSourceAdapter<?>> callable, List<Fetched> circuitOpen,
+    public record Plan(List<DataSourceAdapter<?>> callable, List<Fetched> notCalled,
                        Map<String, DataRequest> requests, Map<String, SourceCircuitBreaker.Admission> trials) {
         public Plan {
             callable = List.copyOf(callable);
-            circuitOpen = List.copyOf(circuitOpen);
+            notCalled = List.copyOf(notCalled);
             requests = Map.copyOf(requests);
             trials = Map.copyOf(trials);
         }
@@ -129,6 +184,30 @@ public final class SourceFanOut {
     }
 
     /**
+     * Thrown by {@link #execute} when it failed for a reason of its own. By then every call is
+     * cancelled and every trial handed back; {@link #notStarted} says how many sources were never
+     * called, so their reads can be given back, and the cause is what the caller should see.
+     */
+    public static final class ExecutionFailure extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+        private final int notStarted;
+
+        ExecutionFailure(RuntimeException cause, int notStarted) {
+            super(cause.getClass().getSimpleName(), cause);
+            this.notStarted = notStarted;
+        }
+
+        public int notStarted() {
+            return notStarted;
+        }
+
+        /** The failure that ended the execution. */
+        public RuntimeException failure() {
+            return (RuntimeException) getCause();
+        }
+    }
+
+    /**
      * Decides which sources to call. A source absent from {@code requests} is not
      * called at all, one whose breaker is open is reported and not called, and more
      * callable sources than {@code maxSources} refuses the whole request with
@@ -138,11 +217,18 @@ public final class SourceFanOut {
      */
     public Plan plan(List<DataSourceAdapter<?>> adapters, Map<String, DataRequest> requests, RequestLimits limits) {
         List<DataSourceAdapter<?>> callable = new ArrayList<>();
-        List<Fetched> circuitOpen = new ArrayList<>();
-        Map<String, SourceCircuitBreaker.Admission> trials = new java.util.HashMap<>();
+        List<Fetched> notCalled = new ArrayList<>();
+        Map<String, SourceCircuitBreaker.Admission> trials = new HashMap<>();
         for (DataSourceAdapter<?> adapter : adapters) {
             String name = adapter.sourceName();
             if (!requests.containsKey(name)) {
+                continue;
+            }
+            if (busy(name, limits)) {
+                // Before the breaker, so no trial is admitted for a call that will not be made; and before the
+                // budget, which only ever sees the sources that will be called.
+                notCalled.add(new Fetched(new SourceOutcome(name, SourceOutcome.Status.TIMED_OUT, Duration.ZERO,
+                        "source still busy with earlier calls"), null));
                 continue;
             }
             SourceCircuitBreaker.Admission admission = breaker.admit(name);
@@ -150,14 +236,14 @@ public final class SourceFanOut {
                 trials.put(name, admission);
             }
             if (!admission.allowed()) {
-                circuitOpen.add(new Fetched(new SourceOutcome(name,
+                notCalled.add(new Fetched(new SourceOutcome(name,
                         SourceOutcome.Status.CIRCUIT_OPEN, Duration.ZERO,
                         "breaker open after repeated failures"), null));
                 continue;
             }
             callable.add(adapter);
         }
-        Plan plan = new Plan(callable, circuitOpen, requests, trials);
+        Plan plan = new Plan(callable, notCalled, requests, trials);
         if (callable.size() > limits.maxSources()) {
             abandon(plan);
             throw new PrivacyRefusedException("SOURCE_SELECTION_TOO_LARGE", "$",
@@ -201,68 +287,114 @@ public final class SourceFanOut {
         volatile boolean succeeded;
         volatile Object record;
         volatile Throwable failure;
+        /**
+         * Set, before the state moves to CANCELLED, when the call's own thread failed before it could call the
+         * source. A CANCELLED call the waiter has not itself resolved can only have come from here.
+         */
+        volatile Throwable startError;
+        /** Whether the call took the breaker's half-open trial. */
+        final boolean holdsTrial;
+        /** Whether the call is counted as running; its thread uncounts it when it actually ends. */
+        volatile boolean counted;
         volatile Thread thread;
 
-        Call(DataSourceAdapter<?> adapter, DataRequest request) {
+        Call(DataSourceAdapter<?> adapter, DataRequest request, boolean holdsTrial) {
             this.adapter = adapter;
             this.request = request;
+            this.holdsTrial = holdsTrial;
         }
     }
 
-    /** Calls every source in the plan, and returns when each has an outcome or the deadline has passed. */
+    /**
+     * What became of one call, and what each consumer is to be told.
+     *
+     * @param breaker      whether the outcome is recorded in the breaker; if not, a trial is handed back
+     * @param errorMetric  whether a failure is counted in {@code SOURCE_ERRORS}
+     * @param latency      whether the call ran, so that its latency means something
+     * @param neverCalled  whether the source was never called, so that its read goes back
+     */
+    private record Resolution(Fetched fetched, boolean breaker, boolean errorMetric, boolean latency,
+                              boolean neverCalled) {
+    }
+
+    private enum Cut { PER_SOURCE, DEADLINE, INTERRUPTED }
+
+    /**
+     * Calls every source in the plan, and returns when each has an outcome or the deadline has passed.
+     *
+     * @throws ExecutionFailure if the execution itself failed, after cancelling everything it started
+     */
     public Execution execute(Plan plan, RequestLimits limits) {
+        List<Call> calls = new ArrayList<>();
+        AtomicBoolean launched = new AtomicBoolean();
+        try {
+            return run(plan, limits, calls, launched);
+        } catch (RuntimeException failure) {
+            throw new ExecutionFailure(failure, abort(plan, calls, launched.get()));
+        } catch (Error failure) {
+            abort(plan, calls, launched.get());
+            throw failure;
+        }
+    }
+
+    private Execution run(Plan plan, RequestLimits limits, List<Call> calls, AtomicBoolean launched) {
         Instant started = Instant.now(clock);
         Instant deadline = started.plus(limits.requestTimeout());
-        Semaphore bulkhead = new Semaphore(limits.maxConcurrency());
+        // Fair, so permits go in the order the calls asked for them.
+        Semaphore bulkhead = new Semaphore(limits.maxConcurrency(), true);
         bulkheadObserver.accept(bulkhead);
         LinkedBlockingQueue<Call> finished = new LinkedBlockingQueue<>();
-        List<Call> calls = new ArrayList<>();
         for (DataSourceAdapter<?> adapter : plan.callable()) {
-            Call call = new Call(adapter, plan.requests().get(adapter.sourceName()));
-            call.thread = Thread.ofVirtual().unstarted(() -> run(call, bulkhead, deadline, finished));
+            Call call = new Call(adapter, plan.requests().get(adapter.sourceName()),
+                    plan.trials().containsKey(adapter.sourceName()));
+            call.thread = Thread.ofVirtual().unstarted(() -> callOne(call, bulkhead, deadline, finished));
             calls.add(call);
         }
+        launched.set(true);
         calls.forEach(call -> call.thread.start());
 
-        Map<Call, Fetched> resolved = new IdentityHashMap<>();
-        Set<Call> neverCalled = Collections.newSetFromMap(new IdentityHashMap<>());
+        Map<Call, Resolution> resolved = new IdentityHashMap<>();
         boolean interrupted = false;
         try {
             while (resolved.size() < calls.size()) {
                 Instant now = Instant.now(clock);
                 if (!now.isBefore(deadline)) {
-                    expire(calls, resolved, neverCalled, started, "no answer before the request deadline of "
-                            + limits.requestTimeout().toMillis() + "ms");
+                    expire(calls, resolved, started, now, limits);
                     break;
                 }
                 for (Call call : calls) {
                     if (!resolved.containsKey(call) && call.state.get() == STARTED && call.startedAt != null
                             && !now.isBefore(call.startedAt.plus(limits.perSourceTimeout()))) {
-                        resolveRunning(call, resolved, SourceOutcome.Status.TIMED_OUT,
-                                "no answer within " + limits.perSourceTimeout().toMillis() + "ms");
+                        resolveRunning(call, resolved, Cut.PER_SOURCE, now, limits);
                     }
                 }
                 tickObserver.accept(now);
                 Call done = finished.poll(TICK_MILLIS, TimeUnit.MILLISECONDS);
                 while (done != null) {
-                    if (!resolved.containsKey(done) && done.state.get() == STARTED) {
-                        resolved.put(done, completed(done));
+                    if (!resolved.containsKey(done)) {
+                        if (done.state.get() == STARTED && done.finishedAt != null) {
+                            resolved.put(done, completed(done));
+                        } else if (done.state.get() == CANCELLED && done.startError != null) {
+                            resolved.put(done, failedBeforeStart(done, started));
+                        }
                     }
                     done = finished.poll();
                 }
             }
         } catch (InterruptedException e) {
             interrupted = true;
+            Instant now = Instant.now(clock);
             for (Call call : calls) {
                 if (resolved.containsKey(call)) {
                     continue;
                 }
                 if (call.state.compareAndSet(NEW, CANCELLED)) {
-                    neverCalled.add(call);
-                    resolved.put(call, new Fetched(new SourceOutcome(call.adapter.sourceName(),
-                            SourceOutcome.Status.FAILED, since(started), "interrupted"), null));
+                    call.thread.interrupt();
+                    resolved.put(call, neverCalled(call, SourceOutcome.Status.FAILED, "interrupted", started));
+                } else if (call.state.get() == CANCELLED && call.startError != null) {
+                    resolved.put(call, failedBeforeStart(call, started));
                 } else {
-                    resolveRunning(call, resolved, SourceOutcome.Status.FAILED, "interrupted");
+                    resolveRunning(call, resolved, Cut.INTERRUPTED, now, limits);
                 }
             }
         }
@@ -271,42 +403,52 @@ public final class SourceFanOut {
             Thread.currentThread().interrupt();
         }
 
-        List<Fetched> results = new ArrayList<>(plan.circuitOpen());
+        List<Fetched> results = new ArrayList<>(plan.notCalled());
+        int notStarted = 0;
         for (Call call : calls) {
-            results.add(resolved.get(call));
+            Resolution resolution = resolved.get(call);
+            results.add(resolution.fetched());
+            if (resolution.neverCalled()) {
+                notStarted++;
+            }
         }
-        Set<String> notCalled = new java.util.HashSet<>();
-        neverCalled.forEach(call -> notCalled.add(call.adapter.sourceName()));
         // The breaker first, and on its own: a metrics implementation that throws must not leave
         // the remaining sources' outcomes (and any half-open trial they hold) unrecorded.
-        for (Fetched fetched : results) {
-            String name = fetched.outcome().sourceName();
-            if (notCalled.contains(name)) {
-                // Never called, so nothing was learned about the source.
+        for (Call call : calls) {
+            Resolution resolution = resolved.get(call);
+            String name = call.adapter.sourceName();
+            if (resolution.breaker()) {
+                breaker.record(resolution.fetched().outcome());
+            } else {
                 SourceCircuitBreaker.Admission trial = plan.trials().get(name);
                 if (trial != null) {
                     breaker.releaseTrial(name, trial);
                 }
-            } else {
-                breaker.record(fetched.outcome());
             }
         }
-        for (Fetched fetched : results) {
-            try {
-                metrics.record(Metric.SOURCE_LATENCY, fetched.outcome().sourceName(), fetched.outcome().took());
-                if (fetched.outcome().failure()) {
-                    metrics.increment(Metric.SOURCE_ERRORS, fetched.outcome().sourceName());
-                }
-            } catch (RuntimeException e) {
-                // Metrics are not worth a request; the class only, as a message can carry a value.
-                LOG.warn("source metrics failed: {}", e.getClass().getSimpleName());
-            }
+        for (Call call : calls) {
+            Resolution resolution = resolved.get(call);
+            recordMetrics(resolution.fetched().outcome(), resolution.latency(), resolution.errorMetric());
         }
-        return new Execution(results, neverCalled.size());
+        return new Execution(results, notStarted);
+    }
+
+    private void recordMetrics(SourceOutcome outcome, boolean latency, boolean error) {
+        try {
+            if (latency) {
+                metrics.record(Metric.SOURCE_LATENCY, outcome.sourceName(), outcome.took());
+            }
+            if (error && outcome.failure()) {
+                metrics.increment(Metric.SOURCE_ERRORS, outcome.sourceName());
+            }
+        } catch (RuntimeException e) {
+            // Metrics are not worth a request; the class only, as a message can carry a value.
+            LOG.warn("source metrics failed: {}", e.getClass().getSimpleName());
+        }
     }
 
     /** One source's thread: wait for a permit within the deadline, then call, then give the permit back. */
-    private void run(Call call, Semaphore bulkhead, Instant deadline, LinkedBlockingQueue<Call> finished) {
+    private void callOne(Call call, Semaphore bulkhead, Instant deadline, LinkedBlockingQueue<Call> finished) {
         try {
             // Opened from this task's own request, never copied from the
             // submitting thread: virtual threads do not inherit MDC.
@@ -319,6 +461,8 @@ public final class SourceFanOut {
                     if (!call.state.compareAndSet(NEW, STARTED)) {
                         return;
                     }
+                    began(call.adapter.sourceName(), call.holdsTrial);
+                    call.counted = true;
                     try {
                         call.record = call.adapter.fetch(call.request);
                         call.succeeded = true;
@@ -330,78 +474,148 @@ public final class SourceFanOut {
                     bulkhead.release();
                 }
             }
+        } catch (Throwable t) {
+            // Failed before the source was called (opening the MDC, reading the clock): the call is
+            // cancelled with its error, so the waiter need not wait for the deadline to find out.
+            call.startError = t;
+            call.state.compareAndSet(NEW, CANCELLED);
         } finally {
+            if (call.counted) {
+                // The thread has really ended: only now is the source free of this call.
+                ended(call.adapter.sourceName(), call.holdsTrial);
+            }
             call.ended.countDown();
             finished.add(call);
         }
     }
 
-    /** Waits for a permit, but never past the deadline or the call being cancelled. */
+    /**
+     * One bounded wait for a permit: no longer than the time left before the deadline, and cut short
+     * by the waiter interrupting a call it has cancelled.
+     */
     private boolean acquire(Call call, Semaphore bulkhead, Instant deadline) {
         try {
-            while (call.state.get() == NEW && Instant.now(clock).isBefore(deadline)) {
-                if (bulkhead.tryAcquire(TICK_MILLIS, TimeUnit.MILLISECONDS)) {
-                    if (call.state.get() == NEW && Instant.now(clock).isBefore(deadline)) {
-                        return true;
-                    }
-                    bulkhead.release();
-                    return false;
-                }
+            long left = Duration.between(Instant.now(clock), deadline).toMillis();
+            if (left <= 0 || call.state.get() != NEW) {
+                return false;
             }
+            if (!bulkhead.tryAcquire(left, TimeUnit.MILLISECONDS)) {
+                return false;
+            }
+            if (call.state.get() == NEW && Instant.now(clock).isBefore(deadline)) {
+                return true;
+            }
+            bulkhead.release();
+            return false;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            return false;
         }
-        return false;
     }
 
     /** Past the overall deadline: nothing not yet called is called, and everything running is interrupted. */
-    private void expire(List<Call> calls, Map<Call, Fetched> resolved, Set<Call> neverCalled, Instant started,
-                        String detail) {
+    private void expire(List<Call> calls, Map<Call, Resolution> resolved, Instant started, Instant now,
+                        RequestLimits limits) {
         // Every call not yet started is cancelled before any running one is
         // interrupted, so an interrupted call's permit cannot start a queued one.
         for (Call call : calls) {
             if (!resolved.containsKey(call) && call.state.compareAndSet(NEW, CANCELLED)) {
-                neverCalled.add(call);
-                resolved.put(call, new Fetched(new SourceOutcome(call.adapter.sourceName(),
-                        SourceOutcome.Status.TIMED_OUT, since(started),
-                        "not started before the request deadline"), null));
+                call.thread.interrupt();
+                resolved.put(call, neverCalled(call, SourceOutcome.Status.TIMED_OUT,
+                        "not started before the request deadline", started));
             }
         }
         for (Call call : calls) {
-            if (!resolved.containsKey(call)) {
-                resolveRunning(call, resolved, SourceOutcome.Status.TIMED_OUT, detail);
+            if (resolved.containsKey(call)) {
+                continue;
+            }
+            if (call.state.get() == CANCELLED && call.startError != null) {
+                resolved.put(call, failedBeforeStart(call, started));
+            } else {
+                resolveRunning(call, resolved, Cut.DEADLINE, now, limits);
             }
         }
     }
 
     /** A started call that has not answered in time: interrupt it, unless it has just finished. */
-    private void resolveRunning(Call call, Map<Call, Fetched> resolved, SourceOutcome.Status status, String detail) {
-        // finishedAt is written after the result, so seeing it means the call finished, whether or not
-        // its thread has yet counted down `ended`.
+    private void resolveRunning(Call call, Map<Call, Resolution> resolved, Cut cut, Instant now,
+                                RequestLimits limits) {
         if (call.finishedAt != null) {
+            // finishedAt is written after the result, so seeing it means the call finished, whether or not
+            // its thread has yet counted down `ended`.
             resolved.put(call, completed(call));
             return;
         }
-        Instant from = call.startedAt == null ? Instant.now(clock) : call.startedAt;
-        // Interrupt the virtual thread so a slow source stops occupying its
-        // bulkhead permit; without this the next request inherits the queue.
+        Instant from = call.startedAt == null ? now : call.startedAt;
+        Duration took = Duration.between(from, now);
+        // Interrupt the virtual thread so a slow source stops occupying its bulkhead permit.
         call.thread.interrupt();
-        resolved.put(call, new Fetched(new SourceOutcome(call.adapter.sourceName(), status,
-                Duration.between(from, Instant.now(clock)), detail), null));
+        String name = call.adapter.sourceName();
+        boolean ownTimeout = cut == Cut.PER_SOURCE || (cut == Cut.DEADLINE && took.compareTo(limits.perSourceTimeout()) >= 0);
+        if (ownTimeout) {
+            String detail = cut == Cut.PER_SOURCE
+                    ? "no answer within " + limits.perSourceTimeout().toMillis() + "ms"
+                    : "no answer within " + limits.perSourceTimeout().toMillis() + "ms before the request deadline";
+            resolved.put(call, new Resolution(new Fetched(new SourceOutcome(name, SourceOutcome.Status.TIMED_OUT,
+                    took, detail), null), true, true, true, false));
+        } else if (cut == Cut.DEADLINE) {
+            // Cut by the deadline before its own timeout: slow for this request, not shown to be a failing source.
+            resolved.put(call, new Resolution(new Fetched(new SourceOutcome(name, SourceOutcome.Status.TIMED_OUT,
+                    took, "no answer before the request deadline"), null), false, false, true, false));
+        } else {
+            resolved.put(call, new Resolution(new Fetched(new SourceOutcome(name, SourceOutcome.Status.FAILED,
+                    took, "interrupted"), null), false, false, true, false));
+        }
     }
 
-    private Fetched completed(Call call) {
+    private Resolution neverCalled(Call call, SourceOutcome.Status status, String detail, Instant started) {
+        return new Resolution(new Fetched(new SourceOutcome(call.adapter.sourceName(), status,
+                Duration.between(started, Instant.now(clock)), detail), null), false, false, false, true);
+    }
+
+    /** The call's thread failed before the source was called: its error is counted, the source is not blamed. */
+    private Resolution failedBeforeStart(Call call, Instant started) {
+        return new Resolution(new Fetched(new SourceOutcome(call.adapter.sourceName(), SourceOutcome.Status.FAILED,
+                Duration.between(started, Instant.now(clock)), call.startError.getClass().getSimpleName()), null),
+                false, true, false, true);
+    }
+
+    private Resolution completed(Call call) {
         String name = call.adapter.sourceName();
         Duration took = Duration.between(call.startedAt, call.finishedAt);
+        Fetched fetched;
         if (call.succeeded) {
-            return call.record == null
+            fetched = call.record == null
                     ? new Fetched(SourceOutcome.noData(name, took), null)
                     : new Fetched(SourceOutcome.answered(name, took), call.record);
+        } else {
+            // The cause's message can carry a fragment of the record that caused
+            // it, so only the exception type is recorded.
+            fetched = new Fetched(new SourceOutcome(name, SourceOutcome.Status.FAILED, took,
+                    call.failure.getClass().getSimpleName()), null);
         }
-        // The cause's message can carry a fragment of the record that caused
-        // it, so only the exception type is recorded.
-        return new Fetched(new SourceOutcome(name, SourceOutcome.Status.FAILED, took,
-                call.failure.getClass().getSimpleName()), null);
+        return new Resolution(fetched, true, true, true, false);
+    }
+
+    /**
+     * An execution that failed for its own reasons: cancel every call, give every trial back, and say
+     * how many sources were never called.
+     */
+    private int abort(Plan plan, List<Call> calls, boolean launched) {
+        int notStarted = 0;
+        if (!launched) {
+            notStarted = plan.callable().size();
+        } else {
+            for (Call call : calls) {
+                if (call.state.compareAndSet(NEW, CANCELLED) || call.state.get() == CANCELLED) {
+                    notStarted++;
+                }
+                call.thread.interrupt();
+            }
+            awaitUnwind(calls);
+        }
+        plan.trials().forEach(breaker::releaseTrial);
+        return notStarted;
     }
 
     /** Gives interrupted calls a bounded real-time interval to let go of their permits. */
@@ -419,10 +633,6 @@ public final class SourceFanOut {
                 return;
             }
         }
-    }
-
-    private Duration since(Instant started) {
-        return Duration.between(started, Instant.now(clock));
     }
 
     /** One source's outcome, and its record where it answered. */

@@ -458,21 +458,42 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                                         + " source reads in this scope");
             }
         }
-        // An execution that fails leaves its reads charged: stricter, never looser.
-        SourceFanOut.Execution execution = fanOut.execute(plan, limits);
-        release(reservation, execution.notStarted());
-        return execution.results();
+        int unused = 0;
+        try {
+            SourceFanOut.Execution execution = fanOut.execute(plan, limits);
+            unused = execution.notStarted();
+            return execution.results();
+        } catch (SourceFanOut.ExecutionFailure failure) {
+            // Cancelled and its trials handed back by the fan-out; the sources it never called go back too.
+            unused = failure.notStarted();
+            throw failure.failure();
+        } finally {
+            settle(reservation, unused);
+        }
     }
 
-    private void release(ReadReservation reservation, int unused) {
-        if (reservation == null || unused <= 0) {
+    /**
+     * Ends a reservation: the reads of sources never called go back, the rest were used and stay charged.
+     * The used reads are forfeited from the reservation itself, so that a budget that tracks its reservations
+     * can drop this one; without that, every request's reservation would stay tracked until its scope ends.
+     */
+    private void settle(ReadReservation reservation, int unused) {
+        if (reservation == null) {
             return;
         }
         try {
-            budget.release(reservation, unused);
+            if (unused > 0) {
+                budget.release(reservation, unused);
+            }
         } catch (RuntimeException e) {
             // The reads stay charged: stricter, never looser. Nothing to refuse for.
             LOG.warn("could not give back {} unused read(s): {}", unused, e.getClass().getSimpleName());
+        }
+        try {
+            reservation.takeUnused(reservation.reads());
+            budget.release(reservation, 0);
+        } catch (RuntimeException e) {
+            LOG.warn("could not settle a read reservation: {}", e.getClass().getSimpleName());
         }
     }
 
