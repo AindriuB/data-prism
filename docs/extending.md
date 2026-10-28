@@ -361,11 +361,22 @@ fixture source shares a single id:
     (`List<List<Leaf>>`, `Leaf[][]`, `List<Leaf[]>`, `Set<List<Leaf>>`): that is
     refused with `SOURCE_MODEL_NESTED_COLLECTION_OF_RECORD`, since a field's own
     policy cannot tell what the inner arrays hold. Wrap the inner list in a record.
-    A `@JsonSerialize(using=...)` on a record or its components, `@JsonAnyGetter`
-    and `@JsonValue` are the model author's explicit choice and stay allowed (the
-    engine still classifies what they produce); `@JsonProperty` or `@JsonGetter` on
-    a method that is not a record component is refused. The message names the class's
-    simple name only, never a value.
+    From 0.8 the engine reads a source record itself, component by component and
+    from the fields, so a Jackson annotation on a record, its components, its
+    methods or the enums it holds changes nothing and is refused at startup with
+    `SOURCE_MODEL_JACKSON_ANNOTATION`; only `@JsonAlias`, `@JsonCreator`,
+    `@JsonDeserialize`, `@JsonSetter` and `@JsonIgnoreProperties(ignoreUnknown = true)`
+    are allowed, because they affect only how an adapter reads the upstream
+    response. A record must sit at a position declared as that record itself. A
+    plain-Java embedder that builds the engine without Spring must call
+    `SourceModels.require` on every response type before serving, because that is
+    where an unreadable record is refused. Adapter code, and the objects it
+    builds, are trusted: a callback in such an object can stall a request or
+    exhaust memory but cannot bypass the scrub (see the
+    [trust model for source adapters](architecture.md#boundaries-that-must-not-be-crossed)).
+    The message names the class's simple name only, never a value.
+
+    To fix a model refused with `SOURCE_MODEL_JACKSON_ANNOTATION`, remove the annotation the message names. From 0.8, Data Prism reads a source record itself: each component is written under its own name with its own value, and Jackson annotations on the record, its components, its methods and the enums it holds change nothing. If the annotation renamed a component in the output, rename the component. If `@JsonProperty` mapped an upstream response's name onto the component, use `@JsonAlias` for that name instead. If it changed how a value is written (`@JsonValue`, `@JsonSerialize`, `@JsonFormat`), give the component the type you want written: for a single sensitive value, a `String` with `@SensitiveData` instead of a record that serialises as one; for a formatted date, a `String` holding the text. If it hid a component (`@JsonIgnore`), remove the component or classify it. If it added keys to the object (`@JsonAnyGetter`), the keys can no longer sit beside the components: hold them in a named `Map<String, Object>` or `JsonNode` component. That component is never descended into. Classify it as a whole: unannotated or marked `@NonSensitive`, the profile's setting for unclassified data decides the whole value, and the bundled DEFAULT profile refuses it. If the keys must be handled one by one, serve that payload as a configured JSON source instead. `@JsonAlias`, `@JsonCreator`, `@JsonDeserialize`, `@JsonSetter` and `@JsonIgnoreProperties(ignoreUnknown = true)` stay allowed, because they affect only how an adapter reads the upstream response. To fix `SOURCE_MODEL_RECORD_NOT_DECLARED`, declare the position as the record type itself, not `Object`, an interface, `Record`, a type variable, an unbounded wildcard or a raw collection. To fix `SOURCE_MODEL_NOT_READABLE`, which can happen only on the module path, add an unqualified `opens` for the model's package to its `module-info.java`. To fix `SOURCE_MODEL_NOT_A_RECORD` on an `AtomicReference` or another reference type, hold the value itself, or an `Optional` of it. On a `Stream`, an `Iterator` or another single-use type, collect it into a `List` first. To fix `SOURCE_MODEL_FOREIGN_NODE`, build the tree from Jackson's own node types and do not put a Java object into it (`putPOJO`).
 
 A response type is never exposed through MCP unless it carries
 `@LlmExposedModel`, and every field of an annotated type must then carry one

@@ -194,6 +194,40 @@ the boundary is crossed; catching a violation depends on review.
    .privacyModulesDoNotMutateObjectGraphsReflectively` forbids `Unsafe`,
    reflective field mutation (`Field#set*` and `setAccessible`), and field
    access through `VarHandle` or `MethodHandles` in the privacy modules.
+
+   **Trust model for source adapters.** Source-adapter code, including the source
+   model's classes and every object the adapter builds, is trusted deployer code
+   that runs in-process with the server's rights; a hostile adapter is out of
+   scope. Upstream data is untrusted, but it cannot create instances of the
+   adapter's classes or attach callbacks; only adapter code can. What the engine
+   guarantees: when it reads a source value it never calls a method directly on a
+   value of a class the deployment supplies (record components are read from their
+   fields; only JDK and Jackson classes are read through their methods: holders and
+   `JsonNode`s by exact class, leaves, collections, maps and map keys by being loaded
+   by the bootstrap or platform loader; dynamic proxies and hidden classes are
+   refused). The helper objects such a call returns (an iterator, an entry set, a
+   map entry) are used as returned, and when the adapter built the collection, map
+   or node over a class of its own they are its code, which is the residual below.
+   The engine reads the value once into a tree it alone holds, and the scrubbed
+   output is built from that tree, so nothing the adapter's code does during the
+   read can make the output differ from what was scrubbed. When reading a value
+   throws, that source alone is refused (`SOURCE_VALUE_READ_FAILED`) and the other
+   sources still answer. Collecting the raw values for the cross-source leak check
+   never throws (except a JVM error such as `OutOfMemoryError`) and is bounded in
+   depth, not in size. The residual: a callback of the adapter's own reached
+   through a JDK object it built runs during the read. The known carriers are a
+   `JsonNode` built over the adapter's own map or list, a `URL` with a custom
+   `URLStreamHandler`, a `Calendar` with a custom `TimeZone`, `LongAccumulator` and
+   `DoubleAccumulator`, sorted-set sub-views with a custom comparator,
+   `Collections.unmodifiable*` and other JDK wrappers, JDK lambdas around the
+   adapter's functions, and an overriding `getCause()` on an exception the
+   adapter's code throws during the read, which the engine calls to look for its
+   own refusal. Such a callback can stall a request or exhaust the process's memory
+   (an iterator that never ends), it can make the read throw, which refuses that
+   source, and a value it changes between reads can escape the cross-source leak
+   check; it cannot release data unscrubbed. Example: a deployer's
+   `ExampleOrderAdapter`, for `https://api.example.invalid`, that returns a list
+   over its own iterator stays inside this residual.
 3. **A response that fails validation is not returned.** There is no
    log-and-continue path. **Enforced** — `ValidationBoundaryTest
    .validationFailureIsNotReturned` injects a validator refusal and asserts a
@@ -377,6 +411,22 @@ all of these is in `design-review.md` under the section named.
   recompiles and changes imports, and an operator has to change the verifier
   command and any log level set on a renamed category. The old to new tables are
   in `migration-0.6.md`.
+- **2026-10-27 — The engine builds the scrub tree of a source record itself, and
+  Jackson annotations on source models are refused at startup (task 290; OD-288-3
+  (b)).** Jackson writes leaves only; each record component is read from its field
+  and written under its own name, so no annotation can rename, hide, reshape or
+  swap a component's value. An annotation an author wrote expected to change the
+  output, so startup refuses it with `SOURCE_MODEL_JACKSON_ANNOTATION` rather than
+  ignoring it, except a closed allowlist of deserialisation-only annotations
+  (`@JsonAlias`, `@JsonCreator`, `@JsonDeserialize`, `@JsonSetter`,
+  `@JsonIgnoreProperties(ignoreUnknown = true)`). It supersedes the D-173-2
+  allowance of `@JsonSerialize`, `@JsonAnyGetter`, `@JsonValue` and the rest on
+  source records, and the 2026-10-08 rejection of refusing
+  `@JsonSerialize(keyUsing=...)`. Source-adapter code is trusted and upstream data
+  is not: see the trust model under boundary 2. Rejected: ignoring the annotations
+  silently, which would start emitting a component an `@JsonIgnore` meant to hide.
+  Cost: a model that carried one of these annotations must change (the fix list is
+  in `extending.md`).
 - **2026-10-08 — Map keys and dynamic property names are undeclared data
   (architect review of task 175).** A key is not reviewed code, and it can be
   personal data (a map keyed by email address), so it is treated like an
@@ -387,7 +437,8 @@ all of these is in `design-review.md` under the section named.
   data", and pinned by `UndeclaredPropertyNameTest`, `UndeclaredKeyRefusalTest`
   and `UndeclaredNameToolResultScanTest`. Rejected: refusing
   `@JsonSerialize(keyUsing=...)` on source records, which would remove a choice
-  D-173-2 deliberately leaves to the model author. Update
+  D-173-2 deliberately leaves to the model author (reversed 2026-10-27, see the
+  entry above that refuses Jackson annotations on source models). Update
   (task 194, D-070-7): `SensitivePatternValidator` and `RawValueLeakValidator`
   scan property names as well as values, always on and under every profile with
   no SPI change, so a map keyed by an email address is refused even under
