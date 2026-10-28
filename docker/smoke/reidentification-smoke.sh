@@ -19,6 +19,13 @@ WAIT_SECONDS=240
 CASE_ID="CASE-SMOKE-1"
 SUBJECT_ID="1001"
 WORK="$(mktemp -d)"
+# The operator audience compose gives both the issuer and the server. Exported, so the
+# stack started below and the tokens minted here always agree. The scope is not
+# configurable in compose (docker/server/application.yaml fixes it), so it is a constant.
+QUICKSTART_OPERATOR_AUDIENCE="${QUICKSTART_OPERATOR_AUDIENCE:-data-prism-quickstart-operator}"
+export QUICKSTART_OPERATOR_AUDIENCE
+OP_AUD="$QUICKSTART_OPERATOR_AUDIENCE"
+OP_SCOPE="operator"
 
 files=(-f "${ROOT}/compose.yaml")
 if [ "${SMOKE_IMAGES:-build}" != "published" ]; then
@@ -84,12 +91,11 @@ mint() { # <subject> <roles-json> <audience> <scope>
     | json_get access_token
 }
 
-OP_AUD="data-prism-quickstart-operator"
 MCP_TOKEN="$(mint smoke-requester '["investigator"]' "" "")"
 # The requester also holds the approver role, so refusing their own approval is
 # the four-eyes rule (SELF_APPROVAL) and not merely a missing permission.
-REQ_TOKEN="$(mint smoke-requester '["investigator","approver"]' "$OP_AUD" operator)"
-APP_TOKEN="$(mint smoke-approver '["approver"]' "$OP_AUD" operator)"
+REQ_TOKEN="$(mint smoke-requester '["investigator","approver"]' "$OP_AUD" "$OP_SCOPE")"
+APP_TOKEN="$(mint smoke-approver '["approver"]' "$OP_AUD" "$OP_SCOPE")"
 [ -n "$MCP_TOKEN" ] && [ -n "$REQ_TOKEN" ] && [ -n "$APP_TOKEN" ] || fail "could not mint the three tokens"
 
 echo "== get_entity_context for CUSTOMER ${SUBJECT_ID}"

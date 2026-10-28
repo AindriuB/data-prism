@@ -54,6 +54,9 @@ By default it builds the four quickstart images from this working tree
 them first, so an image of the same tag built from a working tree on your
 machine is replaced rather than used.
 
+The script honours `QUICKSTART_OPERATOR_AUDIENCE` as compose does (default
+`data-prism-quickstart-operator`) and exports it to the stack it starts.
+
 The stack runs under its own project name (`data-prism-reid-smoke-<pid>`) on
 ephemeral loopback ports, so a quickstart you have running on 8080, 8081 or
 8544 is untouched. Every wait is bounded (240 seconds for the stack, 3 seconds
