@@ -140,6 +140,32 @@ class UnverifiedMemberTest {
         assertThat(new HazelcastScopeBudget(a).tryRead("CASE-1", "subject-1", 3)).isTrue();
     }
 
+    /** A member that is already unverified when an instance starts gets no grace from it. */
+    @Test
+    void anInstanceThatStartsWhileAnUnverifiedMemberHasBeenPresentLongerThanTheGraceDoesNotServe() {
+        ClusterSecuritySettings settings = Fixture.settings(UnverifiedMemberAction.REFUSE);
+        a = fixture.keyed(name, first, all, TestMembers.KEYS, settings, metricsA, logA, true);
+        outsider = Fixture.plain(name, first + 2, all);
+        assertThat(Fixture.awaitMembers(a, 2)).isTrue();
+        for (int step = 0; step < 2; step++) {
+            fixture.clock.advance(GRACE);
+            a.memberCards().orElseThrow().tick();
+        }
+        assertThat(a.securityStatus().serving()).isFalse();
+
+        PrivacyCluster late = fixture.keyed(name, first + 1, all, TestMembers.KEYS, settings, new Fixture.Metrics(),
+                new RecordingLogger(), true);
+        assertThat(Fixture.awaitMembers(late, 3)).isTrue();
+        late.memberCards().orElseThrow().tick();
+        assertThat(late.securityStatus().serving()).as("no grace for a member that was there first").isFalse();
+        assertThat(late.securityStatus().reason()).isEqualTo(ClusterSecurityStatus.Reason.UNVERIFIED_MEMBER);
+
+        outsider.shutdown();
+        assertThat(Fixture.awaitMembers(late, 2)).isTrue();
+        late.memberCards().orElseThrow().tick();
+        assertThat(late.securityStatus().serving()).as("it serves once nobody is unverified").isTrue();
+    }
+
     // ---- the gate on the stores that never call the sealer ---------------------------------------------------
 
     private static final class Generator implements SyntheticValueSource {

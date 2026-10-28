@@ -102,6 +102,16 @@ class ClusterKeyMismatchTest {
                 PrivacyCluster.CALLER_RATE_MAP, PrivacyCluster.OVERSIGHT_MAP);
     }
 
+    @Test
+    void aSentinelThatIsNotAStringIsAMismatchNotAClassCastException() {
+        HazelcastInstance planter = Fixture.plain(name, first + 1, both);
+        planter.getMap(PrivacyCluster.MEMBER_CARD_MAP).put(ClusterSentinel.KEY, 42);
+
+        Throwable refused = catchThrowable(() -> start(0, TestMembers.KEYS));
+        assertThat(refused).isInstanceOf(PrivacyClusterRefusal.class);
+        assertThat(((PrivacyClusterRefusal) refused).code()).isEqualTo(Code.CLUSTER_KEY_MISMATCH);
+    }
+
     // ---- the rows of the 4.6 table ---------------------------------------------------------------------------
 
     @Test

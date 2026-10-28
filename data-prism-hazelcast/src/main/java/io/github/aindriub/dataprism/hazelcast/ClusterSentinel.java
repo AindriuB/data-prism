@@ -3,11 +3,18 @@ package io.github.aindriub.dataprism.hazelcast;
 import com.hazelcast.map.IMap;
 import io.github.aindriub.dataprism.hazelcast.seal.ClusterKeys;
 import io.github.aindriub.dataprism.hazelcast.seal.Opened;
+import io.github.aindriub.dataprism.hazelcast.seal.SealedWrites;
 import io.github.aindriub.dataprism.hazelcast.seal.Sealer;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Duration;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * The sentinel of docs/plan/design/cluster-security.md 4.7: a sealed constant that the first member writes, under
@@ -45,15 +52,40 @@ final class ClusterSentinel {
     private final PrivacyCluster cluster;
     private final ClusterKeys keys;
     private final Sealer sealer;
+    private final Duration writeTimeout;
 
-    ClusterSentinel(PrivacyCluster cluster, ClusterKeys keys, Sealer sealer) {
+    ClusterSentinel(PrivacyCluster cluster, ClusterKeys keys, Sealer sealer, Duration writeTimeout) {
         this.cluster = Objects.requireNonNull(cluster, "cluster");
         this.keys = Objects.requireNonNull(keys, "keys");
         this.sealer = Objects.requireNonNull(sealer, "sealer");
+        this.writeTimeout = Objects.requireNonNull(writeTimeout, "writeTimeout");
     }
 
-    private IMap<String, String> map() {
+    /** Any value can be stored under a card key by a member without the key, so values are read as objects. */
+    private IMap<String, Object> map() {
         return cluster.instance().getMap(PrivacyCluster.MEMBER_CARD_MAP);
+    }
+
+    /**
+     * Waits for a write at most {@code timeout}. A write to a key that another member has locked would otherwise
+     * wait for as long as the lock is held.
+     *
+     * @throws IllegalStateException if the write did not finish in time, failed, or the thread was interrupted
+     */
+    static <T> T bounded(CompletionStage<T> write, Duration timeout) {
+        CompletableFuture<T> future = write.toCompletableFuture();
+        try {
+            return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException late) {
+            future.cancel(true);
+            throw new IllegalStateException("a member card write did not finish in time");
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            future.cancel(true);
+            throw new IllegalStateException("a member card write was interrupted");
+        } catch (ExecutionException failed) {
+            throw new IllegalStateException("a member card write failed");
+        }
     }
 
     /** Reads the sentinel and reports which held key opens it; writes nothing. */
@@ -66,23 +98,29 @@ final class ClusterSentinel {
      * sentinel that another member wrote in the meantime is the one judged.
      */
     Outcome ensure() {
-        IMap<String, String> cards = map();
-        String stored = cards.get(KEY);
+        IMap<String, Object> cards = map();
+        Object stored = cards.get(KEY);
         if (stored == null) {
             String sealed = sealer.seal(PrivacyCluster.MEMBER_CARD_MAP, KEY, CONSTANT);
-            stored = cards.putIfAbsent(KEY, sealed);
-            if (stored == null) {
+            // An entry processor does not wait for a lock on the key; it writes only if the sentinel is still absent.
+            IMap<String, String> typed = cluster.instance().getMap(PrivacyCluster.MEMBER_CARD_MAP);
+            if (Boolean.TRUE.equals(bounded(typed.submitToKey(KEY, SealedWrites.compareAndSet(null, sealed, 0)),
+                    writeTimeout))) {
                 return Outcome.CURRENT;
             }
+            stored = cards.get(KEY);
         }
         return outcomeOf(stored);
     }
 
-    private Outcome outcomeOf(String stored) {
+    private Outcome outcomeOf(Object stored) {
         if (stored == null) {
             return Outcome.ABSENT;
         }
-        Opened opened = sealer.open(PrivacyCluster.MEMBER_CARD_MAP, KEY, stored);
+        if (!(stored instanceof String envelope)) {
+            return Outcome.MISMATCH;
+        }
+        Opened opened = sealer.open(PrivacyCluster.MEMBER_CARD_MAP, KEY, envelope);
         if (opened.outcome() != Opened.Outcome.AUTHENTIC
                 || !MessageDigest.isEqual(CONSTANT, opened.plaintext())) {
             return Outcome.MISMATCH;

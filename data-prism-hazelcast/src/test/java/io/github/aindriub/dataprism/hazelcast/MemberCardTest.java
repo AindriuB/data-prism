@@ -25,6 +25,7 @@ import io.github.aindriub.dataprism.hazelcast.seal.Opened;
 import io.github.aindriub.dataprism.hazelcast.seal.Sealer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -137,7 +138,8 @@ class MemberCardTest {
 
         /** Looks at the cluster only when a test says so: the schedule is an hour. */
         PrivacyCluster.Environment environment(Metrics metrics, RecordingLogger log) {
-            return new PrivacyCluster.Environment(clock, metrics, log.logger(), Duration.ofHours(1));
+            return new PrivacyCluster.Environment(clock, metrics, log.logger(), Duration.ofHours(1),
+                    Duration.ofSeconds(1));
         }
 
         PrivacyCluster keyed(String clusterName, int port, List<String> peers, ClusterKeys keys,
@@ -374,7 +376,7 @@ class MemberCardTest {
         cards.tick();
         assertThat(cards.verifiedMembers()).as("inside the replayed card's lease").contains(memberB);
 
-        fixture.clock.advance(Duration.ofSeconds(21));
+        fixture.clock.advance(Duration.ofSeconds(26));
         cards.tick();
         assertThat(cards.verifiedMembers()).as("past the replayed card's lease").doesNotContain(memberB);
         assertThat(cards.unverifiedCount()).isEqualTo(1);
@@ -441,6 +443,102 @@ class MemberCardTest {
         cards.tick();
         assertThat(cards.unverifiedCount()).isEqualTo(1);
         assertThat(pair.metricsA().count(Metric.CLUSTER_SEAL_TAMPER)).isEqualTo(1);
+    }
+
+    // ---- review round: values that are not cards, locked keys, versions, skew ------------------------------
+
+    /** A member without the key puts a non-String under every card key: the next look must not keep "serving". */
+    @Test
+    void aNonStringCardIsUnverifiedAndTheMemberStopsServingOnceTheGraceIsOver() {
+        Pair pair = pair();
+        MemberCards cards = pair.a().memberCards().orElseThrow();
+        IMap<String, Object> raw = pair.b().instance().getMap(PrivacyCluster.MEMBER_CARD_MAP);
+        for (UUID member : List.of(Fixture.uuidOf(pair.a()), Fixture.uuidOf(pair.b()))) {
+            raw.put(cards.keyForTest(member), 42);
+        }
+
+        cards.tick();
+        assertThat(pair.a().securityStatus().unverifiedCount()).isEqualTo(2);
+        fixture.clock.advance(GRACE.multipliedBy(4));
+        cards.tick();
+
+        // A's tick republished its own card; B's is still the planted 42.
+        assertThat(pair.a().securityStatus().serving()).isFalse();
+        assertThatThrownBy(() -> new HazelcastScopeBudget(pair.a()).tryRead("CASE-1", "subject-1", 3))
+                .isInstanceOf(ClusterOperationRefusedException.class);
+    }
+
+    @Test
+    void aFailedLookNeverKeepsTheLastStatus() {
+        Pair pair = pair();
+        MemberCards cards = pair.a().memberCards().orElseThrow();
+        cards.tick();
+        assertThat(pair.a().securityStatus().serving()).isTrue();
+
+        cards.lookFault = () -> {
+            throw new IllegalStateException("the cluster could not be read");
+        };
+        cards.tick();
+        assertThat(pair.a().securityStatus().serving()).isFalse();
+        assertThatThrownBy(pair.a()::servingInstance).isInstanceOf(ClusterOperationRefusedException.class);
+
+        cards.lookFault = () -> { };
+        cards.tick();
+        assertThat(pair.a().securityStatus().serving()).as("a good look serves again").isTrue();
+    }
+
+    /** A member that locks the card key of another must not stall its refresh, its status or its close. */
+    @Test
+    @Timeout(120)
+    void aLockedCardKeyDoesNotBlockTheRefreshAndTheMemberStopsServing() {
+        Pair pair = pair();
+        MemberCards cards = pair.a().memberCards().orElseThrow();
+        IMap<String, String> lockerView = Fixture.cardMap(pair.b());
+        String keyA = cards.keyForTest(Fixture.uuidOf(pair.a()));
+        lockerView.lock(keyA);
+
+        fixture.clock.advance(GRACE.multipliedBy(4));
+        pair.b().memberCards().orElseThrow().tick();
+        long started = System.nanoTime();
+        cards.tick();
+        assertThat(Duration.ofNanos(System.nanoTime() - started)).as("the tick is bounded")
+                .isLessThan(Duration.ofSeconds(30));
+
+        assertThat(pair.a().securityStatus().serving()).isFalse();
+        assertThatThrownBy(() -> new HazelcastScopeBudget(pair.a()).tryRead("CASE-1", "subject-1", 3))
+                .isInstanceOf(ClusterOperationRefusedException.class);
+        pair.a().close();
+    }
+
+    @Test
+    void anAuthenticCardOfAnotherFormatVersionIsNotAVerifiedCard() {
+        Pair pair = pair();
+        MemberCards cards = pair.a().memberCards().orElseThrow();
+        UUID memberB = Fixture.uuidOf(pair.b());
+        Card other = new Card(memberB, MemberCards.FORMAT_VERSION + 1, List.of("test-cluster-1"), Map.of(), 0L,
+                fixture.clock.instant().plus(LEASE));
+        Fixture.cardMap(pair.a()).set(cards.keyForTest(memberB), cards.sealForTest(memberB, other));
+
+        cards.tick();
+        assertThat(cards.verifiedMembers()).doesNotContain(memberB);
+        assertThat(cards.unverifiedCount()).isEqualTo(1);
+    }
+
+    @Test
+    void aReaderWhoseClockRunsAheadByLessThanTheSkewToleranceKeepsAHealthyMember() {
+        Pair pair = pair();
+        MemberCards cards = pair.a().memberCards().orElseThrow();
+        UUID memberB = Fixture.uuidOf(pair.b());
+        Duration skew = ClusterSecuritySettings.DEFAULT_CLOCK_SKEW_TOLERANCE;
+
+        // B's card runs out at LEASE; the reader is ahead by just under the tolerance.
+        fixture.clock.advance(LEASE.plus(skew).minusSeconds(1));
+        cards.tick();
+        assertThat(cards.verifiedMembers()).as("inside lease plus tolerance").contains(memberB);
+
+        fixture.clock.advance(Duration.ofSeconds(1));
+        cards.tick();
+        assertThat(cards.verifiedMembers()).as("past lease plus tolerance").doesNotContain(memberB);
     }
 
     // ---- disagreeing keys ------------------------------------------------------------------------------------

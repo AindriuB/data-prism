@@ -37,6 +37,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.LongSupplier;
 
 /**
@@ -154,17 +155,30 @@ public final class MemberCards {
     private final Duration tickInterval;
     /** Where the status changes are logged; a seam for tests. */
     volatile Logger log;
+    /** Runs at the start of every look; a seam for tests. */
+    volatile Runnable lookFault = () -> { };
 
     /** Key id to key check value, for every purpose key this member holds. */
     private final Map<String, byte[]> ownCheckValues = new LinkedHashMap<>();
     private volatile LongSupplier pauseSequence = () -> 0L;
 
-    private final Object lock = new Object();
-    private boolean started;
-    private boolean closed;
+    /**
+     * Guards the in-memory judgement only. No cluster call is made while it is held: a member that locks a card key
+     * must not be able to stall the refresh, the status or {@link #close()}.
+     */
+    private final Object state = new Object();
+    private final AtomicBoolean started = new AtomicBoolean();
+    private volatile boolean running;
+    private volatile boolean closed;
     private Instant publishedAt;
     private UUID listenerId;
     private ScheduledExecutorService executor;
+    private final Duration writeTimeout;
+    /** When the latest look finished, and when the latest card write succeeded, on the injected clock. */
+    private volatile Instant lastLookAt;
+    private volatile Instant lastPublishAt;
+    /** The first look of an instance judges the members already there: they get no grace. */
+    private boolean firstLook = true;
 
     /** The cards found at the latest look, by member UUID. */
     private volatile Map<UUID, Card> verified = Map.of();
@@ -187,6 +201,7 @@ public final class MemberCards {
         this.clock = environment.clock();
         this.metrics = environment.metrics();
         this.tickInterval = environment.tickInterval();
+        this.writeTimeout = environment.cardWriteTimeout();
         this.log = environment.log();
         for (ClusterKeys.Key held : keys.held()) {
             ownCheckValues.put(held.id(), KeyCheckValue.compute(held.id(), held.material()));
@@ -236,10 +251,16 @@ public final class MemberCards {
     public void addPurposeKey(String id, byte[] material) {
         Objects.requireNonNull(id, "id");
         Objects.requireNonNull(material, "material");
-        synchronized (lock) {
+        synchronized (state) {
             ownCheckValues.put(id, KeyCheckValue.compute(id, material));
-            if (started && !closed) {
+            // Due at the next tick even if the write below fails.
+            publishedAt = null;
+        }
+        if (running && !closed) {
+            try {
                 publish(clock.instant());
+            } catch (RuntimeException failed) {
+                log.debug("member card could not be published: {}", failed.getClass().getSimpleName());
             }
         }
     }
@@ -256,7 +277,21 @@ public final class MemberCards {
 
     /** Whether this member serves, and why not. */
     public ClusterSecurityStatus status() {
-        return status;
+        ClusterSecurityStatus current = status;
+        if (current.serving() && running) {
+            // Unknown is not serving: a look or a card write that has not finished within a lease means this member
+            // can neither see the others nor prove itself.
+            Instant now = clock.instant();
+            if (lapsed(lastLookAt, now) || lapsed(lastPublishAt, now)) {
+                return ClusterSecurityStatus.notServing(ClusterSecurityStatus.Reason.CARDS_UNAVAILABLE,
+                        current.memberCount(), current.unverifiedCount());
+            }
+        }
+        return current;
+    }
+
+    private boolean lapsed(Instant at, Instant now) {
+        return at == null || !now.isBefore(at.plus(settings.pauseLease()));
     }
 
     // ---- lifecycle -----------------------------------------------------------------------------------------
@@ -266,49 +301,53 @@ public final class MemberCards {
      * {@code members.unverified} gauge. The sentinel has been checked before this runs.
      */
     void start() {
-        synchronized (lock) {
-            if (started || closed) {
-                return;
-            }
-            started = true;
-            executor = Executors.newSingleThreadScheduledExecutor(task -> {
-                Thread thread = new Thread(task, "dataprism-member-cards");
-                thread.setDaemon(true);
-                return thread;
-            });
-            publish(clock.instant());
-            listenerId = cluster.instance().getCluster().addMembershipListener(new MembershipListener() {
-                @Override
-                public void memberAdded(MembershipEvent event) {
-                    lookSoon();
-                }
-
-                @Override
-                public void memberRemoved(MembershipEvent event) {
-                    lookSoon();
-                }
-            });
-            registerGauges(metrics);
-            look(clock.instant());
-            executor.scheduleWithFixedDelay(this::tick, tickInterval.toMillis(), tickInterval.toMillis(),
-                    TimeUnit.MILLISECONDS);
+        if (closed || !started.compareAndSet(false, true)) {
+            return;
         }
+        executor = Executors.newSingleThreadScheduledExecutor(task -> {
+            Thread thread = new Thread(task, "dataprism-member-cards");
+            thread.setDaemon(true);
+            return thread;
+        });
+        publish(clock.instant());
+        UUID id = cluster.instance().getCluster().addMembershipListener(new MembershipListener() {
+            @Override
+            public void memberAdded(MembershipEvent event) {
+                lookSoon();
+            }
+
+            @Override
+            public void memberRemoved(MembershipEvent event) {
+                lookSoon();
+            }
+        });
+        synchronized (state) {
+            listenerId = id;
+        }
+        registerGauges(metrics);
+        look(clock.instant());
+        running = true;
+        executor.scheduleWithFixedDelay(this::tick, tickInterval.toMillis(), tickInterval.toMillis(),
+                TimeUnit.MILLISECONDS);
     }
 
     void close() {
-        synchronized (lock) {
-            closed = true;
-            if (listenerId != null) {
-                try {
-                    cluster.instance().getCluster().removeMembershipListener(listenerId);
-                } catch (RuntimeException ignored) {
-                    // The instance may already be gone.
-                }
-                listenerId = null;
+        closed = true;
+        UUID id;
+        synchronized (state) {
+            id = listenerId;
+            listenerId = null;
+        }
+        if (id != null) {
+            try {
+                cluster.instance().getCluster().removeMembershipListener(id);
+            } catch (RuntimeException ignored) {
+                // The instance may already be gone.
             }
-            if (executor != null) {
-                executor.shutdownNow();
-            }
+        }
+        if (executor != null) {
+            // Interrupts a card write that is waiting on a key somebody else has locked.
+            executor.shutdownNow();
         }
     }
 
@@ -316,10 +355,8 @@ public final class MemberCards {
     private void lookSoon() {
         try {
             executor.execute(() -> {
-                synchronized (lock) {
-                    if (!closed) {
-                        look(clock.instant());
-                    }
+                if (!closed) {
+                    look(clock.instant());
                 }
             });
         } catch (RejectedExecutionException closing) {
@@ -329,36 +366,38 @@ public final class MemberCards {
 
     /**
      * One pass of the schedule: refresh this member's card if half its lease is spent, then look at every member's.
-     * The schedule runs it; a test with an injected clock runs it by hand.
+     * The schedule runs it; a test with an injected clock runs it by hand. Neither step can run longer than the
+     * write timeout plus the reads, and a step that fails leaves the member not serving, never with its old status.
      */
     void tick() {
-        synchronized (lock) {
-            if (!started || closed) {
-                return;
-            }
+        if (!running || closed) {
+            return;
+        }
+        Instant now = clock.instant();
+        boolean due;
+        synchronized (state) {
+            due = publishedAt == null || !now.isBefore(publishedAt.plus(settings.pauseLease().dividedBy(2)));
+        }
+        if (due) {
             try {
-                Instant now = clock.instant();
-                if (publishedAt == null || !now.isBefore(publishedAt.plus(settings.pauseLease().dividedBy(2)))) {
-                    publish(now);
-                }
-                look(now);
-            } catch (RuntimeException unreadable) {
-                // Keep the last status: the cluster call failing is the cluster's state, not a verdict on a member.
-                log.debug("member cards could not be refreshed: {}", unreadable.getClass().getSimpleName());
+                publish(now);
+            } catch (RuntimeException unwritten) {
+                // The old card stays until its lease ends; once a lease has gone by without a write, status() closes.
+                log.debug("member card could not be refreshed: {}", unwritten.getClass().getSimpleName());
             }
         }
+        look(now);
     }
 
     /** Writes this member's card now, whatever its age. For tests that move the clock. */
     void publishNow() {
-        synchronized (lock) {
-            publish(clock.instant());
-        }
+        publish(clock.instant());
     }
 
     // ---- the card of this member ------------------------------------------------------------------------
 
-    private IMap<String, String> map() {
+    /** Any value can be stored under a card key by a member without the key, so values are read as objects. */
+    private IMap<String, Object> map() {
         return cluster.instance().getMap(PrivacyCluster.MEMBER_CARD_MAP);
     }
 
@@ -366,30 +405,77 @@ public final class MemberCards {
         return cluster.keyedNames().mapKey(PrivacyCluster.MEMBER_CARD_MAP, member.toString());
     }
 
+    /** Writes the card, waiting at most the write timeout for a key somebody else may have locked. */
     private void publish(Instant now) {
         UUID self = cluster.instance().getCluster().getLocalMember().getUuid();
+        Map<String, byte[]> checks;
+        synchronized (state) {
+            checks = new LinkedHashMap<>(ownCheckValues);
+        }
         Card card = new Card(self, FORMAT_VERSION, keys.held().stream().map(ClusterKeys.Key::id).toList(),
-                ownCheckValues, pauseSequence.getAsLong(), now.plus(settings.pauseLease()));
+                checks, pauseSequence.getAsLong(), now.plus(settings.pauseLease()));
         String key = keyOf(self);
         String sealed = sealer.seal(PrivacyCluster.MEMBER_CARD_MAP, key, card.encode());
-        map().set(key, sealed, settings.pauseLease().toMillis(), TimeUnit.MILLISECONDS);
-        publishedAt = now;
+        ClusterSentinel.bounded(map().setAsync(key, sealed, settings.pauseLease().toMillis(),
+                TimeUnit.MILLISECONDS), writeTimeout);
+        synchronized (state) {
+            publishedAt = now;
+            lastPublishAt = now;
+        }
     }
 
     // ---- the cards of the members ------------------------------------------------------------------------
 
+    /** What one look read from the cluster, before anything is judged. */
+    private record Snapshot(List<UUID> members, Map<UUID, Object> stored, ClusterSentinel.Outcome sentinel) {
+    }
+
+    /**
+     * Reads every member's card and the sentinel, then judges them. Any failure to read leaves the member not
+     * serving until a look succeeds: the last status is never kept on a failure.
+     */
     private void look(Instant now) {
-        List<Member> members = new ArrayList<>(cluster.instance().getCluster().getMembers());
-        IMap<String, String> cards = map();
+        try {
+            lookFault.run();
+            Snapshot snapshot = read();
+            synchronized (state) {
+                judge(snapshot, now);
+            }
+        } catch (RuntimeException unreadable) {
+            log.debug("member cards could not be read: {}", unreadable.getClass().getSimpleName());
+            synchronized (state) {
+                ClusterSecurityStatus previous = status;
+                status = ClusterSecurityStatus.notServing(ClusterSecurityStatus.Reason.CARDS_UNAVAILABLE,
+                        previous.memberCount(), previous.unverifiedCount());
+            }
+        }
+    }
+
+    /** No lock is held: the reads and the write of an absent sentinel go to the cluster. */
+    private Snapshot read() {
+        List<UUID> members = cluster.instance().getCluster().getMembers().stream().map(Member::getUuid).toList();
+        IMap<String, Object> cards = map();
+        Map<UUID, Object> stored = new LinkedHashMap<>();
+        for (UUID member : members) {
+            stored.put(member, cards.get(keyOf(member)));
+        }
+        ClusterSentinel.Outcome outcome = sentinel.read();
+        if (outcome == ClusterSentinel.Outcome.ABSENT) {
+            // Deleted by someone: write it back under the current key, then judge what is there.
+            outcome = sentinel.ensure();
+        }
+        return new Snapshot(members, stored, outcome);
+    }
+
+    private void judge(Snapshot snapshot, Instant now) {
         Map<UUID, Card> found = new LinkedHashMap<>();
-        Set<UUID> live = new HashSet<>();
+        Set<UUID> live = new HashSet<>(snapshot.members());
         boolean keyCheckMismatch = false;
-        for (Member member : members) {
-            UUID uuid = member.getUuid();
-            live.add(uuid);
-            Card card = valid(uuid, cards.get(keyOf(uuid)), now);
+        for (UUID uuid : snapshot.members()) {
+            Card card = valid(uuid, snapshot.stored().get(uuid), now);
             if (card == null) {
-                unverifiedSince.putIfAbsent(uuid, now);
+                // A member that was there before this instance could judge it gets no grace from it.
+                unverifiedSince.putIfAbsent(uuid, firstLook ? Instant.MIN : now);
                 continue;
             }
             unverifiedSince.remove(uuid);
@@ -401,30 +487,34 @@ public final class MemberCards {
         mismatchesCounted.removeIf(pair -> live.stream().noneMatch(uuid -> pair.startsWith(uuid + "/")));
         verified = Map.copyOf(found);
 
-        boolean sentinelMismatch = sentinelMismatch();
-        int unverified = members.size() - found.size();
+        boolean sentinelMismatch = snapshot.sentinel() == ClusterSentinel.Outcome.MISMATCH;
+        int members = snapshot.members().size();
+        int unverified = members - found.size();
         boolean overGrace = unverifiedSince.values().stream()
                 .anyMatch(since -> !now.isBefore(since.plus(settings.unverifiedMemberGrace())));
         ClusterSecurityStatus next;
         if (sentinelMismatch) {
             next = ClusterSecurityStatus.notServing(ClusterSecurityStatus.Reason.SENTINEL_MISMATCH,
-                    members.size(), unverified);
+                    members, unverified);
         } else if (keyCheckMismatch) {
             next = ClusterSecurityStatus.notServing(ClusterSecurityStatus.Reason.KEY_CHECK_MISMATCH,
-                    members.size(), unverified);
+                    members, unverified);
         } else if (overGrace && settings.unverifiedMemberAction() == UnverifiedMemberAction.REFUSE) {
             next = ClusterSecurityStatus.notServing(ClusterSecurityStatus.Reason.UNVERIFIED_MEMBER,
-                    members.size(), unverified);
+                    members, unverified);
         } else {
-            next = ClusterSecurityStatus.serving(members.size(), unverified);
+            next = ClusterSecurityStatus.serving(members, unverified);
         }
         status = next;
+        firstLook = false;
+        lastLookAt = now;
         report(next, overGrace);
     }
 
     /** The card in {@code stored} if it is one of {@code member}'s, inside its lease; otherwise null. */
-    private Card valid(UUID member, String stored, Instant now) {
-        if (stored == null) {
+    private Card valid(UUID member, Object value, Instant now) {
+        if (!(value instanceof String stored)) {
+            // Absent, or something a member without the key stored that is not even text: no card.
             rejected.remove(member);
             return null;
         }
@@ -443,7 +533,8 @@ public final class MemberCards {
             return null;
         }
         rejected.remove(member);
-        return now.isBefore(card.leaseEnd()) ? card : null;
+        // The reader's clock may run ahead of the writer's by up to the skew tolerance.
+        return now.isBefore(card.leaseEnd().plus(settings.clockSkewTolerance())) ? card : null;
     }
 
     /** Whether the card holds a key check value that differs from this member's for a key id both hold. */
@@ -463,19 +554,6 @@ public final class MemberCards {
             }
         }
         return differs;
-    }
-
-    private boolean sentinelMismatch() {
-        try {
-            ClusterSentinel.Outcome outcome = sentinel.read();
-            if (outcome == ClusterSentinel.Outcome.ABSENT) {
-                // Deleted by someone: write it back under the current key, then judge what is there.
-                outcome = sentinel.ensure();
-            }
-            return outcome == ClusterSentinel.Outcome.MISMATCH;
-        } catch (RuntimeException unreadable) {
-            return false;
-        }
     }
 
     /** One line per change of state, by constant text: no member, key or address. */

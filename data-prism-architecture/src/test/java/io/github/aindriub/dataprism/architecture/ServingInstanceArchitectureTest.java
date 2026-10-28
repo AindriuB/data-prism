@@ -1,9 +1,10 @@
 package io.github.aindriub.dataprism.architecture;
 
+import com.hazelcast.core.HazelcastInstance;
 import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
-import com.tngtech.archunit.core.domain.JavaMethodCall;
+import com.tngtech.archunit.core.domain.JavaAccess;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.lang.ArchRule;
@@ -17,6 +18,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -76,16 +78,15 @@ class ServingInstanceArchitectureTest {
                         c -> !isAllowed(c)));
     }
 
-    private static DescribedPredicate<JavaMethodCall> callsTheUngatedInstance() {
-        return DescribedPredicate.describe("call PrivacyCluster.instance()", call ->
-                call.getTarget().getName().equals("instance")
-                        && call.getTarget().getRawParameterTypes().isEmpty()
-                        && call.getTargetOwner().isEquivalentTo(PrivacyCluster.class));
+    /** A call of, or a method reference to, {@code PrivacyCluster.instance()}. */
+    private static DescribedPredicate<JavaAccess<?>> reachesTheUngatedInstance() {
+        return DescribedPredicate.describe("call or reference PrivacyCluster.instance()", access ->
+                access.getTarget().getFullName().equals(PRIVACY_CLUSTER + ".instance()"));
     }
 
     private static ArchRule noCallToTheUngatedInstance(DescribedPredicate<JavaClass> origin) {
         return noClasses().that(origin)
-                .should().callMethodWhere(callsTheUngatedInstance())
+                .should().accessTargetWhere(reachesTheUngatedInstance())
                 .because("a store reaches its map through PrivacyCluster.servingInstance(), which refuses while the "
                         + "member is not serving; instance() is ungated so card refresh and pause state still work")
                 .allowEmptyShould(true);
@@ -111,10 +112,10 @@ class ServingInstanceArchitectureTest {
             assertThat(storeLikeClassOfTheHazelcastModule().test(CLASSES.get(BASE + allowed))).as(allowed)
                     .isFalse();
         }
-        assertThat(CLASSES.get(BASE + "MemberCards").getMethodCallsFromSelf().stream()
-                .anyMatch(callsTheUngatedInstance())).isTrue();
-        assertThat(CLASSES.get(BASE + "HazelcastOversightState").getMethodCallsFromSelf().stream()
-                .anyMatch(callsTheUngatedInstance())).isTrue();
+        assertThat(CLASSES.get(BASE + "MemberCards").getAccessesFromSelf().stream()
+                .anyMatch(reachesTheUngatedInstance())).isTrue();
+        assertThat(CLASSES.get(BASE + "HazelcastOversightState").getAccessesFromSelf().stream()
+                .anyMatch(reachesTheUngatedInstance())).isTrue();
     }
 
     // ---- fixtures: the rule must be able to fail ----
@@ -142,6 +143,19 @@ class ServingInstanceArchitectureTest {
 
         Object map() {
             return maps.apply("dataprism.fixture");
+        }
+    }
+
+    /** The same through a method reference. */
+    static final class FixtureStoreReferencingInstance {
+        private final Supplier<HazelcastInstance> instances;
+
+        FixtureStoreReferencingInstance(PrivacyCluster cluster) {
+            this.instances = cluster::instance;
+        }
+
+        Object map() {
+            return instances.get().getMap("dataprism.fixture");
         }
     }
 
@@ -173,6 +187,8 @@ class ServingInstanceArchitectureTest {
                 FixtureStoreCallingInstance.class).hasViolation()).isTrue();
         assertThat(evaluate(noCallToTheUngatedInstance(named(FixtureStoreCallingInstanceInALambda.class)),
                 FixtureStoreCallingInstanceInALambda.class).hasViolation()).isTrue();
+        assertThat(evaluate(noCallToTheUngatedInstance(named(FixtureStoreReferencingInstance.class)),
+                FixtureStoreReferencingInstance.class).hasViolation()).isTrue();
     }
 
     @Test

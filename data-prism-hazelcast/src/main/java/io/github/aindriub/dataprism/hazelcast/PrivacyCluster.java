@@ -180,13 +180,19 @@ public final class PrivacyCluster implements AutoCloseable {
      * where the status changes are logged, and how often the cards look at the cluster. The public entry points use
      * {@link #system()}; tests inject their own.
      */
-    record Environment(Clock clock, PrivacyMetrics metrics, Logger log, Duration tickInterval) {
+    record Environment(Clock clock, PrivacyMetrics metrics, Logger log, Duration tickInterval,
+                       Duration cardWriteTimeout) {
+
+        Environment(Clock clock, PrivacyMetrics metrics, Logger log, Duration tickInterval) {
+            this(clock, metrics, log, tickInterval, DEFAULT_CARD_WRITE_TIMEOUT);
+        }
 
         Environment {
             Objects.requireNonNull(clock, "clock");
             Objects.requireNonNull(metrics, "metrics");
             Objects.requireNonNull(log, "log");
             Objects.requireNonNull(tickInterval, "tickInterval");
+            Objects.requireNonNull(cardWriteTimeout, "cardWriteTimeout");
         }
 
         static Environment system() {
@@ -194,6 +200,9 @@ public final class PrivacyCluster implements AutoCloseable {
                     LoggerFactory.getLogger(MemberCards.class), Duration.ofSeconds(1));
         }
     }
+
+    /** How long a write of a card or of the sentinel may take before it counts as failed. */
+    static final Duration DEFAULT_CARD_WRITE_TIMEOUT = Duration.ofSeconds(5);
 
     private PrivacyCluster(HazelcastInstance instance, boolean reidentificationEnabled,
                            Duration approvalSweepInterval, ClusterKeys keys, boolean owned,
@@ -220,7 +229,7 @@ public final class PrivacyCluster implements AutoCloseable {
             // The cards and the sentinel use a sealer with no gate: a member that is not serving can still prove
             // itself and read what proves the others.
             Sealer ungated = Sealer.builder(keys, environment.metrics()).clock(environment.clock()).build();
-            this.sentinel = new ClusterSentinel(this, keys, ungated);
+            this.sentinel = new ClusterSentinel(this, keys, ungated, environment.cardWriteTimeout());
             this.cards = new MemberCards(this, keys, settings, ungated, sentinel, environment);
         }
         this.reidentificationEnabled = reidentificationEnabled;

@@ -23,7 +23,9 @@ public record ClusterSecurityStatus(boolean serving, Reason reason, int memberCo
         /** A member has had no valid card for longer than the grace period and the action is {@code refuse}. */
         UNVERIFIED_MEMBER,
         /** A verified member's key check value differs from this member's for a key id both hold. */
-        KEY_CHECK_MISMATCH
+        KEY_CHECK_MISMATCH,
+        /** The cards could not be read or refreshed, or the last look is older than a lease: unknown is not serving. */
+        CARDS_UNAVAILABLE
     }
 
     public ClusterSecurityStatus {
@@ -49,6 +51,7 @@ public record ClusterSecurityStatus(boolean serving, Reason reason, int memberCo
             case SENTINEL_MISMATCH -> "not serving: the cluster sentinel does not open under a held key";
             case UNVERIFIED_MEMBER -> "not serving: a member has no valid member card";
             case KEY_CHECK_MISMATCH -> "not serving: a member's key check value differs";
+            case CARDS_UNAVAILABLE -> "not serving: the member cards could not be read or refreshed";
         };
         return state + " (members " + memberCount + ", unverified " + unverifiedCount + ")";
     }
