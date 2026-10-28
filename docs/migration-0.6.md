@@ -263,6 +263,8 @@ engine still classifies whatever they produce. The one deliberate difference fro
 Jackson 2 that you might hit: `@JsonAppend(attrs = @Attr("<component name>"))` is
 refused, where Jackson 2 printed the component.
 
+Superseded in 0.8.0: Jackson annotations on source models are refused at startup with `SOURCE_MODEL_JACKSON_ANNOTATION`; see `docs/migration-0.8.md`.
+
 Map keys: a declared key type that is an interface or abstract (`CharSequence`,
 `Comparable`, `Serializable`) is checked per key at request time. JDK key types
 pass; a user class is refused at any depth. JDK `StringBuilder` and `CharBuffer`

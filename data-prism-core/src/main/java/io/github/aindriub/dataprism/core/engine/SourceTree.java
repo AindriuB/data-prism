@@ -358,9 +358,6 @@ public final class SourceTree {
     static void refuseIfReadByGetters(Class<?> type) {
         try {
             READER.writerFor(type);
-            if (type.isRecord()) {
-                SourceModels.refuseForeignProperties(type, READER._serializationContext().findValueSerializer(type));
-            }
         } catch (JacksonException e) {
             PrivacyRefusedException refused = SourceRecordWalker.refusalIn(e);
             if (refused != null) {
