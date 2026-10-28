@@ -36,8 +36,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * <p>Reservations: a reservation changes a subject counter and the scope total, which are two entries, so one
  * entry processor cannot do both (a processor sees only its own entry, and the keys are keyed names that do not
- * share a partition). Every operation on a scope therefore takes the scope's lock, the lock on the scope-total key,
- * bounded by the lock timeout, and updates each counter by its own atomic processor. Each processor enforces its own
+ * share a partition). Every {@code reserve}, {@code release} and {@code forget} on a scope therefore takes the
+ * scope's lock, the lock on the scope-total key, bounded by the lock timeout, and updates each counter by its own
+ * atomic processor. A {@code tryRead} takes the scope's lock only while the scope has no total; after that it needs
+ * only its subject's lock, so reads of different subjects do not wait for each other. Each processor enforces its own
  * budget, so neither counter can pass its budget even if a lock lease expires; the lock makes the pair one unit. If
  * the second update fails the first is undone, and if the undo fails the counter is left over-counted, never
  * under-counted. The total entry is created by the first {@code reserve} of a scope, from the counters already
@@ -46,10 +48,11 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public final class HazelcastScopeBudget implements ScopeBudget {
 
-    private static volatile Logger LOG = LoggerFactory.getLogger(HazelcastScopeBudget.class);
+    private static final Logger DEFAULT_LOG = LoggerFactory.getLogger(HazelcastScopeBudget.class);
 
     private final PrivacyCluster cluster;
     private final Duration lockTimeout;
+    private final Logger log;
 
     /** With the default lock timeout of two seconds. */
     public HazelcastScopeBudget(PrivacyCluster cluster) {
@@ -62,8 +65,14 @@ public final class HazelcastScopeBudget implements ScopeBudget {
      * @throws IllegalArgumentException if the timeout is outside that range
      */
     public HazelcastScopeBudget(PrivacyCluster cluster, Duration lockTimeout) {
+        this(cluster, lockTimeout, DEFAULT_LOG);
+    }
+
+    /** As the public constructor, logging to {@code log}; for tests, so that no logger is shared between them. */
+    HazelcastScopeBudget(PrivacyCluster cluster, Duration lockTimeout, Logger log) {
         this.cluster = Objects.requireNonNull(cluster, "cluster");
         this.lockTimeout = ClusterLocks.checked(lockTimeout);
+        this.log = Objects.requireNonNull(log, "log");
     }
 
     /** What an update processor reports. */
@@ -112,15 +121,23 @@ public final class HazelcastScopeBudget implements ScopeBudget {
         String subjectKey = cluster.scopeKeys().budget(scopeId, subjectId);
         String scopeKey = cluster.scopeKeys().budgetTotal(scopeId);
         IMap<String, Integer> counts;
+        boolean scopeLocked = false;
         // Obtaining the map and taking the lock are themselves cluster calls and
         // throw when the member is gone. They belong inside the guard: leaving
         // them outside meant the fail-closed path could not run, because the
         // exception escaped before reaching it.
         try {
             counts = counts();
-            ClusterLocks.acquire(counts, scopeKey, lockTimeout);
+            // Once the scope has its total a read is a pair of atomic additions, each under its own subject's lock,
+            // so reads of different subjects do not wait for each other. The scope's lock is taken only while the
+            // total does not exist, to keep the first reservation's build of it from counting a read twice or
+            // missing one.
+            if (!counts.containsKey(scopeKey)) {
+                ClusterLocks.acquire(counts, scopeKey, lockTimeout);
+                scopeLocked = true;
+            }
         } catch (ClusterLockTimeoutException held) {
-            LOG.error("read budget lock not obtained within {}; refusing the read", lockTimeout);
+            log.error("read budget lock not obtained within {}; refusing the read", lockTimeout);
             throw held;
         } catch (ClusterOperationRefusedException rejected) {
             throw rejected;
@@ -132,7 +149,7 @@ public final class HazelcastScopeBudget implements ScopeBudget {
             try {
                 ClusterLocks.acquire(counts, subjectKey, lockTimeout);
             } catch (ClusterLockTimeoutException held) {
-                LOG.error("read budget lock not obtained within {}; refusing the read", lockTimeout);
+                log.error("read budget lock not obtained within {}; refusing the read", lockTimeout);
                 throw held;
             } catch (ClusterOperationRefusedException rejected) {
                 throw rejected;
@@ -164,7 +181,9 @@ public final class HazelcastScopeBudget implements ScopeBudget {
                 ClusterLocks.release(counts, subjectKey);
             }
         } finally {
-            ClusterLocks.release(counts, scopeKey);
+            if (scopeLocked) {
+                ClusterLocks.release(counts, scopeKey);
+            }
         }
     }
 
@@ -246,10 +265,11 @@ public final class HazelcastScopeBudget implements ScopeBudget {
      * reservation, one built by hand, one from another budget instance, or one from a scope this instance has since
      * forgotten) does nothing. Taken under the scope's lock, then the subject's.
      *
-     * <p>The subject counter is lowered first, then the total. If the cluster fails after the reads were taken out
-     * of the reservation, they stay charged: a failed total update is followed by putting the reads back on the
-     * subject. If that restore fails too, the subject count is accurate (the reads really were returned) and the
-     * total stays over-counted by them, which fails closed; one WARN line says so.
+     * <p>The subject counter is lowered first, then the total, and only then are the reads taken out of the
+     * reservation. If the cluster fails first, the reservation is untouched and the release can be tried again; a
+     * failed total update is followed by putting the reads back on the subject. If that restore fails too, the
+     * subject count is accurate (the reads really were returned), the reservation is spent, and the total stays
+     * over-counted by them, which fails closed; one WARN line says so.
      *
      * <p><strong>Residual (OD-285-1 (a)).</strong> "A release after {@code forget} does nothing" holds for a
      * {@code forget} made on this instance only. A {@code forget} or {@code ScopeIdentityIndex.endScope} on another
@@ -259,7 +279,8 @@ public final class HazelcastScopeBudget implements ScopeBudget {
      * first or depend on 226.
      *
      * @throws ClusterLockTimeoutException if the scope's lock was not obtained within the lock timeout
-     * @throws ClusterOperationRefusedException if the cluster rejected the lock
+     * @throws ClusterOperationRefusedException if the cluster rejected the lock or an update; the failure is not
+     *                                          swallowed, and the reservation can be released again
      */
     @Override
     public void release(ReadReservation reservation, int unused) {
@@ -282,32 +303,46 @@ public final class HazelcastScopeBudget implements ScopeBudget {
             if (!origin.live) {
                 return;
             }
-            int give = reservation.takeUnused(unused);
+            // What the reservation still holds is known here from this instance's own record, under both locks, so
+            // nothing is taken out of the reservation until the counters have been lowered: a failure leaves it
+            // whole, and the release can be tried again.
+            int give = Math.min(unused, origin.held.get());
             if (give == 0) {
                 return;
             }
-            if (origin.held.addAndGet(-give) == 0) {
-                untrack(origin);
-            }
+            int back;
             try {
-                int back = counts.executeOnKey(subjectKey, new Subtract(give));
-                if (back > 0) {
-                    try {
-                        counts.executeOnKey(scopeKey, new Subtract(back));
-                    } catch (RuntimeException totalFailed) {
-                        restore(counts, subjectKey, back);
-                        throw totalFailed;
-                    }
-                }
+                back = counts.executeOnKey(subjectKey, new Subtract(give));
             } catch (RuntimeException failed) {
-                LOG.error("read budget unavailable; the reads of a release stay charged: {}",
-                        failed.getClass().getSimpleName());
+                throw ClusterRefusals.mapped(failed);
             }
+            if (back > 0) {
+                try {
+                    counts.executeOnKey(scopeKey, new Subtract(back));
+                } catch (RuntimeException totalFailed) {
+                    if (restore(counts, subjectKey, back)) {
+                        throw ClusterRefusals.mapped(totalFailed);
+                    }
+                    // The subject really gave the reads back and the total did not: the reservation is spent and
+                    // the total stays over-counted, which fails closed.
+                    spend(origin, reservation, give);
+                    throw ClusterRefusals.mapped(totalFailed);
+                }
+            }
+            spend(origin, reservation, give);
         } finally {
             if (subjectLocked) {
                 ClusterLocks.release(counts, subjectKey);
             }
             ClusterLocks.release(counts, scopeKey);
+        }
+    }
+
+    /** Takes {@code give} reads out of the reservation, whose counters have been lowered by them. */
+    private void spend(Origin origin, ReadReservation reservation, int give) {
+        reservation.takeUnused(give);
+        if (origin.held.addAndGet(-give) == 0) {
+            untrack(origin);
         }
     }
 
@@ -326,14 +361,34 @@ public final class HazelcastScopeBudget implements ScopeBudget {
         });
     }
 
-    /** @return reads counted against the whole scope, across subjects */
+    /**
+     * @return reads counted against the whole scope, across subjects. A scope that has counters and no total gets its
+     *         total here, under the scope's lock, as the first {@code reserve} would, so later calls read one entry
+     *         and not every counter of the scope.
+     * @throws ClusterLockTimeoutException if the scope has no total and its lock was not obtained in time
+     */
     @Override
     public int scopeReads(String scopeId) {
         Objects.requireNonNull(scopeId, "scopeId");
         IMap<String, Integer> counts = counts();
         String scopeKey = cluster.scopeKeys().budgetTotal(scopeId);
         Integer total = counts.get(scopeKey);
-        return total != null ? total : (int) Math.min(Integer.MAX_VALUE, sumOfSubjects(counts, scopeId, scopeKey));
+        if (total != null) {
+            return total;
+        }
+        counts = lockScope(scopeKey);
+        try {
+            if (sumOfSubjects(counts, scopeId, scopeKey) == 0) {
+                return 0;
+            }
+            ensureTotal(counts, scopeId, scopeKey);
+            Integer built = counts.get(scopeKey);
+            return built == null ? 0 : built;
+        } catch (RuntimeException failed) {
+            throw ClusterRefusals.mapped(failed);
+        } finally {
+            ClusterLocks.release(counts, scopeKey);
+        }
     }
 
     /**
@@ -361,7 +416,7 @@ public final class HazelcastScopeBudget implements ScopeBudget {
         try {
             ClusterLocks.acquire(counts, subjectKey, lockTimeout);
         } catch (ClusterLockTimeoutException held) {
-            LOG.error("read budget lock not obtained within {}; refusing", lockTimeout);
+            log.error("read budget lock not obtained within {}; refusing", lockTimeout);
             throw held;
         } catch (ClusterOperationRefusedException rejected) {
             throw rejected;
@@ -377,7 +432,7 @@ public final class HazelcastScopeBudget implements ScopeBudget {
             ClusterLocks.acquire(counts, scopeKey, lockTimeout);
             return counts;
         } catch (ClusterLockTimeoutException held) {
-            LOG.error("read budget lock not obtained within {}; refusing", lockTimeout);
+            log.error("read budget lock not obtained within {}; refusing", lockTimeout);
             throw held;
         } catch (ClusterOperationRefusedException rejected) {
             throw rejected;
@@ -387,22 +442,24 @@ public final class HazelcastScopeBudget implements ScopeBudget {
     }
 
     /** Takes {@code reads} back off a counter. If that fails too the counter stays over-counted; one line says so. */
-    private static void undo(IMap<String, Integer> counts, String key, int reads) {
+    private void undo(IMap<String, Integer> counts, String key, int reads) {
         try {
             counts.executeOnKey(key, new Subtract(reads));
         } catch (RuntimeException undoFailed) {
-            LOG.warn("read budget undo failed; a counter is left over-counted: {}",
+            log.warn("read budget undo failed; a counter is left over-counted: {}",
                     undoFailed.getClass().getSimpleName());
         }
     }
 
     /** Puts {@code reads} back on a counter after a release that could not finish. */
-    private static void restore(IMap<String, Integer> counts, String key, int reads) {
+    private boolean restore(IMap<String, Integer> counts, String key, int reads) {
         try {
             counts.executeOnKey(key, new AddWithin(reads, Integer.MAX_VALUE));
+            return true;
         } catch (RuntimeException restoreFailed) {
-            LOG.warn("read budget restore failed; the scope total is left over-counted: {}",
+            log.warn("read budget restore failed; the scope total is left over-counted: {}",
                     restoreFailed.getClass().getSimpleName());
+            return false;
         }
     }
 
@@ -446,8 +503,8 @@ public final class HazelcastScopeBudget implements ScopeBudget {
         }
     }
 
-    private static boolean refuse(RuntimeException clusterFailure) {
-        LOG.error("read budget unavailable; refusing the read rather than leaving it "
+    private boolean refuse(RuntimeException clusterFailure) {
+        log.error("read budget unavailable; refusing the read rather than leaving it "
                 + "uncounted: {}", clusterFailure.getClass().getSimpleName());
         return false;
     }
@@ -462,7 +519,9 @@ public final class HazelcastScopeBudget implements ScopeBudget {
      * {@link ScopeIdentityIndex#endScope} does not call this: it deletes the budget keys itself, under the one
      * deadline it shares across all its maps. Because {@code forget} can be called on its own, with no caller's
      * deadline, it takes a lock timeout of its own per key. Reservations this instance granted for the scope can no
-     * longer be released.
+     * longer be released, even when a partial sweep left some counters behind: those stay charged, so the scope is
+     * over-counted, which fails closed. The alternative, keeping the reservations valid, would let a release after
+     * the scope id is reused subtract from the new scope, an under-count and a way past the budget.
      *
      * @throws ClusterLockTimeoutException if the scope's lock or the lock of a key timed out; that count is left in
      *                                     place
@@ -494,13 +553,6 @@ public final class HazelcastScopeBudget implements ScopeBudget {
             }
             ClusterLocks.release(counts, scopeKey);
         }
-    }
-
-    /** Routes this class's log lines to {@code replacement} until the returned handle is closed; for tests. */
-    static AutoCloseable captureTo(Logger replacement) {
-        Logger previous = LOG;
-        LOG = replacement;
-        return () -> LOG = previous;
     }
 
     /** How many scopes this instance holds reservation records for; for tests. */
