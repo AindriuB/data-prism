@@ -114,11 +114,13 @@ class ClusterKeyConfigurationTest {
             case "tcp-ip" -> {
                 p.put("dataprism.hazelcast.join.members[0]", "127.0.0.1:5999");
                 p.put("dataprism.hazelcast.member.interface", "127.0.0.1");
+                p.put("dataprism.hazelcast.trusted-network", "true");
             }
             case "kubernetes" -> {
                 p.put("dataprism.hazelcast.join.kubernetes.namespace", "ns");
                 p.put("dataprism.hazelcast.join.kubernetes.service-name", "svc");
                 p.put("dataprism.hazelcast.member.interface", "10.0.*.*");
+                p.put("dataprism.hazelcast.trusted-network", "true");
             }
             default -> {
             }
