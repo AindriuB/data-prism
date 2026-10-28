@@ -91,6 +91,13 @@ import java.util.regex.Pattern;
  * set, and the Management Center trusted interfaces are set so that no client matches. A member that finds state
  * from before 0.8 refuses to start. {@link #using} checks a supplied instance for the same things it cannot change
  * and never shuts down an instance it did not start.
+ *
+ * <p>A member with keys proves it to the others. At start it reads the sentinel in the member-card map (writing it
+ * if absent) and refuses with {@code CLUSTER_KEY_MISMATCH} if no held key opens it; then it publishes a sealed member
+ * card and refreshes it. A joined member without a valid card past the grace period makes every instance report not
+ * serving (under the default {@code refuse}); {@link #securityStatus()} says so, and {@link #servingInstance()}
+ * refuses while it does. The stores reach their maps through {@link #servingInstance()}; {@link #instance()} is not
+ * gated. This detects a member that cannot be evicted: it is not prevention.
  */
 public final class PrivacyCluster implements AutoCloseable {
 

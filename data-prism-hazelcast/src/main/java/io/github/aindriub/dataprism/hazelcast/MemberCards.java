@@ -244,6 +244,16 @@ public final class MemberCards {
         }
     }
 
+    /**
+     * Registers the {@code members.unverified} gauge with {@code registry}. The member registers it with the metrics
+     * it was started with; an embedder that starts a member without metrics, or the health contributor of task 286,
+     * registers it with its own.
+     */
+    public void registerGauges(PrivacyMetrics registry) {
+        Objects.requireNonNull(registry, "registry").gauge(Metric.CLUSTER_MEMBERS_UNVERIFIED,
+                () -> status.unverifiedCount());
+    }
+
     /** Whether this member serves, and why not. */
     public ClusterSecurityStatus status() {
         return status;
@@ -278,7 +288,7 @@ public final class MemberCards {
                     lookSoon();
                 }
             });
-            metrics.gauge(Metric.CLUSTER_MEMBERS_UNVERIFIED, () -> status.unverifiedCount());
+            registerGauges(metrics);
             look(clock.instant());
             executor.scheduleWithFixedDelay(this::tick, tickInterval.toMillis(), tickInterval.toMillis(),
                     TimeUnit.MILLISECONDS);
