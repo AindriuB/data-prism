@@ -42,7 +42,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  * only its subject's lock, so reads of different subjects do not wait for each other. Each processor enforces its own
  * budget, so neither counter can pass its budget even if a lock lease expires. Under the scope's lock the pair is
  * one unit; the unlocked {@code tryRead} path updates the subject and the total under different locks, and a reader
- * may see one without the other for a moment, which only under-states the total. If the second update of a
+ * may see one without the other for a moment, which under-states the total for that moment only, never in a finished
+ * total. If the second update of a
  * {@code reserve} fails the first is undone, and if the undo fails the counter is left over-counted, never
  * under-counted. The total entry is created by the first {@code reserve} of a scope, from the counters already
  * there, so a scope that only ever uses {@code tryRead} holds one entry per subject, as before; from then on
@@ -50,7 +51,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * <p>Invariant: at every moment the scope total, when it is not being built, is at least the sum of the reads
  * granted in the scope, so a {@code reserve} never goes past the scope budget; it can be over-counted, never
- * under-counted. See {@code ensureTotal} for how a total is built without depending on any lock's lease.
+ * under-counted, except across scope-id reuse (see the residual in the {@code release} Javadoc), which task 226
+ * closes. See {@code ensureTotal} for how a total is built without depending on any lock's lease.
  */
 public final class HazelcastScopeBudget implements ScopeBudget {
 
@@ -140,8 +142,8 @@ public final class HazelcastScopeBudget implements ScopeBudget {
             counts = counts();
             // Once the scope has its total a read is a pair of atomic additions, each under its own subject's lock,
             // so reads of different subjects do not wait for each other. The scope's lock is taken only while the
-            // total does not exist, to keep the first reservation's build of it from counting a read twice or
-            // missing one.
+            // total does not exist, which spares two members the same build; the build is correct without it, because
+            // its marker makes every read be counted at least once.
             if (!counts.containsKey(scopeKey)) {
                 ClusterLocks.acquire(counts, scopeKey, lockTimeout);
                 scopeLocked = true;
@@ -308,7 +310,9 @@ public final class HazelcastScopeBudget implements ScopeBudget {
      * member does not reach this instance's reservations; if the scope id is then reused, a release of an old
      * reservation can subtract from the new scope's counters, clamped to what they hold. Stored scope generations
      * (task 226) close it. Whichever task first calls {@code forget} or {@code endScope} in production must close it
-     * first or depend on 226.
+     * first or depend on 226. The same family: a total builder whose lock lapsed can finish late, with a sum taken
+     * before a {@code forget} or {@code endScope}, onto a marker built after the scope id was reused, which
+     * under-counts the new scope.
      *
      * <p><strong>Residual (OD-285-3 (a)), the same family and needing no reservation.</strong> An unlocked
      * {@code tryRead} (the scope already has a total) lets go of its subject's lock before its update of the total. A
@@ -444,7 +448,8 @@ public final class HazelcastScopeBudget implements ScopeBudget {
      * summed, and the marker is replaced, atomically, by {@code sum + c}. A read whose subject counter was updated
      * before the marker is in the sum, because the sum is taken after the marker exists; a read whose total update
      * came after the marker is in c; the two overlap for a read in both, which counts it twice, an over-count. So at
-     * every moment the total, when not being built, is at least the sum of the reads granted in the scope.
+     * every moment the total, when not being built, is at least the sum of the reads granted in the scope, except
+     * across scope-id reuse (see the residual in the {@code release} Javadoc), which task 226 closes.
      *
      * <p>A builder that dies after the marker leaves it there. The next call finds a marker and finishes it the same
      * way, which cannot under-count for the same reason. Until then a {@code reserve} is refused, never granted

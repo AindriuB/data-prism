@@ -688,6 +688,39 @@ class HazelcastReservationTest {
     }
 
     @Test
+    void aReadThatLandsOnTheMarkerIsCountedInTheTotalTheBuilderFinishes() throws Exception {
+        assertThat(budgets[0].tryRead(SCOPE, "a", 5)).isTrue();
+        assertThat(budgets[0].tryRead(SCOPE, "a", 5)).isTrue();
+        String total = totalKey(SCOPE);
+        AtomicBoolean pauseNext = new AtomicBoolean(true);
+        CountDownLatch reached = new CountDownLatch(1);
+        CountDownLatch gate = new CountDownLatch(1);
+        // Held at the builder's finishing update: the marker exists and the subject counters are already summed.
+        var builder = new HazelcastScopeBudget(pausingOn(0,
+                key -> key.equals(total) && pauseNext.compareAndSet(true, false), reached, gate),
+                Duration.ofMillis(100));
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<ReadReservation> building = pool.submit(() -> builder.reserve(SCOPE, "x", 1, 10, 5));
+            assertThat(reached.await(10, TimeUnit.SECONDS)).isTrue();
+            // The marker is there, so this read takes the unlocked path; its add to the total waits for the
+            // builder's lock to lapse, and then lands on the marker, adding to its count.
+            assertThat(pool.submit(() -> budgets[1].tryRead(SCOPE, "b", 5)).get(30, TimeUnit.SECONDS)).isTrue();
+            gate.countDown();
+            assertThat(building.get(10, TimeUnit.SECONDS).granted()).isTrue();
+        } finally {
+            gate.countDown();
+            pool.shutdown();
+            assertThat(pool.awaitTermination(20, TimeUnit.SECONDS)).isTrue();
+        }
+        int subjects = budgets[1].reads(SCOPE, "a") + budgets[1].reads(SCOPE, "b") + budgets[1].reads(SCOPE, "x");
+        assertThat(subjects).isEqualTo(4);
+        assertThat(budgets[1].scopeReads(SCOPE)).isGreaterThanOrEqualTo(subjects);
+        // 4 of 5 are used; a reservation of 2 would make 6 and must be refused.
+        assertThat(budgets[1].reserve(SCOPE, "c", 2, 10, 5).refusedBy()).isEqualTo(Refusal.SCOPE_TOTAL);
+    }
+
+    @Test
     void aBuildThatDiedPartWayIsFinishedByTheNextReservationWithoutUnderCounting() {
         IMap<String, Integer> map = members[1].instance().getMap(PrivacyCluster.BUDGET_MAP);
         assertThat(budgets[0].tryRead(SCOPE, "a", 5)).isTrue();
