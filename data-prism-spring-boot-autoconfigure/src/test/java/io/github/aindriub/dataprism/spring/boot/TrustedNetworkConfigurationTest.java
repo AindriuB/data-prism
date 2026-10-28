@@ -93,8 +93,12 @@ class TrustedNetworkConfigurationTest {
      */
     private static void assertNotRefusedForTheNetwork(String mode, AssertableWebApplicationContext result) {
         if (result.getStartupFailure() != null) {
-            assertThat(rootMessage(result.getStartupFailure())).doesNotStartWith("PUBLIC_MEMBER_INTERFACE")
-                    .doesNotStartWith("MISSING_TRUSTED_NETWORK").doesNotStartWith("INVALID_TRUSTED_RANGE");
+            String all = everyMessage(result.getStartupFailure());
+            // The two environmental failures: no address on this host matches the pattern (tcp-ip), or there is no
+            // Kubernetes service account to discover with (kubernetes). Anything else is a real failure.
+            assertThat(all).as("an environmental failure, not a refusal")
+                    .containsAnyOf("No matching network interface", "Cannot bind to a given address",
+                            "Failed to configure discovery strategies");
         }
     }
 
@@ -200,10 +204,7 @@ class TrustedNetworkConfigurationTest {
         // Only an interface that is on this host can be bound, so the check is made on the verdict, which the
         // refusal-free path shows: the member is refused for binding a foreign address, never for the network.
         runner("embedded", p).run(result -> {
-            if (result.getStartupFailure() != null) {
-                assertThat(rootMessage(result.getStartupFailure())).doesNotStartWith("PUBLIC_MEMBER_INTERFACE")
-                        .doesNotStartWith("MISSING_TRUSTED_NETWORK").doesNotStartWith("INVALID_TRUSTED_RANGE");
-            }
+            assertNotRefusedForTheNetwork("tcp-ip", result);
         });
         String warning = output.getAll().lines().filter(l -> l.contains("WARN") && l.contains("trusted-ranges"))
                 .findFirst().orElseThrow();
@@ -270,19 +271,17 @@ class TrustedNetworkConfigurationTest {
     @org.junit.jupiter.params.provider.ValueSource(strings = {"hazelcast.local.publicAddress",
             "hazelcast.local.localAddress"})
     void a_private_or_trusted_advertised_address_is_not_refused(String property) {
-        System.setProperty(property, "10.0.0.5:5701");
+        // hazelcast.local.localAddress takes a host only; publicAddress may carry a port.
+        String port = property.endsWith("localAddress") ? "" : ":5701";
+        System.setProperty(property, "10.0.0.5" + port);
         runner("embedded", joining("tcp-ip", "10.0.*.*")).run(result -> {
-            if (result.getStartupFailure() != null) {
-                assertThat(rootMessage(result.getStartupFailure())).doesNotStartWith("PUBLIC_MEMBER_INTERFACE");
-            }
+            assertNotRefusedForTheNetwork("tcp-ip", result);
         });
-        System.setProperty(property, "198.51.100.7:5701");
+        System.setProperty(property, "198.51.100.7" + port);
         Map<String, String> p = joining("tcp-ip", "10.0.*.*");
         p.put(RANGES + "[0]", "198.51.100.0/24");
         runner("embedded", p).run(result -> {
-            if (result.getStartupFailure() != null) {
-                assertThat(rootMessage(result.getStartupFailure())).doesNotStartWith("PUBLIC_MEMBER_INTERFACE");
-            }
+            assertNotRefusedForTheNetwork("tcp-ip", result);
         });
     }
 

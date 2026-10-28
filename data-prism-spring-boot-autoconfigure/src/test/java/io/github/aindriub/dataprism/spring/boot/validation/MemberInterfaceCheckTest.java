@@ -42,6 +42,17 @@ class MemberInterfaceCheckTest {
     }
 
     @Test
+    void rangesWithoutTheAssertionAreSaidToCountForNothingInThePublicInterfaceMessage() {
+        assertThatThrownBy(() -> MemberInterfaceCheck.check("203.0.113.*", false, List.of("203.0.113.0/24")))
+                .isInstanceOf(DataPrismConfigurationException.class)
+                .hasMessageStartingWith("PUBLIC_MEMBER_INTERFACE:")
+                .hasMessageContaining("trusted-ranges count only with dataprism.hazelcast.trusted-network: true")
+                .hasMessageNotContaining("203.0.113");
+        assertThatThrownBy(() -> MemberInterfaceCheck.check("203.0.113.*", false, List.of()))
+                .hasMessageNotContaining("count only with");
+    }
+
+    @Test
     void aTrustedRangeCoveringTheInterfacePasses() {
         MemberInterfaceCheck.check("203.0.113.*", true, List.of("203.0.113.0/24"));
     }

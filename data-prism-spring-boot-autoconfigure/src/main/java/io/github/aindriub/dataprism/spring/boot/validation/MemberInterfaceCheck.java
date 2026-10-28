@@ -42,7 +42,9 @@ final class MemberInterfaceCheck {
                             + "(hazelcast.local.localAddress, hazelcast.local.publicAddress) or a bind-any setting "
                             + "(hazelcast.socket.bind.any, hazelcast.socket.server.bind.any) reaches beyond the "
                             + "private blocks 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 and 127.0.0.0/8; narrow it "
-                            + "or name the block in dataprism.hazelcast.member.trusted-ranges");
+                            + "or name the block in dataprism.hazelcast.member.trusted-ranges"
+                            + (!trustedNetwork && !trustedRanges.isEmpty()
+                            ? "; trusted-ranges count only with dataprism.hazelcast.trusted-network: true" : ""));
         }
         if (!trustedNetwork) {
             throw new DataPrismConfigurationException("MISSING_TRUSTED_NETWORK",

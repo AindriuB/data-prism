@@ -155,6 +155,48 @@ class TrustedNetworkTest {
         assertThat(verdict("10.0.*.*")).isEqualTo(Verdict.TRUSTED);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"fe80::1", "ff02::1", "2001:db8::5", "fc00::1x"})
+    void a_link_local_multicast_or_global_ipv6_advertised_address_is_not_private(String address) {
+        assertThat(TrustedNetwork.evaluate(on("10.0.*.*").setProperty("hazelcast.local.publicAddress", address),
+                List.of())).isEqualTo(Verdict.PUBLIC_MEMBER_INTERFACE);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"fc00::1", "fd12:3456::1", "::1"})
+    void unique_local_and_loopback_ipv6_are_private(String address) {
+        assertThat(TrustedNetwork.evaluate(on("10.0.*.*").setProperty("hazelcast.local.publicAddress", address),
+                List.of())).isEqualTo(Verdict.TRUSTED);
+    }
+
+    @Test
+    void an_enabled_member_address_provider_is_public_because_it_bypasses_the_interface_list() {
+        Config config = on("10.0.0.1");
+        config.getNetworkConfig().getMemberAddressProviderConfig().setEnabled(true)
+                .setImplementation(new com.hazelcast.spi.MemberAddressProvider() {
+                    @Override public java.net.InetSocketAddress getBindAddress() {
+                        return new java.net.InetSocketAddress("0.0.0.0", 5701);
+                    }
+
+                    @Override public java.net.InetSocketAddress getBindAddress(
+                            com.hazelcast.instance.EndpointQualifier qualifier) {
+                        return getBindAddress();
+                    }
+
+                    @Override public java.net.InetSocketAddress getPublicAddress() {
+                        return new java.net.InetSocketAddress("198.51.100.7", 5701);
+                    }
+
+                    @Override public java.net.InetSocketAddress getPublicAddress(
+                            com.hazelcast.instance.EndpointQualifier qualifier) {
+                        return getPublicAddress();
+                    }
+                });
+        assertThat(TrustedNetwork.evaluate(config, List.of())).isEqualTo(Verdict.PUBLIC_MEMBER_INTERFACE);
+        config.getNetworkConfig().getMemberAddressProviderConfig().setEnabled(false);
+        assertThat(TrustedNetwork.evaluate(config, List.of())).isEqualTo(Verdict.TRUSTED);
+    }
+
     @Test
     void a_name_as_an_advertised_address_is_not_trusted() {
         assertThat(TrustedNetwork.evaluate(on("10.0.*.*").setProperty("hazelcast.local.publicAddress",

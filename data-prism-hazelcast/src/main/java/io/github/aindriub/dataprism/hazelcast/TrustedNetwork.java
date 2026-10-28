@@ -118,6 +118,11 @@ public final class TrustedNetwork {
                 || Boolean.getBoolean(ClusterProperty.SOCKET_SERVER_BIND_ANY.getName())) {
             return false;
         }
+        // An enabled member address provider supplies the bind and public addresses itself and bypasses the interface
+        // list, so what it returns cannot be judged here: refused.
+        if (config.getNetworkConfig().getMemberAddressProviderConfig().isEnabled()) {
+            return false;
+        }
         InterfacesConfig interfaces = config.getNetworkConfig().getInterfaces();
         if (!interfaces.isEnabled() || interfaces.getInterfaces().isEmpty()) {
             return false;
