@@ -44,6 +44,7 @@ import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -218,7 +219,9 @@ public final class PrivacyCluster implements AutoCloseable {
         this.names = new KeyedNames(effective);
         this.scopeKeys = new ScopeKeys(names);
         // A member with keys serves only while its security status says so; a solo member has nothing to verify.
-        ServingGate gate = keys == null ? ServingGate.open() : new MemberServingGate(this::securityStatus);
+        // The sealer stays registered on the instance until its last wrapper closes, so its gate must belong to the
+        // instance and not to the wrapper that registered it (see instanceStatus).
+        ServingGate gate = keys == null ? ServingGate.open() : new MemberServingGate(() -> instanceStatus(instance));
         SealedWrites.register(instance, effective, Sealer.builder(effective, environment.metrics())
                 .clock(environment.clock()).servingGate(gate).build(), names);
         this.sealingRegistered.set(true);
@@ -231,6 +234,9 @@ public final class PrivacyCluster implements AutoCloseable {
             Sealer ungated = Sealer.builder(keys, environment.metrics()).clock(environment.clock()).build();
             this.sentinel = new ClusterSentinel(this, keys, ungated, environment.cardWriteTimeout());
             this.cards = new MemberCards(this, keys, settings, ungated, sentinel, environment);
+        }
+        if (cards != null) {
+            liveWrappers(instance).add(this);
         }
         this.reidentificationEnabled = reidentificationEnabled;
         this.approvalSweepInterval = approvalSweepInterval;
@@ -300,6 +306,35 @@ public final class PrivacyCluster implements AutoCloseable {
     }
 
     private static final String SOLO_KEYS_CONTEXT_KEY = "dataprism.cluster.solo.keys";
+    private static final String LIVE_WRAPPERS_CONTEXT_KEY = "dataprism.cluster.live.wrappers";
+
+    /**
+     * The keyed wrappers of {@code instance} that are not closed, kept in its member-local user context beside the
+     * registered sealer, which belongs to the instance and outlives the wrapper that registered it.
+     */
+    @SuppressWarnings("unchecked")
+    private static Set<PrivacyCluster> liveWrappers(HazelcastInstance instance) {
+        return (Set<PrivacyCluster>) instance.getUserContext().computeIfAbsent(LIVE_WRAPPERS_CONTEXT_KEY,
+                key -> ConcurrentHashMap.<PrivacyCluster>newKeySet());
+    }
+
+    /**
+     * What the registered sealer's gate asks: the member serves while it has at least one live wrapper and every
+     * live wrapper says it serves. A closed wrapper no longer speaks for the instance, however stale its cards;
+     * with no live wrapper nobody keeps the cards, so the gate is closed.
+     */
+    private static ClusterSecurityStatus instanceStatus(HazelcastInstance instance) {
+        ClusterSecurityStatus first = null;
+        for (PrivacyCluster wrapper : liveWrappers(instance)) {
+            ClusterSecurityStatus status = wrapper.securityStatus();
+            if (!status.serving()) {
+                return status;
+            }
+            first = status;
+        }
+        return first != null ? first
+                : ClusterSecurityStatus.notServing(ClusterSecurityStatus.Reason.CARDS_UNAVAILABLE, 0, 0);
+    }
 
     /**
      * The random cluster and name keys of a keyless solo instance, drawn once per {@code HazelcastInstance}: every
@@ -1354,6 +1389,11 @@ public final class PrivacyCluster implements AutoCloseable {
     public void close() {
         if (cards != null) {
             cards.close();
+            try {
+                liveWrappers(instance).remove(this);
+            } catch (RuntimeException ignored) {
+                // The instance may already be gone.
+            }
         }
         removeListeners();
         legacyChecks.shutdownNow();

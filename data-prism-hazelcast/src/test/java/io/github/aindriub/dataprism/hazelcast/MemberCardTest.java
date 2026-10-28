@@ -629,6 +629,57 @@ class MemberCardTest {
         assertThat(pair.a().securityStatus().serving()).as("the next tick publishes again").isTrue();
     }
 
+    // ---- two wrappers of one instance ----------------------------------------------------------------------
+
+    /** Two wrappers share one member and one registered sealer; the sealer's gate is the instance's, not the first's. */
+    private PrivacyCluster[] twoWrappers() {
+        String name = TestMembers.uniqueName("wrappers");
+        int port = FreePorts.consecutive(1);
+        Config config = PrivacyCluster.configure(ClusterMembership.tcpIp(name, List.of("127.0.0.1:" + port))
+                .withPort(port).withInterface("127.0.0.1").toConfig());
+        HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
+        var environment = fixture.environment(new Fixture.Metrics(), new RecordingLogger());
+        var settings = Fixture.settings(UnverifiedMemberAction.REFUSE);
+        PrivacyCluster first = PrivacyCluster.using(instance, false, Duration.ofMinutes(1), TestMembers.KEYS,
+                settings, environment);
+        PrivacyCluster second = PrivacyCluster.using(instance, false, Duration.ofMinutes(1), TestMembers.KEYS,
+                settings, environment);
+        return new PrivacyCluster[] {first, second};
+    }
+
+    private static Sealer registeredSealer(PrivacyCluster wrapper) {
+        return (Sealer) wrapper.instance().getUserContext().get("dataprism.cluster.sealer");
+    }
+
+    @Test
+    @Timeout(120)
+    void closingTheFirstWrapperOfAnInstanceLeavesTheSecondServingAndItsSealedOperationsWorking() {
+        PrivacyCluster[] wrappers = twoWrappers();
+        Sealer registered = registeredSealer(wrappers[0]);
+        assertThat(registered.seal(PrivacyCluster.IDENTITY_MAP, "k", new byte[] {1})).isNotNull();
+
+        wrappers[0].close();
+        fixture.clock.advance(LEASE.plusSeconds(1));
+        wrappers[1].memberCards().orElseThrow().tick();
+
+        assertThat(wrappers[1].securityStatus().serving()).isTrue();
+        assertThat(registered.seal(PrivacyCluster.IDENTITY_MAP, "k", new byte[] {1}))
+                .as("the sealer registered by the first wrapper").isNotNull();
+        wrappers[1].close();
+    }
+
+    @Test
+    @Timeout(120)
+    void closingTheLastWrapperOfAnInstanceClosesTheGate() {
+        PrivacyCluster[] wrappers = twoWrappers();
+        Sealer registered = registeredSealer(wrappers[0]);
+        wrappers[0].close();
+        wrappers[1].close();
+
+        assertThatThrownBy(() -> registered.seal(PrivacyCluster.IDENTITY_MAP, "k", new byte[] {1}))
+                .isInstanceOf(ClusterOperationRefusedException.class);
+    }
+
     // ---- disagreeing keys ------------------------------------------------------------------------------------
 
     @Test
