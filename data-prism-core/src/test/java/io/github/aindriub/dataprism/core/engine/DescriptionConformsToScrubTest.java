@@ -662,7 +662,22 @@ class DescriptionConformsToScrubTest {
     void interfaceFieldIsLeftOut() {
         for (String profile : BOTH) {
             assertConforms(new DefaultFieldMetadataResolver(), profile,
-                    new ScrubPlanDescriberTest.WithIface("w-1", null, null, "OPEN"), false);
+                    new ScrubPlanDescriberTest.WithIface("w-1", null, null, null, "OPEN"), false);
+        }
+    }
+
+    @SensitiveObject
+    enum ProbeColour { RED, BLUE }
+
+    @LlmExposedModel
+    record ColourHolder(@InternalIdentifier String ref, @NonSensitive(reason = "x") ProbeColour colour) {
+    }
+
+    @Test
+    @DisplayName("an enum is a scalar even when its type is marked descendable")
+    void descendableEnumIsDescribed() {
+        for (String profile : BOTH) {
+            assertConforms(new DefaultFieldMetadataResolver(), profile, new ColourHolder("c-1", ProbeColour.RED));
         }
     }
 }

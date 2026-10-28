@@ -240,10 +240,15 @@ class ScrubPlanDescriberTest {
         public String name;
     }
 
+    static class PlainBean {
+        public String name;
+    }
+
     @LlmExposedModel
     record WithIface(@InternalIdentifier String ref,
                      @NonSensitive(reason = "x") Payload payload,
                      @NonSensitive(reason = "x") Bean bean,
+                     @NonSensitive(reason = "x") PlainBean plainBean,
                      @NonSensitive(reason = "enumerated") String state) {
     }
 
@@ -724,6 +729,17 @@ class ScrubPlanDescriberTest {
     void nonRecordTypeOmitsOnlyItsField() {
         Map<String, Protection> d = byPath(describe(WithIface.class, "DEFAULT", false));
 
-        assertThat(d).containsEntry("state", Protection.VERBATIM).doesNotContainKeys("payload", "bean", "bean.name");
+        assertThat(d).containsEntry("state", Protection.VERBATIM).doesNotContainKeys("payload", "bean", "bean.name", "plainBean");
+    }
+
+    @Test
+    @DisplayName("an undescended non-record class is left out even where unclassified structures are redacted")
+    void undescendedNonRecordIsLeftOutUnderRedaction() {
+        var redacting = new PrivacyProfile("DEFAULT", UnclassifiedBehaviour.REDACT_AND_WARN, Map.of());
+
+        Map<String, Protection> d = byPath(engine(Map.of("DEFAULT", redacting))
+                .describe(WithIface.class, context("DEFAULT"), false).orElseThrow());
+
+        assertThat(d).containsEntry("state", Protection.VERBATIM).doesNotContainKey("plainBean");
     }
 }

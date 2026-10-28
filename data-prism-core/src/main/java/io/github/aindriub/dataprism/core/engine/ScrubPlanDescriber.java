@@ -290,11 +290,11 @@ final class ScrubPlanDescriber {
         if (nested == byte[].class || nested == char[].class) {
             return new Shape(Kind.SCALAR, array, null);
         }
-        if (resolver.descendable(nested)) {
-            return new Shape(nested.isRecord() ? Kind.RECORD : Kind.OMIT, array, nested);
-        }
         if (nested.isPrimitive() || nested.isEnum() || scalar(nested)) {
             return new Shape(Kind.SCALAR, array, null);
+        }
+        if (resolver.descendable(nested)) {
+            return new Shape(nested.isRecord() ? Kind.RECORD : Kind.OMIT, array, nested);
         }
         if (Map.class.isAssignableFrom(nested)) {
             return new Shape(Kind.STRUCTURE, array, null);
