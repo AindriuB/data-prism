@@ -235,9 +235,6 @@ public final class PrivacyCluster implements AutoCloseable {
             this.sentinel = new ClusterSentinel(this, keys, ungated, environment.cardWriteTimeout());
             this.cards = new MemberCards(this, keys, settings, ungated, sentinel, environment);
         }
-        if (cards != null) {
-            liveWrappers(instance).add(this);
-        }
         this.reidentificationEnabled = reidentificationEnabled;
         this.approvalSweepInterval = approvalSweepInterval;
         this.sweeper = new PendingSweeper(instance, approvalSweepInterval, Clock.systemUTC());
@@ -922,6 +919,8 @@ public final class PrivacyCluster implements AutoCloseable {
                                 + "not join");
             }
             cards.start();
+            // Only a wrapper whose cards are running speaks for the instance's gate.
+            liveWrappers(instance).add(this);
         } catch (RuntimeException failed) {
             close();
             throw failed;

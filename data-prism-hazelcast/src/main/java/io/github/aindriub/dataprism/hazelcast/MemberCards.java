@@ -159,6 +159,16 @@ public final class MemberCards {
     volatile Logger log;
     /** Runs at the start of every look; a seam for tests. */
     volatile Runnable lookFault = () -> { };
+    /** Runs in a card write after the card is built and before it is written; a seam for tests. */
+    volatile Runnable afterCardBuilt = () -> { };
+
+    int sentinelWritesStarted() {
+        return sentinel.writesStarted();
+    }
+
+    boolean sentinelWriteOutstanding() {
+        return sentinel.writeOutstanding();
+    }
 
     /** Key id to key check value, for every purpose key this member holds. */
     private final Map<String, byte[]> ownCheckValues = new LinkedHashMap<>();
@@ -181,6 +191,8 @@ public final class MemberCards {
     private volatile Instant lastPublishAt;
     /** The first look of an instance judges the members already there: they get no grace. */
     private boolean firstLook = true;
+    /** Changes whenever the key set of the card changes, so a write of an older card can be told from the latest. */
+    private long keyGeneration;
     private final AtomicInteger writes = new AtomicInteger();
     /** True from the start of a card write until the owner has completed it, however long the caller waited. */
     private final AtomicBoolean inFlight = new AtomicBoolean();
@@ -197,9 +209,13 @@ public final class MemberCards {
 
     /** The cards found at the latest look, by member UUID. */
     private volatile Map<UUID, Card> verified = Map.of();
-    private volatile ClusterSecurityStatus status = ClusterSecurityStatus.serving(0, 0);
+    /** Not serving until a look has judged the cluster serving: an unstarted wrapper is not a serving owner. */
+    private volatile ClusterSecurityStatus status =
+            ClusterSecurityStatus.notServing(ClusterSecurityStatus.Reason.CARDS_UNAVAILABLE, 0, 0);
     /** When each member without a valid card was first seen without one. */
     private Instant unverifiedSince;
+    /** The first look of an unbroken run of looks that found no unverified member, while the clock is running. */
+    private Instant clearSince;
     /** The stored text of a card that failed to open, so it is judged and counted once, not at every look. */
     private final Map<UUID, String> rejected = new HashMap<>();
     /** The (member, key id) pairs whose key check value disagreement was already counted. */
@@ -268,6 +284,7 @@ public final class MemberCards {
         Objects.requireNonNull(material, "material");
         synchronized (state) {
             ownCheckValues.put(id, KeyCheckValue.compute(id, material));
+            keyGeneration++;
             // Due at the next tick even if the write below fails.
             publishedAt = null;
         }
@@ -348,10 +365,13 @@ public final class MemberCards {
 
     void close() {
         closed = true;
+        running = false;
         UUID id;
         synchronized (state) {
             id = listenerId;
             listenerId = null;
+            status = ClusterSecurityStatus.notServing(ClusterSecurityStatus.Reason.CARDS_UNAVAILABLE,
+                    status.memberCount(), status.unverifiedCount());
         }
         if (id != null) {
             try {
@@ -424,11 +444,14 @@ public final class MemberCards {
     private void publish(Instant now) {
         UUID self = cluster.instance().getCluster().getLocalMember().getUuid();
         Map<String, byte[]> checks;
+        long generation;
         synchronized (state) {
             checks = new LinkedHashMap<>(ownCheckValues);
+            generation = keyGeneration;
         }
         Card card = new Card(self, FORMAT_VERSION, keys.held().stream().map(ClusterKeys.Key::id).toList(),
                 checks, pauseSequence.getAsLong(), now.plus(settings.pauseLease()));
+        afterCardBuilt.run();
         String key = keyOf(self);
         String sealed = sealer.seal(PrivacyCluster.MEMBER_CARD_MAP, key, card.encode());
         // A write to a locked key stays queued at the owner after the caller stopped waiting: start no second one.
@@ -446,8 +469,10 @@ public final class MemberCards {
         write.whenComplete((done, failure) -> inFlight.set(false));
         ClusterSentinel.bounded(write, writeTimeout);
         synchronized (state) {
-            publishedAt = now;
             lastPublishAt = now;
+            // A key added while this card was being written is not in it, and this write may have replaced a newer
+            // card: the next tick must publish again.
+            publishedAt = generation == keyGeneration ? now : null;
         }
     }
 
@@ -495,6 +520,9 @@ public final class MemberCards {
     }
 
     private void judge(Snapshot snapshot, Instant now) {
+        if (closed) {
+            return;
+        }
         Map<UUID, Card> found = new LinkedHashMap<>();
         Set<UUID> live = new HashSet<>(snapshot.members());
         boolean keyCheckMismatch = false;
@@ -508,22 +536,31 @@ public final class MemberCards {
             found.put(uuid, card);
             keyCheckMismatch |= disagrees(uuid, card);
         }
-        // One clock for the cluster as this instance sees it, not one per member UUID (OD-W6-8): it starts when the
-        // view goes from no unverified member to one, and stops when a look shows none. Members already there before
-        // this instance has served once get no grace (OD-W6-7): the clock starts already lapsed.
-        if (!anyMissing) {
-            unverifiedSince = null;
-        } else if (unverifiedSince == null) {
-            unverifiedSince = firstLook ? Instant.MIN : now;
+        // One clock for the cluster as this instance sees it, not one per member UUID (OD-W6-8). It starts when the
+        // view goes from no unverified member to one, and returns to null only after this instance has seen none,
+        // look after look, for at least the grace (OD-W6-9): a brief absence, or a rejoin with a fresh UUID, leaves
+        // the running clock alone. Members already there before this instance has served once get no grace
+        // (OD-W6-7): the clock starts already lapsed. A failed look touches neither value.
+        if (anyMissing) {
+            clearSince = null;
+            if (unverifiedSince == null) {
+                unverifiedSince = firstLook ? Instant.MIN : now;
+            }
+        } else if (unverifiedSince != null) {
+            if (clearSince == null) {
+                clearSince = now;
+            }
+            if (!now.isBefore(clearSince.plus(settings.unverifiedMemberGrace()))) {
+                unverifiedSince = null;
+                clearSince = null;
+            }
         }
-        rejected.keySet().retainAll(live);
-        mismatchesCounted.removeIf(pair -> live.stream().noneMatch(uuid -> pair.startsWith(uuid + "/")));
         verified = Map.copyOf(found);
 
         boolean sentinelMismatch = snapshot.sentinel() == ClusterSentinel.Outcome.MISMATCH;
         int members = snapshot.members().size();
         int unverified = members - found.size();
-        boolean overGrace = unverifiedSince != null
+        boolean overGrace = anyMissing && unverifiedSince != null
                 && !now.isBefore(unverifiedSince.plus(settings.unverifiedMemberGrace()));
         ClusterSecurityStatus next;
         if (sentinelMismatch) {

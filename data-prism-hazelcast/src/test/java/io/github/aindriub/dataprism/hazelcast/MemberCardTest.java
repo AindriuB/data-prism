@@ -680,6 +680,103 @@ class MemberCardTest {
                 .isInstanceOf(ClusterOperationRefusedException.class);
     }
 
+    // ---- review round 3 ---------------------------------------------------------------------------------------
+
+    /** A wrapper that is still starting is not a serving owner of the instance's registered sealer. */
+    @Test
+    @Timeout(240)
+    void aWrapperThatIsStillStartingDoesNotOpenTheInstanceGate() throws Exception {
+        int port = FreePorts.consecutive(2);
+        List<String> everyone = List.of("127.0.0.1:" + port, "127.0.0.1:" + (port + 1));
+        Config config = PrivacyCluster.configure(ClusterMembership.tcpIp(TestMembers.uniqueName("starting"), everyone)
+                .withPort(port).withInterface("127.0.0.1").toConfig());
+        HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
+        var environment = fixture.environment(new Fixture.Metrics(), new RecordingLogger());
+        var settings = Fixture.settings(UnverifiedMemberAction.REFUSE);
+        PrivacyCluster first = PrivacyCluster.using(instance, false, Duration.ofMinutes(1), TestMembers.KEYS,
+                settings, environment);
+        Sealer registered = registeredSealer(first);
+        HazelcastInstance outsider = Fixture.plain(config.getClusterName(), port + 1, everyone);
+        // The outsider holds this member's card key, so the next wrapper's first card write waits and then fails.
+        String cardKey = first.memberCards().orElseThrow().keyForTest(instance.getCluster().getLocalMember().getUuid());
+        outsider.getMap(PrivacyCluster.MEMBER_CARD_MAP).lock(cardKey);
+        first.close();
+
+        CompletableFuture<Object> second = CompletableFuture.supplyAsync(() -> {
+            try {
+                return PrivacyCluster.using(instance, false, Duration.ofMinutes(1), TestMembers.KEYS, settings,
+                        environment);
+            } catch (RuntimeException failed) {
+                return failed;
+            }
+        });
+        while (!second.isDone()) {
+            assertThatThrownBy(() -> registered.seal(PrivacyCluster.IDENTITY_MAP, "k", new byte[] {1}))
+                    .as("while the second wrapper is starting").isInstanceOf(ClusterOperationRefusedException.class);
+        }
+        assertThat(second.get()).as("its first card write failed").isInstanceOf(RuntimeException.class);
+        assertThatThrownBy(() -> registered.seal(PrivacyCluster.IDENTITY_MAP, "k", new byte[] {1}))
+                .isInstanceOf(ClusterOperationRefusedException.class);
+    }
+
+    @Test
+    void aClosedWrapperRefusesAtOnce() {
+        PrivacyCluster[] wrappers = twoWrappers();
+        assertThat(wrappers[0].servingInstance()).isNotNull();
+        wrappers[0].close();
+        assertThatThrownBy(wrappers[0]::servingInstance).isInstanceOf(ClusterOperationRefusedException.class);
+        assertThat(wrappers[1].servingInstance()).isNotNull();
+    }
+
+    /** The sentinel is rewritten while absent; under a lock the writes must not pile up at the owner. */
+    @Test
+    @Timeout(240)
+    void atMostOneSentinelWriteIsOutstandingWhileTheSentinelKeyIsLockedAndDeleted() {
+        Pair pair = pair();
+        MemberCards cards = pair.a().memberCards().orElseThrow();
+        IMap<String, Object> lockerView = pair.b().instance().getMap(PrivacyCluster.MEMBER_CARD_MAP);
+        lockerView.lock(ClusterSentinel.KEY);
+        lockerView.delete(ClusterSentinel.KEY);
+        int before = cards.sentinelWritesStarted();
+
+        for (int i = 0; i < 8; i++) {
+            cards.tick();
+        }
+        assertThat(cards.sentinelWritesStarted() - before).isEqualTo(1);
+        assertThat(cards.sentinelWriteOutstanding()).isTrue();
+        assertThat(pair.a().securityStatus().serving()).as("unknown is not serving").isFalse();
+
+        lockerView.unlock(ClusterSentinel.KEY);
+        assertThat(Fixture.await(30, () -> !cards.sentinelWriteOutstanding())).isTrue();
+        cards.tick();
+        assertThat(pair.a().securityStatus().serving()).isTrue();
+    }
+
+    /** A key added while a card write is under way is not in that card: the next tick must publish again. */
+    @Test
+    void aPurposeKeyAddedDuringACardWriteIsPublishedByTheNextTick() {
+        Pair pair = pair();
+        MemberCards cards = pair.a().memberCards().orElseThrow();
+        UUID memberA = Fixture.uuidOf(pair.a());
+        String key = cards.keyForTest(memberA);
+        boolean[] added = new boolean[1];
+        cards.afterCardBuilt = () -> {
+            if (!added[0]) {
+                added[0] = true;
+                cards.addPurposeKey("test-link-1", Fixture.filled('l'));
+            }
+        };
+
+        fixture.clock.advance(LEASE.dividedBy(2));
+        cards.tick();
+        cards.afterCardBuilt = () -> { };
+        cards.tick();
+
+        Opened opened = Sealer.builder(TestMembers.KEYS, PrivacyMetrics.none()).build()
+                .open(PrivacyCluster.MEMBER_CARD_MAP, key, Fixture.cardMap(pair.b()).get(key));
+        assertThat(Card.decode(opened.plaintext()).keyCheckValues()).containsKey("test-link-1");
+    }
+
     // ---- disagreeing keys ------------------------------------------------------------------------------------
 
     @Test

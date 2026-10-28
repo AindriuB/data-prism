@@ -166,26 +166,40 @@ class UnverifiedMemberTest {
         assertThat(late.securityStatus().serving()).as("it serves once nobody is unverified").isTrue();
     }
 
-    /** The no-grace rule holds until an instance has once judged the cluster serving (OD-W6-7). */
+    /**
+     * The no-grace rule holds until an instance has once judged the cluster serving (OD-W6-7), not merely until its
+     * first look: here the first judgement is not serving for another reason, with no unverified member.
+     */
     @Test
-    void aMemberThatJoinsWhileTheInstanceIsStillNotServingGetsNoGraceEither() {
-        ClusterSecuritySettings settings = Fixture.settings(UnverifiedMemberAction.REFUSE);
-        outsider = Fixture.plain(name, first + 1, all);
-        PrivacyCluster c = fixture.keyed(name, first, all, TestMembers.KEYS, settings, metricsA, logA, true);
+    void anOutsiderThatJoinsBeforeTheInstanceHasEverServedGetsNoGrace() {
+        String clusterName = TestMembers.uniqueName("neverserved");
+        int port = FreePorts.consecutive(3);
+        List<String> everyone = peers(port, 2);
+        var settings = Fixture.settings(UnverifiedMemberAction.REFUSE);
+        // A keyed peer whose key check value for k0 differs: the instance's first judgement is not serving.
+        PrivacyCluster peer = fixture.keyed(clusterName, port + 1, everyone,
+                Fixture.keys("test-cluster-1", 'c', "k0", 'y'), settings, new Fixture.Metrics(),
+                new RecordingLogger(), true);
+        PrivacyCluster c = fixture.keyed(clusterName, port, everyone, Fixture.keys("test-cluster-1", 'c', "k0", 'x'),
+                settings, metricsA, logA, true);
         assertThat(Fixture.awaitMembers(c, 2)).isTrue();
-        assertThat(c.securityStatus().serving()).as("the first outsider was there first").isFalse();
+        MemberCards cards = c.memberCards().orElseThrow();
+        cards.tick();
+        assertThat(c.securityStatus().reason()).isEqualTo(ClusterSecurityStatus.Reason.KEY_CHECK_MISMATCH);
+        assertThat(c.securityStatus().unverifiedCount()).isZero();
 
-        HazelcastInstance second = Fixture.plain(name, first + 2, all);
+        HazelcastInstance stranger = Fixture.plain(clusterName, port + 2, everyone);
         assertThat(Fixture.awaitMembers(c, 3)).isTrue();
-        c.memberCards().orElseThrow().tick();
-        outsider.shutdown();
+        cards.tick();
+        peer.close();
         assertThat(Fixture.awaitMembers(c, 2)).isTrue();
-        c.memberCards().orElseThrow().tick();
+        cards.tick();
 
-        assertThat(c.securityStatus().serving()).as("the second outsider gets no grace").isFalse();
-        second.shutdown();
+        assertThat(c.securityStatus().reason()).as("the stranger was there before this instance ever served")
+                .isEqualTo(ClusterSecurityStatus.Reason.UNVERIFIED_MEMBER);
+        stranger.shutdown();
         assertThat(Fixture.awaitMembers(c, 1)).isTrue();
-        c.memberCards().orElseThrow().tick();
+        cards.tick();
         assertThat(c.securityStatus().serving()).isTrue();
     }
 
@@ -226,33 +240,137 @@ class UnverifiedMemberTest {
         assertThat(serving.securityStatus().serving()).as("42 s of unverified members, never none").isFalse();
     }
 
-    /** A single look with no unverified member starts the clock over. */
+    /** A serving instance on its own: outsiders are started by the tests, one at a time. */
+    private PrivacyCluster solo(int port, List<String> everyone) {
+        return fixture.keyed(name, port, everyone, TestMembers.KEYS, Fixture.settings(UnverifiedMemberAction.REFUSE),
+                metricsA, logA, true);
+    }
+
+    private HazelcastInstance arrives(PrivacyCluster serving, int port, List<String> everyone, int members) {
+        HazelcastInstance outsider = Fixture.plain(name, port, everyone);
+        assertThat(Fixture.awaitMembers(serving, members)).isTrue();
+        serving.memberCards().orElseThrow().tick();
+        return outsider;
+    }
+
+    private void leaves(PrivacyCluster serving, HazelcastInstance outsider, int membersLeft) {
+        outsider.shutdown();
+        assertThat(Fixture.awaitMembers(serving, membersLeft)).isTrue();
+        serving.memberCards().orElseThrow().tick();
+    }
+
+    /** OD-W6-9 (a): a brief absence leaves the running clock alone, so a rejoin with a fresh UUID is no reset. */
     @Test
-    void aLookWithNoUnverifiedMemberResetsTheGrace() {
+    void anOutsiderThatLeavesAndRejoinsWithAFreshUuidDoesNotRestartTheGrace() {
+        int port = FreePorts.consecutive(5);
+        List<String> everyone = peers(port, 4);
+        PrivacyCluster serving = solo(port, everyone);
+        MemberCards cards = serving.memberCards().orElseThrow();
+
+        HazelcastInstance outsider = arrives(serving, port + 1, everyone, 2);
+        for (int round = 2; round <= 4; round++) {
+            fixture.clock.advance(Duration.ofSeconds(14));
+            cards.tick();
+            assertThat(serving.securityStatus().serving()).as("%d s in", (round - 1) * 14).isEqualTo(round < 4);
+            leaves(serving, outsider, 1);
+            assertThat(serving.securityStatus().unverifiedCount()).as("a look with none").isZero();
+            outsider = arrives(serving, port + round, everyone, 2);
+        }
+        assertThat(serving.securityStatus().serving()).as("42 s since the first, with gaps of no time").isFalse();
+        outsider.shutdown();
+    }
+
+    /** One brief absence, then a rejoin: the 29 s already counted stay counted. */
+    @Test
+    void aBriefAbsenceDoesNotResetTheGrace() {
         int port = FreePorts.consecutive(3);
         List<String> everyone = peers(port, 2);
-        PrivacyCluster serving = fixture.keyed(name, port, everyone, TestMembers.KEYS,
-                Fixture.settings(UnverifiedMemberAction.REFUSE), metricsA, logA, true);
-        MemberCards cards = serving.memberCards().orElseThrow();
-        HazelcastInstance first = Fixture.plain(name, port + 1, everyone);
-        assertThat(Fixture.awaitMembers(serving, 2)).isTrue();
-        cards.tick();
-        fixture.clock.advance(Duration.ofSeconds(29));
-        first.shutdown();
-        assertThat(Fixture.awaitMembers(serving, 1)).isTrue();
-        cards.tick();
-        assertThat(serving.securityStatus().unverifiedCount()).isZero();
+        PrivacyCluster serving = solo(port, everyone);
 
-        HazelcastInstance second = Fixture.plain(name, port + 2, everyone);
-        assertThat(Fixture.awaitMembers(serving, 2)).isTrue();
+        HazelcastInstance first = arrives(serving, port + 1, everyone, 2);
+        fixture.clock.advance(Duration.ofSeconds(29));
+        leaves(serving, first, 1);
+        HazelcastInstance second = arrives(serving, port + 2, everyone, 2);
+        assertThat(serving.securityStatus().serving()).isTrue();
+        fixture.clock.advance(Duration.ofSeconds(2));
+        serving.memberCards().orElseThrow().tick();
+        assertThat(serving.securityStatus().serving()).as("31 s since the first arrived").isFalse();
+        second.shutdown();
+    }
+
+    /** The clear period is not credited if an unverified member comes back inside it. */
+    @Test
+    void aReturnInsideTheClearPeriodCancelsTheClearPeriod() {
+        int port = FreePorts.consecutive(4);
+        List<String> everyone = peers(port, 3);
+        PrivacyCluster serving = solo(port, everyone);
+        MemberCards cards = serving.memberCards().orElseThrow();
+
+        HazelcastInstance first = arrives(serving, port + 1, everyone, 2);
+        fixture.clock.advance(Duration.ofSeconds(10));
+        leaves(serving, first, 1);
+        HazelcastInstance second = arrives(serving, port + 2, everyone, 2);
+        fixture.clock.advance(Duration.ofSeconds(30));
         cards.tick();
+        assertThat(serving.securityStatus().serving()).isFalse();
+        leaves(serving, second, 1);
+        HazelcastInstance third = arrives(serving, port + 3, everyone, 2);
+
+        assertThat(serving.securityStatus().serving())
+                .as("the 30 s since the first look with none was interrupted by the second outsider").isFalse();
+        third.shutdown();
+    }
+
+    /** After a genuine absence of at least the grace, a new outsider has a fresh grace. */
+    @Test
+    void aNewOutsiderAfterAGenuineAbsenceOfTheGraceGetsAFreshGrace() {
+        int port = FreePorts.consecutive(3);
+        List<String> everyone = peers(port, 2);
+        PrivacyCluster serving = solo(port, everyone);
+        MemberCards cards = serving.memberCards().orElseThrow();
+
+        HazelcastInstance first = arrives(serving, port + 1, everyone, 2);
+        fixture.clock.advance(Duration.ofSeconds(31));
+        cards.tick();
+        assertThat(serving.securityStatus().serving()).isFalse();
+        leaves(serving, first, 1);
+        assertThat(serving.securityStatus().serving()).as("it serves with none present").isTrue();
+
+        fixture.clock.advance(Duration.ofSeconds(30));
+        cards.tick();
+        HazelcastInstance second = arrives(serving, port + 2, everyone, 2);
+        assertThat(serving.securityStatus().serving()).as("a fresh grace").isTrue();
         fixture.clock.advance(Duration.ofSeconds(29));
         cards.tick();
-        assertThat(serving.securityStatus().serving()).as("29 s since the clock was cleared").isTrue();
+        assertThat(serving.securityStatus().serving()).isTrue();
         fixture.clock.advance(Duration.ofSeconds(1));
         cards.tick();
-        assertThat(serving.securityStatus().serving()).as("30 s").isFalse();
+        assertThat(serving.securityStatus().serving()).isFalse();
         second.shutdown();
+    }
+
+    /** A look that fails changes neither clock. */
+    @Test
+    void aFailedLookLeavesTheGraceClockWhereItWas() {
+        int port = FreePorts.consecutive(2);
+        List<String> everyone = peers(port, 1);
+        PrivacyCluster serving = solo(port, everyone);
+        MemberCards cards = serving.memberCards().orElseThrow();
+
+        HazelcastInstance outsider = arrives(serving, port + 1, everyone, 2);
+        fixture.clock.advance(Duration.ofSeconds(29));
+        cards.lookFault = () -> {
+            throw new IllegalStateException("the cluster could not be read");
+        };
+        cards.tick();
+        assertThat(serving.securityStatus().serving()).isFalse();
+        cards.lookFault = () -> { };
+        fixture.clock.advance(Duration.ofSeconds(2));
+        cards.tick();
+
+        assertThat(serving.securityStatus().reason()).as("31 s since the outsider arrived")
+                .isEqualTo(ClusterSecurityStatus.Reason.UNVERIFIED_MEMBER);
+        outsider.shutdown();
     }
 
     // ---- the gate on the stores that never call the sealer ---------------------------------------------------

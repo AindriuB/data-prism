@@ -15,6 +15,8 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * The sentinel of docs/plan/design/cluster-security.md 4.7: a sealed constant that the first member writes, under
@@ -53,6 +55,18 @@ final class ClusterSentinel {
     private final ClusterKeys keys;
     private final Sealer sealer;
     private final Duration writeTimeout;
+    private final AtomicInteger writes = new AtomicInteger();
+    private final AtomicBoolean inFlight = new AtomicBoolean();
+
+    /** How many sentinel writes were started, for tests. */
+    int writesStarted() {
+        return writes.get();
+    }
+
+    /** Whether a sentinel write has been started and has not completed at the owner, for tests. */
+    boolean writeOutstanding() {
+        return inFlight.get();
+    }
 
     ClusterSentinel(PrivacyCluster cluster, ClusterKeys keys, Sealer sealer, Duration writeTimeout) {
         this.cluster = Objects.requireNonNull(cluster, "cluster");
@@ -112,8 +126,20 @@ final class ClusterSentinel {
             // Writes only if the sentinel is still absent. The wait is bounded below: a processor on a locked key would
             // otherwise wait for the lock.
             IMap<String, String> typed = cluster.instance().getMap(PrivacyCluster.MEMBER_CARD_MAP);
-            if (Boolean.TRUE.equals(bounded(typed.submitToKey(KEY, SealedWrites.compareAndSet(null, sealed, 0)),
-                    writeTimeout))) {
+            // A write to a locked key stays queued at the owner after the caller stopped waiting: start no second one.
+            if (!inFlight.compareAndSet(false, true)) {
+                throw new IllegalStateException("a sentinel write is still outstanding");
+            }
+            CompletionStage<Boolean> write;
+            try {
+                write = typed.submitToKey(KEY, SealedWrites.compareAndSet(null, sealed, 0));
+            } catch (RuntimeException notStarted) {
+                inFlight.set(false);
+                throw notStarted;
+            }
+            writes.incrementAndGet();
+            write.whenComplete((done, failure) -> inFlight.set(false));
+            if (Boolean.TRUE.equals(bounded(write, writeTimeout))) {
                 return Outcome.CURRENT;
             }
             stored = cards.get(KEY);
