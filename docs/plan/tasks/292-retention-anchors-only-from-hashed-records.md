@@ -92,17 +92,17 @@ After this task:
    - **Scan order.** Go in segment order after D. A writer's next record is its first newline-terminated line that parses as that writer's record once one trailing `\r` is removed, so a `\r` copy cannot be stepped over. An unterminated tail is not a next record, because it may be in flight in today's segment. The scan goes through a verifier helper, which keeps rule 3's grep clean.
    - **Terms.** For each expiring writer:
      - **L** is D's last hashed record for that writer (sequence, `eventHash`). On the partial-day path it is the writer's recorded anchor for D (`sequence`, `headHash`), because the day's tail is already gone.
-     - **S** is the instance's `SHUTDOWN` checkpoint with the highest sequence, if any (OD-292-6 (a)). `AuditRecorder.close` (:126-132) writes `SHUTDOWN` with the instance's `instanceId`, its current `sequence` and the last committed hash as `headHash`.
-   - **When a writer is resolved.** Each expiring writer is resolved by the first of these:
-     - (a) Its next record is found, and rule 6 compares it with L.
-     - (b) **The `SHUTDOWN` stop (OD-292-6 (a)).** S exists, `L.sequence >= S.sequence`, and every hashed record of the instance above `S.sequence` chains without a break from `S.headHash`. That means the record at `S.sequence + 1` has `previousHash == S.headHash`, and so on up to L. When `L.sequence == S.sequence`, that requires `L`'s hash to equal `S.headHash`. On the partial-day path the check covers the hashed records that remain, and L is the anchor. The instance then wrote nothing it did not account for, so there is no next record to compare. A record above S on disk is the legitimate rolled-back N+1 case.
-   - **The scan stops** as soon as every expiring writer is resolved. A writer with no `SHUTDOWN`, after a crash for instance, keeps the scan going to the last segment, as before.
-   - **A `SHUTDOWN` that contradicts the records refuses the day (fail closed):**
-     - `L.sequence < S.sequence`, and the scan reaches the last segment without finding a next record (the tail of a cleanly closed writer was deleted);
-     - `L.sequence == S.sequence`, but L's hash differs from `S.headHash`;
-     - a hashed record above `S.sequence` does not chain from `S.headHash`;
-     - a record of the instance appears beyond what the chain from S accounts for. That is, a record with a sequence above `L.sequence` appears in anything retention reads: the expiring segments, which are always read in full, or a retained segment the scan reads for another writer.
-
+     - **S** is the instance's `SHUTDOWN` checkpoint with the highest sequence, if any (OD-292-6 (a)). No existing retention test writes a `SHUTDOWN`: their recorders have no checkpoint sink, or are never closed into one. Every `SHUTDOWN` case below is therefore new. `AuditRecorder.close` (:126-132) writes `SHUTDOWN` with the instance's `instanceId`, its current `sequence` and the last committed hash as `headHash`.
+   - **The order of the checks.** Each expiring writer is checked in this order. **What retention reads** means two things: the expiring segments, which are always read in full, and any retained segment the scan opens for some writer. Steps (a) and (c) apply to every record of the writer in what retention reads, including a segment opened for another writer after this one was resolved by (b). The checks are evaluated once the scan has stopped, not only at the moment the writer was resolved.
+     1. **(a) The next record.** If the writer's next record after D appears in what retention reads, it must have `previousHash` equal to L's hash. If it does not, refuse D with rule 6's link refusal. If it does, the writer is resolved. This holds whether L is below, equal to or above `S.sequence`. In particular, a writer that spans D and a later day and then closes cleanly (`L < S`) is resolved here.
+     2. **(b) The `SHUTDOWN` stop**, only when no next record has been seen and `L.sequence >= S.sequence`. If the sequences are equal, L's hash must equal `S.headHash`. Every hashed record of the instance above `S.sequence`, up to L, must chain without a break from `S.headHash`; the first has `previousHash == S.headHash`. On the partial-day path, L is the anchor and the chain check covers the hashed records that remain. If this passes, the writer is resolved without opening any further segment for it. A record above S on disk is the legitimate rolled-back N+1 case. If it fails, refuse D.
+     3. **Keep scanning** when no next record has been seen and either there is no S, or `L.sequence < S.sequence`. Go on in segment order until the next record appears, then apply (a). If the scan reaches the last segment without it:
+        - with no S, the writer is resolved: this is the residual case, for example after a crash;
+        - with `L.sequence < S.sequence`, refuse D. The instance shut down after records that are no longer there, so the tail of a cleanly closed writer was deleted.
+     4. **(c) Beyond the chain.** Refuse D if what retention reads holds a record of the instance whose sequence is above `max(L.sequence, S.sequence)` and that is not accounted for by the chain from S. That chain starts at `S.headHash` and runs through L and through the next record (a) found, each record linking to the one before. This check applies only to a writer with an S.
+   - **More than one `SHUTDOWN` at the highest sequence.** If two `SHUTDOWN`s for one instance share the highest sequence but have different `headHash` values, refuse D (fail closed). A real recorder cannot produce this: with no record between two `close()` calls, both write the same head.
+   - **The scan stops** as soon as every expiring writer is resolved. A writer with no `SHUTDOWN` keeps the scan going until its next record is found or the last segment is reached, as before.
+   - **Refusals that cite the `SHUTDOWN`:** (b) failing, the `L.sequence < S.sequence` end-of-scan case in step 3, (c), and two `SHUTDOWN`s that conflict at the highest sequence.
      The refusal message is `AUDIT_RETENTION_CHAIN_UNVERIFIED: writer <instanceId>'s SHUTDOWN checkpoint at sequence <n> in the checkpoint store does not match its records in <segment>; it and every later expired segment were not purged. Compare the checkpoint store (dataprism.audit.checkpoint.file-path) with the audit directory before purging.`
 
      A forged later record beyond what the scan reads is not seen by purge. OD-292-5 (a), decided by the owner 2026-10-28, accepts this for 292, because purge does not read past the stop. The follow-up is that the verifier reports any record from an instance that comes after that instance's `SHUTDOWN` checkpoint. The scribe files it. No code for it in this task.
@@ -156,7 +156,7 @@ Each refused case keeps its day, `dataprism.audit.retention.unverified` fires, a
 - "A real crash fragment still purges", a regression guard;
 - "Duplicate-sequence line" (shape E), already refused by 207's `DUPLICATE_SEQUENCE` clause at the first copy's offset;
 - "Clock stepped back", because the base has no rule 7.
-- "Clean restart, bounded read", "Crash, no `SHUTDOWN`, full scan", "Rolled-back N+1", "Partial day after a clean shutdown" and "Two `SHUTDOWN`s, positive", because the base has no boundary scan. They pin the `SHUTDOWN` stop, and mutants (iv-b) and (iv-c) are their failing proofs;
+- "Clean restart, bounded read", "Crash, no `SHUTDOWN`, full scan", "Rolled-back N+1" (both variants), "Partial day after a clean shutdown", "Two `SHUTDOWN`s, positive" and "A writer spanning D1 and a later day closes cleanly", because the base has no boundary scan. Each has a named mutant that kills it (mutants (iv-b) to (iv-g));
 - "Two-key purge that succeeds", because the base already deletes a clean D1. It pins the replay choice.
 
 Otherwise: Every test runs in plain mode and in keyed mode (`AuditChainMode.keyed(key)` on the writer, the same key passed to `AuditRetention`'s seven-argument constructor, `allowUnkeyedWriters=false`). If a shape does not fail first in one mode, stop and report. The PR lists each test with its failing assertion on the base.
@@ -171,21 +171,26 @@ Otherwise: Every test runs in plain mode and in keyed mode (`AuditChainMode.keye
 - [ ] **Duplicate-sequence line.** A copy of a D1 record, edited, appended to D1's last segment as a newline-terminated line (shape E `appendDupForgedEnd`). The purge refuses and keeps every D1 segment.
 - [ ] **Attribution.** D1's last record is replaced by a prefix of itself that does not parse, ended `\r\n`, and D2 is also expired. The purge refuses, the message names D1, and every D1 segment remains. This shape is not a real crash, because D2's record continues the same instance. There is a two-key variant as for shape A.
 - [ ] **Clean restart, bounded read (OD-292-4 (b)).** Writers w1 and w2 each write on D1 (expired) and close with a `SHUTDOWN` in the store. A new instance writes on each of 180 retained daily segments. The test counts the segments the boundary scan opens, through a package-private read seam like `deleter`. The purge deletes D1, and the scan opens no retained segment for w1 or w2: at most the segments needed for writers without a `SHUTDOWN`, here none.
-- [ ] **Rolled-back N+1 (OD-292-6 (a)).** w1 writes through a `TeeAuditSink` whose projection throws on record N+1. N+1 is on disk, the recorder rolls back to N, and a clean `close()` writes `SHUTDOWN{N, hashN}`. With D1 expired, the purge deletes D1, and the scan opens no retained segment for w1.
+- [ ] **Rolled-back N+1 (OD-292-6 (a)), plain and keyed.** w1 writes through a `TeeAuditSink` whose projection throws on record N+1. N+1 is on disk, the recorder rolls back to N, and a clean `close()` writes `SHUTDOWN{N, hashN}`. A second writer w2, with no `SHUTDOWN`, writes into 30 retained daily segments, so a read-count assertion cannot pass vacuously. Two variants:
+  - **N+1 in D1:** the purge deletes D1, and the scan opens no retained segment for w1;
+  - **N+1 across midnight:** N+1 lands in the next day's segment, which is retained in one sub-case and also expired in the other. By step (a), N+1 links to `hashN`, and D1 purges.
+- [ ] **A writer spanning D1 and a later day closes cleanly, plain and keyed.** w writes seq 1-5 on D1 and seq 6-10 on 03-02, then closes (`SHUTDOWN{10}`). Two variants: 03-02 retained, and 03-02 also expired. D1 purges in both. In the second, 03-02 purges too.
 - [ ] **Partial day after a clean shutdown.** w1 writes seq 1-10 across D1's segments and shuts down cleanly (`SHUTDOWN{10, h10}`). Purge 1 anchors {10, h10} and fails while deleting `audit-2026-03-01.log` (through `deleter`). Purge 2 finishes the day, deletes the remaining prefix, and does not refuse.
 - [ ] **Two `SHUTDOWN`s.** Two cases:
   - **positive:** close at N, record N+1, close at N+1; the purge deletes D1;
-  - **negative:** close at N, records N+1 and N+2, close at N+2, then N+2 removed by a clean line cut. The purge refuses D1, because the highest `SHUTDOWN` wins. Using the lower one would let it purge.
+  - **negative:** close at N, records N+1 and N+2, close at N+2, then N+2 removed by a clean line cut. The purge refuses D1, because the highest `SHUTDOWN` wins. Using the lower one would let it purge;
+  - **conflicting:** two `SHUTDOWN`s at the same highest sequence with different `headHash` values (written by hand into the store). The purge refuses D1.
 - [ ] **`SHUTDOWN` read fails.** The checkpoint sink's `SHUTDOWN` read-back throws. The purge fails with `AUDIT_RETENTION_CHAIN_UNVERIFIED` naming the `SHUTDOWN` read, deletes nothing, and opens no retained segment.
 - [ ] **Crash, no `SHUTDOWN`, full scan.** The same directory, but w1 has no `SHUTDOWN` (crashed). The purge still deletes D1, and the counted reads reach the last segment.
 - [ ] **`SHUTDOWN` contradicted.** Each refuses D1 and keeps it:
-  - a record of w1 with a sequence above its `SHUTDOWN`, forged into the first retained segment the scan reads for another, unclosed writer;
-  - the same record forged into a later expired day;
-  - a `SHUTDOWN` whose `headHash` differs from D1's last hashed hash at the same sequence;
-  - a `SHUTDOWN` beyond D1's last hashed sequence with no later record of w1 (its last records deleted by a clean cut);
-  - a forged N+1 above `SHUTDOWN{N}` whose `previousHash` is not `hashN`.
+  - a forged record of w1 above its `SHUTDOWN`, whose `previousHash` does not link to L, placed in the first retained segment the scan reads for another, unclosed writer. Step (a) refuses it with the link refusal;
+  - the same record placed in a later expired day;
+  - a `SHUTDOWN` whose `headHash` differs from D1's last hashed hash at the same sequence. Step (b) refuses it;
+  - a `SHUTDOWN` beyond D1's last hashed sequence with no later record of w1, because its last records were deleted by a clean cut. Step 3 refuses it;
+  - a forged N+1 above `SHUTDOWN{N}`, in D1, whose `previousHash` is not `hashN`. Step (b)'s chain check refuses it;
+  - after a correct next record of w1 in a retained segment, a later record of w1 that does not chain from it, in a segment the scan reads for another writer. Step (c) refuses it.
 
-  Each refusal message matches the `SHUTDOWN`-contradiction message in rule 6.
+  Each refusal's message is the one rule 6 assigns to its step: the link refusal for step (a), and the `SHUTDOWN`-contradiction message for the others.
 - [ ] **Window edge (`hideLastExpiringRecordAsFragment`).** w has seq 1-3 on 03-01 and seq 4 on 09-09, and record 3 is cut to its first 60 characters. Two variants: ended `\r\n`, and unterminated. The purge refuses, the message names D1, and D1 remains.
 - [ ] **Rename (`renameRecentSegmentIntoExpiredDay`).** The repro above. The purge refuses. `audit-2026-03-01.log` and `audit-2026-03-01.0001.log` both remain. No anchor is recorded for D1.
 - [ ] **Partial-day path (shapes C, C2).** A prefix of D1 left by a failed delete, then tampered (an unterminated edited last record, or one ended `\r\n`), is not finished. Every remaining D1 segment is kept. A clean prefix whose writer's next record chains from the recorded anchor is still finished; 207's existing partial-day tests cover this unchanged.
@@ -215,7 +220,12 @@ Otherwise: Every test runs in plain mode and in keyed mode (`AuditChainMode.keye
 - [ ] (iii) Rule 6 removed: the attribution test and both window-edge variants fail.
 - [ ] (iv) Rule 7 removed: the rename test fails, in both modes.
 - [ ] (iv-b) `SHUTDOWN` ignored by the scan: the clean-restart bounded-read test fails on its read count.
-- [ ] (iv-c) The `SHUTDOWN` stop requires `L.sequence == S.sequence` exactly: the rolled-back N+1 test fails.
+- [ ] (iv-c) The pre-delta rule, "a `SHUTDOWN` below L refuses": the rolled-back N+1 test (N+1 in D1) fails.
+- [ ] (iv-d) The pre-fix (c) wording, "any record above `L.sequence` refuses": both variants of the spanning-writer test fail.
+- [ ] (iv-e) On the partial path, L is taken from the remaining prefix instead of the anchor: "Partial day after a clean shutdown" fails, because L < S and the scan finds no next record.
+- [ ] (iv-f) A writer with no `SHUTDOWN` is treated as resolved: "Crash, no `SHUTDOWN`, full scan" fails on its read count.
+- [ ] (iv-g) More than one `SHUTDOWN` for an instance is treated as a contradiction: "Two `SHUTDOWN`s, positive" fails. No mutant of the highest-wins choice can kill the positive case, because the lower `SHUTDOWN` also lets it purge. The negative case is what pins highest-wins.
+- [ ] (iv-h) Hashed positions taken from `k0`'s replay: "Two-key purge that succeeds" fails. `k0`'s replay hashes nothing of the writer, so D1 is refused.
 - [ ] (v) The rule changed to "refuse any unhashed line", whether or not it parses: the real-crash test fails.
 
 **Existing tests.**
@@ -229,6 +239,7 @@ Otherwise: Every test runs in plain mode and in keyed mode (`AuditChainMode.keye
   - names the affected versions, 0.4.0 through 0.7.1;
   - states the effect: anyone with write access to the audit directory could make a retention purge erase audit records while verification still passed, including records that were still inside the retention period;
   - says what 0.8.0 does instead, claiming no more than rules 1-7. A day is deleted only when every record in it that parses was verified, each writer's next record after the day links to the day's last verified record, and no record is dated after its file's day. Otherwise purge refuses with `AUDIT_RETENTION_CHAIN_UNVERIFIED` and keeps the day.
+  - says the clean-shutdown cover needs a checkpoint sink that implements the `SHUTDOWN` read-back. `FileAuditCheckpointSink` does; a custom `AuditCheckpointSink` without it falls back to the residual;
   - lists the `SHUTDOWN`-contradiction refusal. A day is also kept when a writer's `SHUTDOWN` checkpoint contradicts its records. The entry quotes the operator-facing part of that message: compare the checkpoint store (`dataprism.audit.checkpoint.file-path`) with the audit directory before purging;
   - states the residual: if a writer stopped without a clean shutdown (for example after a crash) and never writes again, deleting its last records before a purge is not detected by purge. Periodic checkpoints (`dataprism.audit.checkpoint.interval`) are the defence. A writer that shut down cleanly is covered by its `SHUTDOWN` checkpoint;
   - gives the workaround for anyone staying on an affected version, in the owner-accepted wording: set `dataprism.audit.retention` to a period longer than the oldest segment, for example `P100Y`, and keep the audit directory and `dataprism.audit.checkpoint.file-path` writable only by the server. Plain-Java embedders who never call `purge()` are unaffected. (No affected version has an on/off switch for the purge. It runs whenever `dataprism.audit.directory` is set, `AuditWiring.java:89-97` at v0.7.1.)
