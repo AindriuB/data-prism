@@ -113,16 +113,35 @@ public final class SourceFanOut {
     }
 
     /**
-     * What is running for one source: all its calls, including leftovers that ignored their interrupt and
-     * outlived their request, and how many of those hold a half-open trial.
+     * What is still running for one source after its request is done with it.
+     *
+     * @param leftovers calls that ignored their interrupt and were still running when their request returned or
+     *                  abandoned them; counted from then until their thread actually ends. Ordinary concurrent
+     *                  traffic is not counted: {@code maxConcurrency} is a limit on one request
+     * @param trials    calls that took a half-open trial, from the moment they start until their thread ends,
+     *                  leftover or not
      */
-    private record Load(int running, int trials) {
+    private record Load(int leftovers, int trials) {
+        Load plus(Load other) {
+            return new Load(leftovers + other.leftovers, trials + other.trials);
+        }
+
+        Load minus(Load other) {
+            return new Load(leftovers - other.leftovers, trials - other.trials);
+        }
+
+        boolean idle() {
+            return leftovers <= 0 && trials <= 0;
+        }
     }
 
-    /** Test hook: calls running for a source, leftovers included. */
-    int running(String sourceName) {
+    private static final Load ONE_LEFTOVER = new Load(1, 0);
+    private static final Load ONE_TRIAL = new Load(0, 1);
+
+    /** Test hook: leftover calls still running for a source. */
+    int leftovers(String sourceName) {
         Load load = this.load.get(sourceName);
-        return load == null ? 0 : load.running();
+        return load == null ? 0 : load.leftovers();
     }
 
     /** Test hook: how many sources have anything running; an entry is removed when its count reaches zero. */
@@ -130,25 +149,43 @@ public final class SourceFanOut {
         return load.size();
     }
 
-    private void began(String sourceName, boolean trial) {
-        load.merge(sourceName, new Load(1, trial ? 1 : 0),
-                (a, b) -> new Load(a.running() + b.running(), a.trials() + b.trials()));
+    private void add(String sourceName, Load amount) {
+        load.merge(sourceName, amount, Load::plus);
     }
 
-    private void ended(String sourceName, boolean trial) {
+    private void remove(String sourceName, Load amount) {
         load.computeIfPresent(sourceName, (k, l) -> {
-            Load next = new Load(l.running() - 1, l.trials() - (trial ? 1 : 0));
-            return next.running() <= 0 ? null : next;
+            Load next = l.minus(amount);
+            return next.idle() ? null : next;
         });
     }
 
     /**
-     * Whether the source cannot take a new call: it already has {@code maxConcurrency} calls running, or the
-     * trial call of its breaker is still running. Both include calls that outlived their request.
+     * Whether the source cannot take a new call. It has as many leftover calls (earlier calls that ignored
+     * their interrupt and are still running) as one request may have in flight, or the call holding its
+     * breaker's half-open trial is still running. This bounds the leftovers per source; the calls a source
+     * has at once are those plus the calls of the requests in flight, not {@code maxConcurrency} in total.
      */
     private boolean busy(String sourceName, RequestLimits limits) {
         Load load = this.load.get(sourceName);
-        return load != null && (load.running() >= limits.maxConcurrency() || load.trials() > 0);
+        return load != null && (load.leftovers() >= limits.maxConcurrency() || load.trials() > 0);
+    }
+
+    /**
+     * Counts the calls still running after their request is done with them. Called once the request has
+     * given its interrupted calls the unwind interval; a call that finished (or is finishing) is not one.
+     */
+    private void countLeftovers(List<Call> calls) {
+        for (Call call : calls) {
+            if (call.state.get() == STARTED && call.finishedAt == null) {
+                synchronized (call) {
+                    if (!call.threadEnded) {
+                        call.leftover = true;
+                        add(call.adapter.sourceName(), ONE_LEFTOVER);
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -294,8 +331,11 @@ public final class SourceFanOut {
         volatile Throwable startError;
         /** Whether the call took the breaker's half-open trial. */
         final boolean holdsTrial;
-        /** Whether the call is counted as running; its thread uncounts it when it actually ends. */
-        volatile boolean counted;
+        /** Whether the call is counted as a trial call; its thread uncounts it when it actually ends. */
+        volatile boolean trialCounted;
+        /** Guarded by this call: the thread has ended, or the call was counted a leftover (not both ways round). */
+        boolean threadEnded;
+        boolean leftover;
         volatile Thread thread;
 
         Call(DataSourceAdapter<?> adapter, DataRequest request, boolean holdsTrial) {
@@ -399,6 +439,7 @@ public final class SourceFanOut {
             }
         }
         awaitUnwind(calls);
+        countLeftovers(calls);
         if (interrupted) {
             Thread.currentThread().interrupt();
         }
@@ -461,8 +502,10 @@ public final class SourceFanOut {
                     if (!call.state.compareAndSet(NEW, STARTED)) {
                         return;
                     }
-                    began(call.adapter.sourceName(), call.holdsTrial);
-                    call.counted = true;
+                    if (call.holdsTrial) {
+                        add(call.adapter.sourceName(), ONE_TRIAL);
+                        call.trialCounted = true;
+                    }
                     try {
                         call.record = call.adapter.fetch(call.request);
                         call.succeeded = true;
@@ -480,9 +523,15 @@ public final class SourceFanOut {
             call.startError = t;
             call.state.compareAndSet(NEW, CANCELLED);
         } finally {
-            if (call.counted) {
-                // The thread has really ended: only now is the source free of this call.
-                ended(call.adapter.sourceName(), call.holdsTrial);
+            // The thread has really ended: only now is the source free of this call.
+            if (call.trialCounted) {
+                remove(call.adapter.sourceName(), ONE_TRIAL);
+            }
+            synchronized (call) {
+                call.threadEnded = true;
+                if (call.leftover) {
+                    remove(call.adapter.sourceName(), ONE_LEFTOVER);
+                }
             }
             call.ended.countDown();
             finished.add(call);
@@ -613,6 +662,7 @@ public final class SourceFanOut {
                 call.thread.interrupt();
             }
             awaitUnwind(calls);
+            countLeftovers(calls);
         }
         plan.trials().forEach(breaker::releaseTrial);
         return notStarted;

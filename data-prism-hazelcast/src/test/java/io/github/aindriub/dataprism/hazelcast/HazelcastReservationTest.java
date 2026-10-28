@@ -973,4 +973,42 @@ class HazelcastReservationTest {
             throw failure.getCause();
         }
     }
+
+    @Test
+    void aReleaseOfNothingTakesNoLockAndLeavesTheReservationWhole() throws Exception {
+        var shortBudget = new HazelcastScopeBudget(members[0], Duration.ofMillis(100));
+        ReadReservation reservation = shortBudget.reserve(SCOPE, "s-1", 2, 5, 5);
+        IMap<String, Object> map = members[1].instance().getMap(PrivacyCluster.BUDGET_MAP);
+        String key = totalKey(SCOPE);
+        CountDownLatch locked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Thread holder = new Thread(() -> {
+            map.lock(key);
+            locked.countDown();
+            try {
+                release.await();
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            } finally {
+                map.unlock(key);
+            }
+        });
+        holder.start();
+        try {
+            assertThat(locked.await(10, TimeUnit.SECONDS)).isTrue();
+            // Nothing to give back: no lock is asked for, so a held scope lock cannot time it out.
+            shortBudget.release(reservation, 0);
+            assertThatThrownBy(() -> shortBudget.release(reservation, 1))
+                    .as("a release of something still needs the lock")
+                    .isInstanceOf(ClusterLockTimeoutException.class);
+        } finally {
+            release.countDown();
+            holder.join(10_000);
+        }
+        assertThat(budgets[1].reads(SCOPE, "s-1")).as("the reads are still held").isEqualTo(2);
+
+        shortBudget.release(reservation, 2);
+
+        assertThat(budgets[1].reads(SCOPE, "s-1")).as("and the reservation could still give them back").isZero();
+    }
 }

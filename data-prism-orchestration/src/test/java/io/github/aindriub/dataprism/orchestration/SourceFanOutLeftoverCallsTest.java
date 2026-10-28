@@ -7,6 +7,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -91,14 +92,14 @@ class SourceFanOutLeftoverCallsTest {
 
     private static void awaitIdle(SourceFanOut fanOut, String source) {
         long limit = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT_SECONDS);
-        while (fanOut.running(source) > 0 && System.nanoTime() < limit) {
+        while (fanOut.leftovers(source) > 0 && System.nanoTime() < limit) {
             Thread.onSpinWait();
         }
-        assertThat(fanOut.running(source)).as("leftover calls ended").isZero();
+        assertThat(fanOut.leftovers(source)).as("leftover calls ended").isZero();
     }
 
     @Test
-    @DisplayName("running calls for a source never exceed maxConcurrency, and later requests are told TIMED_OUT without a call")
+    @DisplayName("leftover calls for a source stop at maxConcurrency, and later requests are told TIMED_OUT without a call")
     void leftoversAreCappedPerSource() throws Exception {
         var clock = new SourceFanOutDeadlineTest.MutableClock();
         var fanOut = new SourceFanOut(SourceCircuitBreaker.disabled(), clock, SourceFanOutOptions.defaults());
@@ -113,8 +114,8 @@ class SourceFanOutLeftoverCallsTest {
                 });
             }
             assertThat(deaf.calls.get()).as("only the first two requests reached the source").isEqualTo(2);
-            assertThat(deaf.peak.get()).isLessThanOrEqualTo(2);
-            assertThat(fanOut.running("deaf")).isEqualTo(2);
+            assertThat(deaf.peak.get()).as("each request left one behind").isEqualTo(2);
+            assertThat(fanOut.leftovers("deaf")).isEqualTo(2);
         } finally {
             deaf.stop.countDown();
             awaitIdle(fanOut, "deaf");
@@ -205,7 +206,9 @@ class SourceFanOutLeftoverCallsTest {
             requestCutByTheDeadline(fanOut, clock, deaf, limits);
             clock.advance(Duration.ofSeconds(6));
 
-            var results = fanOut.fetchAll(List.of(deaf), ASK, limits);
+            // On a worker, so that a regression fails this test instead of hanging the build.
+            var results = CompletableFuture.supplyAsync(() -> fanOut.fetchAll(List.of(deaf), ASK, limits))
+                    .get(WAIT_SECONDS, TimeUnit.SECONDS);
 
             assertThat(results).singleElement()
                     .satisfies(f -> assertThat(f.outcome().status()).isEqualTo(SourceOutcome.Status.TIMED_OUT));
@@ -237,5 +240,67 @@ class SourceFanOutLeftoverCallsTest {
         assertThat(results).singleElement()
                 .satisfies(f -> assertThat(f.outcome().status()).isEqualTo(SourceOutcome.Status.ANSWERED));
         assertThat(deaf.calls.get()).isEqualTo(2);
+    }
+
+    /** Answers when released, and counts how many calls are running at once. */
+    private static final class Healthy implements DataSourceAdapter<String> {
+        final CountDownLatch release = new CountDownLatch(1);
+        final AtomicInteger calls = new AtomicInteger();
+        final AtomicInteger peak = new AtomicInteger();
+        private final AtomicInteger running = new AtomicInteger();
+        private volatile CountDownLatch entered = new CountDownLatch(1);
+
+        @Override
+        public String sourceName() {
+            return "healthy";
+        }
+
+        @Override
+        public Class<String> responseType() {
+            return String.class;
+        }
+
+        @Override
+        public String fetch(DataRequest request) {
+            calls.incrementAndGet();
+            peak.accumulateAndGet(running.incrementAndGet(), Math::max);
+            entered.countDown();
+            try {
+                release.await();
+                return "ok";
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("interrupted", e);
+            } finally {
+                running.decrementAndGet();
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("ordinary overlapping requests to a healthy source are all called: maxConcurrency is per request")
+    void overlappingRequestsAreNotBusy() throws Exception {
+        var fanOut = new SourceFanOut(SourceCircuitBreaker.disabled(), new SourceFanOutDeadlineTest.MutableClock(),
+                SourceFanOutOptions.defaults());
+        var healthy = new Healthy();
+        var limits = limits(4);
+        List<DataSourceAdapter<?>> adapters = List.of(healthy);
+        Map<String, DataRequest> ask = Map.of("healthy", DataRequest.of("THING", "1"));
+        List<CompletableFuture<List<SourceFanOut.Fetched>>> requests = new ArrayList<>();
+
+        for (int request = 1; request <= 6; request++) {
+            healthy.entered = new CountDownLatch(1);
+            requests.add(CompletableFuture.supplyAsync(() -> fanOut.fetchAll(adapters, ask, limits)));
+            assertThat(healthy.entered.await(WAIT_SECONDS, TimeUnit.SECONDS))
+                    .as("request %d reached the source", request).isTrue();
+        }
+        assertThat(healthy.peak.get()).as("six calls at once with maxConcurrency 4").isEqualTo(6);
+        healthy.release.countDown();
+
+        for (var request : requests) {
+            assertThat(request.get(WAIT_SECONDS, TimeUnit.SECONDS)).singleElement()
+                    .satisfies(f -> assertThat(f.outcome().status()).isEqualTo(SourceOutcome.Status.ANSWERED));
+        }
+        assertThat(fanOut.trackedSources()).isZero();
     }
 }
