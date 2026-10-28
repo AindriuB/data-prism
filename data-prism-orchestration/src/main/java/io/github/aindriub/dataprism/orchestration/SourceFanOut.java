@@ -83,6 +83,9 @@ public final class SourceFanOut {
     private final CorrelationMdc mdc;
     private volatile Consumer<Semaphore> bulkheadObserver = bulkhead -> { };
     private volatile Consumer<Instant> tickObserver = now -> { };
+    private volatile Consumer<String> callStartObserver = source -> { };
+    private volatile Consumer<String> callFinishedObserver = source -> { };
+    private volatile Consumer<String> callEndObserver = source -> { };
     /**
      * Running calls per configured source name, process-wide for this fan-out (one per deployment); an entry
      * is removed when it reaches zero. Task 272's shared pool may replace it.
@@ -187,6 +190,27 @@ public final class SourceFanOut {
                 }
             }
         }
+    }
+
+    /**
+     * Test hook: told, on a call's own thread, that the call holds a permit and is about to read the clock
+     * for its start, so a test can hold it there past the deadline.
+     */
+    void callStartObserver(Consumer<String> observer) {
+        this.callStartObserver = Objects.requireNonNull(observer, "observer");
+    }
+
+    /**
+     * Test hook: told, on a call's own thread, that its result and finish time are recorded and it has not yet
+     * told the waiter, so a test can hold it there while the waiter looks.
+     */
+    void callFinishedObserver(Consumer<String> observer) {
+        this.callFinishedObserver = Objects.requireNonNull(observer, "observer");
+    }
+
+    /** Test hook: told, on a call's own thread, as the last thing it does: the thread is over and the waiter can see the call. */
+    void callEndObserver(Consumer<String> observer) {
+        this.callEndObserver = Objects.requireNonNull(observer, "observer");
     }
 
     /**
@@ -330,6 +354,8 @@ public final class SourceFanOut {
          * source. A CANCELLED call the waiter has not itself resolved can only have come from here.
          */
         volatile Throwable startError;
+        /** Set, before the state moves to CANCELLED, when the call's own thread found the deadline already past. */
+        volatile boolean lateStart;
         /** Whether the call took the breaker's half-open trial. */
         final boolean holdsTrial;
         /** Whether the call is counted as a trial call; its thread uncounts it when it actually ends. */
@@ -400,13 +426,13 @@ public final class SourceFanOut {
             while (resolved.size() < calls.size()) {
                 Instant now = Instant.now(clock);
                 if (!now.isBefore(deadline)) {
-                    expire(calls, resolved, started, now, limits);
+                    expire(calls, resolved, started, now, deadline, limits);
                     break;
                 }
                 for (Call call : calls) {
                     if (!resolved.containsKey(call) && call.state.get() == STARTED && call.startedAt != null
                             && !now.isBefore(call.startedAt.plus(limits.perSourceTimeout()))) {
-                        resolveRunning(call, resolved, Cut.PER_SOURCE, now, limits);
+                        resolveRunning(call, resolved, Cut.PER_SOURCE, now, deadline, limits);
                     }
                 }
                 tickObserver.accept(now);
@@ -414,9 +440,9 @@ public final class SourceFanOut {
                 while (done != null) {
                     if (!resolved.containsKey(done)) {
                         if (done.state.get() == STARTED && done.finishedAt != null) {
-                            resolved.put(done, completed(done));
-                        } else if (done.state.get() == CANCELLED && done.startError != null) {
-                            resolved.put(done, failedBeforeStart(done, started));
+                            resolved.put(done, completed(done, deadline, limits));
+                        } else if (cancelledBySelf(done)) {
+                            resolved.put(done, resolveSelfCancelled(done, started));
                         }
                     }
                     done = finished.poll();
@@ -432,10 +458,10 @@ public final class SourceFanOut {
                 if (call.state.compareAndSet(NEW, CANCELLED)) {
                     call.thread.interrupt();
                     resolved.put(call, neverCalled(call, SourceOutcome.Status.FAILED, "interrupted", started));
-                } else if (call.state.get() == CANCELLED && call.startError != null) {
-                    resolved.put(call, failedBeforeStart(call, started));
+                } else if (cancelledBySelf(call)) {
+                    resolved.put(call, resolveSelfCancelled(call, started));
                 } else {
-                    resolveRunning(call, resolved, Cut.INTERRUPTED, now, limits);
+                    resolveRunning(call, resolved, Cut.INTERRUPTED, now, deadline, limits);
                 }
             }
         }
@@ -502,7 +528,16 @@ public final class SourceFanOut {
                     return;
                 }
                 try {
-                    call.startedAt = Instant.now(clock);
+                    callStartObserver.accept(call.adapter.sourceName());
+                    // The start time is read, and checked against the deadline, before the call may become
+                    // STARTED: one of this thread and the waiter's expiry wins the single move out of NEW.
+                    Instant begin = Instant.now(clock);
+                    if (!begin.isBefore(deadline)) {
+                        call.lateStart = true;
+                        call.state.compareAndSet(NEW, CANCELLED);
+                        return;
+                    }
+                    call.startedAt = begin;
                     if (!call.state.compareAndSet(NEW, STARTED)) {
                         return;
                     }
@@ -511,12 +546,17 @@ public final class SourceFanOut {
                         call.trialCounted = true;
                     }
                     try {
+                        if (Thread.currentThread().isInterrupted()) {
+                            // Cancelled between starting and calling: do not begin remote work.
+                            throw new InterruptedException();
+                        }
                         call.record = call.adapter.fetch(call.request);
                         call.succeeded = true;
                     } catch (Throwable t) {
                         call.failure = t;
                     }
                     call.finishedAt = Instant.now(clock);
+                    callFinishedObserver.accept(call.adapter.sourceName());
                 } finally {
                     bulkhead.release();
                 }
@@ -539,6 +579,7 @@ public final class SourceFanOut {
             }
             call.ended.countDown();
             finished.add(call);
+            callEndObserver.accept(call.adapter.sourceName());
         }
     }
 
@@ -568,7 +609,7 @@ public final class SourceFanOut {
 
     /** Past the overall deadline: nothing not yet called is called, and everything running is interrupted. */
     private void expire(List<Call> calls, Map<Call, Resolution> resolved, Instant started, Instant now,
-                        RequestLimits limits) {
+                        Instant deadline, RequestLimits limits) {
         // Every call not yet started is cancelled before any running one is
         // interrupted, so an interrupted call's permit cannot start a queued one.
         for (Call call : calls) {
@@ -582,21 +623,21 @@ public final class SourceFanOut {
             if (resolved.containsKey(call)) {
                 continue;
             }
-            if (call.state.get() == CANCELLED && call.startError != null) {
-                resolved.put(call, failedBeforeStart(call, started));
+            if (cancelledBySelf(call)) {
+                resolved.put(call, resolveSelfCancelled(call, started));
             } else {
-                resolveRunning(call, resolved, Cut.DEADLINE, now, limits);
+                resolveRunning(call, resolved, Cut.DEADLINE, now, deadline, limits);
             }
         }
     }
 
     /** A started call that has not answered in time: interrupt it, unless it has just finished. */
     private void resolveRunning(Call call, Map<Call, Resolution> resolved, Cut cut, Instant now,
-                                RequestLimits limits) {
+                                Instant deadline, RequestLimits limits) {
         if (call.finishedAt != null) {
             // finishedAt is written after the result, so seeing it means the call finished, whether or not
-            // its thread has yet counted down `ended`.
-            resolved.put(call, completed(call));
+            // its thread has yet counted down `ended`. Whether the result is still wanted depends on when.
+            resolved.put(call, completed(call, deadline, limits));
             return;
         }
         Instant from = call.startedAt == null ? now : call.startedAt;
@@ -621,6 +662,17 @@ public final class SourceFanOut {
         }
     }
 
+    /** Whether the call's own thread cancelled it, before the waiter did: it failed to start, or started too late. */
+    private static boolean cancelledBySelf(Call call) {
+        return call.state.get() == CANCELLED && (call.startError != null || call.lateStart);
+    }
+
+    private Resolution resolveSelfCancelled(Call call, Instant started) {
+        return call.lateStart
+                ? neverCalled(call, SourceOutcome.Status.TIMED_OUT, "not started before the request deadline", started)
+                : failedBeforeStart(call, started);
+    }
+
     private Resolution neverCalled(Call call, SourceOutcome.Status status, String detail, Instant started) {
         return new Resolution(new Fetched(new SourceOutcome(call.adapter.sourceName(), status,
                 Duration.between(started, Instant.now(clock)), detail), null), false, false, false, true);
@@ -633,9 +685,23 @@ public final class SourceFanOut {
                 false, true, false, true);
     }
 
-    private Resolution completed(Call call) {
+    /**
+     * A finished call, judged by when it finished and not by when the waiter looked: a result that arrived
+     * after the call's own timeout is a timeout of the source, and one that arrived after the overall
+     * deadline only is a call the deadline cut (no breaker verdict). A waiter that was slow to notice changes
+     * neither.
+     */
+    private Resolution completed(Call call, Instant deadline, RequestLimits limits) {
         String name = call.adapter.sourceName();
         Duration took = Duration.between(call.startedAt, call.finishedAt);
+        if (call.finishedAt.isAfter(call.startedAt.plus(limits.perSourceTimeout()))) {
+            return new Resolution(new Fetched(new SourceOutcome(name, SourceOutcome.Status.TIMED_OUT, took,
+                    "no answer within " + limits.perSourceTimeout().toMillis() + "ms"), null), true, true, true, false);
+        }
+        if (call.finishedAt.isAfter(deadline)) {
+            return new Resolution(new Fetched(new SourceOutcome(name, SourceOutcome.Status.TIMED_OUT, took,
+                    "no answer before the request deadline"), null), false, false, true, false);
+        }
         Fetched fetched;
         if (call.succeeded) {
             fetched = call.record == null
