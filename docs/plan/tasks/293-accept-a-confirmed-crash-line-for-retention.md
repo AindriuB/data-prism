@@ -3,7 +3,7 @@
 **Repo:** `.`
 **Release:** 0.8.0
 **Base branch:** `origin/main` after 292 has merged. One PR, targeting `main`.
-**Depends on:** 292 (this task extends 292's verifier API and retention rule 4; both edit `AuditRetention.java` and `AuditChainVerifier.java`), 291 (both insert into `CHANGELOG.md` `[Unreleased]`; 291 is in wave 8)
+**Depends on:** 292 (this task extends 292's verifier API and retention rules 4 and 6; both edit `AuditRetention.java` and `AuditChainVerifier.java`), 291 (both insert into `CHANGELOG.md` `[Unreleased]`; 291 is in wave 8)
 **Wave:** 9 (filed 2026-10-28).
 - In wave 9 its Owns are disjoint from 252 (orchestration `follow`) and 254 (Spring limits and catalog wiring, `docs/configuration.md`, and the `CLUSTER_KEY_SHARED` and `NAME_KEY_SHARED` rows of `docs/plan/design/contract-register.md`).
 - It does not own the contract register, so it shares no file with 254. See Out of scope.
@@ -37,6 +37,7 @@
   - **Branch (ii) requires sequence 1** (condition 5 (ii) check 2). This makes OD-293-5 (a)'s claim hold. Without it, a keyless attacker could delete records 2-50 of w, rewrite record 1's sequence to 51 with GENESIS kept, and end the line `\r\n`. That line passes condition 7 against `PERIODIC{w, 50}`. A genuine GENESIS record is always sequence 1: the counter starts at 0 and `record` takes `incrementAndGet` (`AuditRecorder.java:42`, `:189` on `origin/wave/0.8-wave4`).
   - **Condition 2 accepts only a line the replay skipped without parsing**: a `\r`-terminated line (`AuditChainVerifier.java:581-593`) or the unterminated tail (`:439-447`). A newline-terminated line that the replay parsed and did not hash is refused. That covers a record after a break, a duplicate second copy, and a content break. This makes OD-293-6 (a) hold: once the own hash is not a condition, an edited newline-terminated record must not pass as a crash line.
   - **A `NON_GENESIS_START` or `RETENTION_ANCHOR_REJECTED` finding for the line's instance refuses** (condition 5 (i) check 1). This makes OD-292-3 (a) hold, because the line must continue a chain the verifier accepts from its start. Other findings that are not breaks, such as `TRUNCATED_BEFORE_CHECKPOINT` and `MISSING_WRITER`, still fail no condition by themselves.
+- **Acceptance also covers 292's rule 6 (coordinator, 2026-10-28, from external review of #172).** Rule 4 alone is not enough: an accepted crash line N+1 after `SHUTDOWN{N}` sits above `max(L, S)` off the chain, so 292's rule 6 (c) would still refuse its day. Retention therefore treats the accepted line as absent in every rule 6 check: it is not a next record for (a), not an S record for step 3, and not a record beyond the chain for (c). It is matched exactly as rule 4 matches it, by segment name, in-segment offset and the SHA-256 of its current bytes. Every other record is checked as before. 292's text needs no change. Its Out of scope already leaves "retention's tolerance of an accepted line" to 293.
 - **OD-293-2: withdrawn (2026-10-28).** Its premise was false. A torn write is always either `\r\n`-terminated or an unterminated tail, and the verifier skips both before parsing (`AuditChainVerifier.java:581-593`, `:439-447`). A `raw[23]` cut is therefore a tolerated fragment under 292's rules 2 and 5 and purges without this command. 292 pins it as purging.
 - **What the checks prove (planner, at filing; updated for OD-293-5 (a) and OD-293-6 (a)).** They do not prove a crash. The operator's investigation is the gate. The help text and the CHANGELOG say so, and neither may call the checks proof of a crash.
   - **What condition 7 closes.** A record at or below a sequence the store has checkpointed for its instance cannot be passed off as a crash line.
@@ -56,6 +57,7 @@ After 292, a real crash that leaves an unhashed line that parses keeps its day a
 - The line is the bytes of `<segment>` from `<offset>` up to, but not including, the next `\n`, or to end of file for an unterminated tail. A trailing `\r` is included. The SHA-256 is over those bytes as they are on disk, never over the verifier's joined copy.
 - **Replay mode.** Condition 2 and branch (i) of condition 5 are judged by the full-directory replay `AuditChainVerifier.verify(<audit-directory>, <anchor-store-file>, minimumRetention, keys, allowUnkeyedWriters)`, with the supplied keys and flag. `minimumRetention` is `--min-retention` or the verifier's default. This is the same replay the verify mode runs: not lenient, and with retention anchors honoured. Branches (ii) and (iii) of condition 5 are judged on the line's fields and the anchor store, because the replay never hashes that line. Condition 7 reads the same parsed store.
 - **Which bytes are hashed, by both the CLI and retention.** The SHA-256 covers the on-disk bytes of the segment file, from the line's in-segment offset up to, but not including, the next `\n`, or to end of file for an unterminated tail, so a trailing `\r` is included. It never covers the verifier's joined copy, which appends `"\r\n"` to a non-final segment's unterminated tail (`join`, :178-194). Retention maps a joined offset back to (segment, in-segment offset) through `starts`, and re-reads those bytes from the segment file to compare.
+- **What retention does with an acceptance.** It skips the accepted line, and only that line, in 292's rule 4 (the lowest unhashed complete offset) and in every rule 6 check: the next-record search, the S-record search of step 3, and step (c)'s records beyond the chain. Each check matches the line by segment name, in-segment offset and the SHA-256 of its current bytes. A line whose bytes have changed since acceptance is not skipped.
 - The command refuses, writes nothing, and exits with a distinct non-zero code (a new `EXIT_*` constant, documented in `--help`) unless every one of these holds:
   1. `<offset>` is the start of a line in `<segment>`, and `<segment>` is an `audit-YYYY-MM-DD[.NNNN].log` file in `<audit-directory>`;
   2. the line is one the verifier's full-directory replay, under the supplied keys, skipped without parsing: a `\r`-terminated line (`AuditChainVerifier.java:581-593`) or the unterminated tail (`:439-447`). It must also parse with `AuditRecordFormat.parse` once exactly one trailing `\r` is removed. This is narrower than 292's "unhashed complete record". A newline-terminated line that the replay parsed but did not hash is refused. That covers a record after a break, a duplicate second copy, and a content break;
@@ -127,6 +129,7 @@ After 292, a real crash that leaves an unhashed line that parses keeps its day a
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/audit/verify/AuditChainVerifier.java *(only these:*
   - *the new kind is skipped in `applyCheckpoints` and `anchorContradiction`;*
   - *292's lowest-unhashed-complete computation takes a set of acceptances and skips a line only when segment name, in-segment offset and the SHA-256 of its current bytes all match one;*
+  - *292's boundary-record helper (rule 6) takes the same acceptance set and skips the accepted line, matched the same way, in its next-record, S-record and beyond-the-chain scans;*
   - *the line lookup the command needs. That includes:*
     - *branch selection;*
     - *the checks of branches (i)-(iii), with branch (iii) using the existing `anchorIsOldEnough` and `anchorContradiction`;*
@@ -135,7 +138,7 @@ After 292, a real crash that leaves an unhashed line that parses keeps its day a
 
     *`AuditEventHash.java` is not changed.)*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/audit/verify/AuditChainVerifierCli.java *(the subcommand, its exit code and its `--help` lines)*
-- data-prism-core/src/main/java/io/github/aindriub/dataprism/audit/retention/AuditRetention.java *(reading the acceptances and passing them to rule 4 only)*
+- data-prism-core/src/main/java/io/github/aindriub/dataprism/audit/retention/AuditRetention.java *(reading the acceptances and passing them to rules 4 and 6 only)*
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/audit/retention/AuditRetentionCrashLineAcceptanceTest.java *(new)*
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/audit/verify/AuditChainVerifierCliAcceptCrashLineTest.java *(new)*
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/audit/AuditCheckpointTest.java *(insertions only: round trip of the new kind and its fields)*
@@ -166,6 +169,10 @@ After 292, a real crash that leaves an unhashed line that parses keeps its day a
 
   Each cut is ended `\r\n`. Each is tested on branch (ii), as an instance's sole GENESIS line at seq 1, and on branch (iii), as seq 100 after the anchor `{w, 99, h99}`. Each of the four is refused by `purge()` before acceptance. Each is accepted, and `purge()` then deletes its day. The report is `NO_MATCH_LOOKS_CUT` in the keyed variants, run with the key, and `NO_UNKEYED_MATCH` in the plain variants.
 - [ ] **Crash after a checkpoint (OD-293-5 (a) guard), plain and keyed.** w writes seq 1-N, the store holds `PERIODIC{w, N}`, and record N+1 is a crash line that parses, ended `\r\n`. After the crash, `close()` writes `SHUTDOWN{w, N}`. The command accepts the line on branch (i), and `purge()` then deletes its day.
+- [ ] **Accepted line and rule 6, plain and keyed.** w writes seq 1-N on D1, record N+1 is a crash line that parses, ended `\r\n`, as w's last line on D1, and `close()` writes `SHUTDOWN{w, N}`. Another instance writes on D2 and D3, which are also expired.
+  - Before acceptance, `purge()` refuses D1 (rule 4) and keeps D1, D2 and D3.
+  - After acceptance, `purge()` deletes D1, D2 and D3. It does not refuse under rule 6 (c), although N+1 is above `max(L, S) = N`.
+  - Negative: the same directory and acceptance, plus a second record of w at seq N+2 that is not on the chain. It sits in a retained segment the boundary scan opens for another, unclosed writer, as in 292's step (c) test. `purge()` refuses D1 under rule 6 (c) with 292's `SHUTDOWN` message, and keeps D1.
 - [ ] **Recovery variants, plain and keyed.** Each is refused by `purge()` before acceptance and purges after it. Each also asserts that the acceptance's SHA-256 equals the SHA-256 of the on-disk line bytes, and differs from the hash of the joined copy wherever the two differ:
   - an unterminated complete record at the end of a non-final expired segment: a crash at 23:59 on D1, with the restart writing after midnight into D2, so D1's file is never reopened and `join` adds `"\r\n"` only in the joined copy;
   - an unterminated complete record as the final expiring segment's tail.
@@ -213,9 +220,9 @@ After 292, a real crash that leaves an unhashed line that parses keeps its day a
   - condition 7, the reviewer's attack (OD-293-5 (a)), plain and keyed. w writes seq 1-50, and the store holds `{w, 50}`, in two variants: `PERIODIC` and `SHUTDOWN`. Each case is refused by condition 7, and the reason names the checkpoint's kind and sequence 50, unless stated:
     - branch (ii): records 2-50 deleted, and record 1 ended `\r\n`;
     - branch (i): records 11-50 deleted, and record 10 ended `\r\n`;
-    - branch (iii): D1 (seq 1-99) is purged and anchored at `{w, 99, h99}`, and D2 holds seq 100-150. Records 101-150 are deleted and record 100 is ended `\r\n`. The store holds the higher checkpoint first, so a build that names the first qualifying checkpoint it finds names 120. The two variants:
-      - `PERIODIC`: the store holds `PERIODIC{w, 150}`, then `PERIODIC{w, 120}`. The reason names `PERIODIC` 150;
-      - `SHUTDOWN`: the store holds `SHUTDOWN{w, 150}`, then `PERIODIC{w, 120}`. The reason names `SHUTDOWN` 150;
+    - branch (iii): D1 (seq 1-99) is purged and anchored at `{w, 99, h99}`, and D2 holds seq 100-150. Records 101-150 are deleted and record 100 is ended `\r\n`. The store holds the lower checkpoint first, so a build that names the first qualifying checkpoint it finds names 120. The two variants:
+      - `PERIODIC`: the store holds `PERIODIC{w, 120}`, then `PERIODIC{w, 150}`. The reason names `PERIODIC` 150;
+      - `SHUTDOWN`: the store holds `PERIODIC{w, 120}`, then `SHUTDOWN{w, 150}`. The reason names `SHUTDOWN` 150;
     - same sequence, branch (ii) as above: the store holds `PERIODIC{w, 50}`, then `SHUTDOWN{w, 50}`. The reason names `SHUTDOWN` 50;
     - at the checkpoint: nothing deleted, and record 50 itself ended `\r\n`, on branch (i). This pins "at or above";
   - a store whose last byte is not `\n`, which is left byte-identical.
@@ -230,8 +237,9 @@ After 292, a real crash that leaves an unhashed line that parses keeps its day a
   - condition 2 accepting any unhashed complete record by 292's definition: the "parsed newline-terminated line" negative fails;
   - branch (i) check 1 ignoring `NON_GENESIS_START` and `RETENTION_ANCHOR_REJECTED`: the `NON_GENESIS_START` negative fails;
   - branch (ii) dropping its sequence check: the seq 51 negative fails;
-  - condition 7 naming the first qualifying checkpoint found, not the highest: both variants of the branch (iii) condition 7 case fail on their reason, which names 120;
-  - condition 7 naming `PERIODIC` over `SHUTDOWN` at the same sequence: the "same sequence" case fails on its reason;
+  - condition 7 naming the first qualifying checkpoint found, not the highest: both variants of the branch (iii) condition 7 case fail, because the mutant names 120. The "same sequence" case fails too, because the mutant names the `PERIODIC` written first;
+  - condition 7 preferring `PERIODIC` over `SHUTDOWN` at the same sequence: the "same sequence" case fails, because the mutant names `PERIODIC` 50;
+  - acceptance applied to rule 4 only, not rule 6: "Accepted line and rule 6" fails, because purge refuses D1 under rule 6 (c) after acceptance;
   - branch (i) skipping its sequence check: the branch (i) "sequence skips by 2" negative fails;
   - the branch chosen by `previousHash == GENESIS` instead of by whether the instance has other records, with branch (ii) not re-checking that there is no other record: the "branch selection" negative fails;
   - branch (iii) skipping the `previousHash` check: the branch (iii) "`previousHash` not equal" negative fails;
