@@ -41,10 +41,11 @@ import java.util.stream.Collectors;
  * gives the same protection, and otherwise left out. Leaving a field out is the fail-closed answer: it is
  * never described more loosely than the scrubber treats it.
  *
- * <p>A declared type that is not a record and not a platform type is not a source model the scrubber
- * accepts, so a model holding one cannot be described.
+ * <p>A field declared as a user type that is not a record (an interface or a class that startup lets
+ * through) is the one case left out by its type: the scrubber writes it with no content, so that field is
+ * omitted and the rest of the model is still described.
  *
-  * <p>Whether the {@code ValueTokenSource} can hash and tokenize is read afresh for each description, by the
+ * <p>Whether the {@code ValueTokenSource} can hash and tokenize is read afresh for each description, by the
  * caller, and passed in. When it cannot (or its {@code available()} throws), every HASH or TOKENIZE field is
  * omitted, because the scrubber would refuse it. That is fail closed: a source reporting {@code true} wrongly
  * is the only way to over-claim, and the interface default is {@code false}.
@@ -177,6 +178,9 @@ final class ScrubPlanDescriber {
             }
             case STRUCTURE -> structure(md, leaf, removed, null);
             case DYNAMIC -> structure(md, leaf, removed, policy);
+            case OMIT -> {
+                // A non-record user type: the scrub writes it with no content, so only this field is left out.
+            }
         }
     }
 
@@ -260,7 +264,7 @@ final class ScrubPlanDescriber {
                 : null;
     }
 
-    private enum Kind { SCALAR, RECORD, STRUCTURE, DYNAMIC }
+    private enum Kind { SCALAR, RECORD, STRUCTURE, DYNAMIC, OMIT }
 
     private record Shape(Kind kind, boolean array, Class<?> record) {
     }
@@ -287,8 +291,7 @@ final class ScrubPlanDescriber {
             return new Shape(Kind.SCALAR, array, null);
         }
         if (resolver.descendable(nested)) {
-            requireRecord(nested);
-            return new Shape(Kind.RECORD, array, nested);
+            return new Shape(nested.isRecord() ? Kind.RECORD : Kind.OMIT, array, nested);
         }
         if (nested.isPrimitive() || nested.isEnum() || scalar(nested)) {
             return new Shape(Kind.SCALAR, array, null);
@@ -297,17 +300,9 @@ final class ScrubPlanDescriber {
             return new Shape(Kind.STRUCTURE, array, null);
         }
         if (concrete(nested) && !platform(nested)) {
-            requireRecord(nested);
-            return new Shape(Kind.STRUCTURE, array, null);
+            return new Shape(nested.isRecord() ? Kind.STRUCTURE : Kind.OMIT, array, null);
         }
         return new Shape(Kind.DYNAMIC, array, null);
-    }
-
-    /** A source model holds records only; the scrubber refuses any other user class, so none is described. */
-    private static void requireRecord(Class<?> type) {
-        if (!type.isRecord()) {
-            throw new IllegalStateException("not a record");
-        }
     }
 
     /**

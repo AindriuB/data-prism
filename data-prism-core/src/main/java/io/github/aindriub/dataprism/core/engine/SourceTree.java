@@ -1,6 +1,5 @@
 package io.github.aindriub.dataprism.core.engine;
 
-import com.fasterxml.jackson.annotation.JsonFormat;
 import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.BeanDescription;

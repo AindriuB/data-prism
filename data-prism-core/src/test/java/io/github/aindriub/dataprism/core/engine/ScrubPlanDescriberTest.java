@@ -230,6 +230,23 @@ class ScrubPlanDescriberTest {
 
     }
 
+    @SensitiveObject
+    interface Payload {
+    }
+
+    @SensitiveObject
+    static class Bean {
+        @NonSensitive(reason = "x")
+        public String name;
+    }
+
+    @LlmExposedModel
+    record WithIface(@InternalIdentifier String ref,
+                     @NonSensitive(reason = "x") Payload payload,
+                     @NonSensitive(reason = "x") Bean bean,
+                     @NonSensitive(reason = "enumerated") String state) {
+    }
+
     interface HasValue {
         @JsonValue
         String value();
@@ -700,5 +717,13 @@ class ScrubPlanDescriberTest {
     @DisplayName("a platform reference type is not a scalar, so it is never described VERBATIM")
     void referenceTypes() {
         assertThat(byPath(describe(AtomicRef.class, "DEFAULT", false))).doesNotContainKey("contact");
+    }
+
+    @Test
+    @DisplayName("a non-record user type leaves out its own field only; the rest of the model is still described")
+    void nonRecordTypeOmitsOnlyItsField() {
+        Map<String, Protection> d = byPath(describe(WithIface.class, "DEFAULT", false));
+
+        assertThat(d).containsEntry("state", Protection.VERBATIM).doesNotContainKeys("payload", "bean", "bean.name");
     }
 }

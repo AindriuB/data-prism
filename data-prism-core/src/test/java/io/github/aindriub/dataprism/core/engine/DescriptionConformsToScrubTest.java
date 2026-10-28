@@ -656,4 +656,13 @@ class DescriptionConformsToScrubTest {
                 .describe(PlainScalars.class, ScrubPlanDescriberTest.context("DEFAULT"), false).orElseThrow().fields())
                 .extracting(FieldProtection::path).contains("s", "n", "u", "e");
     }
+
+    @Test
+    @DisplayName("a model with an interface-typed field is described around it and conforms to the scrub")
+    void interfaceFieldIsLeftOut() {
+        for (String profile : BOTH) {
+            assertConforms(new DefaultFieldMetadataResolver(), profile,
+                    new ScrubPlanDescriberTest.WithIface("w-1", null, null, "OPEN"), false);
+        }
+    }
 }
