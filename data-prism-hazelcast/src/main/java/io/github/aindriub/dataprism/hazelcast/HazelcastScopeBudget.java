@@ -40,8 +40,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  * scope's lock, the lock on the scope-total key, bounded by the lock timeout, and updates each counter by its own
  * atomic processor. A {@code tryRead} takes the scope's lock only while the scope has no total; after that it needs
  * only its subject's lock, so reads of different subjects do not wait for each other. Each processor enforces its own
- * budget, so neither counter can pass its budget even if a lock lease expires; the lock makes the pair one unit. If
- * the second update fails the first is undone, and if the undo fails the counter is left over-counted, never
+ * budget, so neither counter can pass its budget even if a lock lease expires. Under the scope's lock the pair is
+ * one unit; the unlocked {@code tryRead} path updates the subject and the total under different locks, and a reader
+ * may see one without the other for a moment, which only under-states the total. If the second update of a
+ * {@code reserve} fails the first is undone, and if the undo fails the counter is left over-counted, never
  * under-counted. The total entry is created by the first {@code reserve} of a scope, from the counters already
  * there, so a scope that only ever uses {@code tryRead} holds one entry per subject, as before; from then on
  * {@code tryRead} adds to it.
@@ -296,8 +298,10 @@ public final class HazelcastScopeBudget implements ScopeBudget {
      * first or depend on 226.
      *
      * @throws ClusterLockTimeoutException if the scope's lock was not obtained within the lock timeout
-     * @throws ClusterOperationRefusedException if the cluster rejected the lock or an update; the failure is not
-     *                                          swallowed, and the reservation can be released again
+     * @throws ClusterOperationRefusedException if the cluster rejected a lock or failed an update. The failure is not
+     *                                          swallowed. Only a failure before any write (taking a lock) leaves the
+     *                                          reservation whole and releasable again; one from an update leaves it
+     *                                          spent
      */
     @Override
     public void release(ReadReservation reservation, int unused) {
@@ -321,8 +325,8 @@ public final class HazelcastScopeBudget implements ScopeBudget {
                 return;
             }
             // What the reservation still holds is known here from this instance's own record, under both locks, so
-            // nothing is taken out of the reservation until the counters have been lowered: a failure leaves it
-            // whole, and the release can be tried again.
+            // nothing is taken out of the reservation until the counters have been lowered. A failure before this
+            // point (taking a lock) has written nothing and leaves it whole; the updates below are sorted next.
             int give = Math.min(unused, origin.held.get());
             if (give == 0) {
                 return;
