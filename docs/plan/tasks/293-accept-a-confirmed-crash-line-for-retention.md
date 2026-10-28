@@ -41,7 +41,7 @@ After 292, a real crash that leaves an unhashed line that parses keeps its day a
   4. `--sha256` matches the line's bytes;
   5. the line chains as its instance's next record (OD-293-1 (a), OD-293-3 (a)). One condition, with two branches. The branch is chosen by whether the instance has any other record anywhere in the directory, that is, any other line that parses as that instance's record once one trailing `\r` is removed:
      - **(i) Not the instance's first record:** the instance has another record. It must have at least one hashed record before the line and must not be broken before it, in that replay. The line's `previousHash` must equal the instance's last hashed `eventHash`. The key is checked through the chain replay: a keyed chain replayed without its key, or under a wrong one, is broken at its first record or falls into the forger branch, so it has no hashed record before the line.
-     - **(ii) The instance's sole line:** the instance has no other record, so this line is its only line. Its `previousHash` must be GENESIS. Its stored `eventHash` must also recompute and match on its own: `AuditEventHash.compute(event, k)` for one of the supplied `--hmac-key-file` keys, or the unkeyed `AuditEventHash.compute(event)` only when no key is supplied or `--allow-unkeyed-writers` is set. This is the same acceptance rule the replay applies to a writer's first record (292's rule 1). A keyed line checked with no key, or under a wrong one, fails here. Both `compute` overloads are already public (`AuditEventHash.java:185`, `:198` on `origin/wave/0.8-wave4`), so the check needs no change outside 293's Owns.
+     - **(ii) The instance's sole line:** the instance has no other record, so this line is its only line. Its `previousHash` must be GENESIS. Its stored `eventHash` must also recompute and match on its own. `event` is the record that condition 2 parsed, with exactly one trailing `\r` removed and nothing else changed. It must match `AuditEventHash.compute(event, k)` for any one of the supplied `--hmac-key-file` keys, not only the first. The unkeyed `AuditEventHash.compute(event)` counts only when no key is supplied or `--allow-unkeyed-writers` is set. This is the same acceptance rule the replay applies to a writer's first record (292's rule 1). A keyed line checked with no key, or under a wrong one, fails here. Both `compute` overloads are already public (`AuditEventHash.java:185`, `:198` on `origin/wave/0.8-wave4`), so the check needs no change outside 293's Owns.
   6. the anchor store's last byte is `\n`, or the store is empty.
 - On success it appends one checkpoint to `<anchor-store-file>` through `FileAuditCheckpointSink`, prints it, and exits 0. The new kind is `CRASH_LINE_ACCEPTED`. It carries:
   - the line's `instanceId` and `sequence`;
@@ -71,7 +71,7 @@ After 292, a real crash that leaves an unhashed line that parses keeps its day a
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/audit/verify/AuditChainVerifier.java *(only these:*
   - *the new kind is skipped in `applyCheckpoints` and `anchorContradiction`;*
   - *292's lowest-unhashed-complete computation takes a set of acceptances and skips a line only when segment name, in-segment offset and the SHA-256 of its current bytes all match one;*
-     - *the line lookup the command needs, including branch (ii)'s single-record `eventHash` check through `AuditEventHash.compute`. `AuditEventHash.java` is not changed.)*
+  - *the line lookup the command needs, including branch (ii)'s single-record `eventHash` check through `AuditEventHash.compute`. `AuditEventHash.java` is not changed.)*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/audit/verify/AuditChainVerifierCli.java *(the subcommand, its exit code and its `--help` lines)*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/audit/retention/AuditRetention.java *(reading the acceptances and passing them to rule 4 only)*
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/audit/retention/AuditRetentionCrashLineAcceptanceTest.java *(new)*
@@ -87,7 +87,7 @@ After 292, a real crash that leaves an unhashed line that parses keeps its day a
   - `purge()` then returns normally and deletes the 03-01 and 03-02 segments, and the bytes of every remaining file are unchanged;
   - writer a's anchor is its last hashed record (its third), never the accepted fourth;
   - `AuditChainVerifier.verify(dir, store, P6M, keys, false)` reports no break, no checkpoint finding, and nothing from the new kind.
-- [ ] **Crash on the first record, plain and keyed (OD-293-3 (a), branch (ii)).** An instance's only line is its first record, complete with `previousHash` GENESIS, ended `\r\n`, in an expired day. A later expired day holds another instance's records. `purge()` refuses. `accept-crash-line` exits 0. `purge()` then deletes both days, and records no anchor for the crashed instance. In the keyed variant the line was written under the key passed as `--hmac-key-file`, with `allowUnkeyedWriters` false, and the command recomputes its `eventHash` under that key.
+- [ ] **Crash on the first record, plain and keyed (OD-293-3 (a), branch (ii)).** An instance's only line is its first record, complete with `previousHash` GENESIS, ended `\r\n`, in an expired day. A later expired day holds another instance's records. `purge()` refuses. `accept-crash-line` exits 0. `purge()` then deletes both days, and records no anchor for the crashed instance. In the keyed variant the line was written under the key passed as `--hmac-key-file`, with `allowUnkeyedWriters` false, and the command recomputes its `eventHash` under that key. A second keyed variant passes two keys, `[k0, k1]`, with the line written under `k1`: it is accepted and purges the same way. A build that tries only the first key fails it.
 - [ ] **Recovery variants, plain and keyed.** Each is refused by `purge()` before acceptance and purges after it. Each also asserts that the acceptance's SHA-256 equals the SHA-256 of the on-disk line bytes, and differs from the hash of the joined copy wherever the two differ:
   - an unterminated complete record at the end of a non-final expired segment: a crash at 23:59 on D1, with the restart writing after midnight into D2, so D1's file is never reopened and `join` adds `"\r\n"` only in the joined copy;
   - an unterminated complete record as the final expiring segment's tail.
@@ -104,10 +104,11 @@ After 292, a real crash that leaves an unhashed line that parses keeps its day a
     - a line whose instance has records but none hashed before the line;
     - an instance broken before the line;
     - keyed: the probe's chain run with no `--hmac-key-file`, and with a wrong one. Each is refused through the replay, because no record before the line is hashed;
+  - branch selection: a GENESIS line whose instance has other records (OD-293-3 (a)), pinned so that only branch selection can refuse it. In keyed mode, w has hashed seq 1-5, and a copy of w's genuine record 1 is appended as the directory's last line, ended `\r\n`. Conditions 2, 3 and 4 hold, and its HMAC is valid under the supplied key. The instance has other records, so branch (i) applies and refuses it: its GENESIS `previousHash` does not equal `hash5`. The test asserts that this is the refusal reported;
   - branch (ii), the instance's sole line:
-    - a GENESIS line whose instance has other records anywhere in the directory (OD-293-3 (a)). Branch (ii) does not apply, so branch (i) or condition 3 refuses it;
     - a sole line whose `previousHash` is not GENESIS;
     - keyed: the "Crash on the first record" line, written under key `k1`, run with no `--hmac-key-file`, and with `--hmac-key-file` holding a different key `k2`. Each is refused by the single-record `eventHash` check;
+    - keyed, unkeyed fallback: keys `[k1]`, `allowUnkeyedWriters` false, and a sole GENESIS line ended `\r\n` whose `eventHash` is the unkeyed `AuditEventHash.compute(event)`. It is refused, because unkeyed matching is allowed only with no key supplied or with `--allow-unkeyed-writers`;
   - a store whose last byte is not `\n`, which is left byte-identical.
 - [ ] **Store compatibility.** `AuditCheckpoint.fromJsonLine(cp.toJsonLine())` round-trips the new kind with its fields. A `BOOT`, `PERIODIC`, `SHUTDOWN` or `RETENTION_ANCHOR` line is byte-identical to the base's. `retentionAnchors()` never returns an acceptance.
 - [ ] **Verifier unchanged otherwise.** On copies, in the new test, of the inputs used by `AuditChainVerifierTest`, the full verifier's report with an acceptance in the store equals the report without it.
@@ -115,7 +116,10 @@ After 292, a real crash that leaves an unhashed line that parses keeps its day a
   - matching by segment and offset only, without the SHA-256: "Exactly that line" fails;
   - dropping the later-record check: the shape D negative fails;
   - `applyCheckpoints` not skipping the new kind: the recovery's final verify fails;
-  - branch (ii)'s single-record `eventHash` check removed: both keyed branch (ii) negatives fail;
+  - branch (ii)'s single-record `eventHash` check removed: the keyed branch (ii) negatives with no key and with `k2` fail;
+  - branch (ii) accepting the unkeyed hash regardless of `--allow-unkeyed-writers`: the "unkeyed fallback" negative fails;
+  - branch (ii) trying only the first supplied key: the two-key variant of "Crash on the first record" fails;
+  - the branch chosen by `previousHash == GENESIS` instead of by whether the instance has other records: the "branch selection" negative fails;
   - branch (i)'s predecessor rule applied to the sole line as well: "Crash on the first record" fails, in both modes.
 - [ ] **Help and CHANGELOG.** `--help` documents the subcommand and its exit code. One `### Added` entry under `[Unreleased]` names the command and when to use it: after a purge refuses with `AUDIT_RETENTION_CHAIN_UNVERIFIED` and an investigation finds a crash line, not tampering. The entry and the help text also:
   - say that the checks do not prove a crash, and that the operator's investigation is what decides;
