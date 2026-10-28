@@ -126,6 +126,12 @@ After this task:
    - **Cost reporting.** The implementation PR states the measured cost, as segments read and wall time: a clean-restart directory, and a crash directory with no `SHUTDOWN`, each with 180 retained daily segments. A writer with `L.sequence < S.sequence` is read up to its S record, which is at most the crash directory's full scan, so it needs no third measurement.
 7. **Dates must match (OD-292-2 (a), rule 2).** Refuse a day with `AUDIT_RETENTION_CHAIN_UNVERIFIED`, and keep it and every later expired segment, if any segment's latest hashed timestamp date (rule 2) is later than the date in that segment's file name. `SegmentedFileAuditSink.record` (:174-183) only ever moves the segment date forward. A record's UTC date is therefore never later than its segment's date. It can be earlier, after the clock steps back.
 
+   **A segment with no hashed record (172-4).** Rule 7 has no date evidence for a segment that holds no hashed record, so renaming such a segment to an earlier date is not detected.
+   - If the segment holds an unhashed complete record, rule 4 refuses its new day anyway.
+   - Otherwise it holds only lines that do not parse once one trailing `\r` is removed (rule 5 fragments), or nothing. Purge then deletes it under its new, earlier date.
+
+   This is accepted. Such a segment holds no hashed record, so deleting it removes no chain position, anchor or link that rules 1-7 or the full verifier rely on. What is lost is the verifier's fragment anomaly (`INTERRUPTED_WRITE_FRAGMENT` or `tail()`), which records that a write was torn, not a record. Renaming a fragment-only segment needs the same write access to the audit directory that deleting it outright needs, and this task does not detect a deleted fragment either.
+
 **Residual (OD-292-2 (a), narrowed by OD-292-4 (b) and OD-292-7 (a)).** If a writer stopped without a `SHUTDOWN` checkpoint (a crash, or a recorder built without a checkpoint sink) and never writes again, its last records can be deleted before a purge, by a clean line-boundary cut that leaves no fragment, and rule 6 has no next record to compare. Rules 1-7 cannot detect that. A writer that shut down cleanly is covered: when its `SHUTDOWN` is beyond the day's last hashed sequence, purge requires the writer's record at the `SHUTDOWN`'s sequence, carrying the `SHUTDOWN`'s hash and ending in `\n` with no `\r` (OD-292-8 (a)), in what it reads, whether or not a next record links (OD-292-7 (a)). Purge does not link-check the records between the next record and that record. They stay on disk, so the full verifier still reports a break among them. Periodic checkpoints (`dataprism.audit.checkpoint.interval`), compared by the full verifier, are the defence.
 
 **OD-292-1 (a) in practice.** A real crash can produce an unhashed line that *parses*. The cases, by where the cut falls in a v3 record (25 fields):
@@ -171,6 +177,7 @@ Each refused case keeps its day, `dataprism.audit.retention.unverified` fires, a
 - "A real crash fragment still purges", a regression guard;
 - "Duplicate-sequence line" (shape E), already refused by 207's `DUPLICATE_SEQUENCE` clause at the first copy's offset;
 - "Clock stepped back", because the base has no rule 7.
+- "Rename of a segment with no hashed record", positive variant, because it pins accepted behaviour that the base shares.
 - "Clean restart, bounded read", "Crash, no `SHUTDOWN`, full scan", "Rolled-back N+1" (both variants), "Partial day after a clean shutdown", "Two `SHUTDOWN`s, positive" and "A writer spanning D1 and a later day closes cleanly", because the base has no boundary scan. Each has a named mutant that kills it (mutants (iv-b) to (iv-g), and (iv-k) for the spanning writer's third variant);
 - "Two-key purge that succeeds", because the base already deletes a clean D1. It pins the replay choice.
 
@@ -225,6 +232,9 @@ Otherwise: Every test runs in plain mode and in keyed mode (`AuditChainMode.keye
 
   No later record of that instance exists, and a later expired day has records from another instance. `purge()` throws `AUDIT_RETENTION_CHAIN_UNVERIFIED` naming that day's segment. That day and the later expired day are both kept.
 - [ ] **A real crash fragment still purges.** In an expired day, an instance's last line is a strict prefix of its next record, cut in an early field so it does not parse. Two variants: ended `\r\n`, and unterminated as the day's last segment. A different instance writes on a later expired day. The purge returns normally, deletes the day and records one anchor per writer at that writer's last hashed record. A third variant, a v3 record cut inside `raw[23]` and ended `\r\n`, is pinned as purging. It is torn, so the verifier skips it before parsing (rule 5), and it does not parse once the `\r` is removed.
+- [ ] **Rename of a segment with no hashed record (172-4), in `AuditRetentionBoundaryTest`.** w writes seq 1-3 on 03-01 (expired). Instance x's only line is a torn prefix of its first record that does not parse, ended `\r\n`, alone in `audit-2026-09-09.log`. Another instance writes on 09-10 (retained). Rename `audit-2026-09-09.log` to `audit-2026-03-01.0001.log`. Two variants:
+  - **fragment only:** `purge()` returns normally and deletes both D1 files, as rule 7 states for a segment with no hashed record. The full verify afterwards reports no break;
+  - **unhashed complete record:** x's line is instead a complete record ended `\r\n`. `purge()` refuses under rule 4, naming `audit-2026-03-01.0001.log`, and both D1 files remain.
 - [ ] **Clock stepped back.** A record whose timestamp date is earlier than its segment's date (the sink's forward-only rule) does not refuse its day under rule 7.
 - [ ] **Verifier API.** `AuditChainVerifierHashedRecordsTest` pins rule 2 for each of these:
   - two writers across three segments;
