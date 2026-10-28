@@ -174,14 +174,12 @@ After 292, a real crash that leaves an unhashed line that parses keeps its day a
 - [ ] **Accepted line and rule 6, plain and keyed.** w writes seq 1-N on D1, record N+1 is a crash line that parses, ended `\r\n`, as w's last line on D1, and `close()` writes `SHUTDOWN{w, N}`. Another instance writes on D2 and D3, which are also expired.
   - Before acceptance, `purge()` refuses D1 (rule 4) and keeps D1, D2 and D3.
   - After acceptance, `purge()` deletes D1, D2 and D3. It does not refuse under rule 6 (c), although N+1 is above `max(L, S) = N`.
-  - **Negatives**, built as 292's step (c) test is built. Same D1, crash line, `SHUTDOWN{w, N}` and acceptance, plus:
-    - an unclosed writer u, with no `SHUTDOWN`, that also writes on D1, and whose next record is in the first retained segment R1. So the boundary scan opens R1;
-    - in R1, w's record N+2 with `previousHash` = `hashN`. It is w's next record after D1, links to L by step (a), and is on the chain.
+  - **Negative, off the chain**, built as 292's step (c) test is built. Steps, in this order:
+    1. Build the same D1, crash line and `SHUTDOWN{w, N}`. Add an unclosed writer u, with no `SHUTDOWN`, that also writes on D1 and whose next record is in the first retained segment R1, so the boundary scan opens R1.
+    2. Accept the crash line. Acceptance comes first, as in "Exactly that line": with N+2 already on disk, condition 3 would refuse it.
+    3. Append two records of w to R1. The first is N+2, with `previousHash` = `hashN`: it is w's next record after D1, links to L by step (a), and is on the chain. The second is a newline-terminated record at seq N+4 whose `previousHash` is not N+2's `eventHash`, as in 292's "seq 6, then a forged seq 8".
 
-    The variant places one more line of w in R1 after N+2. It must make `purge()` refuse D1 under rule 6 (c), with 292's `SHUTDOWN` message, and keep D1:
-    - **off the chain:** a newline-terminated record at seq N+4 whose `previousHash` is not N+2's `eventHash`, as in 292's "seq 6, then a forged seq 8". This record is also unhashed, because the replay reports it as a link break in R1. So it kills a build that skips every unhashed record above `max(L, S)`, and one that skips every off-chain record;
-
-    The main case above purges under the correct build. A build with either over-broad skip also purges it, so the variant, not the main case, is what kills those builds. Coverage of a matcher that is too loose (SHA-256 alone, or instance and sequence) is in "Exactly that line", through rule 4.
+    `purge()` refuses D1 under rule 6 (c) with 292's `SHUTDOWN` message, whose `<segment>` is R1, the segment holding N+4. D1 is kept. N+4 is also unhashed, because the replay reports it as a link break in R1. So this negative kills a build that skips every unhashed record above `max(L, S)`, and one that skips every off-chain record. Both of those builds still purge the main case, as the correct build does, so this negative is what kills them. Coverage of a matcher that is too loose (SHA-256 alone, or instance and sequence) is in "Exactly that line", through rule 4.
 - [ ] **Recovery variants, plain and keyed.** Each is refused by `purge()` before acceptance and purges after it. Each also asserts that the acceptance's SHA-256 equals the SHA-256 of the on-disk line bytes, and differs from the hash of the joined copy wherever the two differ:
   - an unterminated complete record at the end of a non-final expired segment: a crash at 23:59 on D1, with the restart writing after midnight into D2, so D1's file is never reopened and `join` adds `"\r\n"` only in the joined copy;
   - an unterminated complete record as the final expiring segment's tail.
