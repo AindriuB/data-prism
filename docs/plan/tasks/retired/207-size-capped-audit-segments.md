@@ -49,3 +49,16 @@ chain across every segment.
 - Size caps for the JSON projection or the single-file `FileAuditSink` (`file-path` mode), which still never rotates.
 - Keyed hashing (task 206).
 - `docs/audit.md` and `docs/log-shipping.md` (task 213).
+
+## Outcome (2026-10-27, 0.8; PR #166, tip 8459a812, wave/0.8-wave4)
+A day's audit segment is capped in size and the chain stays continuous across the rotations: segments of one day are named by index, the verifier's directory mode reads them in index order, and a purge deletes a day whole and anchors it at its last segment's last record. Base: `origin/wave/0.8-wave4` (OD-W5-1 (a)).
+
+Decisions. OD-207-1 (b): a purge finishes a partly deleted day by its recorded anchors before verifying later days. OD-207-2 (a): a partly purged day is finished only after its remaining segments verify on their own (same chain keys, never joined to the next day) with no break, structural anomaly or unterminated tail, and every writer's first remaining record starts at GENESIS or follows a recorded anchor; the anchor rule is judged on verified records. Purge also refuses at a duplicate sequence. OD-207-3 (a) and OD-207-4 (c): see the pre-existing gap below.
+
+Trust assumption (in the `AuditRetention` Javadoc): the retention anchor store is trusted.
+
+Review. External review found two P2s: segment indices used the default locale (fixed with `Locale.ROOT` in c3af4980, test `indexedNamesAreAsciiWhateverTheDefaultLocaleIs`), and the finish-partial-day path inferred partial deletion from sequence numbers in unverified records (fixed in 0c5ed3a8 and a60126e9 with four red-first tests). Internal review ended CLEAN.
+
+Pre-existing gap found, not fixed here: retention builds anchors by re-parsing raw lines, including lines the verifier skips unhashed (a `\r`-terminated line, an unterminated tail), so someone with write access to the audit directory can make purge write an anchor of their choosing and erase recent records undetected. It is in v0.6.0 to v0.7.1 and on wave4; this task does not make it worse. Task 292 closes it, and task 293 gives the operator recovery from a genuine crash line. Disclosure is a 0.8.0 CHANGELOG entry only (OD-207-4 (c)).
+
+Follow-up (Low): when a purge finishes a partly deleted day and a later day then fails verification, the `CHAIN_UNVERIFIED` message does not name the finished day.

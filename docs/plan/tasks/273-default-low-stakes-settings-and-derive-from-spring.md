@@ -76,6 +76,7 @@ A Spring Boot developer should set only what is a security decision. Default the
 - `docs/configuration.md:150-225` (the property reference table, with its `Default` column) and `:119-148` (the group table). 281 later splits the Required column; this task only corrects the cells for the keys above.
 - docs/conventions.md: tests use the `ApplicationContextRunner` shapes already in `DataPrismAutoConfigurationTest`.
 - Never read `~/.m2/settings.xml`, `~/.m2/settings-security.xml`, `~/.gnupg` or any other credential file.
+- From the 2026-10-27 re-plan of 210 (owner decision 2; the client-allowlist part reverses the 2026-10-24 decision): from 0.8 a context with the starter refuses to start unless case authorisation and the client allowlist are each decided. That means a `CaseAuthorizer` bean or `dataprism.security-policy.case-authorisation: token-trusted` (else `MISSING_CASE_AUTHORIZER`), and a `ClientAllowlist` bean, `dataprism.security-policy.allowed-clients`, or `dataprism.security-policy.client-allowlist: unrestricted` (else `MISSING_CLIENT_ALLOWLIST`). Neither is a low-stakes setting: do not default either. Every context this task's tests start decides both.
 
 ## OD-273-1 (open, owner): the default `scope-lifetime`
 - **Recommended: `PT8H`.** It is one working session, and it is the value every shipped configuration already uses (`docker/server/application.yaml:32`, `docs/configuration.md:254`, `data-prism-integration-tests/src/main/resources/application.yaml:42`, `docs/protect-your-own-api.md:348`).

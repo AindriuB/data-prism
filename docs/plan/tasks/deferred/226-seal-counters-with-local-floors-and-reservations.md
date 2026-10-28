@@ -1,10 +1,14 @@
 # 226 — Seal the budget and caller-rate counters, add local floors, and implement budget reservations on Hazelcast
 
+Deferred 2026-10-23, owner decision (b): 1.0 supports multiple instances on a trusted network only, and cluster security for untrusted networks is deferred past 1.0 (D-RM-1 (a) as amended; `docs/plan/PLAN.md`, "After 1.0: untrusted-network clusters"). This brief is kept as written for that milestone. Its dependencies, wave and base branch below are those of the 0.8 plan and must be re-planned when the milestone opens; read the 1.0 briefs 225, 227, 228 and 284 to 287 first, because they changed some of the files named here.
+
+What moved out for 1.0: the unsealed `reserve`, `release` and `scopeReads` on `HazelcastScopeBudget` that core 246 needs are task 285 (OD-08-1 (a) is met there, without sealing or local floors). When this brief is revived, it seals what 285 built and adds the floors and the merge policy; `HazelcastReservationTest` already exists (285) and gains the sealed and floor cases.
+
 **Repo:** `.`
-**Release:** 0.8.0
+**Release:** after 1.0 (untrusted-network clusters); was 0.8.0
 **Base branch:** `origin/main` (or the 0.8 integration branch), at a commit that contains 223 and 243.
 **Depends on:** 219 (answers 8 and 9), 223 (keyed names, `SealedWrites`, `ClusterSecuritySettings`, `CounterMapsBoundary`), 243 (core plan: `ScopeBudget.reserve` and `release`)
-**Wave:** 5 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
+**Wave:** none (deferred past 1.0; was a 0.8 wave)
 **Decisions:** OD-215-11 (a if 219 shows it possible, otherwise b), OD-215-15 (a, local floor covers the scope total) and core OD-08-1 (a, this brief owns `reserve` and `release` on `HazelcastScopeBudget`) are decided 2026-10-20.
 **Owns:**
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/HazelcastScopeBudget.java
@@ -28,6 +32,7 @@ Budget and caller-rate counts become sealed, and a member that deletes or replay
 - Task 219 answers 8 (processor re-run on backup and retry) and 9 (member-local state in a merge policy). Task 223 `SealedWrites`, computing shape: a retried counter may over-count, never under-count.
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/limits/InMemoryScopeBudget.java: the reference semantics.
 - From 218/219 (2026-10-21): OD-215-11 answer: a merge policy can open values (Q9), so "keep the higher count" is available. The earlier wave-1 follow-ups in PLAN.md also apply.
+- From the wave-5 record (2026-10-28, task 285, PR #171; this brief is deferred past 1.0 but takes these if it is ever built): (1) `ScopeIdentityIndex.endScope` deletes `BUDGET_MAP` keys without taking the scope lock, so a reserve during `endScope` can leave the scope total out of step with the subject counters. (2) Stored scope generations close the scope-reuse residuals of OD-285-1 (a) and OD-285-3 (a): a release after a `forget` or `endScope` on another member, a `forget` or `endScope` during an unlocked `tryRead` gap, a lapsed release, an undo, or a lapsed total builder finishing onto a reused scope's marker can each subtract from, or write into, the counters of a new scope with the same id (clamped). 285's invariant (when the total is not being built it is at least the reads granted in the scope) holds only across a scope id that is not reused. Whichever task first wires `forget` or `endScope` into production must close these first or depend on this brief.
 
 ## Required approach
 - Counter values are sealed with their canonical parts and window or lease end. Every change is one computing processor from `SealedWrites`: open, check, add, seal once on the primary, copy bytes to the backup.
