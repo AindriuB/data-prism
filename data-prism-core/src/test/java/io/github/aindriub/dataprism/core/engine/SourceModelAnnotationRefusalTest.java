@@ -61,6 +61,15 @@ class SourceModelAnnotationRefusalTest {
         protected Object value(Object bean, JsonGenerator g, SerializationContext prov) {
             return "appended";
         }
+
+        @Override
+        public tools.jackson.databind.ser.VirtualBeanPropertyWriter withConfig(
+                tools.jackson.databind.cfg.MapperConfig<?> config,
+                tools.jackson.databind.introspect.AnnotatedClass declaringClass,
+                tools.jackson.databind.introspect.BeanPropertyDefinition propDef,
+                tools.jackson.databind.JavaType type) {
+            return this;
+        }
     }
 
     private static void assertRefusedWith(Class<?> model, String where, String annotation) {
@@ -68,7 +77,7 @@ class SourceModelAnnotationRefusalTest {
                 .isInstanceOfSatisfying(PrivacyRefusedException.class, e -> {
                     assertThat(e.code()).isEqualTo(CODE);
                     assertThat(e.path()).isEqualTo("$");
-                    assertThat(e.getMessage()).isEqualTo(where + ": @" + annotation + TAIL);
+                    assertThat(e.getMessage()).endsWith(" at $: " + where + ": @" + annotation + TAIL);
                 });
     }
 
