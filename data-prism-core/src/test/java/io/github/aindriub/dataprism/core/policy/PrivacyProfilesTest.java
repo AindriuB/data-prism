@@ -55,6 +55,23 @@ class PrivacyProfilesTest {
     }
 
     @Test
+    @DisplayName("FREE_TEXT is redacted by DEFAULT and removed by STRICT, and every classification is mapped in both")
+    void freeTextMappedAndEveryClassificationCovered() throws Exception {
+        try (InputStream in = PrivacyProfiles.class.getResourceAsStream("/privacy-profiles-default.yaml")) {
+            Map<String, PrivacyProfile> profiles = PrivacyProfiles.fromYaml(in);
+
+            assertThat(profiles.get("DEFAULT").classifications()).containsEntry(DataClassification.FREE_TEXT,
+                    PrivacyProfile.ClassificationRule.of(PrivacyAction.REDACT));
+            assertThat(profiles.get("STRICT").classifications()).containsEntry(DataClassification.FREE_TEXT,
+                    PrivacyProfile.ClassificationRule.of(PrivacyAction.REMOVE));
+            assertThat(profiles.get("DEFAULT").classifications().keySet())
+                    .containsExactlyInAnyOrder(DataClassification.values());
+            assertThat(profiles.get("STRICT").classifications().keySet())
+                    .containsExactlyInAnyOrder(DataClassification.values());
+        }
+    }
+
+    @Test
     @DisplayName("a misspelled classification fails at load, naming the key")
     void unknownClassificationFails() {
         // The alternative is a rule that silently does not apply, which looks

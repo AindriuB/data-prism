@@ -73,6 +73,10 @@ profiles:
       TRADE_UNION: { action: REMOVE }
       SEX_LIFE_ORIENTATION: { action: REMOVE }
 
+      # Prose can carry a name, an address or a diagnosis that no field shape
+      # reveals, so it is treated as personal data by default.
+      FREE_TEXT: { action: REDACT }
+
   # For contexts where linkability itself is too much disclosure — a broad
   # search, or a model outside the organisation's control.
   STRICT:
@@ -99,3 +103,7 @@ profiles:
       RELIGIOUS_BELIEF: { action: REMOVE }
       TRADE_UNION: { action: REMOVE }
       SEX_LIFE_ORIENTATION: { action: REMOVE }
+
+      # Strict mode will not let unstructured prose through even redacted, since
+      # a redacted note still shows that a note exists on the record.
+      FREE_TEXT: { action: REMOVE }

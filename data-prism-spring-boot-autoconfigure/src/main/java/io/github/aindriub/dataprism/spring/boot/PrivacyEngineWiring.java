@@ -18,12 +18,15 @@ import io.github.aindriub.dataprism.pseudonymisation.HmacSyntheticGenerator;
 import io.github.aindriub.dataprism.pseudonymisation.HmacValueTokenSource;
 import io.github.aindriub.dataprism.pseudonymisation.vocabulary.Vocabulary;
 import io.github.aindriub.dataprism.pseudonymisation.vocabulary.VocabularyRegistry;
+import io.github.aindriub.dataprism.validation.FreeTextRecogniser;
 import io.github.aindriub.dataprism.validation.LlmResponseValidator;
 import io.github.aindriub.dataprism.validation.RawValueLeakValidator;
+import io.github.aindriub.dataprism.validation.SensitiveDataScanner;
 import io.github.aindriub.dataprism.validation.SensitivePatternValidator;
 import org.springframework.aop.framework.AopProxyUtils;
 import org.springframework.beans.factory.BeanFactoryUtils;
 import org.springframework.beans.factory.ListableBeanFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -245,5 +248,7 @@ class PrivacyEngineWiring implements SmartInitializingSingleton {
      * collected list rather than replacing this one.
      */
     @Bean
-    LlmResponseValidator dataPrismSensitivePatternValidator() { return new SensitivePatternValidator(); }
+    LlmResponseValidator dataPrismSensitivePatternValidator(ObjectProvider<FreeTextRecogniser> recognisers) {
+        return new SensitivePatternValidator(new SensitiveDataScanner(), recognisers.orderedStream().toList());
+    }
 }
