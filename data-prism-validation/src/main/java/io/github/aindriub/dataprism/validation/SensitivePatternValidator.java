@@ -111,7 +111,12 @@ public final class SensitivePatternValidator implements LlmResponseValidator {
                 names = null;
             } catch (VirtualMachineError e) {
                 throw e;
-            } catch (Exception | Error e) {
+            } catch (Throwable e) {
+                // An InterruptedException (possibly thrown sneakily) is deliberately NOT turned back into
+                // an interrupt flag here, unlike ResolverInvoker. This runs on the request thread before the
+                // audit write, and a restored interrupt makes the audit sink's FileChannel write throw
+                // ClosedByInterruptException and poisons the sink. The response is refused below regardless,
+                // so the request still fails closed.
                 // Nothing from the throwable is kept: its message may quote the value.
                 names = null;
             }

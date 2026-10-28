@@ -116,6 +116,34 @@ class SensitivePatternValidatorRecogniserTest {
     }
 
     @Test
+    @DisplayName("a raw Throwable thrown sneakily refuses and its message is not kept")
+    void rawThrowableRefuses() {
+        FreeTextRecogniser sneaky = v -> FreeTextRecogniserTestSupport.<RuntimeException>sneaky(
+                new Throwable("leaked " + v));
+        ValidationResult r = run(List.of(sneaky), note(SENTINEL), Set.of());
+        assertThat(r.violations()).isNotEmpty().allSatisfy(v ->
+                assertThat(v.code()).isEqualTo(SensitivePatternValidator.FREE_TEXT_RECOGNISER_FAILED));
+        assertThat(r.violations().toString()).doesNotContain(SENTINEL).doesNotContain("leaked");
+    }
+
+    @Test
+    @DisplayName("a sneaky InterruptedException refuses and the interrupt flag is not set afterwards")
+    void interruptedDoesNotRestoreFlag() {
+        FreeTextRecogniser sneaky = v -> FreeTextRecogniserTestSupport.<RuntimeException>sneaky(
+                new InterruptedException("leaked " + v));
+        ValidationResult r;
+        try {
+            r = run(List.of(sneaky), note(SENTINEL), Set.of());
+            assertThat(Thread.currentThread().isInterrupted()).isFalse();
+        } finally {
+            Thread.interrupted();
+        }
+        assertThat(r.violations()).isNotEmpty().allSatisfy(v ->
+                assertThat(v.code()).isEqualTo(SensitivePatternValidator.FREE_TEXT_RECOGNISER_FAILED));
+        assertThat(r.violations().toString()).doesNotContain(SENTINEL);
+    }
+
+    @Test
     @DisplayName("a linkage Error from a recogniser refuses")
     void linkageErrorRefuses() {
         FreeTextRecogniser broken = v -> {
