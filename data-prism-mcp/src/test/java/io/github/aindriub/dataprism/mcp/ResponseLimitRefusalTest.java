@@ -59,7 +59,7 @@ class ResponseLimitRefusalTest {
                 (subject, namespace, context) -> "SUBJ-1", new ParameterFingerprinter(KEYS), recorder,
                 new PassThroughIdentityResolver(),
                 new SourceFanOut(SourceCircuitBreaker.disabled(), CLOCK, SourceFanOutOptions.defaults()),
-                new InMemoryScopeBudget(), new RequestLimits(8, records, bytes, Duration.ofSeconds(3), 4, 100),
+                new InMemoryScopeBudget(), new RequestLimits(8, records, bytes, Duration.ofSeconds(3), 4, 100, Duration.ofSeconds(10), 50_000),
                 (raw, context) -> findings, new SourceAliasing(new HmacValueTokenSource(KEYS)), PrivacyMetrics.none());
         var policy = new SecurityPolicy(Set.of("test"), Map.of("operator", Set.of("GET_ENTITY_CONTEXT", "COMPARE_ENTITY_SOURCES")));
         var caller = new AuthenticatedCaller("principal-1", "client-1", Set.of("operator"), "test", "case-1", null);

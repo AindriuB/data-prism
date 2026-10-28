@@ -100,7 +100,9 @@ class ExternalCorrelationPropagationTest {
                 new AuditRecorder(audited::add, CLOCK, "test-110"),
                 new PassThroughIdentityResolver(),
                 new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), SourceFanOutOptions.defaults()),
-                new InMemoryScopeBudget(), RequestLimits.DEFAULT, new NamespaceCorrelationService(resolver),
+                new InMemoryScopeBudget(),
+                new RequestLimits(8, 500, 512 * 1024, java.time.Duration.ofSeconds(3), 4, 1_000,
+                        java.time.Duration.ofSeconds(10), 50_000), new NamespaceCorrelationService(resolver),
                 new SourceAliasing(new HmacValueTokenSource(KEYS)), PrivacyMetrics.none());
     }
 

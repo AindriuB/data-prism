@@ -66,7 +66,7 @@ class SourceFanOutMdcTest {
         DataRequest request = DataRequest.of("THING", "s-1").withContext(new SourceCallContext(id));
         new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), SourceFanOutOptions.defaults().withMdc(mdc))
                 .fetchAll(List.of(new Logging()), Map.of("src", request),
-                        new RequestLimits(8, 500, 512 * 1024, Duration.ofSeconds(5), 4, 100));
+                        new RequestLimits(8, 500, 512 * 1024, Duration.ofSeconds(5), 4, 100, Duration.ofSeconds(10), 50_000));
         return appender.list;
     }
 

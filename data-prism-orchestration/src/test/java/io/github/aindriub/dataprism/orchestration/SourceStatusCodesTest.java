@@ -15,14 +15,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SourceStatusCodesTest {
 
     @Test
-    @DisplayName("SourceOutcome.Status is exactly the seven documented codes, in the documented order")
+    @DisplayName("SourceOutcome.Status is exactly the six documented codes, in the documented order")
     void statusSetIsThePublishedContract() throws IOException {
         List<String> documented;
         try (InputStream in = getClass().getResourceAsStream("/source-status-codes.txt")) {
             documented = new String(in.readAllBytes(), StandardCharsets.UTF_8).lines().filter(l -> !l.isBlank()).toList();
         }
 
-        assertThat(documented).hasSize(7);
+        assertThat(documented).hasSize(6);
         assertThat(Arrays.stream(SourceOutcome.Status.values()).map(Enum::name).toList())
                 .containsExactlyElementsOf(documented);
     }

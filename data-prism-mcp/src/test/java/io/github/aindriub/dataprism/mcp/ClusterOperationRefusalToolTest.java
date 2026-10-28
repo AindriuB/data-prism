@@ -145,6 +145,12 @@ class ClusterOperationRefusalToolTest {
             }
 
             @Override
+            public io.github.aindriub.dataprism.core.limits.ReadReservation reserve(String scopeId, String subjectId,
+                    int reads, int subjectBudget, int scopeTotalBudget) {
+                throw new ClusterOperationRefusedException(new IllegalArgumentException(SENTINEL));
+            }
+
+            @Override
             public int reads(String scopeId, String subjectId) {
                 return 0;
             }

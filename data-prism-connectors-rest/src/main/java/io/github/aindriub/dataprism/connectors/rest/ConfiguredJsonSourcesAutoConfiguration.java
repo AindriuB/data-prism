@@ -92,7 +92,8 @@ public class ConfiguredJsonSourcesAutoConfiguration {
      * these values to the framework defaults.
      */
     static final RequestLimits STANDALONE_LIMITS = new RequestLimits(
-            8, 500, 512 * 1024, java.time.Duration.ofSeconds(3), 4, 100);
+            8, 500, 512 * 1024, java.time.Duration.ofSeconds(3), 4, 100,
+            java.time.Duration.ofSeconds(10), 50_000);
 
 
     static final String CONFIG_LOCATION_PROPERTY = "dataprism.json-sources.config-location";

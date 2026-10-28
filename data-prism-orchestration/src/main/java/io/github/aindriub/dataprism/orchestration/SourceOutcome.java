@@ -27,8 +27,6 @@ public record SourceOutcome(String sourceName, Status status, Duration took, Str
         FAILED,
         /** Not called: the source is failing and its breaker is open. */
         CIRCUIT_OPEN,
-        /** Not called: the request had already reached its source limit. */
-        SKIPPED_OVER_LIMIT,
         /**
          * The source answered, and the answer was withheld: scrubbing or validating it refused. Nothing of
          * the record is returned. The call itself is refused only when no source is left to answer.

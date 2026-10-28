@@ -90,7 +90,8 @@ public class LimitsProperties {
         positive(maxConcurrency, "max-concurrency");
         positive(scopeReadBudget, "scope-read-budget");
         return new RequestLimits(maxSources, maxRecords, (int) maxResponseSize.toBytes(), perSourceTimeout,
-                maxConcurrency, scopeReadBudget);
+                maxConcurrency, scopeReadBudget, RequestLimits.DEFAULT.requestTimeout(),
+                RequestLimits.DEFAULT.scopeTotalReadBudget());
     }
 
     private static void positive(int value, String name) {
