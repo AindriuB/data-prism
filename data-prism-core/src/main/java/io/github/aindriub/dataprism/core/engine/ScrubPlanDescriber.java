@@ -1,6 +1,5 @@
 package io.github.aindriub.dataprism.core.engine;
 
-import com.fasterxml.jackson.annotation.JsonValue;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.core.model.FieldMetadata;
@@ -13,15 +12,9 @@ import io.github.aindriub.dataprism.core.policy.EffectivePrivacyPolicy;
 import io.github.aindriub.dataprism.core.policy.PrivacyPolicyResolver;
 import io.github.aindriub.dataprism.core.spi.FieldMetadataResolver;
 import io.github.aindriub.dataprism.core.spi.KeyNamespace;
-import tools.jackson.databind.annotation.JsonSerialize;
 
 import java.lang.ref.Reference;
-import java.lang.reflect.AnnotatedElement;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
-import java.lang.reflect.RecordComponent;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -40,23 +33,18 @@ import java.util.stream.Collectors;
  * same {@link FieldMetadataResolver} (annotations and descriptors), the same
  * {@link PrivacyPolicyResolver} (profile tightening) and the same nested-type rule.
  *
- * <p>The scrubber decides from the JSON value it meets; the describer has only the declared type, so
- * where the type does not say whether a field holds a scalar, an object or an array (an {@code Object},
- * a raw collection, a Jackson node), it describes the field only when every reading the scrubber could
- * take gives the same protection, and otherwise leaves it out. Leaving a field out is the fail-closed
- * answer: it is never described more loosely than the scrubber treats it.
+ * <p>The scrubber builds its tree from the declared types ({@link SourceRecordWalker}), so a Jackson
+ * annotation changes nothing about it and nothing here reads one: a declared record is always an object of
+ * its components, and a declared scalar or enum is always a scalar. Where the declared type does not say
+ * what a field holds (an {@code Object}, a raw collection, a Jackson node, an array inside an array) the
+ * scrubber reads it by the value it meets; such a field is described only when every reading it could take
+ * gives the same protection, and otherwise left out. Leaving a field out is the fail-closed answer: it is
+ * never described more loosely than the scrubber treats it.
  *
- * <p>A record or other structure type that may serialise as a scalar ({@code @JsonValue}, or a
- * {@code @JsonSerialize} on the type or on the component holding it) is treated the same way: the
- * scrubber then applies the field's own policy to the whole value, so it is described only when that
- * agrees with the structure reading.
- *
- * <p>A nested record is described through only when the scrubber's own reader
- * ({@link SourceTree#readsAsPlainBean}) writes it as a plain object of exactly its components: not as an
- * array, not with an object id, not through {@code @JsonValue} or a custom serializer, and with no
- * serializer or format override on the holding component. Anything else is omitted, which fails closed.
- * There is no mix-in route, because that reader is fixed. A type that may instead be written as a scalar
- * and that the scrubber would descend into is omitted too.
+ * <p>A field declared as a user type that is not a record (an interface or a class that startup lets
+ * through) is the one case left out by its type: the scrubber writes it as null when it is null and refuses
+ * the response when it is populated, so omitting that field hides no content the scrub emits, and the rest
+ * of the model is still described.
  *
  * <p>Whether the {@code ValueTokenSource} can hash and tokenize is read afresh for each description, by the
  * caller, and passed in. When it cannot (or its {@code available()} throws), every HASH or TOKENIZE field is
@@ -160,12 +148,12 @@ final class ScrubPlanDescriber {
         boolean subject = hasSubject || fields.stream().anyMatch(FieldMetadata::internalIdentifier);
 
         for (FieldMetadata md : fields) {
-            field(type, md, byName, prefix, gone, subject, inProgress, depth);
+            field(md, byName, prefix, gone, subject, inProgress, depth);
         }
         inProgress.remove(type);
     }
 
-    private void field(Class<?> owner, FieldMetadata md, Map<String, FieldMetadata> siblings, String prefix, boolean gone,
+    private void field(FieldMetadata md, Map<String, FieldMetadata> siblings, String prefix, boolean gone,
                        boolean subject, Set<Class<?>> inProgress, int depth) {
         EffectivePrivacyPolicy policy = null;
         if (!gone) {
@@ -178,7 +166,7 @@ final class ScrubPlanDescriber {
         boolean removed = gone || policy.action() == PrivacyAction.REMOVE;
         String path = prefix + md.fieldName();
 
-        Shape shape = shapeOf(owner, md);
+        Shape shape = shapeOf(md);
         String leaf = shape.array ? path + "[]" : path;
         switch (shape.kind) {
             case RECORD -> walk(shape.record, leaf + ".", removed, subject, inProgress, depth + 1);
@@ -192,7 +180,7 @@ final class ScrubPlanDescriber {
             case STRUCTURE -> structure(md, leaf, removed, null);
             case DYNAMIC -> structure(md, leaf, removed, policy);
             case OMIT -> {
-                // Descended into or written as a scalar, depending on serialiser settings this cannot read.
+                // A non-record user type: the scrub writes it with no content, so only this field is left out.
             }
         }
     }
@@ -287,11 +275,11 @@ final class ScrubPlanDescriber {
      * collection or array is described by its element; an array inside an array, or an element whose
      * type is not stated, is dynamic because the scrubber reads it by the value it meets.
      */
-    private Shape shapeOf(Class<?> owner, FieldMetadata md) {
+    private Shape shapeOf(FieldMetadata md) {
         Class<?> value = md.valueType();
         if (value == byte[].class || value == char[].class) {
             // Written as one string (base64 for bytes), not as an array of elements.
-            return overridden(owner, md) ? new Shape(Kind.DYNAMIC, false, null) : new Shape(Kind.SCALAR, false, null);
+            return new Shape(Kind.SCALAR, false, null);
         }
         boolean array = value != null && (value.isArray() || Collection.class.isAssignableFrom(value));
         Class<?> nested = nestedType(md, array);
@@ -301,92 +289,28 @@ final class ScrubPlanDescriber {
             return new Shape(Kind.DYNAMIC, array, null);
         }
         if (nested == byte[].class || nested == char[].class) {
-            return overridden(owner, md) ? new Shape(Kind.DYNAMIC, array, null) : new Shape(Kind.SCALAR, array, null);
+            return new Shape(Kind.SCALAR, array, null);
         }
-        boolean mayBeScalar = mayBeScalar(owner, md, nested);
-        if (resolver.descendable(nested)) {
-            return new Shape(mayBeScalar || !plain(owner, md, nested) ? Kind.OMIT : Kind.RECORD, array, nested);
+        // The order is the walker's: a record is read through its components whatever else it implements, so
+        // records come before the scalar test; an enum is a scalar even when marked descendable, so enums come
+        // before the descendable test; any other user type is written with no content when null and refused
+        // when populated, so only that field is left out.
+        if (nested.isRecord()) {
+            return new Shape(resolver.descendable(nested) ? Kind.RECORD : Kind.STRUCTURE, array, nested);
         }
         if (nested.isPrimitive() || nested.isEnum() || scalar(nested)) {
-            return SourceTree.readsAsPlainScalar(owner, md.fieldName(), nested)
-                    ? new Shape(Kind.SCALAR, array, null) : new Shape(Kind.DYNAMIC, array, null);
+            return new Shape(Kind.SCALAR, array, null);
         }
-        if (Map.class.isAssignableFrom(nested) || concrete(nested) && !platform(nested)) {
-            if (mayBeScalar) {
-                return new Shape(Kind.DYNAMIC, array, null);
-            }
-            return new Shape(Map.class.isAssignableFrom(nested) || plain(owner, md, nested)
-                    ? Kind.STRUCTURE : Kind.OMIT, array, null);
+        if (resolver.descendable(nested)) {
+            return new Shape(Kind.OMIT, array, null);
+        }
+        if (Map.class.isAssignableFrom(nested)) {
+            return new Shape(Kind.STRUCTURE, array, null);
+        }
+        if (concrete(nested) && !platform(nested)) {
+            return new Shape(Kind.OMIT, array, null);
         }
         return new Shape(Kind.DYNAMIC, array, null);
-    }
-
-    /**
-     * Whether the holding component carries a serializer or shape override, as Jackson merges them, so
-     * that a scalar-typed value may be written as an object. Such a field is dynamic: the agreement rule
-     * decides, which usually omits it.
-     */
-    private static boolean overridden(Class<?> owner, FieldMetadata md) {
-        return SourceTree.overridesSerialization(owner, md.fieldName());
-    }
-
-    /** Whether the scrubber's own reader writes the type as a plain object of its components. */
-    private static boolean plain(Class<?> owner, FieldMetadata md, Class<?> nested) {
-        return SourceTree.readsAsPlainBean(owner, md.fieldName(), nested);
-    }
-
-    private static void supertypes(Class<?> type, Set<Class<?>> out) {
-        if (type == null || type == Object.class || !out.add(type)) {
-            return;
-        }
-        supertypes(type.getSuperclass(), out);
-        for (Class<?> i : type.getInterfaces()) {
-            supertypes(i, out);
-        }
-    }
-
-    /**
-     * Whether a record or user class may be written as a single scalar: a {@code @JsonValue} member or a
-     * {@code @JsonSerialize} on the type, or a {@code @JsonSerialize} on the component, field or accessor
-     * that holds it.
-     */
-    private static boolean mayBeScalar(Class<?> owner, FieldMetadata md, Class<?> nested) {
-        if (platform(nested)) {
-            return false;
-        }
-        // Jackson honours these on any supertype, so every superclass and interface is searched.
-        Set<Class<?>> types = new HashSet<>();
-        supertypes(nested, types);
-        for (Class<?> type : types) {
-            if (type.isAnnotationPresent(JsonSerialize.class)) {
-                return true;
-            }
-            for (Method m : type.getDeclaredMethods()) {
-                if (m.isAnnotationPresent(JsonValue.class)) {
-                    return true;
-                }
-            }
-            for (Field f : type.getDeclaredFields()) {
-                if (f.isAnnotationPresent(JsonValue.class)) {
-                    return true;
-                }
-            }
-        }
-        List<AnnotatedElement> holders = new ArrayList<>();
-        if (owner.isRecord()) {
-            for (RecordComponent rc : owner.getRecordComponents()) {
-                if (rc.getName().equals(md.fieldName())) {
-                    holders.add(rc);
-                    holders.add(rc.getAccessor());
-                }
-            }
-        }
-        try {
-            holders.add(owner.getDeclaredField(md.fieldName()));
-        } catch (NoSuchFieldException e) {
-            // A record component has its field; anything else without one is covered above.
-        }
-        return holders.stream().anyMatch(h -> h.isAnnotationPresent(JsonSerialize.class));
     }
 
     /**
