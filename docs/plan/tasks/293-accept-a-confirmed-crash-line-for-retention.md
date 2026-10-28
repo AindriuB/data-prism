@@ -7,7 +7,7 @@
 **Wave:** 9 (filed 2026-10-28).
 - In wave 9 its Owns are disjoint from 252 (orchestration `follow`) and 254 (Spring limits and catalog wiring, `docs/configuration.md`, and the `CLUSTER_KEY_SHARED` and `NAME_KEY_SHARED` rows of `docs/plan/design/contract-register.md`).
 - It does not own the contract register, so it shares no file with 254. See Out of scope.
-- No earlier open brief owns `AuditCheckpoint.java`, `AuditCheckpointSink.java`, `FileAuditCheckpointSink.java` or `AuditChainVerifierCli.java` after 207 (which owned the CLI help text only, and is done before 292).
+- `AuditCheckpointSink.java` and `FileAuditCheckpointSink.java` are also 292's (its `SHUTDOWN` read-back, OD-292-4 (b)), and this task depends on 292. No other open brief owns `AuditCheckpoint.java`, `AuditCheckpointSink.java`, `FileAuditCheckpointSink.java` or `AuditChainVerifierCli.java`. 207 owned the CLI help text only, and is on `wave/0.8-wave4` at 0f712c2a.
 **Decisions:**
 - **OD-292-3 (a), decided by the owner 2026-10-27.** Recovery from a crash line that parses (OD-292-1 (a)) works like this:
   - a verifier CLI subcommand records an operator-confirmed acceptance in the anchor store, as a new checkpoint kind holding the segment name, the byte offset and the SHA-256 of the exact line bytes;
@@ -15,14 +15,14 @@
   - retention tolerates exactly that accepted line and nothing else;
   - files on disk are not changed.
 - **Trust (planner, at filing, from 292).** An acceptance is only as trustworthy as the anchor store. The attacker 292 defends against cannot write the anchor store, so cannot forge an acceptance. Whoever can write the anchor store can already vouch for chain starts, as `AuditRetention`'s Javadoc says.
-- **Open, OD-293-1 (owner).** Should the command also require that the line chains as its instance's next record, meaning its `previousHash` equals that instance's last hashed `eventHash`? A genuine crash line always does: it is the recorder's next record, cut at or after `raw[19]`, so `previousHash` in `raw[18]` is intact.
-  - (a) Add the check. Recommended: it costs one comparison and rejects a relocated or invented record.
-  - (b) The three owner-decided conditions only.
-
-  Build (a) unless the owner decides otherwise before work starts.
-- **Open, OD-293-2 (owner).** A real crash cut inside `raw[23]` of a v3 record gives 24 fields under a v3 `recordVersion`. The verifier reports that as `FIELD_COUNT_MISMATCH`, which is a break. The line does not parse, so this command cannot accept it, and purge stays blocked at that day with no product recovery. This was so before 292 too: 292 pins it as refused.
-  - (a) Accept and document as a known limit. Recommended for 0.8.0.
-  - (b) Extend acceptance to that one shape in a later task.
+- **OD-293-1 (a), decided by the owner 2026-10-28.** The command also requires the line's `previousHash` to equal its instance's last hashed `eventHash`. A genuine crash line always passes: it is the recorder's next record, and a cut that still parses keeps `raw[18]` intact.
+- **OD-293-2: withdrawn (2026-10-28).** Its premise was false. A torn write is always either `\r\n`-terminated or an unterminated tail, and the verifier skips both before parsing (`AuditChainVerifier.java:581-593`, `:439-447`). A `raw[23]` cut is therefore a tolerated fragment under 292's rules 2 and 5 and purges without this command. 292 pins it as purging.
+- **What the checks prove (planner, at filing).** They do not prove a crash. A keyless attacker with write access to the audit directory can craft a line that passes every condition: for example, the instance's true next record, rewritten as a last line ended `\r\n`. The operator's investigation is the gate. The help text and the CHANGELOG say so, and neither may call the checks proof of a crash.
+- **Running it (planner, at filing).**
+  - Stop the server first. The command appends to the live anchor store, and opening a `FileAuditCheckpointSink` runs `terminateTornTail`. Run against a store the server is writing, the command could terminate an in-flight `PERIODIC` line, which then reads as `TORN_CHECKPOINT_LINE`.
+  - The command refuses, writing nothing, if the store's last byte is not `\n`, so it never terminates a line itself.
+  - Run it as the account that owns the anchor store, which is the server's account (292's workaround keeps the store writable only by the server).
+  - The help text says all three.
 
 ## Goal
 After 292, a real crash that leaves an unhashed line that parses keeps its day and every later expired day until an operator acts (OD-292-1 (a)). Give the operator a way to act that changes no audit file and widens nothing else: after investigation, the operator records an acceptance of that exact line in the anchor store, and purge then tolerates that line alone.
@@ -30,12 +30,15 @@ After 292, a real crash that leaves an unhashed line that parses keeps its day a
 ## The command
 - `AuditChainVerifierCli accept-crash-line <audit-directory> --checkpoints <anchor-store-file> --segment <segment-file-name> --offset <byte-offset-in-segment> --sha256 <hex>`, taking `--hmac-key-file` (repeatable) and `--allow-unkeyed-writers` exactly as the verify mode does. The exact flag names may differ; the help text and the CHANGELOG name whatever is built.
 - The line is the bytes of `<segment>` from `<offset>` up to, but not including, the next `\n`, or to end of file for an unterminated tail. A trailing `\r` is included. The SHA-256 is over those bytes as they are on disk, never over the verifier's joined copy.
+- **Replay mode.** Conditions 2 and 5 are judged by the full-directory replay `AuditChainVerifier.verify(<audit-directory>, <anchor-store-file>, minimumRetention, keys, allowUnkeyedWriters)`, with the supplied keys and flag. `minimumRetention` is `--min-retention` or the verifier's default. This is the same replay the verify mode runs: not lenient, and with retention anchors honoured.
+- **Which bytes are hashed, by both the CLI and retention.** The SHA-256 covers the on-disk bytes of the segment file, from the line's in-segment offset up to, but not including, the next `\n`, or to end of file for an unterminated tail, so a trailing `\r` is included. It never covers the verifier's joined copy, which appends `"\r\n"` to a non-final segment's unterminated tail (`join`, :178-194). Retention maps a joined offset back to (segment, in-segment offset) through `starts`, and re-reads those bytes from the segment file to compare.
 - The command refuses, writes nothing, and exits with a distinct non-zero code (a new `EXIT_*` constant, documented in `--help`) unless every one of these holds:
   1. `<offset>` is the start of a line in `<segment>`, and `<segment>` is an `audit-YYYY-MM-DD[.NNNN].log` file in `<audit-directory>`;
   2. the line is an unhashed complete record by 292's definition, judged by the verifier's full-directory replay under the supplied keys;
   3. its instance has no later record anywhere in the directory: no later line, in segment order, that parses as that instance's record once one trailing `\r` is removed;
   4. `--sha256` matches the line's bytes;
-  5. if OD-293-1 (a) stands, its `previousHash` equals its instance's last hashed `eventHash`.
+  5. the instance has at least one hashed record before the line, and is not broken before it, in that replay. This covers a wrong or missing `--hmac-key-file`: a keyed chain replayed without its key is broken, or falls in the forger branch, at its first record. The line's `previousHash` equals the instance's last hashed `eventHash` (OD-293-1 (a)).
+  6. the anchor store's last byte is `\n`, or the store is empty.
 - On success it appends one checkpoint to `<anchor-store-file>` through `FileAuditCheckpointSink`, prints it, and exits 0. The new kind is `CRASH_LINE_ACCEPTED`. It carries:
   - the line's `instanceId` and `sequence`;
   - the SHA-256 of the line as `headHash`;
@@ -80,6 +83,9 @@ After 292, a real crash that leaves an unhashed line that parses keeps its day a
   - `purge()` then returns normally and deletes the 03-01 and 03-02 segments, and the bytes of every remaining file are unchanged;
   - writer a's anchor is its last hashed record (its third), never the accepted fourth;
   - `AuditChainVerifier.verify(dir, store, P6M, keys, false)` reports no break, no checkpoint finding, and nothing from the new kind.
+- [ ] **Recovery variants, plain and keyed.** Each is refused by `purge()` before acceptance and purges after it. Each also asserts that the acceptance's SHA-256 equals the SHA-256 of the on-disk line bytes, and differs from the hash of the joined copy wherever the two differ:
+  - an unterminated complete record at the end of a non-final expired segment: a crash at 23:59 on D1, with the restart writing after midnight into D2, so D1's file is never reopened and `join` adds `"\r\n"` only in the joined copy;
+  - an unterminated complete record as the final expiring segment's tail.
 - [ ] **Exactly that line.** After acceptance, append a second unhashed complete line elsewhere in D1, or edit one byte of the accepted line. `purge()` refuses again and keeps D1.
 - [ ] **Negatives.** Each of these exits with the new refusal code, writes nothing to the store, and leaves every file's bytes unchanged:
   - wrong SHA-256;
@@ -88,20 +94,28 @@ After 292, a real crash that leaves an unhashed line that parses keeps its day a
   - the line does not parse (a crash fragment, already tolerated);
   - the offset is not a line start;
   - a segment name outside the directory or not matching the segment pattern;
-  - if OD-293-1 (a) stands, a complete record that does not chain from its instance's last hashed record.
+  - a complete record that does not chain from its instance's last hashed record (OD-293-1 (a));
+  - an instance with no hashed record before the line;
+  - an instance broken before the line;
+  - a keyed chain run with no `--hmac-key-file`, or with a wrong one;
+  - a store whose last byte is not `\n`, which is left byte-identical.
 - [ ] **Store compatibility.** `AuditCheckpoint.fromJsonLine(cp.toJsonLine())` round-trips the new kind with its fields. A `BOOT`, `PERIODIC`, `SHUTDOWN` or `RETENTION_ANCHOR` line is byte-identical to the base's. `retentionAnchors()` never returns an acceptance.
-- [ ] **Verifier unchanged otherwise.** With an acceptance in the store, the full verifier's report on every existing `AuditChainVerifierTest` input equals the report without it.
+- [ ] **Verifier unchanged otherwise.** On copies, in the new test, of the inputs used by `AuditChainVerifierTest`, the full verifier's report with an acceptance in the store equals the report without it.
 - [ ] **Mutation proofs**, recorded in the PR:
   - matching by segment and offset only, without the SHA-256: "Exactly that line" fails;
   - dropping the later-record check: the shape D negative fails;
   - `applyCheckpoints` not skipping the new kind: the recovery's final verify fails.
-- [ ] **Help and CHANGELOG.** `--help` documents the subcommand and its exit code. One `### Added` entry under `[Unreleased]` names the command and when to use it: after a purge refuses with `AUDIT_RETENTION_CHAIN_UNVERIFIED` and an investigation finds a crash line, not tampering. It also says that an anchor store containing an acceptance cannot be read by a 0.7.x or earlier verifier, which then stops with an unreadable checkpoint file.
+- [ ] **Help and CHANGELOG.** `--help` documents the subcommand and its exit code. One `### Added` entry under `[Unreleased]` names the command and when to use it: after a purge refuses with `AUDIT_RETENTION_CHAIN_UNVERIFIED` and an investigation finds a crash line, not tampering. The entry and the help text also:
+  - say that the checks do not prove a crash, and that the operator's investigation is what decides;
+  - say to stop the server and to run the command as the account that owns the anchor store;
+  - say that an anchor store containing an acceptance cannot be read by 0.7.x or earlier. A 0.7.x or earlier verifier stops with an unreadable checkpoint file. A server rolled back to 0.7.x fails every purge closed with `AUDIT_RETENTION_CHAIN_UNVERIFIED: could not read the earlier retention anchors`, because its `FileAuditCheckpointSink.retentionAnchors()` (:87-105) parses every line and rejects the unknown kind.
 - [ ] Every existing test under `data-prism-core/src/test/java/io/github/aindriub/dataprism/audit/**` passes with unchanged expectations.
 
 ## Out of scope
 - `docs/audit.md`: 213 owns it (wave 13). The PR description gives the scribe the paragraph for 213 to carry.
 - `docs/plan/design/contract-register.md` rows for the new kind, subcommand and exit code: 254 owns that file in wave 9. The PR lists the rows, and the coordinator routes them, as 290 does for 291's.
-- Accepting a line that does not parse, including OD-293-2's `raw[23]` shape.
+- Accepting a line that does not parse. A torn line that does not parse is already tolerated by 292.
+- An instance whose very first record is the crash line, which has no hashed record before it. The command refuses it (condition 5), so purge stays blocked at that day. This is recorded as a residual for the owner.
 - Accepting a whole segment or a day, or any wildcard.
 - Editing, moving or truncating audit files, in the command or in retention.
 - Spring wiring and metrics. The Spring retention bean already uses `FileAuditCheckpointSink`, so it gets the read-back method with no wiring change.
