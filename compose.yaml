@@ -10,8 +10,8 @@
 # volume — a location Docker itself owns, never a path in this repository —
 # and nothing generated is ever committed (CLAUDE.md rule 7).
 #
-# Every service below pulls its image, tagged `latest` by default (or
-# QUICKSTART_IMAGE_TAG, e.g. pinned to the reactor version), from the same
+# Every service below pulls its image, tagged 0.8.0 by default (or
+# QUICKSTART_IMAGE_TAG), from the same
 # GHCR namespace as the published distribution image (task 55) — no service
 # here carries a
 # `build:` block, so a cold `docker compose up` never runs a Maven build on
@@ -32,7 +32,7 @@ services:
   # locally trusted TLS keystore/truststore into the `certs` volume before
   # anything else starts, and exiting. See docker/certs-init/generate-certs.sh.
   cert-init:
-    image: ghcr.io/aindriub/data-prism-quickstart-certs-init:${QUICKSTART_IMAGE_TAG:-latest}
+    image: ghcr.io/aindriub/data-prism-quickstart-certs-init:${QUICKSTART_IMAGE_TAG:-0.8.0}
     environment:
       CERT_PASSWORD: ${QUICKSTART_CERT_PASSWORD:-quickstart-only-not-for-production}
     volumes:
@@ -45,7 +45,7 @@ services:
   # comment — it mints tokens for this Compose network's synthetic
   # issuer/audience only, and is never a general-purpose identity provider.
   issuer:
-    image: ghcr.io/aindriub/data-prism-quickstart-issuer:${QUICKSTART_IMAGE_TAG:-latest}
+    image: ghcr.io/aindriub/data-prism-quickstart-issuer:${QUICKSTART_IMAGE_TAG:-0.8.0}
     depends_on:
       cert-init:
         condition: service_completed_successfully
@@ -63,6 +63,9 @@ services:
       SERVER_SSL_KEYALIAS: quickstart
       QUICKSTART_ISSUER_ISSUERID: ${QUICKSTART_ISSUER_ID:-https://issuer.quickstart.invalid}
       QUICKSTART_ISSUER_AUDIENCE: ${QUICKSTART_AUDIENCE:-data-prism-quickstart-mcp}
+      # The one other audience this issuer will stamp on request, for the
+      # server's operator port; must equal the server's required-audience.
+      QUICKSTART_ISSUER_OPERATORAUDIENCE: ${QUICKSTART_OPERATOR_AUDIENCE:-data-prism-quickstart-operator}
     volumes:
       - certs:/certs:ro
     ports:
@@ -71,7 +74,7 @@ services:
   # The synthetic customer API (data-prism-quickstart-fixtures). Every record
   # it can return is invented; see its own Javadoc.
   fixtures:
-    image: ghcr.io/aindriub/data-prism-quickstart-fixtures:${QUICKSTART_IMAGE_TAG:-latest}
+    image: ghcr.io/aindriub/data-prism-quickstart-fixtures:${QUICKSTART_IMAGE_TAG:-0.8.0}
     depends_on:
       cert-init:
         condition: service_completed_successfully
@@ -92,7 +95,7 @@ services:
   # docs/quickstart.md for why the very first request after `up` can need a
   # retry.
   server:
-    image: ghcr.io/aindriub/data-prism-quickstart-server:${QUICKSTART_IMAGE_TAG:-latest}
+    image: ghcr.io/aindriub/data-prism-quickstart-server:${QUICKSTART_IMAGE_TAG:-0.8.0}
     depends_on:
       cert-init:
         condition: service_completed_successfully
@@ -117,7 +120,27 @@ services:
       # to an environment variable, the shape task 17 requires everywhere,
       # not an exception to it.
       DATAPRISM_QUICKSTART_HMAC_KEY: ${QUICKSTART_HMAC_KEY:-quickstart-demo-hmac-key-not-a-real-secret-32-bytes-long}
+      QUICKSTART_OPERATOR_AUDIENCE: ${QUICKSTART_OPERATOR_AUDIENCE:-data-prism-quickstart-operator}
+    # The embedded solo member's cluster key and name key are generated here,
+    # at every start, from the container's own random source: nothing is
+    # committed, written to a volume or printed, and a restart makes new ones
+    # (the member is alone, so nothing else needs to share them). A value
+    # already set in the environment wins, which is how docker/multi-instance
+    # supplies one pair to both of its members. The command is the image's own
+    # ENTRYPOINT, run after the two exports.
+    entrypoint:
+      - sh
+      - -c
+      - |
+        gen() { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
+        : "$${DATAPRISM_CLUSTER_KEY_MATERIAL:=$$(gen)}"
+        : "$${DATAPRISM_NAME_KEY_MATERIAL:=$$(gen)}"
+        export DATAPRISM_CLUSTER_KEY_MATERIAL DATAPRISM_NAME_KEY_MATERIAL
+        exec java -Dloader.path=/app/data-prism-quickstart-extension.jar -jar /app/data-prism-server.jar --server.port=8080
     volumes:
       - certs:/certs:ro
     ports:
       - "8080:8080"
+      # The operator surface: its own port, on loopback only. Plain HTTP, so it
+      # is never published beyond this machine.
+      - "127.0.0.1:8081:8081"

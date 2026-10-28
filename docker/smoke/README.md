@@ -28,3 +28,34 @@ Hazelcast triggers a `sun.misc.Unsafe` warning on JDK 24 and later (JEP 471 and
 498). It is expected, behaviour is unchanged, and it is recorded on purpose
 rather than hidden: no image passes `--sun-misc-unsafe-memory-access=allow`
 (decision D-140-C). A count of 0 is also acceptable.
+
+# Re-identification smoke test
+
+`reidentification-smoke.sh` runs the re-identification walkthrough of
+`docs/quickstart.md` against the quickstart Compose stack and exits 0 only when
+all of these hold:
+
+- `get_entity_context` for subject `1001` returns a pseudonym, not `1001`;
+- the requester approving their own request is refused with `SELF_APPROVAL`
+  (409), and collecting before approval with `APPROVAL_NOT_APPROVED`;
+- a second principal approves, and the requester's collect resolves to `1001`;
+- the `reidentify` audit decisions, in order, are exactly `ALLOW:REQUESTED`,
+  `DENY:SELF_APPROVAL`, `DENY:APPROVAL_NOT_APPROVED`, `ALLOW:APPROVED`,
+  `ALLOW:RESOLVED`, and no `reidentify` audit line carries the real subject id.
+
+Run it from anywhere, needing Docker with Compose v2 (2.24.4 or later), `curl`
+and `python3`:
+
+    bash docker/smoke/reidentification-smoke.sh
+
+By default it builds the four quickstart images from this working tree
+(`compose.build.yaml`), which takes a few minutes the first time. Set
+`SMOKE_IMAGES=published` to use the published `0.8.0` images instead.
+
+The stack runs under its own project name (`data-prism-reid-smoke-<pid>`) on
+ephemeral loopback ports, so a quickstart you have running on 8080, 8081 or
+8544 is untouched. Every wait is bounded (240 seconds for the stack, 3 seconds
+per probe, 20 seconds per request). The stack and its volumes are removed on
+exit, including on failure. The tokens and the cluster and name keys exist only
+in the script's memory and the containers' environment; nothing is written to
+the repository.
