@@ -44,6 +44,10 @@ class ClusterLockTimeoutTest {
     void start() {
         members = TestMembers.pair(TestMembers.uniqueName("locks"), OptionalInt.empty());
         cluster = members[0];
+        // The first member writes its sentinel and card before the second joins, so partitions are still moving to
+        // the second member when the pair returns. A lock wait measured meanwhile includes the migration.
+        assertThat(MemberCardTest.Fixture.await(30, () -> cluster.instance().getPartitionService().isClusterSafe()))
+                .as("the partitions settled").isTrue();
         approvals = new HazelcastApprovalStore(cluster, TIMEOUT);
         budget = new HazelcastScopeBudget(cluster, TIMEOUT);
         limiter = new HazelcastCallerRateLimiter(cluster, TIMEOUT);
