@@ -104,7 +104,7 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
         String generated = null;
         boolean lookupOutcomeRecorded = false;
         try {
-            IMap<String, String> identities = cluster.instance().getMap(PrivacyCluster.IDENTITY_MAP);
+            IMap<String, String> identities = cluster.servingInstance().getMap(PrivacyCluster.IDENTITY_MAP);
             String key = cluster.scopeKeys().identity(context.scopeId(), subjectId, namespace);
 
             String canonical = ScopeKeys.identityCanonical(context.scopeId(), subjectId, namespace);
@@ -196,7 +196,7 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
         }
 
         if (cluster.reidentificationEnabled()) {
-            IMap<String, String> index = cluster.instance().getMap(PrivacyCluster.REIDENTIFICATION_MAP);
+            IMap<String, String> index = cluster.servingInstance().getMap(PrivacyCluster.REIDENTIFICATION_MAP);
             String indexKey = cluster.scopeKeys().reidentification(context.scopeId(), namespace, generated);
             String indexCanonical = ScopeKeys.reidentificationCanonical(context.scopeId(), namespace, generated);
             String sealedSubject = sealer.seal(PrivacyCluster.REIDENTIFICATION_MAP, indexKey,

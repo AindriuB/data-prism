@@ -666,6 +666,6 @@ public final class HazelcastScopeBudget implements ScopeBudget {
     }
 
     private IMap<String, Integer> counts() {
-        return cluster.instance().getMap(PrivacyCluster.BUDGET_MAP);
+        return cluster.servingInstance().getMap(PrivacyCluster.BUDGET_MAP);
     }
 }
