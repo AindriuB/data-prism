@@ -16,6 +16,8 @@ import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
 import io.github.aindriub.dataprism.hazelcast.ClusterSecuritySettings.UnverifiedMemberAction;
 import io.github.aindriub.dataprism.hazelcast.MemberCards.Card;
+import io.github.aindriub.dataprism.hazelcast.boundary.Inputs;
+import io.github.aindriub.dataprism.hazelcast.boundary.MemberCardMapsBoundary;
 import io.github.aindriub.dataprism.hazelcast.seal.ClusterKeys;
 import io.github.aindriub.dataprism.hazelcast.seal.KeyCheckValue;
 import io.github.aindriub.dataprism.hazelcast.seal.KeyedNames;
@@ -323,6 +325,34 @@ class MemberCardTest {
         assertThat(Card.decode(opened.plaintext()).keyCheckValues()).containsKey("test-link-1");
         assertThat(Card.decode(opened.plaintext()).keyCheckValues().get("test-link-1"))
                 .isEqualTo(KeyCheckValue.compute("test-link-1", Fixture.filled('l')));
+    }
+
+    @Test
+    void theCardMapPassesItsBoundaryCheckAndTheCheckBites() {
+        Pair pair = pair();
+        var inputs = new Inputs(new KeyedNames(TestMembers.KEYS), null, null, null, null, null, null, null, null,
+                null);
+        IMap<Object, Object> contents = pair.a().instance().getMap(PrivacyCluster.MEMBER_CARD_MAP);
+        var boundary = new MemberCardMapsBoundary();
+        assertThat(contents.size()).isEqualTo(3);
+        boundary.check(PrivacyCluster.MEMBER_CARD_MAP, contents, inputs);
+
+        // A value that does not open, a sentinel anywhere but the reserved key, and a card under a foreign key.
+        String sentinel = (String) contents.get(ClusterSentinel.KEY);
+        String card = (String) contents.get(pair.a().memberCards().orElseThrow().keyForTest(Fixture.uuidOf(pair.a())));
+        contents.put("planted", "not an envelope");
+        assertThatThrownBy(() -> boundary.check(PrivacyCluster.MEMBER_CARD_MAP, contents, inputs))
+                .isInstanceOf(AssertionError.class);
+        contents.remove("planted");
+        contents.put("planted", sentinel);
+        assertThatThrownBy(() -> boundary.check(PrivacyCluster.MEMBER_CARD_MAP, contents, inputs))
+                .isInstanceOf(AssertionError.class);
+        contents.remove("planted");
+        contents.put("planted", card);
+        assertThatThrownBy(() -> boundary.check(PrivacyCluster.MEMBER_CARD_MAP, contents, inputs))
+                .isInstanceOf(AssertionError.class);
+        contents.remove("planted");
+        boundary.check(PrivacyCluster.MEMBER_CARD_MAP, contents, inputs);
     }
 
     // ---- replay, deletion, strangers -------------------------------------------------------------------------

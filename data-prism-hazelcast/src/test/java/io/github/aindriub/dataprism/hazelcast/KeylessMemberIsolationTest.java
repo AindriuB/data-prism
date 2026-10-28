@@ -282,6 +282,65 @@ class KeylessMemberIsolationTest {
         assertThat(real.getLifecycleService().isRunning()).isTrue();
     }
 
+    // ---- the address a started member really bound ------------------------------------------------------
+
+    /** The same instance, reporting that its member is bound to {@code address}. */
+    private static HazelcastInstance boundTo(HazelcastInstance real, byte[] address) throws Exception {
+        InetSocketAddress bound = new InetSocketAddress(InetAddress.getByAddress(address), 5701);
+        Member local = forwarding(Member.class, real.getCluster().getLocalMember(),
+                (m, a) -> m.getName().equals("getSocketAddress") ? bound : NOT_OVERRIDDEN);
+        Cluster cluster = forwarding(Cluster.class, real.getCluster(),
+                (m, a) -> m.getName().equals("getLocalMember") ? local : NOT_OVERRIDDEN);
+        return forwarding(HazelcastInstance.class, real,
+                (m, a) -> m.getName().equals("getCluster") ? cluster : NOT_OVERRIDDEN);
+    }
+
+    @Test
+    void launchChecksTheAddressAKeylessMemberReallyBoundAndRefusesAWidenedOne() throws Exception {
+        Config hardened = PrivacyCluster.configure(
+                keylessConfig(TestMembers.uniqueName("bound"), FreePorts.consecutive(1)));
+        ClusterMembership.isolate(hardened);
+        HazelcastInstance real = Hazelcast.newHazelcastInstance(hardened);
+
+        PrivacyCluster.refuseUnlessBoundWithinMembership(real, hardened, true);
+        refusedAsMissingKeys(catchThrowable(() -> PrivacyCluster.refuseUnlessBoundWithinMembership(
+                boundTo(real, new byte[] {10, 9, 9, 9}), hardened, true)));
+        refusedAsMissingKeys(catchThrowable(() -> PrivacyCluster.refuseUnlessBoundWithinMembership(
+                boundTo(real, new byte[] {0, 0, 0, 0}), hardened, true)));
+        assertThat(real.getLifecycleService().isRunning()).as("the caller shuts a refused member down").isTrue();
+    }
+
+    @Test
+    void launchChecksTheAddressAKeyedMemberReallyBoundAgainstItsInterfaces() throws Exception {
+        int port = FreePorts.consecutive(1);
+        Config hardened = PrivacyCluster.configure(ClusterMembership
+                .tcpIp(TestMembers.uniqueName("boundkeyed"), List.of("127.0.0.1:" + port)).withPort(port)
+                .withInterface("127.0.0.1").toConfig());
+        HazelcastInstance real = Hazelcast.newHazelcastInstance(hardened);
+
+        PrivacyCluster.refuseUnlessBoundWithinMembership(real, hardened, false);
+        Throwable widened = catchThrowable(() -> PrivacyCluster.refuseUnlessBoundWithinMembership(
+                boundTo(real, new byte[] {10, 9, 9, 9}), hardened, false));
+        assertThat(widened).isInstanceOf(PrivacyClusterRefusal.class);
+        assertThat(((PrivacyClusterRefusal) widened).code()).isEqualTo(Code.INVALID_CLUSTER_INTERFACE);
+        assertThat(widened.getMessage()).doesNotContain("10.9.9.9").doesNotContain("127.0.0.1");
+
+        // A wildcard and a range match what they name, and no more.
+        for (String pattern : List.of("10.9.*.*", "10.9.9.1-10", "10.9.9.9")) {
+            Config patterned = PrivacyCluster.configure(ClusterMembership
+                    .tcpIp(TestMembers.uniqueName("boundpattern"), List.of("10.9.9.1:5701")).withPort(5701)
+                    .withInterface(pattern).toConfig());
+            PrivacyCluster.refuseUnlessBoundWithinMembership(boundTo(real, new byte[] {10, 9, 9, 9}), patterned,
+                    false);
+        }
+        Config elsewhere = PrivacyCluster.configure(ClusterMembership
+                .tcpIp(TestMembers.uniqueName("boundelsewhere"), List.of("10.8.0.1:5701")).withPort(5701)
+                .withInterface("10.8.*.*").toConfig());
+        assertThat(catchThrowable(() -> PrivacyCluster.refuseUnlessBoundWithinMembership(
+                boundTo(real, new byte[] {10, 9, 9, 9}), elsewhere, false)))
+                .isInstanceOf(PrivacyClusterRefusal.class);
+    }
+
     /**
      * A real late join cannot be produced here: Hazelcast's own joiner check turns away every member that is not
      * itself joinerless, and a joinerless one never looks. So the join is announced to the wrapper's listeners by
