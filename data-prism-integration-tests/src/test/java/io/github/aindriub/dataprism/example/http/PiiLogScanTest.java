@@ -686,7 +686,9 @@ class PiiLogScanTest {
                 Map.of(io.github.aindriub.dataprism.core.policy.PrivacyProfile.UnclassifiedBehaviour.FAIL_REQUEST,
                         "UNKNOWN_FIELD",
                         io.github.aindriub.dataprism.core.policy.PrivacyProfile.UnclassifiedBehaviour
-                                .PASS_THROUGH_UNSAFE, "VALIDATION_FAILED");
+                                // The carrier is a configured JSON source (task 288, OD-288-1 (a)): its own engine
+                                // runs the raw-value leak check and refuses with that validator's code first.
+                                .PASS_THROUGH_UNSAFE, "RAW_SOURCE_VALUE");
 
         expectedCode.forEach((behaviour, code) -> {
             List<String> results = new ArrayList<>();
@@ -725,8 +727,8 @@ class PiiLogScanTest {
                     PrivacyScopeType.CASE, "DEFAULT", "test", Instant.parse("2030-01-01T00:00:00Z"),
                     io.github.aindriub.dataprism.core.model.PseudonymisationVersion.HMAC_SHA256_V1);
 
-            String captured = captureLogOutput(() -> engine.scrub(new UndeclaredKeyFixture.Mixed(
-                    "1", "a note", Map.of(UndeclaredKeyFixture.KEY, "v")), context));
+            String captured = captureLogOutput(() -> engine.scrub(UndeclaredKeyFixture.mixedTree(
+                    "1", "a note", UndeclaredKeyFixture.KEY, "v"), context));
 
             assertThat(captured).as(behaviour + " declared-but-unannotated field is still named")
                     .contains("unclassified field unreviewedNote");

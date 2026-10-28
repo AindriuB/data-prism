@@ -1,8 +1,6 @@
 package io.github.aindriub.dataprism.example.http;
 
-import com.fasterxml.jackson.annotation.JsonAnyGetter;
-import io.github.aindriub.dataprism.annotations.LlmExposedModel;
-import io.github.aindriub.dataprism.core.spi.DataRequest;
+import io.github.aindriub.dataprism.core.engine.SourceTree;
 import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.format.AuditRecordFormat;
@@ -12,6 +10,7 @@ import io.github.aindriub.dataprism.core.model.Capability;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.model.PrivacyScopeType;
 import io.github.aindriub.dataprism.example.DataPrismAssembly;
+import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.example.StubAccountAdapter;
 import io.github.aindriub.dataprism.example.StubCustomerAdapter;
 import io.github.aindriub.dataprism.example.StubOrderAdapter;
@@ -111,13 +110,16 @@ class AuditFieldDispositionTest {
     /** The distinctive undeclared key; example.com is a reserved domain. */
     private static final String PAYLOAD_KEY = "leaky.key@example.com";
 
-    /** A payload whose only property is undeclared, and whose name is itself identifying. */
-    @LlmExposedModel
-    public record KeyedPayload() {
-        @JsonAnyGetter
-        public Map<String, Object> extras() {
-            return Map.of(PAYLOAD_KEY, 1);
-        }
+    /**
+     * A payload whose only property is undeclared, and whose name is itself identifying. A record source can no
+     * longer carry undeclared keys (task 288, OD-288-1 (a)), so this is a configured JSON source: the catalogue
+     * declares only the identifier, and the body carries the key beside it.
+     */
+    private static DataSourceAdapter<?> keyedPayload() {
+        ObjectNode body = SourceTree.newObject();
+        body.put("id", "123");
+        body.put(PAYLOAD_KEY, 1);
+        return UndeclaredKeyFixture.UPSTREAM.source("keyed-api", body, UndeclaredKeyFixture.identifier("id"));
     }
 
     @Test
@@ -126,25 +128,11 @@ class AuditFieldDispositionTest {
         Path auditFile = tempDir.resolve("audit.log");
         String purpose = "demonstration";
         String role = "investigator";
-        DataSourceAdapter<KeyedPayload> adapter = new DataSourceAdapter<>() {
-            @Override
-            public String sourceName() {
-                return "keyed-api";
-            }
-
-            @Override
-            public Class<KeyedPayload> responseType() {
-                return KeyedPayload.class;
-            }
-
-            @Override
-            public KeyedPayload fetch(DataRequest request) {
-                return new KeyedPayload();
-            }
-        };
+        DataSourceAdapter<?> adapter = keyedPayload();
 
         try (FileAuditSink fileSink = new FileAuditSink(auditFile)) {
-            DataPrismAssembly assembly = new DataPrismAssembly(List.of(adapter), FIXED_CLOCK, fileSink);
+            UndeclaredKeyFixture.Assembly assembly = new UndeclaredKeyFixture.Assembly(List.of(adapter),
+                    UndeclaredKeyFixture.UPSTREAM.sources(), FIXED_CLOCK, fileSink, UndeclaredKeyFixture.defaultProfiles());
             AuditRecorder toolAudit = new AuditRecorder(fileSink, FIXED_CLOCK, "disposition-mcp");
             SecurityPolicy policy = new SecurityPolicy(Set.of(purpose),
                     Map.of(role, Set.of(Capability.GET_ENTITY_CONTEXT)));

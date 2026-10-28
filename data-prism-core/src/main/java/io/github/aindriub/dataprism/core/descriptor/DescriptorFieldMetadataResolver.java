@@ -47,6 +47,11 @@ public final class DescriptorFieldMetadataResolver implements FieldMetadataResol
         this.descriptors = Map.copyOf(Objects.requireNonNull(descriptors, "descriptors"));
     }
 
+    /** The descriptors this resolver was built with, by type name; unmodifiable. */
+    public Map<String, ModelDescriptor> descriptors() {
+        return descriptors;
+    }
+
     @Override
     public List<FieldMetadata> resolve(Class<?> type) {
         List<FieldMetadata> base = delegate.resolve(type);

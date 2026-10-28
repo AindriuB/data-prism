@@ -105,6 +105,16 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
         this.descriptors = Map.copyOf(Objects.requireNonNull(descriptors, "descriptors"));
     }
 
+    /** The resolver this engine was constructed with. */
+    public FieldMetadataResolver resolver() {
+        return resolver;
+    }
+
+    /** The descriptors this engine describes chainable fields from; equal to the map it was given, unmodifiable. */
+    public Map<String, ModelDescriptor> descriptors() {
+        return descriptors;
+    }
+
     @Override
     public ScrubResult scrub(Object source, PrivacyContext context) {
         Objects.requireNonNull(source, "source");

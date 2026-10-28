@@ -194,19 +194,19 @@ class NestedContainerLeakTest {
     }
 
     @Test
-    @DisplayName("with the startup check skipped, the scrub refuses and no invented value is released")
+    @DisplayName("with the startup check skipped, the scrub refuses with the startup code and no invented value is released")
     void declaredShapesAreRefusedByTheEngine() throws Exception {
         for (var shape : declaredShapes().entrySet()) {
-            assertThat(scrub(shape.getValue())).as(shape.getKey()).isEqualTo("UNCLASSIFIED_STRUCTURE");
+            assertThat(scrub(shape.getValue())).as(shape.getKey()).isEqualTo(NESTED);
         }
     }
 
     @Test
-    @DisplayName("an Object or List<Object> holding [[record]] passes startup and is refused at scrub")
+    @DisplayName("an Object or List<Object> holding [[record]] passes startup and is refused at scrub as not declared")
     void requestTimeShapesAreRefusedByTheEngine() throws Exception {
         for (var shape : requestTimeShapes().entrySet()) {
             assertThat(startup(shape.getValue())).as(shape.getKey()).isEqualTo("accepted");
-            assertThat(scrub(shape.getValue())).as(shape.getKey()).isEqualTo("UNCLASSIFIED_STRUCTURE");
+            assertThat(scrub(shape.getValue())).as(shape.getKey()).isEqualTo("SOURCE_MODEL_RECORD_NOT_DECLARED");
         }
     }
 
@@ -225,15 +225,16 @@ class NestedContainerLeakTest {
     }
 
     @Test
-    @DisplayName("an unannotated or REDACT List<List<Leaf>> is now refused at startup; skipped, the scrub still fails closed")
+    @DisplayName("an unannotated or REDACT List<List<Leaf>> is now refused at startup; skipped, the scrub refuses with the same code")
     void unannotatedAndRedactedAreRefusedAtStartup() throws Exception {
         var unannotated = new Unannotated("r", List.of(List.of(leaf())));
         var redacted = new SensList("r", List.of(List.of(leaf())));
 
         assertThat(startup(unannotated)).isEqualTo(NESTED);
         assertThat(startup(redacted)).isEqualTo(NESTED);
-        assertThat(scrub(unannotated)).isEqualTo("UNDECLARED_FIELD");
-        assertThat(scrub(redacted)).isEqualTo("UNCLASSIFIED_STRUCTURE");
+        // The walker refuses while it builds the tree, before any field's policy applies.
+        assertThat(scrub(unannotated)).isEqualTo(NESTED);
+        assertThat(scrub(redacted)).isEqualTo(NESTED);
     }
 
     @Test

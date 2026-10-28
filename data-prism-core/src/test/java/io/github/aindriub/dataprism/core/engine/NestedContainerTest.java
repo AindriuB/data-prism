@@ -19,6 +19,8 @@ import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 import io.github.aindriub.dataprism.core.spi.SyntheticValueSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.io.InputStream;
 import java.time.Instant;
@@ -131,12 +133,33 @@ class NestedContainerTest {
     }
 
     @Test
-    @DisplayName("an object inside an inner array is recorded at its pointer, one /* per level")
+    @DisplayName("a record inside an inner array is refused while the tree is built, naming neither value nor path text")
     void dispositionsNameTheInnerArrayPointer() {
         var profile = new PrivacyProfile("DEFAULT", PrivacyProfile.UnclassifiedBehaviour.REDACT_AND_WARN, Map.of());
 
+        Throwable thrown = catchThrowable(() -> engine(Map.of("DEFAULT", profile))
+                .scrub(new Records("r", List.of(List.of(new Leaf("Zelda Invented-Probe")))), context()));
+
+        assertThat(thrown).isInstanceOfSatisfying(PrivacyRefusedException.class, e -> {
+            assertThat(e.code()).isEqualTo("SOURCE_MODEL_NESTED_COLLECTION_OF_RECORD");
+            assertThat(e.getMessage()).doesNotContain("Zelda");
+            assertThat(e.path()).doesNotContain("Zelda");
+        });
+    }
+
+    @LlmExposedModel
+    record JsonLists(@InternalIdentifier String ref, @NonSensitive(reason = "x") List<List<JsonNode>> v) {
+    }
+
+    @Test
+    @DisplayName("an object inside an inner array is recorded at its pointer, one /* per level")
+    void anObjectInAnInnerArrayIsRecordedAtItsPointer() {
+        var profile = new PrivacyProfile("DEFAULT", PrivacyProfile.UnclassifiedBehaviour.REDACT_AND_WARN, Map.of());
+        ObjectNode object = SourceTree.newObject();
+        object.put("name", "Zelda Invented-Probe");
+
         ScrubResult result = engine(Map.of("DEFAULT", profile))
-                .scrub(new Records("r", List.of(List.of(new Leaf("Zelda Invented-Probe")))), context());
+                .scrub(new JsonLists("r", List.of(List.of(object))), context());
 
         assertThat(result.dispositions()).containsEntry("/v/*/*", PrivacyAction.REDACT);
         assertThat(result.tree().get("v").toString()).isEqualTo("[[\"[REDACTED]\"]]")

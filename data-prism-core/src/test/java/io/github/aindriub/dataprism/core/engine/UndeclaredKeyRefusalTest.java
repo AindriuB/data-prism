@@ -1,6 +1,5 @@
 package io.github.aindriub.dataprism.core.engine;
 
-import com.fasterxml.jackson.annotation.JsonAnyGetter;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.InternalIdentifier;
 import io.github.aindriub.dataprism.annotations.LlmExposedModel;
@@ -14,10 +13,13 @@ import io.github.aindriub.dataprism.core.policy.PrivacyProfile;
 import io.github.aindriub.dataprism.core.policy.ProfilePrivacyPolicyResolver;
 import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 import io.github.aindriub.dataprism.core.refusal.RefusalPaths;
+import io.github.aindriub.dataprism.core.spi.FieldMetadataResolver;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -34,9 +36,40 @@ class UndeclaredKeyRefusalTest {
     private static final String KEY = "zzUndeclaredKeyQx7@example.com";
     private static final String TOKEN = "zzUndeclaredKeyQx7";
 
+    /** The declared fields of the exposed tree below. */
     @LlmExposedModel
-    record Open(@InternalIdentifier String subjectRef,
-                @JsonAnyGetter Map<String, Object> extra) {
+    record Declared(@InternalIdentifier String subjectRef) {
+    }
+
+    /**
+     * Exposes an {@link ObjectNode} root with the fields of a declared record, as a configured JSON source does.
+     * A record source can no longer carry undeclared keys (task 288, OD-288-1 (a)); a JsonNode root can.
+     */
+    static final class ExposedTree implements FieldMetadataResolver {
+        private final DefaultFieldMetadataResolver delegate = new DefaultFieldMetadataResolver();
+
+        @Override
+        public List<FieldMetadata> resolve(Class<?> type) {
+            return delegate.resolve(type == ObjectNode.class ? Declared.class : type);
+        }
+
+        @Override
+        public boolean exposed(Class<?> type) {
+            return type == ObjectNode.class || delegate.exposed(type);
+        }
+    }
+
+    /** A tree with the declared subject reference and one undeclared key whose value is {@code value}. */
+    private static ObjectNode open(String subjectRef, Object value) {
+        ObjectNode tree = SourceTree.newObject();
+        tree.put("subjectRef", subjectRef);
+        if (value instanceof Map<?, ?> nested) {
+            ObjectNode inner = tree.putObject(KEY);
+            nested.forEach((k, v) -> inner.put((String) k, (String) v));
+        } else {
+            tree.put(KEY, (String) value);
+        }
+        return tree;
     }
 
     private static PrivacyContext context() {
@@ -47,7 +80,7 @@ class UndeclaredKeyRefusalTest {
     private static JsonTreeScrubbingEngine engine(PrivacyProfile.UnclassifiedBehaviour behaviour) {
         var profile = new PrivacyProfile("DEFAULT", behaviour,
                 Map.of(DataClassification.PII, PrivacyProfile.ClassificationRule.of(PrivacyAction.REDACT)));
-        return new JsonTreeScrubbingEngine(new DefaultFieldMetadataResolver(),
+        return new JsonTreeScrubbingEngine(new ExposedTree(),
                 new ProfilePrivacyPolicyResolver(Map.of("DEFAULT", profile)),
                 (subject, namespace, ctx) -> "synthetic");
     }
@@ -55,7 +88,7 @@ class UndeclaredKeyRefusalTest {
     @Test
     @DisplayName("UNKNOWN_FIELD names the placeholder, not the payload key")
     void unknownField() {
-        var source = new Open("s-1", Map.of(KEY, "v"));
+        var source = open("s-1", "v");
 
         assertThatThrownBy(() -> engine(PrivacyProfile.UnclassifiedBehaviour.FAIL_REQUEST)
                 .scrub(source, context()))
@@ -82,9 +115,9 @@ class UndeclaredKeyRefusalTest {
                             EffectivePrivacyPolicy.Decided.UNCLASSIFIED)
                     : EffectivePrivacyPolicy.refuse("DEFAULT");
         };
-        var engine = new JsonTreeScrubbingEngine(new DefaultFieldMetadataResolver(), resolver,
+        var engine = new JsonTreeScrubbingEngine(new ExposedTree(), resolver,
                 (subject, namespace, ctx) -> "synthetic");
-        var source = new Open("s-1", Map.of(KEY, Map.of("inner", "v")));
+        var source = open("s-1", Map.of("inner", "v"));
 
         assertThatThrownBy(() -> engine.scrub(source, context()))
                 .isInstanceOfSatisfying(PrivacyRefusedException.class, e -> {

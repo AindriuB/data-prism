@@ -676,6 +676,7 @@ public final class DataPrismPropertiesValidator {
         if (securityPolicy.getRoles() == null || securityPolicy.getRoles().isEmpty()) {
             refuse("MISSING_ROLE_POLICY", "dataprism.security-policy.roles");
         }
+        securityPolicy.validateDecisions();
         securityPolicy.getRoles().forEach((role, caps) -> {
             required(role, "BLANK_ROLE", "dataprism.security-policy.roles");
             if (caps == null || caps.isEmpty()) {

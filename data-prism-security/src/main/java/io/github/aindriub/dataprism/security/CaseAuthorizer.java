@@ -14,13 +14,12 @@ public interface CaseAuthorizer {
     boolean isAuthorised(CaseAccessRequest request);
 
     /**
-     * An authorizer that always permits. It trusts the token's case claim
-     * without checking that the principal is assigned to that case. A Spring
-     * deployment uses it only when it defines no {@code CaseAuthorizer} bean,
-     * and logs a startup warning when it does; a bean of the deployer's own
-     * replaces it. Task 210 will make the choice an explicit required setting.
+     * An authorizer that always permits, and always the same instance. It trusts the token's case claim
+     * without checking that the principal is assigned to that case. A Spring deployment gets it only by setting
+     * {@code dataprism.security-policy.case-authorisation=token-trusted}, which logs a startup warning; with no
+     * {@code CaseAuthorizer} bean and no such setting, startup is refused.
      */
     static CaseAuthorizer tokenTrusted() {
-        return request -> true;
+        return TokenTrustedCaseAuthorizer.INSTANCE;
     }
 }

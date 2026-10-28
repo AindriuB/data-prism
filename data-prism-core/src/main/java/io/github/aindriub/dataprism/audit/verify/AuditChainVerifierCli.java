@@ -305,7 +305,8 @@ public final class AuditChainVerifierCli {
         out.println("the below-minimum override. An anchor over a segment younger than this is rejected.");
         out.println();
         out.println("<audit-log-file> may also be a directory of audit-YYYY-MM-DD.log segments written by");
-        out.println("SegmentedFileAuditSink, read in date order.");
+        out.println("SegmentedFileAuditSink, read in date order. A day capped by size has indexed segments");
+        out.println("(audit-YYYY-MM-DD.NNNN.log), read in index order after audit-YYYY-MM-DD.log.");
         out.println();
         out.println("Replays each writer's hash chain in a file written by FileAuditSink and reports either");
         out.println("an intact chain or the first edit or deletion detected, per writer.");

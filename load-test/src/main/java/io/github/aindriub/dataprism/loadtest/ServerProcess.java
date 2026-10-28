@@ -74,6 +74,9 @@ final class ServerProcess implements AutoCloseable {
                 "--dataprism.security.caller-claims.principal=sub",
                 "--dataprism.security.caller-claims.roles=roles",
                 "--dataprism.security.caller-claims.investigation=case_id",
+                // A real deployment supplies a CaseAuthorizer bean and lists its allowed clients; this one trusts the token.
+                "--dataprism.security-policy.case-authorisation=token-trusted",
+                "--dataprism.security-policy.client-allowlist=unrestricted",
                 "--dataprism.security-policy.purposes[0]=" + TokenIssuer.PURPOSE,
                 "--dataprism.security-policy.roles.investigator[0]=GET_ENTITY_CONTEXT",
                 "--dataprism.identity.resolver=pass-through",

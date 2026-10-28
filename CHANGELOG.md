@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ValueTokenSource` that hashes and tokenizes must override it to return `true`;
   until it does, a model describing HASH or TOKENIZE fields omits them and says the
   source cannot tokenize. A decorator must delegate it to the source it wraps.
+- Startup refuses with `MODEL_DESCRIPTOR_RESOLVER_REPLACED` when `dataprism.privacy.descriptor-file` is set and either any `FieldMetadataResolver` bean other than the one Data Prism builds from that file is present (including a `DescriptorFieldMetadataResolver` the application built itself), or a `JsonTreeScrubbingEngine` bean does not use that resolver. A deployer who needs a custom resolver or engine must leave `dataprism.privacy.descriptor-file` unset and build a `DescriptorFieldMetadataResolver` themselves.
 
 ## [0.7.1] - 2026-10-21
 

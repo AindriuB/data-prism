@@ -33,9 +33,12 @@ public final class SourceValues {
     }
 
     public static Set<String> prohibited(Object source, FieldMetadataResolver resolver) {
-        Set<String> out = new HashSet<>();
-        JsonNode tree = SourceTree.of(source);
-        if (tree.isObject()) {
+        // The lenient walk: it throws nothing but a VirtualMachineError. Where the strict walk would refuse
+        // a position, every scalar under it is prohibited here, and that source's scrub refuses on its own.
+        SourceRecordWalker.Lenient walked = SourceRecordWalker.lenient(source);
+        Set<String> out = new HashSet<>(walked.prohibited());
+        JsonNode tree = walked.tree();
+        if (tree != null && tree.isObject()) {
             collect((ObjectNode) tree, source.getClass(), resolver, out, 0);
         }
         return out;
@@ -107,8 +110,34 @@ public final class SourceValues {
         return md.valueType() == java.util.Optional.class && stated ? elementType : md.valueType();
     }
 
+    /**
+     * The base64 text the output carries for a binary value: a {@code BinaryNode}, or a {@code POJONode} holding
+     * exactly a {@code byte[]}. Null for anything else.
+     */
+    static String binaryText(JsonNode node) {
+        if (node instanceof tools.jackson.databind.node.POJONode pojo) {
+            Object held = pojo.getPojo();
+            return held != null && held.getClass() == byte[].class
+                    ? java.util.Base64.getEncoder().encodeToString((byte[]) held) : null;
+        }
+        return node.isBinary() ? java.util.Base64.getEncoder().encodeToString(node.binaryValue()) : null;
+    }
+
     /** Every scalar under this node, so a sensitive collection contributes each element. */
     private static void addScalars(JsonNode node, Set<String> out) {
+        if (node instanceof tools.jackson.databind.node.POJONode) {
+            // Only a byte[] leaf is expected; anything else records nothing rather than throwing.
+            String text = binaryText(node);
+            if (text != null) {
+                out.add(text);
+            }
+            return;
+        }
+        String binary = binaryText(node);
+        if (binary != null) {
+            out.add(binary);
+            return;
+        }
         if (node.isValueNode()) {
             String text = node.asString();
             if (text != null && !text.isBlank()) {
