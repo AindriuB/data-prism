@@ -47,6 +47,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  * under-counted. The total entry is created by the first {@code reserve} of a scope, from the counters already
  * there, so a scope that only ever uses {@code tryRead} holds one entry per subject, as before; from then on
  * {@code tryRead} adds to it.
+ *
+ * <p>Invariant: at every moment the scope total, when it is not being built, is at least the sum of the reads
+ * granted in the scope, so a {@code reserve} never goes past the scope budget; it can be over-counted, never
+ * under-counted. See {@code ensureTotal} for how a total is built without depending on any lock's lease.
  */
 public final class HazelcastScopeBudget implements ScopeBudget {
 
@@ -81,6 +85,10 @@ public final class HazelcastScopeBudget implements ScopeBudget {
     private static final int GRANTED = 0;
     private static final int OVER = 1;
     private static final int OVERFLOW = 2;
+    /** The scope total is absent or still being built, so it cannot be checked against. */
+    private static final int NOT_READY = 3;
+    /** A total being built, with no read counted since it was created. A negative value is {@code -(reads + 1)}. */
+    private static final int BUILDING = -1;
 
     /**
      * The reservations this instance granted, per scope, so a forget on this instance can invalidate them. Keyed by
@@ -238,10 +246,14 @@ public final class HazelcastScopeBudget implements ScopeBudget {
             }
             int total;
             try {
-                total = counts.executeOnKey(scopeKey, new AddWithin(reads, scopeTotalBudget));
+                total = counts.executeOnKey(scopeKey, new AddToTotal(reads, scopeTotalBudget));
             } catch (RuntimeException totalFailed) {
                 undo(counts, subjectKey, reads);
                 throw totalFailed;
+            }
+            if (total == NOT_READY) {
+                undo(counts, subjectKey, reads);
+                throw ClusterRefusals.refused(new IllegalStateException("scope total not ready"));
             }
             if (total != GRANTED) {
                 undo(counts, subjectKey, reads);
@@ -404,17 +416,18 @@ public final class HazelcastScopeBudget implements ScopeBudget {
         IMap<String, Integer> counts = counts();
         String scopeKey = cluster.scopeKeys().budgetTotal(scopeId);
         Integer total = counts.get(scopeKey);
-        if (total != null) {
+        if (total != null && total >= 0) {
             return total;
         }
         counts = lockScope(scopeKey);
         try {
-            if (sumOfSubjects(counts, scopeId, scopeKey) == 0) {
+            if (total == null && sumOfSubjects(counts, scopeId, scopeKey) == 0) {
                 return 0;
             }
             ensureTotal(counts, scopeId, scopeKey);
             Integer built = counts.get(scopeKey);
-            return built == null ? 0 : built;
+            // Not a normal total again (the scope was ended and reused meanwhile): report the most, which fails closed.
+            return built == null ? 0 : built < 0 ? Integer.MAX_VALUE : built;
         } catch (RuntimeException failed) {
             throw ClusterRefusals.mapped(failed);
         } finally {
@@ -423,13 +436,30 @@ public final class HazelcastScopeBudget implements ScopeBudget {
     }
 
     /**
-     * Creates the scope total from the counters already there, if the scope has none. Called under the scope's lock,
-     * which is the lock on the total's own key, held by this thread: the write cannot wait on another holder.
+     * Makes the scope's total a normal one, so a check against it means something. It does not depend on the scope's
+     * lock (which has a lease) for its correctness; the lock only avoids two members doing the work.
+     *
+     * <p>The total is first created as a marker, a negative value {@code -(c + 1)} meaning "being built, with c reads
+     * counted since the marker". Every read that finds the marker adds to c. Only then are the subject counters
+     * summed, and the marker is replaced, atomically, by {@code sum + c}. A read whose subject counter was updated
+     * before the marker is in the sum, because the sum is taken after the marker exists; a read whose total update
+     * came after the marker is in c; the two overlap for a read in both, which counts it twice, an over-count. So at
+     * every moment the total, when not being built, is at least the sum of the reads granted in the scope.
+     *
+     * <p>A builder that dies after the marker leaves it there. The next call finds a marker and finishes it the same
+     * way, which cannot under-count for the same reason. Until then a {@code reserve} is refused, never granted
+     * against a partial value. Locks are only waited on, never relied on: a write to the total's key by a member
+     * whose own lease lapsed simply waits for the holder.
      */
     private void ensureTotal(IMap<String, Integer> counts, String scopeId, String scopeKey) {
-        if (counts.get(scopeKey) == null) {
-            counts.putIfAbsent(scopeKey, (int) Math.min(Integer.MAX_VALUE, sumOfSubjects(counts, scopeId, scopeKey)));
+        Integer current = counts.get(scopeKey);
+        if (current != null && current >= 0) {
+            return;
         }
+        if (current == null) {
+            counts.putIfAbsent(scopeKey, BUILDING);
+        }
+        counts.executeOnKey(scopeKey, new FinishBuild(sumOfSubjects(counts, scopeId, scopeKey)));
     }
 
     private long sumOfSubjects(IMap<String, Integer> counts, String scopeId, String scopeKey) {
@@ -515,12 +545,44 @@ public final class HazelcastScopeBudget implements ScopeBudget {
         }
     }
 
+    /** Adds to the scope total if it is a normal total and the result stays within {@code cap}. */
+    private record AddToTotal(int delta, int cap) implements EntryProcessor<String, Integer, Integer> {
+        @Override
+        public Integer process(Map.Entry<String, Integer> entry) {
+            Integer current = entry.getValue();
+            if (current == null || current < 0) return NOT_READY;
+            long next = (long) current + delta;
+            if (next > Integer.MAX_VALUE) return OVERFLOW;
+            if (next > cap) return OVER;
+            entry.setValue((int) next);
+            return GRANTED;
+        }
+    }
+
+    /** Turns a total that is being built into a normal one: the sum of the counters plus the reads counted since. */
+    private record FinishBuild(long sum) implements EntryProcessor<String, Integer, Integer> {
+        @Override
+        public Integer process(Map.Entry<String, Integer> entry) {
+            Integer current = entry.getValue();
+            if (current == null || current >= 0) return GRANTED;
+            long counted = -(long) current - 1;
+            entry.setValue((int) Math.min(Integer.MAX_VALUE, sum + counted));
+            return GRANTED;
+        }
+    }
+
     /** Adds one to an entry that exists and does nothing to one that does not. */
     private record IncrementIfPresent() implements EntryProcessor<String, Integer, Integer> {
         @Override
         public Integer process(Map.Entry<String, Integer> entry) {
             Integer current = entry.getValue();
             if (current == null) return GRANTED;
+            if (current < 0) {
+                // Being built: one more read counted since the marker.
+                if (current == Integer.MIN_VALUE) return OVERFLOW;
+                entry.setValue(current - 1);
+                return GRANTED;
+            }
             if (current == Integer.MAX_VALUE) return OVERFLOW;
             entry.setValue(current + 1);
             return GRANTED;
@@ -532,6 +594,8 @@ public final class HazelcastScopeBudget implements ScopeBudget {
         @Override
         public Integer process(Map.Entry<String, Integer> entry) {
             int current = entry.getValue() == null ? 0 : entry.getValue();
+            // A total being built is left alone: not lowering it can only over-count.
+            if (current < 0) return 0;
             int taken = Math.min(delta, current);
             if (taken > 0) entry.setValue(current - taken);
             return taken;

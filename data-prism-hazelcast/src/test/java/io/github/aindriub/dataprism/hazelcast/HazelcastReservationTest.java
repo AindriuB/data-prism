@@ -654,6 +654,79 @@ class HazelcastReservationTest {
         assertThat(budgets[1].scopeReads(SCOPE)).isEqualTo(3);
     }
 
+    // ----- the total never under-counts, whatever becomes of a lock lease
+
+    @Test
+    void aTotalBuiltFromAStaleSnapshotDoesNotLetAReserveGoPastTheBudget() throws Exception {
+        // Two reads are counted, and the scope has no total yet.
+        assertThat(budgets[0].tryRead(SCOPE, "a", 5)).isTrue();
+        assertThat(budgets[0].tryRead(SCOPE, "a", 5)).isTrue();
+        String total = totalKey(SCOPE);
+        AtomicBoolean pauseNext = new AtomicBoolean(true);
+        CountDownLatch reached = new CountDownLatch(1);
+        CountDownLatch gate = new CountDownLatch(1);
+        // A short lease: the builder is held for longer than it, so another member's read gets in meanwhile.
+        var builder = new HazelcastScopeBudget(pausingOnWrite(0,
+                key -> key.equals(total) && pauseNext.compareAndSet(true, false), reached, gate),
+                Duration.ofMillis(100));
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<ReadReservation> building = pool.submit(() -> builder.reserve(SCOPE, "x", 1, 10, 6));
+            assertThat(reached.await(10, TimeUnit.SECONDS)).isTrue();
+            // Completes only once the builder's scope lock has lapsed.
+            assertThat(pool.submit(() -> budgets[1].tryRead(SCOPE, "b", 5)).get(30, TimeUnit.SECONDS)).isTrue();
+            gate.countDown();
+            assertThat(building.get(10, TimeUnit.SECONDS).granted()).isTrue();
+        } finally {
+            gate.countDown();
+            pool.shutdown();
+            assertThat(pool.awaitTermination(20, TimeUnit.SECONDS)).isTrue();
+        }
+        // 3 reads and the reservation of 1 make 4 of 6. A reservation of 3 would make 7 and must be refused.
+        assertThat(budgets[1].reserve(SCOPE, "c", 3, 10, 6).refusedBy()).isEqualTo(Refusal.SCOPE_TOTAL);
+        assertThat(budgets[1].scopeReads(SCOPE)).isGreaterThanOrEqualTo(4);
+    }
+
+    @Test
+    void aBuildThatDiedPartWayIsFinishedByTheNextReservationWithoutUnderCounting() {
+        IMap<String, Integer> map = members[1].instance().getMap(PrivacyCluster.BUDGET_MAP);
+        assertThat(budgets[0].tryRead(SCOPE, "a", 5)).isTrue();
+        assertThat(budgets[0].tryRead(SCOPE, "a", 5)).isTrue();
+        // What a builder that died after creating its marker leaves: building, with two reads counted since.
+        map.put(totalKey(SCOPE), -3);
+        assertThat(budgets[1].reserve(SCOPE, "x", 1, 10, 100).granted()).isTrue();
+        assertThat(budgets[1].scopeReads(SCOPE)).as("the counters (2) and the reads counted since (2) and 1")
+                .isGreaterThanOrEqualTo(5);
+        assertThat(map.get(totalKey(SCOPE))).as("a normal total now").isNotNegative();
+    }
+
+    @Test
+    void aReserveRefusesWhenTheTotalIsBeingBuiltAndNeverTreatsItAsATotal() {
+        assertThat(budgets[0].reserve(SCOPE, "a", 1, 10, 100).granted()).isTrue();
+        IMap<String, Integer> real = members[0].instance().getMap(PrivacyCluster.BUDGET_MAP);
+        String total = totalKey(SCOPE);
+        AtomicBoolean marked = new AtomicBoolean();
+        HazelcastInstance instance = members[0].instance();
+        Object map = Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{IMap.class},
+                (proxy, method, args) -> {
+                    if (method.getName().equals("executeOnKey") && total.equals(args[0])
+                            && marked.compareAndSet(false, true)) {
+                        // The total is rebuilt (the scope was ended and reused) between the build check and the add.
+                        real.put(total, -1);
+                    }
+                    return invoke(method, real, args);
+                });
+        HazelcastInstance wrapped = (HazelcastInstance) Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[]{HazelcastInstance.class}, (proxy, method, args) ->
+                        method.getName().equals("getMap") && PrivacyCluster.BUDGET_MAP.equals(args[0])
+                                ? map : invoke(method, instance, args));
+        var budget = new HazelcastScopeBudget(PrivacyCluster.using(wrapped, false, TestMembers.KEYS), LONG);
+        assertThatThrownBy(() -> budget.reserve(SCOPE, "b", 1, 10, 100))
+                .isInstanceOf(ClusterOperationRefusedException.class);
+        assertThat(real.get(total)).as("still the marker").isEqualTo(-1);
+        assertThat(budgets[1].reads(SCOPE, "b")).as("the subject was undone").isZero();
+    }
+
     // ----- cluster failures
 
     @Test
@@ -721,6 +794,8 @@ class HazelcastReservationTest {
 
     @Test
     void anUndoThatAlsoFailsLeavesTheCounterOverCountedAndLogsOneLineNamingNothing() throws Exception {
+        // The scope has its total already, so the first update of the failing budget is the subject's.
+        assertThat(budgets[0].reserve("scope-secret", "other", 1, 10, 100).granted()).isTrue();
         PrivacyCluster failing = failingOn(0, "executeOnKey", key -> true, true);
         var recorder = new RecordingLogger();
         var budget = new HazelcastScopeBudget(failing, LONG, recorder.logger());
@@ -826,6 +901,26 @@ class HazelcastReservationTest {
         Object map = Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{IMap.class},
                 (proxy, method, args) -> {
                     if (method.getName().equals("executeOnKey") && pausing.test((String) args[0])) {
+                        reached.countDown();
+                        if (!gate.await(20, TimeUnit.SECONDS)) throw new AssertionError("gate never opened");
+                    }
+                    return invoke(method, real.getMap(PrivacyCluster.BUDGET_MAP), args);
+                });
+        HazelcastInstance instance = (HazelcastInstance) Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[]{HazelcastInstance.class}, (proxy, method, args) ->
+                        method.getName().equals("getMap") && PrivacyCluster.BUDGET_MAP.equals(args[0])
+                                ? map : invoke(method, real, args));
+        return PrivacyCluster.using(instance, false, TestMembers.KEYS);
+    }
+
+    /** As {@link #pausingOn}, but a matching {@code putIfAbsent} also announces itself and waits for the gate. */
+    private PrivacyCluster pausingOnWrite(int index, Predicate<String> pausing, CountDownLatch reached,
+                                          CountDownLatch gate) {
+        HazelcastInstance real = members[index].instance();
+        Object map = Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{IMap.class},
+                (proxy, method, args) -> {
+                    String name = method.getName();
+                    if ((name.equals("executeOnKey") || name.equals("putIfAbsent")) && pausing.test((String) args[0])) {
                         reached.countDown();
                         if (!gate.await(20, TimeUnit.SECONDS)) throw new AssertionError("gate never opened");
                     }
