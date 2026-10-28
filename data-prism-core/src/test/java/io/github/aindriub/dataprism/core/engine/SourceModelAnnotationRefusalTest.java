@@ -383,6 +383,44 @@ class SourceModelAnnotationRefusalTest {
         assertRefusedContaining(HoldsValueEnum.class, "JsonValue");
     }
 
+    @Retention(RetentionPolicy.RUNTIME)
+    @java.lang.annotation.Target(java.lang.annotation.ElementType.FIELD)
+    @JacksonAnnotationsInside
+    @JsonIgnore
+    public @interface HideField {
+    }
+
+    public record FieldBundle(@HideField String secret, String a) {
+    }
+
+    public record ParamOnly(String a) {
+        public ParamOnly(@JsonProperty("x") String a) {
+            this.a = a;
+        }
+    }
+
+    public record ConstructorOnly(String a) {
+        @JsonIgnore
+        public ConstructorOnly {
+        }
+    }
+
+    public record AccessorOnly(String a) {
+        @JsonProperty("x")
+        @Override
+        public String a() {
+            return a;
+        }
+    }
+
+    @Test
+    void eachPlaceAnAnnotationCanSitIsCheckedOnItsOwn() {
+        assertRefusedWith(FieldBundle.class, "FieldBundle.secret", "HideField");
+        assertRefusedWith(ParamOnly.class, "ParamOnly.a", "JsonProperty");
+        assertRefusedWith(ConstructorOnly.class, "ConstructorOnly", "JsonIgnore");
+        assertRefusedWith(AccessorOnly.class, "AccessorOnly.a", "JsonProperty");
+    }
+
     @Test
     void aCustomAnnotationMetaAnnotatedJacksonAnnotationsInsideIsRefusedEvenWhenItBundlesAllowedOnes() {
         assertRefusedWith(Bundled.class, "Bundled", "Bundle");

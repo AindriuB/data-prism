@@ -216,8 +216,8 @@ public final class SourceModels {
             RecordComponent[] components = type.getRecordComponents();
             for (RecordComponent component : components) {
                 String where = simple + "." + component.getName();
+                // The accessor is one of the type's declared methods, checked by refuseMethods below.
                 refuseAnnotationsOn(component, where);
-                refuseAnnotationsOn(component.getAccessor(), where);
                 try {
                     refuseAnnotationsOn(type.getDeclaredField(component.getName()), where);
                 } catch (NoSuchFieldException e) {
