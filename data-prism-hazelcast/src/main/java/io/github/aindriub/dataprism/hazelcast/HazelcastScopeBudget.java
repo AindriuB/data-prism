@@ -142,8 +142,9 @@ public final class HazelcastScopeBudget implements ScopeBudget {
             counts = counts();
             // Once the scope has its total a read is a pair of atomic additions, each under its own subject's lock,
             // so reads of different subjects do not wait for each other. The scope's lock is taken only while the
-            // total does not exist, which spares two members the same build; the build is correct without it, because
-            // its marker makes every read be counted at least once.
+            // total does not exist. While the builder's lease holds, that keeps a read from being counted both in the
+            // builder's sum and in the marker's count, so it reduces over-counting during a build; the build is
+            // correct without it, because its marker makes every read be counted at least once.
             if (!counts.containsKey(scopeKey)) {
                 ClusterLocks.acquire(counts, scopeKey, lockTimeout);
                 scopeLocked = true;
