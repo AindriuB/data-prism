@@ -52,7 +52,7 @@
     - purge's replay is given no checkpoints (`AuditChainVerifier.java:149-154`, called from `AuditRetention.java:185` on `origin/wave/0.8-wave4`);
     - 292's rule 6 reads `SHUTDOWN` only for writers with hashed records in that day.
 
-    Every planted-line attack in this family gains that attacker nothing beyond that plain deletion. Whole-writer deletion is caught only by the full verifier's `MISSING_WRITER`; see 292's Out of scope for the follow-up.
+    Every planted-line attack in this family gains that attacker nothing beyond that plain deletion. After such a deletion, the full verifier reports it (`MISSING_WRITER`, or a non-GENESIS start or anchor rejection when the writer survives in a later segment), except when the writer's highest checkpoint is `BOOT` or is covered by a valid retention anchor, where nothing detects it (`AuditChainVerifier.java:503-512`, `:530-535` on `origin/wave/0.8-wave4`). See 292's Out of scope for the follow-up.
   - **The residual.** These all pass every condition, and, like every attack in this family, each is bounded by plain deletion:
     - **Records after the last checkpoint.** A line crafted from records written after the instance's last checkpoint. For example, take the instance's true next record after its last `PERIODIC`, delete everything after it, and end it `\r\n`. A shorter `dataprism.audit.checkpoint.interval` narrows that window.
     - **Another real instance.** A line rewritten to another real instance's id v, where v has a `BOOT` and no checkpoint at or above the line's sequence. It passes 7 (a) and 7 (b).
@@ -268,10 +268,10 @@ After 292, a real crash that leaves an unhashed line that parses keeps its day a
   - condition 7 (a), renamed instance (OD-293-8 (a)), plain and keyed. w writes seq 1-50 through a recorder with a checkpoint sink, so the store holds `BOOT{w}` and `PERIODIC{w, 50}`. Records 2-50 are deleted, record 1's `instanceId` is rewritten to a made-up w′, and the line is ended `\r\n`. It passes conditions 1-6, on branch (ii). It is refused at condition 7 (a), and the reason names w′'s missing `BOOT`. The hash report, printed before the refusal, is `NO_MATCH_LOOKS_CUT` in the keyed run and `NO_UNKEYED_MATCH` in the plain run;
   - condition 7 (a), genuine crash with no `BOOT`: the "No `BOOT`, with the flag" fixture run without `--no-boot-checkpoint` is refused at condition 7 (a);
   - the flag does not override other conditions:
-    - the condition 7 (b) attack on branch (ii) (`BOOT{w}` and `PERIODIC{w, 50}`, records 2-50 deleted, record 1 ended `\r\n`), run with `--no-boot-checkpoint`, is still refused at condition 7 (b), naming `PERIODIC` 50;
-    - no `BOOT`, a contradicting checkpoint: the store holds `PERIODIC{w, 50}`, written by hand, and no `BOOT` for w. w's only line is its record 1, ended `\r\n`. Run with `--no-boot-checkpoint`, it is refused at condition 7 (b), naming `PERIODIC` 50;
-    - the wrong-SHA-256 negative, run with `--no-boot-checkpoint`, is still refused at condition 4;
-    - the condition 8 forger-shape negative with its `BOOT` removed from the store, run with `--no-boot-checkpoint`, is still refused at condition 8;
+    - plain and keyed: the condition 7 (b) attack on branch (ii) (`BOOT{w}` and `PERIODIC{w, 50}`, records 2-50 deleted, record 1 ended `\r\n`), run with `--no-boot-checkpoint`, is still refused at condition 7 (b), naming `PERIODIC` 50;
+    - no `BOOT`, a contradicting checkpoint, plain and keyed: the store holds `PERIODIC{w, 50}`, written by hand, and no `BOOT` for w. w's only line is its record 1, ended `\r\n`. Run with `--no-boot-checkpoint`, it is refused at condition 7 (b), naming `PERIODIC` 50;
+    - plain and keyed: the wrong-SHA-256 negative, run with `--no-boot-checkpoint`, is still refused at condition 4;
+    - keyed only, as condition 8 needs keys: the condition 8 forger-shape negative with its `BOOT` removed from the store, run with `--no-boot-checkpoint`, is still refused at condition 8;
   - condition 8, forger shape (OD-293-7 (a)): keys `[k1]`, no `--allow-unkeyed-writers`, and a sole GENESIS line at seq 1, ended `\r\n`, whose `eventHash` is the unkeyed hash. It passes conditions 1-7. It is refused, and the reason names `UNKEYED_ONLY_FORGER_SHAPE`;
   - a store whose last byte is not `\n`, which is left byte-identical.
 - [ ] **Store compatibility.** `AuditCheckpoint.fromJsonLine(cp.toJsonLine())` round-trips the new kind with its fields. A `BOOT`, `PERIODIC`, `SHUTDOWN` or `RETENTION_ANCHOR` line is byte-identical to the base's. `retentionAnchors()` never returns an acceptance.
