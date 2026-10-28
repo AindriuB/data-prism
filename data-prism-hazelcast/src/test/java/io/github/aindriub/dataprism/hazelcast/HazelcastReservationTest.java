@@ -604,6 +604,56 @@ class HazelcastReservationTest {
         assertThat(budgets[1].scopeReads(SCOPE)).as("spent: a retry does nothing").isEqualTo(4);
     }
 
+    @Test
+    void aReleaseOfReadsThatWereTakenOutOfTheReservationBySomeoneElseSubtractsNothing() {
+        ReadReservation r = budgets[0].reserve(SCOPE, "s-1", 3, 10, 100);
+        assertThat(r.takeUnused(3)).isEqualTo(3);
+        budgets[0].release(r, 3);
+        assertThat(budgets[1].reads(SCOPE, "s-1")).isEqualTo(3);
+        assertThat(budgets[1].scopeReads(SCOPE)).isEqualTo(3);
+    }
+
+    @Test
+    void twoReleasesOfOneReservationThatBothGetPastTheLocksSubtractItOnlyOnce() throws Exception {
+        // A lock lease of 500 ms: the first release is held in its subject update for longer, so its locks lapse and
+        // a second release of the same reservation gets in. The reservation, not the locks, must say what is left.
+        AtomicBoolean pauseNext = new AtomicBoolean();
+        String subject = TestMembers.SCOPE_KEYS.budget(SCOPE, "s-1");
+        CountDownLatch reached = new CountDownLatch(1);
+        CountDownLatch gate = new CountDownLatch(1);
+        PrivacyCluster paused = pausingOn(0, key -> key.equals(subject) && pauseNext.compareAndSet(true, false),
+                reached, gate);
+        var budget = new HazelcastScopeBudget(paused, Duration.ofMillis(100));
+        ReadReservation held = budget.reserve(SCOPE, "s-1", 5, 10, 100);
+        assertThat(budgets[1].reserve(SCOPE, "s-1", 3, 10, 100).granted()).isTrue();
+        pauseNext.set(true);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> first = pool.submit(() -> budget.release(held, 5));
+            assertThat(reached.await(10, TimeUnit.SECONDS)).isTrue();
+            Future<Boolean> second = pool.submit(() -> {
+                for (int attempt = 0; attempt < 100; attempt++) {
+                    try {
+                        budget.release(held, 5);
+                        return true;
+                    } catch (ClusterLockTimeoutException stillHeld) {
+                        // The first release's locks have not lapsed yet.
+                    }
+                }
+                return false;
+            });
+            assertThat(second.get(30, TimeUnit.SECONDS)).as("the second release got in").isTrue();
+            gate.countDown();
+            first.get(10, TimeUnit.SECONDS);
+        } finally {
+            gate.countDown();
+            pool.shutdown();
+            assertThat(pool.awaitTermination(20, TimeUnit.SECONDS)).isTrue();
+        }
+        assertThat(budgets[1].reads(SCOPE, "s-1")).as("the other reservation's reads are untouched").isEqualTo(3);
+        assertThat(budgets[1].scopeReads(SCOPE)).isEqualTo(3);
+    }
+
     // ----- cluster failures
 
     @Test

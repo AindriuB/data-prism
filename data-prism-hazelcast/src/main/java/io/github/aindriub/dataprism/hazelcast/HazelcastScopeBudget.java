@@ -99,14 +99,14 @@ public final class HazelcastScopeBudget implements ScopeBudget {
     private static final class Origin {
         private final HazelcastScopeBudget owner;
         private final String scope;
-        private final AtomicInteger held;
+        /** Reads released through this instance so far; only decides when to stop tracking, never what to give. */
+        private final AtomicInteger released = new AtomicInteger();
         private volatile boolean live = true;
         private volatile ReadReservation reservation;
 
-        private Origin(HazelcastScopeBudget owner, String scope, int reads) {
+        private Origin(HazelcastScopeBudget owner, String scope) {
             this.owner = owner;
             this.scope = scope;
-            this.held = new AtomicInteger(reads);
         }
     }
 
@@ -251,7 +251,7 @@ public final class HazelcastScopeBudget implements ScopeBudget {
                 return ReadReservation.refused(scopeId, subjectId, reads, ReadReservation.Refusal.SCOPE_TOTAL);
             }
             String scope = keys.scopePrefix(scopeId);
-            Origin origin = new Origin(this, scope, reads);
+            Origin origin = new Origin(this, scope);
             ReadReservation granted = ReadReservation.granted(scopeId, subjectId, reads, origin);
             origin.reservation = granted;
             issued.compute(scope, (k, origins) -> {
@@ -297,6 +297,13 @@ public final class HazelcastScopeBudget implements ScopeBudget {
      * (task 226) close it. Whichever task first calls {@code forget} or {@code endScope} in production must close it
      * first or depend on 226.
      *
+     * <p><strong>Residual (OD-285-3 (a)), the same family and needing no reservation.</strong> An unlocked
+     * {@code tryRead} (the scope already has a total) lets go of its subject's lock before its update of the total. A
+     * {@code forget} on any instance, this one included, can delete that subject in the gap. If the scope id is then
+     * reused and the read's total update fails, the read's undo subtracts from the new scope's counter, an
+     * under-count. Task 226 closes it with the rest; {@code forget} and {@code endScope} have no production callers
+     * yet.
+     *
      * @throws ClusterLockTimeoutException if the scope's lock was not obtained within the lock timeout
      * @throws ClusterOperationRefusedException if the cluster rejected a lock or failed an update. The failure is not
      *                                          swallowed. Only a failure before any write (taking a lock) leaves the
@@ -324,10 +331,11 @@ public final class HazelcastScopeBudget implements ScopeBudget {
             if (!origin.live) {
                 return;
             }
-            // What the reservation still holds is known here from this instance's own record, under both locks, so
-            // nothing is taken out of the reservation until the counters have been lowered. A failure before this
-            // point (taking a lock) has written nothing and leaves it whole; the updates below are sorted next.
-            int give = Math.min(unused, origin.held.get());
+            // The reservation itself says what is left, and the claim is atomic, so nothing depends on the locks for
+            // this: two releases that overlap (a lease can lapse) claim disjoint reads, and reads already taken out
+            // by any other holder are not subtracted. A failure before the claim (taking a lock) has written
+            // nothing and leaves the reservation whole; the updates below are sorted next.
+            int give = reservation.takeUnused(unused);
             if (give == 0) {
                 return;
             }
@@ -339,7 +347,7 @@ public final class HazelcastScopeBudget implements ScopeBudget {
             try {
                 back = counts.executeOnKey(subjectKey, new Subtract(give));
             } catch (RuntimeException failed) {
-                spend(origin, reservation, give);
+                tracked(origin, give);
                 throw ClusterRefusals.mapped(failed);
             }
             try {
@@ -347,10 +355,10 @@ public final class HazelcastScopeBudget implements ScopeBudget {
                     counts.executeOnKey(scopeKey, new Subtract(back));
                 }
             } catch (RuntimeException failed) {
-                spend(origin, reservation, give);
+                tracked(origin, give);
                 throw ClusterRefusals.mapped(failed);
             }
-            spend(origin, reservation, give);
+            tracked(origin, give);
         } finally {
             if (subjectLocked) {
                 ClusterLocks.release(counts, subjectKey);
@@ -359,10 +367,9 @@ public final class HazelcastScopeBudget implements ScopeBudget {
         }
     }
 
-    /** Takes {@code give} reads out of the reservation, whose counters have been lowered by them. */
-    private void spend(Origin origin, ReadReservation reservation, int give) {
-        reservation.takeUnused(give);
-        if (origin.held.addAndGet(-give) == 0) {
+    /** Notes that {@code give} reads were claimed, and stops tracking a reservation that has given up all its reads. */
+    private void tracked(Origin origin, int give) {
+        if (origin.released.addAndGet(give) == origin.reservation.reads()) {
             untrack(origin);
         }
     }
