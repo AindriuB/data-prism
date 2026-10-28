@@ -17,6 +17,8 @@ import io.github.aindriub.dataprism.core.spi.PassThroughIdentityResolver;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.ContextRequest;
 import io.github.aindriub.dataprism.pseudonymisation.vocabulary.VocabularyRegistry;
+import io.github.aindriub.dataprism.annotations.DataClassification;
+import io.github.aindriub.dataprism.validation.FreeTextRecogniser;
 import io.github.aindriub.dataprism.validation.SensitivePatternValidator;
 import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.server.McpTransportContextExtractor;
@@ -82,6 +84,42 @@ class PatternValidatorWiringTest {
                         assertThat(e.getMessage()).contains("SENSITIVE_PATTERN");
                     });
         });
+    }
+
+    @Test
+    void application_recognisers_are_collected_and_a_recognition_refuses() {
+        context.withBean("sentinel", FreeTextRecogniser.class,
+                () -> value -> value.contains("casework.sample")
+                        ? Set.of(DataClassification.PII) : Set.of()).run(result -> {
+            assertThat(result).hasNotFailed();
+            assertThat(result.getBeansOfType(SensitivePatternValidator.class)).hasSize(1);
+            assertThatThrownBy(() -> buildContext(result.getBean(ContextOrchestrator.class)))
+                    .isInstanceOfSatisfying(PrivacyRefusedException.class,
+                            e -> assertThat(e.getMessage()).contains("FREE_TEXT_RECOGNISED"));
+        });
+    }
+
+    @Test
+    void an_unrecognised_value_adds_no_recogniser_refusal() {
+        context.withBean("none", FreeTextRecogniser.class, () -> value -> Set.of()).run(result ->
+                assertThatThrownBy(() -> buildContext(result.getBean(ContextOrchestrator.class)))
+                        .isInstanceOfSatisfying(PrivacyRefusedException.class, e ->
+                                assertThat(e.getMessage()).doesNotContain("FREE_TEXT")));
+    }
+
+    @Test
+    void a_failing_recogniser_refuses_without_exposing_its_exception() {
+        context.withBean("boom", FreeTextRecogniser.class, () -> value -> {
+            throw new IllegalStateException("SENTINEL-EXC-MESSAGE");
+        }).run(result -> assertThatThrownBy(() -> buildContext(result.getBean(ContextOrchestrator.class)))
+                .isInstanceOfSatisfying(PrivacyRefusedException.class, e ->
+                        assertThat(e.getMessage()).contains("FREE_TEXT_RECOGNISER_FAILED")
+                                .doesNotContain("SENTINEL-EXC-MESSAGE").doesNotContain("IllegalState")));
+    }
+
+    private static void buildContext(ContextOrchestrator orchestrator) {
+        orchestrator.buildContext(ContextRequest.of("CUSTOMER", "CUST-1"), privacyContext(),
+                new InvestigationContext("investigator-1", "client-1", "CASE-1", Set.of()));
     }
 
     private static PrivacyContext privacyContext() {
