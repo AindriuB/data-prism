@@ -71,6 +71,11 @@ public interface ScopeBudget {
      * back at most what the reservation still holds, once per read; a second
      * release of the same reads, a release of a refused reservation, or a release
      * after {@link #forget} does nothing.
+     *
+     * <p>An implementation no-ops any release it cannot match to a reservation it
+     * granted: a reservation built by hand or around another reservation's origin,
+     * one from another budget, or one from a scope that was forgotten and
+     * recreated. It does not throw and changes no counter.
      */
     default void release(ReadReservation reservation, int unused) {
     }
