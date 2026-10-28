@@ -52,7 +52,7 @@ class SourceCircuitBreakerTrialTest {
         Map<String, DataRequest> req = new LinkedHashMap<>();
         adapters.forEach(x -> req.put(x.sourceName(), DataRequest.of("THING", "1")));
         var limits = TestLimits.defaults().perSourceTimeout(Duration.ofSeconds(10)).maxConcurrency(1).build();
-        var run = CompletableFuture.supplyAsync(() -> fanOut.fetchAll(adapters, req, limits));
+        var run = TestAsync.supply(() -> fanOut.fetchAll(adapters, req, limits));
         String first = entered.poll(10, TimeUnit.SECONDS);
         assertThat(first).isNotNull();
         String queued = first.equals("a") ? "slow" : "a";
@@ -232,7 +232,7 @@ class SourceCircuitBreakerTrialTest {
         Map<String, DataRequest> req = new LinkedHashMap<>();
         adapters.forEach(x -> req.put(x.sourceName(), DataRequest.of("THING", "1")));
         var limits = TestLimits.defaults().perSourceTimeout(Duration.ofSeconds(10)).maxConcurrency(1).build();
-        var run = CompletableFuture.supplyAsync(() -> fanOut.fetchAll(adapters, req, limits));
+        var run = TestAsync.supply(() -> fanOut.fetchAll(adapters, req, limits));
         String first = entered.poll(10, TimeUnit.SECONDS);
         assertThat(first).isNotNull();
         String queued = first.equals("a") ? "slow" : "a";
@@ -262,7 +262,7 @@ class SourceCircuitBreakerTrialTest {
         Map<String, DataRequest> req = new LinkedHashMap<>();
         adapters.forEach(x -> req.put(x.sourceName(), DataRequest.of("THING", "1")));
         var limits = TestLimits.defaults().perSourceTimeout(Duration.ofSeconds(10)).maxConcurrency(1).build();
-        var run = CompletableFuture.supplyAsync(() -> fanOut.fetchAll(adapters, req, limits));
+        var run = TestAsync.supply(() -> fanOut.fetchAll(adapters, req, limits));
         String first = entered.poll(10, TimeUnit.SECONDS);
         assertThat(first).isNotNull();
         String queued = first.equals("a") ? "slow" : "a";
@@ -326,7 +326,7 @@ class SourceCircuitBreakerTrialTest {
         two.order = order;
         List<DataSourceAdapter<?>> adapters = List.of(one, two);
         var limits = oneAtATime();
-        var run = CompletableFuture.supplyAsync(() -> fanOut.fetchAll(adapters, ask(adapters), limits));
+        var run = TestAsync.supply(() -> fanOut.fetchAll(adapters, ask(adapters), limits));
 
         var first = order.poll(10, TimeUnit.SECONDS);
         assertThat(first).isNotNull();
@@ -357,7 +357,7 @@ class SourceCircuitBreakerTrialTest {
         List<DataSourceAdapter<?>> adapters = List.of(blocking);
         var limits = oneAtATime();
         var caller = new AtomicReference<Thread>();
-        var run = CompletableFuture.supplyAsync(() -> {
+        var run = TestAsync.supply(() -> {
             caller.set(Thread.currentThread());
             return fanOut.fetchAll(adapters, ask(adapters), limits);
         });
@@ -412,7 +412,7 @@ class SourceCircuitBreakerTrialTest {
         two.order = order;
         List<DataSourceAdapter<?>> adapters = List.of(one, two);
         var limits = oneAtATime();
-        var run = CompletableFuture.supplyAsync(() -> fanOut.fetchAll(adapters, ask(adapters), limits));
+        var run = TestAsync.supply(() -> fanOut.fetchAll(adapters, ask(adapters), limits));
         var holder = order.poll(10, TimeUnit.SECONDS);
         assertThat(holder).isNotNull();
 
@@ -442,7 +442,7 @@ class SourceCircuitBreakerTrialTest {
         var limits = oneAtATime();
 
         // The clock never moves: only a waiter that notices the failed call by itself can return.
-        var execution = CompletableFuture.supplyAsync(() -> fanOut.execute(fanOut.plan(adapters, req, limits), limits))
+        var execution = TestAsync.supply(() -> fanOut.execute(fanOut.plan(adapters, req, limits), limits))
                 .get(10, TimeUnit.SECONDS);
 
         assertThat(execution.results()).singleElement().satisfies(f -> {

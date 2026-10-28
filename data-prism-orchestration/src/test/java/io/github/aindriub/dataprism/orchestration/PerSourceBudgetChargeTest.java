@@ -297,8 +297,8 @@ class PerSourceBudgetChargeTest {
     private static int runTogether(DefaultContextOrchestrator orchestrator, String subjectA, String subjectB,
                                    String scopeA, String scopeB) throws Exception {
         var go = new CountDownLatch(1);
-        var first = CompletableFuture.supplyAsync(() -> call(orchestrator, go, subjectA, scopeA));
-        var second = CompletableFuture.supplyAsync(() -> call(orchestrator, go, subjectB, scopeB));
+        var first = TestAsync.supply(() -> call(orchestrator, go, subjectA, scopeA));
+        var second = TestAsync.supply(() -> call(orchestrator, go, subjectB, scopeB));
         go.countDown();
         return first.get(30, TimeUnit.SECONDS) + second.get(30, TimeUnit.SECONDS);
     }
@@ -354,7 +354,7 @@ class PerSourceBudgetChargeTest {
         var limits = TestLimits.defaults().maxConcurrency(1).build();
         var orchestrator = orchestrator(all, budget, limits, fanOut);
 
-        var running = CompletableFuture.runAsync(() -> assertThatThrownBy(() ->
+        var running = TestAsync.run(() -> assertThatThrownBy(() ->
                 orchestrator.buildContext(ContextRequest.of("THING", "1"), context("S"), caller()))
                 .satisfies(t -> assertThat(refusalCode(t)).isEqualTo("NO_SOURCE_DATA")));
         assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue();

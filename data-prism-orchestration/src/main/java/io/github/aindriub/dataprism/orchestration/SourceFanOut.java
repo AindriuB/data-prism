@@ -179,7 +179,8 @@ public final class SourceFanOut {
         for (Call call : calls) {
             if (call.state.get() == STARTED && call.finishedAt == null) {
                 synchronized (call) {
-                    if (!call.threadEnded) {
+                    // Once: a second pass (an abort after the first) must not count the same call again.
+                    if (!call.threadEnded && !call.leftover) {
                         call.leftover = true;
                         add(call.adapter.sourceName(), ONE_LEFTOVER);
                     }
@@ -482,8 +483,11 @@ public final class SourceFanOut {
             if (error && outcome.failure()) {
                 metrics.increment(Metric.SOURCE_ERRORS, outcome.sourceName());
             }
-        } catch (RuntimeException e) {
-            // Metrics are not worth a request; the class only, as a message can carry a value.
+        } catch (VirtualMachineError fatal) {
+            throw fatal;
+        } catch (RuntimeException | Error e) {
+            // Metrics are not worth a request; the class only, as a message can carry a value. A failing
+            // virtual machine is not contained.
             LOG.warn("source metrics failed: {}", e.getClass().getSimpleName());
         }
     }

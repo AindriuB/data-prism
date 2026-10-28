@@ -142,7 +142,7 @@ class SourceFanOutDeadlineTest {
 
     private static CompletableFuture<SourceFanOut.Execution> run(SourceFanOut fanOut, List<DataSourceAdapter<?>> adapters,
                                                                  RequestLimits limits) {
-        return CompletableFuture.supplyAsync(() -> fanOut.execute(fanOut.plan(adapters, askAll(adapters), limits), limits));
+        return TestAsync.supply(() -> fanOut.execute(fanOut.plan(adapters, askAll(adapters), limits), limits));
     }
 
     @Test

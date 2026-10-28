@@ -1,21 +1,28 @@
 package io.github.aindriub.dataprism.orchestration;
 
 import io.github.aindriub.dataprism.core.limits.RequestLimits;
+import io.github.aindriub.dataprism.core.metrics.Metric;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.spi.DataRequest;
 import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Calls that ignore their interrupt outlive their request (OD-W6-4 (a)). The fan-out counts them per source and
@@ -84,7 +91,7 @@ class SourceFanOutLeftoverCallsTest {
             throws Exception {
         List<DataSourceAdapter<?>> adapters = List.of(deaf);
         deaf.expectCall();
-        var running = CompletableFuture.supplyAsync(() -> fanOut.fetchAll(adapters, ASK, limits));
+        var running = TestAsync.supply(() -> fanOut.fetchAll(adapters, ASK, limits));
         deaf.awaitCall();
         clock.advance(limits.requestTimeout());
         return running.get(WAIT_SECONDS, TimeUnit.SECONDS);
@@ -207,7 +214,7 @@ class SourceFanOutLeftoverCallsTest {
             clock.advance(Duration.ofSeconds(6));
 
             // On a worker, so that a regression fails this test instead of hanging the build.
-            var results = CompletableFuture.supplyAsync(() -> fanOut.fetchAll(List.of(deaf), ASK, limits))
+            var results = TestAsync.supply(() -> fanOut.fetchAll(List.of(deaf), ASK, limits))
                     .get(WAIT_SECONDS, TimeUnit.SECONDS);
 
             assertThat(results).singleElement()
@@ -290,7 +297,7 @@ class SourceFanOutLeftoverCallsTest {
 
         for (int request = 1; request <= 6; request++) {
             healthy.entered = new CountDownLatch(1);
-            requests.add(CompletableFuture.supplyAsync(() -> fanOut.fetchAll(adapters, ask, limits)));
+            requests.add(TestAsync.supply(() -> fanOut.fetchAll(adapters, ask, limits)));
             assertThat(healthy.entered.await(WAIT_SECONDS, TimeUnit.SECONDS))
                     .as("request %d reached the source", request).isTrue();
         }
@@ -302,5 +309,111 @@ class SourceFanOutLeftoverCallsTest {
                     .satisfies(f -> assertThat(f.outcome().status()).isEqualTo(SourceOutcome.Status.ANSWERED));
         }
         assertThat(fanOut.trackedSources()).isZero();
+    }
+
+    /** Not a RuntimeException, and not a failing virtual machine. */
+    private static final class BrokenClock extends Error {
+        private static final long serialVersionUID = 1L;
+    }
+
+    @Test
+    @DisplayName("an execution aborted after its leftovers were counted does not count them twice")
+    void aLeftoverIsCountedOnceEvenWhenTheExecutionAborts() throws Exception {
+        var clock = new SourceFanOutDeadlineTest.MutableClock();
+        var armed = new AtomicBoolean();
+        // The breaker's own clock fails once armed, in the middle of recording the timed-out call's outcome.
+        var breakerClock = new Clock() {
+            @Override
+            public ZoneId getZone() {
+                return clock.getZone();
+            }
+
+            @Override
+            public Clock withZone(ZoneId zone) {
+                return this;
+            }
+
+            @Override
+            public Instant instant() {
+                if (armed.get()) {
+                    throw new BrokenClock();
+                }
+                return clock.instant();
+            }
+        };
+        var breaker = new SourceCircuitBreaker(1, Duration.ofSeconds(5), breakerClock);
+        var fanOut = new SourceFanOut(breaker, clock, SourceFanOutOptions.defaults());
+        var deaf = new Deaf();
+        var limits = limits(2);
+        deaf.expectCall();
+        var running = TestAsync.supply(() -> fanOut.fetchAll(List.of(deaf), ASK, limits));
+        try {
+            deaf.awaitCall();
+            armed.set(true);
+            clock.advance(limits.requestTimeout());
+
+            assertThatThrownBy(() -> running.get(WAIT_SECONDS, TimeUnit.SECONDS))
+                    .hasRootCauseInstanceOf(BrokenClock.class);
+        } finally {
+            deaf.stop.countDown();
+        }
+        awaitIdle(fanOut, "deaf");
+
+        assertThat(fanOut.leftovers("deaf")).as("counted once, uncounted once").isZero();
+        assertThat(fanOut.trackedSources()).isZero();
+    }
+
+    @Test
+    @DisplayName("a metrics implementation that throws an Error does not end the request")
+    void anErrorFromMetricsIsContained() throws Exception {
+        PrivacyMetrics broken = new PrivacyMetrics() {
+            @Override
+            public void increment(Metric metric) {
+            }
+
+            @Override
+            public void increment(Metric metric, String sourceName) {
+                throw new BrokenClock();
+            }
+
+            @Override
+            public void record(Metric metric, String sourceName, Duration duration) {
+                throw new BrokenClock();
+            }
+        };
+        var fanOut = new SourceFanOut(SourceCircuitBreaker.disabled(), new SourceFanOutDeadlineTest.MutableClock(),
+                SourceFanOutOptions.defaults().withMetrics(broken));
+        var deaf = new Deaf();
+        deaf.stop.countDown();
+
+        var results = fanOut.fetchAll(List.of(deaf), ASK, limits(2));
+
+        assertThat(results).singleElement()
+                .satisfies(f -> assertThat(f.outcome().status()).isEqualTo(SourceOutcome.Status.ANSWERED));
+    }
+
+    @Test
+    @DisplayName("a failing virtual machine is not contained as a metrics failure")
+    void aVirtualMachineErrorFromMetricsIsNotSwallowed() {
+        PrivacyMetrics failing = new PrivacyMetrics() {
+            @Override
+            public void increment(Metric metric) {
+            }
+
+            @Override
+            public void increment(Metric metric, String sourceName) {
+            }
+
+            @Override
+            public void record(Metric metric, String sourceName, Duration duration) {
+                throw new InternalError("synthetic");
+            }
+        };
+        var fanOut = new SourceFanOut(SourceCircuitBreaker.disabled(), new SourceFanOutDeadlineTest.MutableClock(),
+                SourceFanOutOptions.defaults().withMetrics(failing));
+        var deaf = new Deaf();
+        deaf.stop.countDown();
+
+        assertThatThrownBy(() -> fanOut.fetchAll(List.of(deaf), ASK, limits(2))).isInstanceOf(InternalError.class);
     }
 }
