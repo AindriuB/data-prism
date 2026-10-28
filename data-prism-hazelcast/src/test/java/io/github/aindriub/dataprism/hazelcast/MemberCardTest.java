@@ -38,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.OptionalInt;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -539,6 +540,93 @@ class MemberCardTest {
         fixture.clock.advance(Duration.ofSeconds(1));
         cards.tick();
         assertThat(cards.verifiedMembers()).as("past lease plus tolerance").doesNotContain(memberB);
+    }
+
+    // ---- review round 2: each half of the staleness check, ForkJoin threads, piled-up writes -----------------
+
+    /** A look that never finishes: the member stops serving once a lease has gone by without one. */
+    @Test
+    @Timeout(120)
+    void aLookThatHangsLeavesTheMemberNotServingAfterALease() throws Exception {
+        Pair pair = pair();
+        MemberCards cards = pair.a().memberCards().orElseThrow();
+        fixture.clock.advance(Duration.ofSeconds(40));
+        cards.publishNow();
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        cards.lookFault = () -> {
+            entered.countDown();
+            try {
+                release.await();
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        };
+        Thread ticking = new Thread(cards::tick);
+        ticking.start();
+        try {
+            assertThat(entered.await(30, TimeUnit.SECONDS)).isTrue();
+            assertThat(pair.a().securityStatus().serving()).as("the card is fresh, the look is not old yet").isTrue();
+            fixture.clock.advance(Duration.ofSeconds(20));
+            assertThat(pair.a().securityStatus().serving()).as("no look for a lease").isFalse();
+            assertThat(pair.a().securityStatus().reason()).isEqualTo(ClusterSecurityStatus.Reason.CARDS_UNAVAILABLE);
+        } finally {
+            release.countDown();
+            ticking.join();
+        }
+    }
+
+    /** The own card is still readable (inside the skew tolerance) but could not be refreshed for a lease. */
+    @Test
+    @Timeout(120)
+    void aFailedPublishLeavesTheMemberNotServingEvenWhileItsOwnCardIsStillReadable() {
+        Pair pair = pair();
+        MemberCards cards = pair.a().memberCards().orElseThrow();
+        Fixture.cardMap(pair.b()).lock(cards.keyForTest(Fixture.uuidOf(pair.a())));
+
+        fixture.clock.advance(LEASE.plusSeconds(1));
+        cards.tick();
+
+        assertThat(cards.verifiedMembers()).as("its own card is still readable").contains(Fixture.uuidOf(pair.a()));
+        assertThat(pair.a().securityStatus().serving()).isFalse();
+        assertThat(pair.a().securityStatus().reason()).isEqualTo(ClusterSecurityStatus.Reason.CARDS_UNAVAILABLE);
+    }
+
+    /** On a ForkJoinPool worker a plain future wait would be unbounded. */
+    @Test
+    @Timeout(120)
+    void aTickOnACommonPoolThreadIsBoundedWhileTheCardKeyIsLocked() throws Exception {
+        Pair pair = pair();
+        MemberCards cards = pair.a().memberCards().orElseThrow();
+        Fixture.cardMap(pair.b()).lock(cards.keyForTest(Fixture.uuidOf(pair.a())));
+        fixture.clock.advance(LEASE);
+
+        CompletableFuture.runAsync(cards::tick).get(30, TimeUnit.SECONDS);
+        assertThat(pair.a().securityStatus().serving()).isFalse();
+    }
+
+    /** Writes to a locked key queue at the owner: no new one is started while the last is outstanding. */
+    @Test
+    @Timeout(240)
+    void atMostOneCardWriteIsOutstandingWhileTheCardKeyIsLocked() {
+        Pair pair = pair();
+        MemberCards cards = pair.a().memberCards().orElseThrow();
+        IMap<String, String> locker = Fixture.cardMap(pair.b());
+        String keyA = cards.keyForTest(Fixture.uuidOf(pair.a()));
+        locker.lock(keyA);
+        fixture.clock.advance(LEASE.dividedBy(2));
+        int before = cards.writesStarted();
+
+        for (int i = 0; i < 11; i++) {
+            cards.tick();
+        }
+        assertThat(cards.writesStarted() - before).as("writes started under the lock").isEqualTo(1);
+        assertThat(cards.writeOutstanding()).isTrue();
+
+        locker.unlock(keyA);
+        assertThat(Fixture.await(30, () -> !cards.writeOutstanding())).as("the queued write completed").isTrue();
+        cards.tick();
+        assertThat(pair.a().securityStatus().serving()).as("the next tick publishes again").isTrue();
     }
 
     // ---- disagreeing keys ------------------------------------------------------------------------------------

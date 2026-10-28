@@ -67,21 +67,28 @@ final class ClusterSentinel {
     }
 
     /**
-     * Waits for a write at most {@code timeout}. A write to a key that another member has locked would otherwise
-     * wait for as long as the lock is held.
+     * Waits for a write at most {@code timeout}. A write that has to wait for a lock another member holds would
+     * otherwise wait for as long as the lock is held. The wait is on a JDK future completed by a callback: waiting
+     * on Hazelcast's own future on a ForkJoinPool worker would block through a ManagedBlocker with no bound. The
+     * write itself is not cancelled; it stays queued at the owner until it can run.
      *
      * @throws IllegalStateException if the write did not finish in time, failed, or the thread was interrupted
      */
     static <T> T bounded(CompletionStage<T> write, Duration timeout) {
-        CompletableFuture<T> future = write.toCompletableFuture();
+        CompletableFuture<T> future = new CompletableFuture<>();
+        write.whenComplete((value, failure) -> {
+            if (failure != null) {
+                future.completeExceptionally(failure);
+            } else {
+                future.complete(value);
+            }
+        });
         try {
             return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
         } catch (TimeoutException late) {
-            future.cancel(true);
             throw new IllegalStateException("a member card write did not finish in time");
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
-            future.cancel(true);
             throw new IllegalStateException("a member card write was interrupted");
         } catch (ExecutionException failed) {
             throw new IllegalStateException("a member card write failed");
@@ -102,7 +109,8 @@ final class ClusterSentinel {
         Object stored = cards.get(KEY);
         if (stored == null) {
             String sealed = sealer.seal(PrivacyCluster.MEMBER_CARD_MAP, KEY, CONSTANT);
-            // An entry processor does not wait for a lock on the key; it writes only if the sentinel is still absent.
+            // Writes only if the sentinel is still absent. The wait is bounded below: a processor on a locked key would
+            // otherwise wait for the lock.
             IMap<String, String> typed = cluster.instance().getMap(PrivacyCluster.MEMBER_CARD_MAP);
             if (Boolean.TRUE.equals(bounded(typed.submitToKey(KEY, SealedWrites.compareAndSet(null, sealed, 0)),
                     writeTimeout))) {
