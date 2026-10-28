@@ -40,16 +40,30 @@ class TokenController {
         TokenRequest resolved = (request == null ? new TokenRequest(null, null, null, null, null, null)
                 : request).withDefaults();
 
-        JWTClaimsSet claims = new JWTClaimsSet.Builder()
+        String audience = resolved.audience() == null ? properties.getAudience() : resolved.audience();
+        // An allow-list of exactly two shapes: the MCP token (MCP audience, no scope) and the operator
+        // token (operator audience, exactly the configured scope). Everything else is refused.
+        boolean mcp = properties.getAudience().equals(audience) && resolved.scope() == null;
+        boolean operator = properties.getOperatorAudience().equals(audience)
+                && properties.getOperatorScope().equals(resolved.scope());
+        if (!mcp && !operator) {
+            // Fixed body: nothing the caller sent is ever echoed back.
+            return ResponseEntity.badRequest().body(Map.of("code", "INVALID_TOKEN_REQUEST"));
+        }
+
+        JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder()
                 .subject(resolved.subject())
                 .claim("azp", resolved.clientId())
                 .claim("roles", List.copyOf(resolved.roles()))
                 .claim("purpose", resolved.purpose())
                 .claim("case_id", resolved.caseId())
                 .issuer(properties.getIssuerId())
-                .audience(properties.getAudience())
-                .expirationTime(Date.from(Instant.now().plus(resolved.ttlMinutes(), ChronoUnit.MINUTES)))
-                .build();
+                .audience(audience)
+                .expirationTime(Date.from(Instant.now().plus(resolved.ttlMinutes(), ChronoUnit.MINUTES)));
+        if (resolved.scope() != null) {
+            builder.claim("scope", resolved.scope());
+        }
+        JWTClaimsSet claims = builder.build();
         SignedJWT jwt = new SignedJWT(
                 new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(keys.signingKey().getKeyID()).build(), claims);
         jwt.sign(new RSASSASigner(keys.signingKey()));
