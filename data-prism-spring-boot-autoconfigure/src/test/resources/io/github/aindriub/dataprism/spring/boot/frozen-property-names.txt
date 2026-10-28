@@ -47,6 +47,7 @@ dataprism.hazelcast.map-store-enabled | boolean | rw | false
 dataprism.hazelcast.member | bean | ro
 dataprism.hazelcast.member.interface | java.lang.String | rw | null
 dataprism.hazelcast.member.port | java.lang.Integer | rw | null
+dataprism.hazelcast.member.trusted-ranges | java.util.List<java.lang.String> | rw | []
 dataprism.hazelcast.persistence-enabled | boolean | rw | false
 dataprism.hazelcast.reidentification-controls-reference | java.lang.String | rw | null
 dataprism.hazelcast.reidentification-enabled | boolean | rw | false
@@ -74,6 +75,7 @@ dataprism.hazelcast.security.name-key.value | java.lang.String | rw | null
 dataprism.hazelcast.tls-key-reference | java.lang.String | rw | null
 dataprism.hazelcast.tls-trust-reference | java.lang.String | rw | null
 dataprism.hazelcast.topology | java.lang.String | rw | null
+dataprism.hazelcast.trusted-network | boolean | rw | false
 dataprism.identity | bean | rw
 dataprism.identity.resolver | java.lang.String | rw | null
 dataprism.limits | bean | rw

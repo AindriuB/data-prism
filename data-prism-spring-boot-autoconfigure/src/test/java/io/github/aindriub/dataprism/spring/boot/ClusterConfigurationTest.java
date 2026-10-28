@@ -371,7 +371,7 @@ class ClusterConfigurationTest {
                 "dataprism.hazelcast.join.members[0]=127.0.0.1:" + portA,
                 "dataprism.hazelcast.join.members[1]=127.0.0.1:" + portB,
                 "dataprism.hazelcast.member.port=" + port,
-                "dataprism.hazelcast.member.interface=127.0.0.1");
+                "dataprism.hazelcast.member.interface=127.0.0.1", "dataprism.hazelcast.trusted-network=true");
     }
 
     // ---- bean graph ----------------------------------------------------------------------------
@@ -396,7 +396,7 @@ class ClusterConfigurationTest {
                 "DATAPRISM_HAZELCAST_JOIN_MODE=tcp-ip",
                 "DATAPRISM_HAZELCAST_JOIN_MEMBERS=127.0.0.1:" + port + ",127.0.0.1:" + (port + 1),
                 "DATAPRISM_HAZELCAST_MEMBER_PORT=" + port,
-                "DATAPRISM_HAZELCAST_MEMBER_INTERFACE=127.0.0.1")
+                "DATAPRISM_HAZELCAST_MEMBER_INTERFACE=127.0.0.1", "DATAPRISM_HAZELCAST_TRUSTEDNETWORK=true")
                 .applyTo(context.getEnvironment(), TestPropertyValues.Type.SYSTEM_ENVIRONMENT)).run(result -> {
             assertThat(result).hasNotFailed();
             Config config = result.getBean(PrivacyCluster.class).instance().getConfig();

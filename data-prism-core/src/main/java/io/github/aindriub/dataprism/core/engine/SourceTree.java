@@ -1,20 +1,13 @@
 package io.github.aindriub.dataprism.core.engine;
 
-import com.fasterxml.jackson.annotation.JsonFormat;
-import com.fasterxml.jackson.annotation.JsonRawValue;
-import com.fasterxml.jackson.annotation.JsonUnwrapped;
-import com.fasterxml.jackson.annotation.JsonValue;
 import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 import tools.jackson.core.JacksonException;
-import tools.jackson.core.JsonGenerator;
 import tools.jackson.databind.BeanDescription;
-import tools.jackson.databind.BeanProperty;
 import tools.jackson.databind.JavaType;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.MapperFeature;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.SerializationConfig;
-import tools.jackson.databind.SerializationContext;
 import tools.jackson.databind.ValueSerializer;
 import tools.jackson.databind.annotation.JsonSerialize;
 import tools.jackson.databind.cfg.DateTimeFeature;
@@ -41,22 +34,15 @@ import tools.jackson.databind.node.ObjectNode;
 import tools.jackson.databind.node.POJONode;
 import tools.jackson.databind.node.ShortNode;
 import tools.jackson.databind.node.StringNode;
-import tools.jackson.databind.ser.BeanPropertyWriter;
-import tools.jackson.databind.ser.BeanSerializer;
-import tools.jackson.databind.ser.UnrolledBeanSerializer;
 import tools.jackson.databind.ser.ValueSerializerModifier;
 import tools.jackson.databind.ser.bean.BeanSerializerBase;
 import tools.jackson.databind.ser.impl.UnknownSerializer;
-import tools.jackson.databind.ser.jdk.EnumSerializer;
-import tools.jackson.databind.ser.jdk.JDKStringLikeSerializer;
 import tools.jackson.databind.ser.jdk.JavaUtilCalendarSerializer;
 import tools.jackson.databind.ser.jdk.JavaUtilDateSerializer;
 import tools.jackson.databind.ser.jdk.MapSerializer;
-import tools.jackson.databind.ser.jdk.NumberSerializer;
 import tools.jackson.databind.ser.std.ArraySerializerBase;
 import tools.jackson.databind.ser.std.ReferenceTypeSerializer;
 import tools.jackson.databind.ser.std.StdContainerSerializer;
-import tools.jackson.databind.ser.std.StdScalarSerializer;
 import tools.jackson.databind.ser.std.ToStringSerializer;
 import tools.jackson.databind.type.CollectionLikeType;
 import tools.jackson.databind.type.CollectionType;
@@ -64,14 +50,11 @@ import tools.jackson.databind.type.MapLikeType;
 import tools.jackson.databind.type.MapType;
 import tools.jackson.databind.util.StdDateFormat;
 
-import java.lang.reflect.RecordComponent;
 import java.time.Month;
 import java.util.Calendar;
 import java.util.Collections;
 import java.util.Date;
-import java.util.HashSet;
 import java.util.Locale;
-import java.util.Set;
 
 /**
  * Reads source objects into trees, and builds the nodes that replace them.
@@ -375,102 +358,12 @@ public final class SourceTree {
     static void refuseIfReadByGetters(Class<?> type) {
         try {
             READER.writerFor(type);
-            if (type.isRecord()) {
-                SourceModels.refuseForeignProperties(type, READER._serializationContext().findValueSerializer(type));
-            }
         } catch (JacksonException e) {
             PrivacyRefusedException refused = SourceRecordWalker.refusalIn(e);
             if (refused != null) {
                 throw refused;
             }
             // Any other failure is left for the runtime check, which sees the actual object.
-        }
-    }
-
-    /**
-     * Whether this reader writes {@code type}, as the value of the record component {@code component} of
-     * {@code holder}, as a plain JSON object of exactly its record components. It asks the reader's own
-     * serializers, so whatever the reader would do is what is judged; the answer is false for anything
-     * else: an array shape, an object id, a {@code @JsonValue} or other custom serializer, a renamed,
-     * ignored or extra property, a filter, and any Jackson annotation or non-object format on the holding property.
-     * If the lookup throws, the answer is false (fail closed).
-     */
-    static boolean readsAsPlainBean(Class<?> holder, String component, Class<?> type) {
-        try {
-            if (!holder.isRecord() || !type.isRecord()) {
-                return false;
-            }
-            var context = READER._serializationContext();
-            // A class-level format (and the like) is applied when the serializer is contextualised.
-            if (!plainBean(contextual(context, context.findValueSerializer(type)), type)) {
-                return false;
-            }
-            if (!(context.findValueSerializer(holder) instanceof BeanSerializerBase bean)) {
-                return false;
-            }
-            for (var properties = bean.properties(); properties.hasNext(); ) {
-                var writer = properties.next();
-                if (writer.getName().equals(component)) {
-                    return writer instanceof BeanPropertyWriter bpw && plainHolder(bpw, type);
-                }
-            }
-            return false;
-        } catch (RuntimeException e) {
-            return false;
-        }
-    }
-
-    /**
-     * Whether the holding property of {@code component} on {@code holder} carries a serializer or shape
-     * override as Jackson merged it (on the component, its accessor, an interface, or inside a
-     * meta-annotation): a {@code @JsonSerialize}, {@code @JsonRawValue}, {@code @JsonValue} or
-     * {@code @JsonUnwrapped}, or a format shape other than natural, any or scalar. A value so held may be written
-     * as an object whatever its declared type. If the lookup throws, or the property cannot be found,
-     * the answer is true (fail closed).
-     */
-    static boolean overridesSerialization(Class<?> holder, String component) {
-        try {
-            if (!holder.isRecord()) {
-                return true;
-            }
-            var context = READER._serializationContext();
-            if (!(context.findValueSerializer(holder) instanceof BeanSerializerBase bean)) {
-                return true;
-            }
-            for (var properties = bean.properties(); properties.hasNext(); ) {
-                var writer = properties.next();
-                if (writer.getName().equals(component)) {
-                    return !(writer instanceof BeanPropertyWriter bpw) || overrides(bpw);
-                }
-            }
-            return true;
-        } catch (RuntimeException e) {
-            return true;
-        }
-    }
-
-    /**
-     * Whether this reader writes {@code type}, held by the record component {@code component} of
-     * {@code holder}, as one JSON scalar. An allowlist: the holding property has no serializer, shape or
-     * type-information override, the type has no type serializer of its own, and the serializer Jackson
-     * contextualises for the type is one of its own scalar serializers (string, number, boolean, date and
-     * time, UUID, string-like, enum). An enum with a custom serializer, a {@code @JsonValue} or type
-     * information fails this, as does anything unrecognised or whose lookup throws (fail closed).
-     */
-    static boolean readsAsPlainScalar(Class<?> holder, String component, Class<?> type) {
-        try {
-            if (overridesSerialization(holder, component)) {
-                return false;
-            }
-            var context = READER._serializationContext();
-            JavaType javaType = context.constructType(type);
-            if (context.findTypeSerializer(javaType) != null) {
-                return false;
-            }
-            ValueSerializer<?> serializer = contextual(context, context.findValueSerializer(javaType));
-            return serializer != null && jacksonScalar(serializer);
-        } catch (RuntimeException e) {
-            return false;
         }
     }
 
@@ -484,105 +377,6 @@ public final class SourceTree {
         } catch (SecurityException e) {
             return false;
         }
-    }
-
-    private static boolean jacksonScalar(ValueSerializer<?> serializer) {
-        Class<?> c = serializer.getClass();
-        // A name is not ownership: a user class may sit in Jackson's package. The java.time serializers are
-        // in the same jackson-databind jar, so one code source covers them all.
-        if (!c.getName().startsWith("tools.jackson.databind.") || !fromJacksonDatabind(c)) {
-            return false;
-        }
-        return serializer instanceof StdScalarSerializer<?>
-                || serializer instanceof ToStringSerializer
-                || serializer instanceof EnumSerializer
-                || serializer instanceof JDKStringLikeSerializer
-                || serializer instanceof NumberSerializer
-                || serializer instanceof JavaUtilDateSerializer
-                || serializer instanceof JavaUtilCalendarSerializer
-                || c.getName().startsWith("tools.jackson.databind.ext.javatime.ser.");
-    }
-
-    private static boolean overrides(BeanPropertyWriter writer) {
-        var member = writer.getMember();
-        if (member == null) {
-            return true;
-        }
-        boolean annotated = member.annotations().anyMatch(a -> {
-            Class<?> type = a.annotationType();
-            return type == JsonSerialize.class || type == JsonRawValue.class || type == JsonValue.class
-                    || type == JsonUnwrapped.class;
-        });
-        if (annotated || writer.getTypeSerializer() != null) {
-            return true;
-        }
-        var shape = writer.findPropertyFormat(READER.serializationConfig(), member.getRawType()).getShape();
-        return shape != JsonFormat.Shape.ANY && shape != JsonFormat.Shape.NATURAL
-                && shape != JsonFormat.Shape.STRING && shape != JsonFormat.Shape.NUMBER
-                && shape != JsonFormat.Shape.NUMBER_INT && shape != JsonFormat.Shape.NUMBER_FLOAT
-                && shape != JsonFormat.Shape.BOOLEAN;
-    }
-
-    /** The serializer as the writer would use it, or null when it cannot be contextualised. */
-    private static ValueSerializer<?> contextual(SerializationContext context, ValueSerializer<?> serializer) {
-        return serializer == null ? null : serializer.createContextual(context, null);
-    }
-
-    /**
-     * Judges the holding property as Jackson merged it (annotations on the component, its accessor, an
-     * interface, or inside a meta-annotation): no Jackson annotation of any kind, a natural or object
-     * shape, and, where the property is a container, a content serializer that is itself plain. A
-     * {@code java.util.Optional} or other reference hides its content serializer, so only the property
-     * checks apply to it; its content is judged by the type-level lookup above.
-     */
-    private static boolean plainHolder(BeanPropertyWriter writer, Class<?> type) {
-        var member = writer.getMember();
-        if (member == null) {
-            return false;
-        }
-        boolean annotated = member.annotations().anyMatch(a -> {
-            String name = a.annotationType().getName();
-            return name.startsWith("com.fasterxml.jackson.") || name.startsWith("tools.jackson.");
-        });
-        if (annotated) {
-            return false;
-        }
-        var shape = writer.findPropertyFormat(READER.serializationConfig(), member.getRawType()).getShape();
-        if (shape != JsonFormat.Shape.ANY && shape != JsonFormat.Shape.NATURAL
-                && shape != JsonFormat.Shape.OBJECT) {
-            return false;
-        }
-        ValueSerializer<?> serializer = writer.getSerializer();
-        if (serializer instanceof StdContainerSerializer<?> container) {
-            return plainBean(container.getContentSerializer(), type);
-        }
-        return serializer == null || serializer.handledType() != type || plainBean(serializer, type);
-    }
-
-    private static boolean plainBean(ValueSerializer<?> serializer, Class<?> type) {
-        // The plain object serializers only: the as-array, object-id-less variants and everything else differ.
-        if (serializer == null
-                || serializer.getClass() != BeanSerializer.class
-                && serializer.getClass() != UnrolledBeanSerializer.class) {
-            return false;
-        }
-        BeanSerializerBase bean = (BeanSerializerBase) serializer;
-        if (bean.usesObjectId() || bean.getFilterId() != null || bean.isUnwrappingSerializer()) {
-            return false;
-        }
-        Set<String> components = new HashSet<>();
-        for (RecordComponent rc : type.getRecordComponents()) {
-            components.add(rc.getName());
-        }
-        Set<String> written = new HashSet<>();
-        for (var properties = bean.properties(); properties.hasNext(); ) {
-            var writer = properties.next();
-            if (!(writer instanceof BeanPropertyWriter)) {
-                return false;
-            }
-            written.add(writer.getName());
-        }
-        return written.equals(components);
     }
 
     private SourceTree() {

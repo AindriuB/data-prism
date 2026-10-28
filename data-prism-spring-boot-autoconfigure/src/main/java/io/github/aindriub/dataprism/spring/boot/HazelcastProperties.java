@@ -31,6 +31,12 @@ public class HazelcastProperties {
     /** How often each member sweeps the pending-approval entries and approval-id claims it owns. Between PT1S and P1D. */
     private Duration approvalSweepInterval = Duration.ofMinutes(5);
     private boolean approvalSweepIntervalSet;
+    /**
+     * The operator's assertion that only Data Prism members can reach the member port. Required to join other
+     * members. Refused with single-node, join mode none and an application-supplied PrivacyCluster.
+     */
+    private boolean trustedNetwork;
+    private boolean trustedNetworkSet;
     private final Join join = new Join();
     private final Member member = new Member();
     private final Security security = new Security();
@@ -85,6 +91,25 @@ public class HazelcastProperties {
         return approvalSweepIntervalSet;
     }
 
+    /**
+     * Asserts that only Data Prism members can reach the member port ({@code dataprism.hazelcast.member.port}, 5701
+     * by default). Approvals and counters on that port are unsealed, so anyone else who can reach it can read and
+     * forge them. Required to join other members.
+     */
+    public boolean isTrustedNetwork() {
+        return trustedNetwork;
+    }
+
+    public void setTrustedNetwork(boolean v) {
+        trustedNetwork = v;
+        trustedNetworkSet = true;
+    }
+
+    /** Whether the trusted-network assertion was given, to either value. */
+    public boolean trustedNetworkSet() {
+        return trustedNetworkSet;
+    }
+
     /** Required with {@code embedded}; never {@code dev}. Refused with {@code single-node}. */
     public String getClusterName() {
         return clusterName;
@@ -115,7 +140,8 @@ public class HazelcastProperties {
     public boolean clusterSettingsSet() {
         return !isBlank(clusterName) || approvalMinimumMembers != null || !isBlank(join.mode) || !join.members.isEmpty()
                 || !isBlank(join.kubernetes.namespace) || !isBlank(join.kubernetes.serviceName)
-                || !isBlank(join.kubernetes.serviceDns) || member.port != null || !isBlank(member.interfaceAddress);
+                || !isBlank(join.kubernetes.serviceDns) || member.port != null || !isBlank(member.interfaceAddress)
+                || trustedNetworkSet || !member.trustedRanges.isEmpty();
     }
 
     /**
@@ -410,6 +436,8 @@ public class HazelcastProperties {
         private Integer port;
         /** Network interface the member binds. Unset binds every interface for tcp-ip and kubernetes. */
         private String interfaceAddress;
+        /** IPv4 CIDR blocks to trust beyond the private ones. Applies only with trusted-network. */
+        private List<String> trustedRanges = new ArrayList<>();
 
         public Integer getPort() {
             return port;
@@ -426,6 +454,18 @@ public class HazelcastProperties {
 
         public void setInterface(String v) {
             interfaceAddress = v;
+        }
+
+        /**
+         * IPv4 CIDR blocks the operator trusts beyond 10/8, 172.16/12, 192.168/16 and 127/8. A block outside those
+         * must be /24 or longer.
+         */
+        public List<String> getTrustedRanges() {
+            return trustedRanges;
+        }
+
+        public void setTrustedRanges(List<String> v) {
+            trustedRanges = v == null ? new ArrayList<>() : new ArrayList<>(v);
         }
     }
 

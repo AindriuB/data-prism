@@ -79,6 +79,14 @@ class SourceModelsTest {
                 });
     }
 
+    private static void assertJacksonRefused(Runnable action, String name) {
+        assertThatThrownBy(action::run)
+                .isInstanceOfSatisfying(PrivacyRefusedException.class, e -> {
+                    assertThat(e.code()).isEqualTo("SOURCE_MODEL_JACKSON_ANNOTATION");
+                    assertThat(e.getMessage()).contains(name).doesNotContain("value-that-must-not-appear");
+                });
+    }
+
     @Test
     void theCodeIsAValidRefusalToken() {
         assertThat(io.github.aindriub.dataprism.core.refusal.RefusalCodes.sanitise(SourceModels.CODE))
@@ -264,7 +272,7 @@ class SourceModelsTest {
     void enumsAreAllowedUnlessReadByGetters() {
         assertThat(SourceTree.of(new Untyped(ValueEnum.A)).get("any").asString()).isEqualTo("A");
         assertThat(SourceTree.of(new Untyped(RenamedEnum.B)).get("any").asString()).isEqualTo("B");
-        assertRefused(() -> SourceModels.require(ObjectEnumHolder.class), "ObjectEnum");
+        assertJacksonRefused(() -> SourceModels.require(ObjectEnumHolder.class), "ObjectEnum");
         // At scrub time every enum is written by name().
         assertThat(SourceTree.of(new Untyped(ObjectEnum.A)).get("any").asString()).isEqualTo("A");
     }
@@ -366,9 +374,9 @@ class SourceModelsTest {
 
     @Test
     void jsonPropertyOrJsonGetterOnAMethodThatIsNotAComponentIsRefused() {
-        // At scrub time the walker writes the components only; the startup refusal (290's) is unchanged.
+        // At scrub time the walker writes the components only; startup refuses the annotation (task 290).
         assertThat(SourceTree.of(new RenamedGetter("n")).propertyNames()).containsExactly("name");
-        assertRefused(() -> SourceModels.require(RenamedGetter.class), "RenamedGetter");
+        assertJacksonRefused(() -> SourceModels.require(RenamedGetter.class), "RenamedGetter");
         assertThat(SourceTree.of(new GetterAnnotated("n")).propertyNames()).containsExactly("name");
         assertThat(SourceTree.of(new AccessorAnnotated("n")).propertyNames()).containsExactly("name");
         assertThat(SourceTree.of(new WithAny("a")).propertyNames()).containsExactly("a");
@@ -411,24 +419,24 @@ class SourceModelsTest {
     @Test
     void anAnnotatedMethodInheritedFromAnInterfaceIsRefusedAtStartupAndRuntime() {
         assertThat(SourceTree.of(new ViaInterfaceProperty("n")).propertyNames()).containsExactly("name");
-        assertRefused(() -> SourceModels.require(ViaInterfaceProperty.class), "ViaInterfaceProperty");
+        assertJacksonRefused(() -> SourceModels.require(ViaInterfaceProperty.class), "AnnotatedUrled");
         assertThat(SourceTree.of(new ViaInterfaceGetter("n")).propertyNames()).containsExactly("name");
-        assertRefused(() -> SourceModels.require(ViaInterfaceGetter.class), "ViaInterfaceGetter");
+        assertJacksonRefused(() -> SourceModels.require(ViaInterfaceGetter.class), "GetterUrled");
         assertThat(SourceTree.of(new ViaSuperInterface("n")).propertyNames()).containsExactly("name");
-        assertRefused(() -> SourceModels.require(ViaSuperInterface.class), "ViaSuperInterface");
+        assertJacksonRefused(() -> SourceModels.require(ViaSuperInterface.class), "AnnotatedUrled");
     }
 
     @Test
-    void aComponentAccessorRenamedOnTheInterfaceItImplementsKeepsTheName() {
+    void aComponentAccessorRenamedOnTheInterfaceItImplementsKeepsTheNameAtRuntimeAndIsRefusedAtStartup() {
         assertThat(SourceTree.of(new RenamedViaInterface("n")).propertyNames()).containsExactly("name");
-        assertThatCode(() -> SourceModels.require(RenamedViaInterface.class)).doesNotThrowAnyException();
+        assertJacksonRefused(() -> SourceModels.require(RenamedViaInterface.class), "NamedAccessor");
     }
 
     @Test
-    void theAllowedExplicitChoicesStillPassAtStartup() {
-        assertThatCode(() -> SourceModels.require(Annotated.class)).doesNotThrowAnyException();
-        assertThatCode(() -> SourceModels.require(WithAny.class)).doesNotThrowAnyException();
-        assertThatCode(() -> SourceModels.require(Valued.class)).doesNotThrowAnyException();
+    void jacksonAnnotationsAreRefusedAtStartupAndUnannotatedExtraGettersPass() {
+        assertJacksonRefused(() -> SourceModels.require(Annotated.class), "Annotated");
+        assertJacksonRefused(() -> SourceModels.require(WithAny.class), "WithAny");
+        assertJacksonRefused(() -> SourceModels.require(Valued.class), "Valued");
         assertThatCode(() -> SourceModels.require(WithExtraGetters.class)).doesNotThrowAnyException();
         assertThatCode(() -> SourceModels.require(WithInterfaceGetter.class)).doesNotThrowAnyException();
     }
@@ -437,8 +445,8 @@ class SourceModelsTest {
     }
 
     @Test
-    void aComponentSerializerAndAnIgnoredComponentStillPass() {
-        assertThatCode(() -> SourceModels.require(ComponentSerialized.class)).doesNotThrowAnyException();
+    void aComponentSerializerAndAnIgnoredComponentAreRefusedAtStartupAndHaveNoEffectAtRuntime() {
+        assertJacksonRefused(() -> SourceModels.require(ComponentSerialized.class), "ComponentSerialized");
         JsonNode tree = SourceTree.of(new ComponentSerialized("s", "h"));
         // Neither annotation has an effect on the tree: the raw value is written, and the ignored one too.
         assertThat(tree.propertyNames()).containsExactly("secret", "hidden");
@@ -507,13 +515,13 @@ class SourceModelsTest {
     void aDisabledAnyGetterIsAnOrdinaryPropertyAndAVirtualPropertyIsNotAComponent() {
         // The runtime trees hold the components only (task 288); the startup refusals are 290's.
         assertThat(SourceTree.of(new ViaAnyOff("n")).toString()).isEqualTo("{\"name\":\"n\"}");
-        assertRefused(() -> SourceModels.require(ViaAnyOff.class), "ViaAnyOff");
+        assertJacksonRefused(() -> SourceModels.require(ViaAnyOff.class), "AnyOff");
         assertThat(SourceTree.of(new ViaAnyOffMap("n")).toString()).isEqualTo("{\"name\":\"n\"}");
-        assertRefused(() -> SourceModels.require(ViaAnyOffMap.class), "ViaAnyOffMap");
+        assertJacksonRefused(() -> SourceModels.require(ViaAnyOffMap.class), "AnyOffMap");
         assertThat(SourceTree.of(new AnyOffDirect("n")).toString()).isEqualTo("{\"name\":\"n\"}");
-        assertRefused(() -> SourceModels.require(AnyOffDirect.class), "AnyOffDirect");
+        assertJacksonRefused(() -> SourceModels.require(AnyOffDirect.class), "AnyOffDirect");
         assertThat(SourceTree.of(new Appended("n")).toString()).isEqualTo("{\"name\":\"n\"}");
-        assertRefused(() -> SourceModels.require(Appended.class), "Appended");
+        assertJacksonRefused(() -> SourceModels.require(Appended.class), "Appended");
     }
 
     @Test
@@ -533,7 +541,7 @@ class SourceModelsTest {
     void aRecursiveGenericRecordIsRefusedAsGenericAndAnObjectShapedEnumIsRefusedAtStartup() {
         // Task 265: a record declaring type parameters is refused outright, so the bound is never walked.
         assertRefusedWith(() -> SourceModels.require(Recursive.class), "SOURCE_MODEL_GENERIC", "Recursive");
-        assertRefused(() -> SourceModels.require(ObjectEnumHolder.class), "ObjectEnum");
+        assertJacksonRefused(() -> SourceModels.require(ObjectEnumHolder.class), "ObjectEnum");
     }
 
     @Test
