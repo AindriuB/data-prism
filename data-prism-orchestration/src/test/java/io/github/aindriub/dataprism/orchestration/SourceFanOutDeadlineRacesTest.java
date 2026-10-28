@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -232,6 +233,162 @@ class SourceFanOutDeadlineRacesTest {
             assertThat(f.record()).isEqualTo("answer-s");
         });
         assertThat(breaker.admit("s").holdsTrial()).as("a success closed the breaker").isFalse();
+    }
+
+    /** One source, a 3 s call timeout and a 10 s deadline, a breaker trial, the waiter held after the call starts. */
+    private record Fixture(SourceFanOutDeadlineTest.MutableClock clock, SourceCircuitBreaker breaker,
+                           SourceFanOut fanOut, SourceFanOutDeadlineTest.Blocking source, RequestLimits limits) {
+        static Fixture create() {
+            var clock = new SourceFanOutDeadlineTest.MutableClock();
+            var breaker = new SourceCircuitBreaker(1, Duration.ofSeconds(5), clock);
+            breaker.record(failed("s"));
+            clock.advance(Duration.ofSeconds(6));
+            var limits = TestLimits.defaults().perSourceTimeout(Duration.ofSeconds(3)).maxConcurrency(1).build();
+            return new Fixture(clock, breaker, new SourceFanOut(breaker, clock, SourceFanOutOptions.defaults()),
+                    new SourceFanOutDeadlineTest.Blocking("s"), limits);
+        }
+
+        CompletableFuture<SourceFanOut.Execution> start() {
+            List<DataSourceAdapter<?>> adapters = List.of(source);
+            return TestAsync.supply(() -> fanOut.execute(fanOut.plan(adapters, ask(adapters), limits), limits));
+        }
+    }
+
+    @Test
+    @DisplayName("a result that finishes after the call's own timeout, seen by the waiter's per-source check, is a timeout of the source")
+    void aLateResultFoundByThePerSourceCheckIsAFailure() throws Exception {
+        var f = Fixture.create();
+        var pause = new WaiterPause();
+        pause.install(f.fanOut());
+        var finishedAndHeld = new CountDownLatch(1);
+        var letGo = new CountDownLatch(1);
+        // The call records its result and is held before it tells the waiter, so the waiter finds it by looking.
+        f.fanOut().callFinishedObserver(name -> {
+            finishedAndHeld.countDown();
+            await(letGo);
+        });
+        var running = f.start();
+        assertThat(f.source().entered.await(WAIT_SECONDS, TimeUnit.SECONDS)).isTrue();
+
+        pause.pauseNextPass();
+        f.clock().advance(Duration.ofSeconds(4));
+        f.source().release.countDown();
+        await(finishedAndHeld);
+        pause.resume.countDown();
+        var execution = running.get(WAIT_SECONDS, TimeUnit.SECONDS);
+        letGo.countDown();
+
+        assertThat(execution.results()).singleElement().satisfies(r -> {
+            assertThat(r.outcome().status()).isEqualTo(SourceOutcome.Status.TIMED_OUT);
+            assertThat(r.record()).isNull();
+        });
+        assertThat(f.breaker().admit("s").allowed()).as("a failure, not a success, was recorded").isFalse();
+    }
+
+    @Test
+    @DisplayName("a result that finishes exactly at the call's own timeout counts as expired, as it does everywhere else")
+    void aResultExactlyAtTheOwnTimeoutIsExpired() throws Exception {
+        var f = Fixture.create();
+        var pause = new WaiterPause();
+        pause.install(f.fanOut());
+        var ended = endOf(f.fanOut(), "s");
+        var running = f.start();
+        assertThat(f.source().entered.await(WAIT_SECONDS, TimeUnit.SECONDS)).isTrue();
+
+        pause.pauseNextPass();
+        f.clock().advance(Duration.ofSeconds(3));
+        f.source().release.countDown();
+        await(ended);
+        pause.resume.countDown();
+        var execution = running.get(WAIT_SECONDS, TimeUnit.SECONDS);
+
+        assertThat(execution.results()).singleElement()
+                .satisfies(r -> assertThat(r.outcome().status()).isEqualTo(SourceOutcome.Status.TIMED_OUT));
+        assertThat(f.breaker().admit("s").allowed()).as("a failure was recorded").isFalse();
+    }
+
+    @Test
+    @DisplayName("a result that finishes just inside the call's own timeout is accepted")
+    void aResultJustInsideTheOwnTimeoutIsAccepted() throws Exception {
+        var f = Fixture.create();
+        var pause = new WaiterPause();
+        pause.install(f.fanOut());
+        var ended = endOf(f.fanOut(), "s");
+        var running = f.start();
+        assertThat(f.source().entered.await(WAIT_SECONDS, TimeUnit.SECONDS)).isTrue();
+
+        pause.pauseNextPass();
+        f.clock().advance(Duration.ofSeconds(3).minusNanos(1));
+        f.source().release.countDown();
+        await(ended);
+        pause.resume.countDown();
+        var execution = running.get(WAIT_SECONDS, TimeUnit.SECONDS);
+
+        assertThat(execution.results()).singleElement()
+                .satisfies(r -> assertThat(r.outcome().status()).isEqualTo(SourceOutcome.Status.ANSWERED));
+    }
+
+    @Test
+    @DisplayName("a result that finishes exactly at the overall deadline counts as expired: a cut call")
+    void aResultExactlyAtTheDeadlineIsExpired() throws Exception {
+        var clock = new SourceFanOutDeadlineTest.MutableClock();
+        var breaker = new SourceCircuitBreaker(1, Duration.ofSeconds(5), clock);
+        var fanOut = new SourceFanOut(breaker, clock, SourceFanOutOptions.defaults());
+        breaker.record(failed("one"));
+        breaker.record(failed("two"));
+        clock.advance(Duration.ofSeconds(6));
+        var order = new LinkedBlockingQueue<SourceFanOutDeadlineTest.Blocking>();
+        var one = new SourceFanOutDeadlineTest.Blocking("one");
+        var two = new SourceFanOutDeadlineTest.Blocking("two");
+        one.order = order;
+        two.order = order;
+        List<DataSourceAdapter<?>> adapters = List.of(one, two);
+        var limits = TestLimits.defaults().perSourceTimeout(Duration.ofSeconds(10)).maxConcurrency(1).build();
+        var pause = new WaiterPause();
+        pause.install(fanOut);
+        var running = TestAsync.supply(() -> fanOut.execute(fanOut.plan(adapters, ask(adapters), limits), limits));
+        var first = order.poll(WAIT_SECONDS, TimeUnit.SECONDS);
+        assertThat(first).isNotNull();
+        clock.advance(Duration.ofSeconds(8));
+        first.release.countDown();
+        var second = order.poll(WAIT_SECONDS, TimeUnit.SECONDS);
+        assertThat(second).isNotNull();
+        var ended = endOf(fanOut, second.sourceName());
+
+        pause.pauseNextPass();
+        clock.advance(Duration.ofSeconds(2));
+        second.release.countDown();
+        await(ended);
+        pause.resume.countDown();
+        var execution = running.get(WAIT_SECONDS, TimeUnit.SECONDS);
+
+        assertThat(execution.results()).filteredOn(r -> r.outcome().sourceName().equals(second.sourceName()))
+                .singleElement().satisfies(r -> assertThat(r.outcome().status()).isEqualTo(SourceOutcome.Status.TIMED_OUT));
+        assertThat(breaker.admit(second.sourceName()).holdsTrial()).as("a cut call: the trial was handed back").isTrue();
+    }
+
+    @Test
+    @DisplayName("an expiry interrupt that lands between starting and calling means the source is never called")
+    void anInterruptBetweenStartAndCallStopsTheCall() throws Exception {
+        var f = Fixture.create();
+        var reached = new CountDownLatch(1);
+        var go = new CountDownLatch(1);
+        f.fanOut().callAfterStartObserver(name -> {
+            reached.countDown();
+            await(go);
+        });
+        var ended = endOf(f.fanOut(), "s");
+        var running = f.start();
+        assertThat(reached.await(WAIT_SECONDS, TimeUnit.SECONDS)).as("the call is started, not yet calling").isTrue();
+
+        f.clock().advance(Duration.ofSeconds(10));
+        var execution = running.get(WAIT_SECONDS, TimeUnit.SECONDS);
+        go.countDown();
+        await(ended);
+
+        assertThat(f.source().calls.get()).as("the adapter was never called").isZero();
+        assertThat(execution.results()).singleElement()
+                .satisfies(r -> assertThat(r.outcome().status()).isEqualTo(SourceOutcome.Status.TIMED_OUT));
     }
 
     /** Holds a call's thread between getting its permit and starting, until the test lets it go. */

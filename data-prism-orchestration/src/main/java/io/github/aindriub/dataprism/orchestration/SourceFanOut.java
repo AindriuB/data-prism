@@ -84,6 +84,7 @@ public final class SourceFanOut {
     private volatile Consumer<Semaphore> bulkheadObserver = bulkhead -> { };
     private volatile Consumer<Instant> tickObserver = now -> { };
     private volatile Consumer<String> callStartObserver = source -> { };
+    private volatile Consumer<String> callAfterStartObserver = source -> { };
     private volatile Consumer<String> callFinishedObserver = source -> { };
     private volatile Consumer<String> callEndObserver = source -> { };
     /**
@@ -198,6 +199,14 @@ public final class SourceFanOut {
      */
     void callStartObserver(Consumer<String> observer) {
         this.callStartObserver = Objects.requireNonNull(observer, "observer");
+    }
+
+    /**
+     * Test hook: told, on a call's own thread, that the call has become STARTED and has not yet called the
+     * source, so a test can land the waiter's interrupt in that gap.
+     */
+    void callAfterStartObserver(Consumer<String> observer) {
+        this.callAfterStartObserver = Objects.requireNonNull(observer, "observer");
     }
 
     /**
@@ -545,6 +554,7 @@ public final class SourceFanOut {
                         add(call.adapter.sourceName(), ONE_TRIAL);
                         call.trialCounted = true;
                     }
+                    callAfterStartObserver.accept(call.adapter.sourceName());
                     try {
                         if (Thread.currentThread().isInterrupted()) {
                             // Cancelled between starting and calling: do not begin remote work.
@@ -687,18 +697,18 @@ public final class SourceFanOut {
 
     /**
      * A finished call, judged by when it finished and not by when the waiter looked: a result that arrived
-     * after the call's own timeout is a timeout of the source, and one that arrived after the overall
-     * deadline only is a call the deadline cut (no breaker verdict). A waiter that was slow to notice changes
-     * neither.
+     * at or after the call's own timeout is a timeout of the source, and one that arrived at or after the
+     * overall deadline only is a call the deadline cut (no breaker verdict). An instant that is expired
+     * everywhere else is expired here. A waiter that was slow to notice changes neither.
      */
     private Resolution completed(Call call, Instant deadline, RequestLimits limits) {
         String name = call.adapter.sourceName();
         Duration took = Duration.between(call.startedAt, call.finishedAt);
-        if (call.finishedAt.isAfter(call.startedAt.plus(limits.perSourceTimeout()))) {
+        if (!call.finishedAt.isBefore(call.startedAt.plus(limits.perSourceTimeout()))) {
             return new Resolution(new Fetched(new SourceOutcome(name, SourceOutcome.Status.TIMED_OUT, took,
                     "no answer within " + limits.perSourceTimeout().toMillis() + "ms"), null), true, true, true, false);
         }
-        if (call.finishedAt.isAfter(deadline)) {
+        if (!call.finishedAt.isBefore(deadline)) {
             return new Resolution(new Fetched(new SourceOutcome(name, SourceOutcome.Status.TIMED_OUT, took,
                     "no answer before the request deadline"), null), false, false, true, false);
         }
