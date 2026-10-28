@@ -255,7 +255,7 @@ class SourceCircuitBreakerTrialTest {
         String first = entered.poll(10, TimeUnit.SECONDS);
         assertThat(first).isNotNull();
         String queued = first.equals("a") ? "slow" : "a";
-        clock.advance(Duration.ofSeconds(4));
+        clock.advance(Duration.ofSeconds(10));
         run.get(10, TimeUnit.SECONDS);
 
         // The source that ran timed out and re-opened at the deadline; the one never called did not.
