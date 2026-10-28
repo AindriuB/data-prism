@@ -281,8 +281,9 @@ public final class HazelcastScopeBudget implements ScopeBudget {
      * reservation, one built by hand, one from another budget instance, or one from a scope this instance has since
      * forgotten) does nothing. Taken under the scope's lock, then the subject's.
      *
-     * <p>The subject counter is lowered first, then the total, and only then are the reads taken out of the
-     * reservation. Failures are sorted by whether a write could already have happened. One raised before any write
+     * <p>Once both locks are held, the reads to give back are claimed from the reservation itself, atomically
+     * ({@code takeUnused}), before any counter is written; then the subject counter is lowered, then the total.
+     * Failures are sorted by whether a write could already have happened. One raised before any write
      * (a lock timeout or refusal taking the scope's or the subject's lock) leaves the reservation whole, and the
      * release can be tried again. One raised from either update itself may have come after the write, so the
      * outcome is unknown: the reservation is spent, the counters are left as they are (over-counted if the write did
@@ -301,8 +302,10 @@ public final class HazelcastScopeBudget implements ScopeBudget {
      * {@code tryRead} (the scope already has a total) lets go of its subject's lock before its update of the total. A
      * {@code forget} on any instance, this one included, can delete that subject in the gap. If the scope id is then
      * reused and the read's total update fails, the read's undo subtracts from the new scope's counter, an
-     * under-count. Task 226 closes it with the rest; {@code forget} and {@code endScope} have no production callers
-     * yet.
+     * under-count. The same holds for a release whose locks lapse after it has claimed (stalled for longer than 5
+     * times the lock timeout): if {@code forget} runs on this instance in that gap, its Subtract can land on a reused
+     * scope's counters. Task 226 closes it with the rest; {@code forget} and {@code endScope} have no production
+     * callers yet.
      *
      * @throws ClusterLockTimeoutException if the scope's lock was not obtained within the lock timeout
      * @throws ClusterOperationRefusedException if the cluster rejected a lock or failed an update. The failure is not
