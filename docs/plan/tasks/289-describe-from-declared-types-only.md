@@ -2,7 +2,7 @@
 
 **Repo:** `.`
 **Release:** 0.8.0
-**Base branch:** `origin/wave/0.8-wave4` once 288 has merged into it. One PR for this task, targeting `wave/0.8-wave4`. PR #163 does not merge until 210, 288, 289 and 290 have merged into it (owner decision 3, 2026-10-27).
+**Base branch:** `origin/wave/0.8-wave4`, which holds 288 (merged 2026-10-27, PR #170). One PR for this task, targeting `wave/0.8-wave4`. PR #163 does not merge until 289 and 290 have merged into it; 210 and 288 have (owner decision 3, 2026-10-27; updated 2026-10-28).
 **Depends on:** 288 (the walker makes the scrubber ignore Jackson annotations, which is what lets the describer ignore them; both edit `SourceTree.java`, `ScrubPlanDescriberTest.java` and `DescriptionConformsToScrubTest.java`)
 **Wave:** 6 (filed 2026-10-27; the brief's proposal of wave 5 alongside 288 does not hold, because describing by the new rules before the scrubber follows them would describe fields the scrubber still writes differently)
 **Decisions:** owner decision 1, 2026-10-27: describe and scrub follow one plan. 270 (retired) had the describer decide "ambiguous" through a shared serializer check; that is superseded.

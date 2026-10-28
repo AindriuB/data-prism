@@ -4,7 +4,7 @@ Renumbered from 193 on 2026-10-19 (id collision with the 0.7.0 plan). Reconciled
 
 **Repo:** `.`
 **Release:** 0.8.0 (before the 0.9 API freeze)
-**Base branch:** `origin/main` after 0.7.0 integration; refresh the cited paths and call sites against that base before implementation.
+**Base branch:** `origin/wave/0.8-wave4`, which holds 209 (via `main`), 203, 206, 207 and 210 (corrected 2026-10-28: wave 5 merged into `wave/0.8-wave4`, not `main`, OD-W5-1 (a); PR #163 is held). One PR for this task, targeting `wave/0.8-wave4`. Refresh the cited paths and call sites against that base before implementation.
 **Depends on:** 209, 210 (extend the existing pattern-validator bean after security wiring)
 **Wave:** 6 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Owns:**

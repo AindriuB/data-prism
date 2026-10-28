@@ -2,7 +2,7 @@
 
 **Repo:** `.`
 **Release:** 0.8.0
-**Base branch:** the 0.8 integration branch once 243, 244, 203 and 285 have merged
+**Base branch:** `origin/wave/0.8-wave4`, which holds 243, 244, 203 and 285 (corrected 2026-10-28: 285 landed on `wave/0.8-wave4`, not `main`, OD-W5-1 (a); PR #163 is held). One PR for this task, targeting `wave/0.8-wave4`.
 **Depends on:** 243 (reservation SPI), 244 (both edit `DefaultContextOrchestrator`), 203 (203 owns existing `data-prism-mcp` test files), 285 (implements `reserve` and `release` on `HazelcastScopeBudget`, unsealed; OD-08-1 is decided as option (a), 2026-10-20. Re-wired 2026-10-23 from 226, which owner decision (b) deferred past 1.0)
 **Decisions:** OD-08-1 (a), OD-08-3 (`PT10S` deadline, scope total 50,000, `scope-read-budget` stays 100 and counts source reads), OD-08-4 (a, remove `SKIPPED_OVER_LIMIT`) and OD-08-5 (a, release reads never started) are decided 2026-10-20.
 **Wave:** 6 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)

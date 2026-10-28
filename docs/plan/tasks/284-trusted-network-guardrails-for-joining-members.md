@@ -4,7 +4,7 @@ Filed 2026-10-23 for owner decision (b): 1.0 supports multiple instances on a tr
 
 **Repo:** `.`
 **Release:** 0.8.0
-**Base branch:** the 0.8 integration branch, at a commit that contains 210.
+**Base branch:** `origin/wave/0.8-wave4`, at a commit that contains 210 (corrected 2026-10-28: 210 landed on `wave/0.8-wave4`, not `main`, OD-W5-1 (a); PR #163 is held). One PR for this task, targeting `wave/0.8-wave4`.
 **Depends on:** 210 (owns `docker/multi-instance/*.yaml`, `data-prism-server/src/test/**` configuration and the existing Spring tests, and is the previous editor of the shared Spring files below). The edge to 270 was removed on 2026-10-24: 270 moved to wave 6 (PR #161), so this task no longer edits `docs/plan/design/contract-register.md`; 286 writes its rows
 **Wave:** 6
 **Owns:**

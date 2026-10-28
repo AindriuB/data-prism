@@ -56,3 +56,14 @@ Bounded writes and lock keys from 223; `CLUSTER_LOCK_TIMEOUT` and `CLUSTER_OPERA
 - Say "supports", never "compliant".
 - No Hazelcast Enterprise feature (D-0.4.1-A). No new dependency.
 - No sleeps.
+
+## Outcome (2026-10-27, 0.8; PR #169, tip ff8ac80e, wave/0.8-wave4)
+The identity cache and the re-identification index hold only dps1 envelopes (length-prefixed canonical parts plus value), written through `SealedWrites.compareAndSet` under the key lock. A hit counts only for an authentic envelope sealed for the same parts; a failed open reads as a miss (identity) or empty (re-identification). Only the current key is used. The index write checks its compare-and-set result: one retry, then the cache-failure path (counted). Base: `origin/wave/0.8-wave4` (OD-W5-1 (a)).
+
+Decision. OD-225-1 (a): a T14 rule forbids `SealedWrites.computing` outside the seal package, with an empty allow-list that 224 and 226 extend (both are deferred past 1.0).
+
+For 213: a cluster-key change is a planned full restart that empties both maps; index entries are lost and issued pseudonyms can no longer be re-identified; deleted re-identification entries are lost for good.
+
+Review: round 1 FIX (method-reference bypass of T14, unchecked CAS, untested canonical check), round 2 FIX (the seal-package prefix exempted sibling packages; the identity CAS had no retry), round 3 CLEAN.
+
+Known limits, not fixed (Low): one poisoned identity entry is opened twice in one lookup, so `seal.tamper` / `seal.unsupported_format` rises by 2 for one bad value (open once and pass the result through); the `Sealer.open` allow-list includes `CachingSyntheticValueSource`, so a change there that opened the index would pass T14; `IdentityMapsBoundary` opens values with the member's registered sealer, not one built from the test key; `IdentityPoisoningTest` simulates the keyless and other-key writers by the bytes they could store, written on one member; `PrivacyCluster` has no accessor for a keyless solo member's keys (read through the user-context literal `dataprism.cluster.solo.keys`); `ServingGate.open()` is the production default until 227. Flake: `ApprovalBoundedCleanupTest` setup can fail with "no free loopback ports after 3 attempts" (`FreePorts.java:82`).

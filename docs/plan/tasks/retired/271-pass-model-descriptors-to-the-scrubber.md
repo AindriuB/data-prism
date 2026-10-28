@@ -112,3 +112,12 @@ It follows the approach of 203's `BypassCheck` (`SecurityWiring.java`): remember
 - Any other part of `JsonTreeScrubbingEngine` (no other task edits it in this wave; 288 reaches the walker through the unchanged `SourceTree.of`).
 - `DataPrismContractValidator` and `PropertiesValidation` (no planned change since 270 was retired).
 - `describe_source` (250).
+
+## Outcome (2026-10-27, 0.8; PR #167, tip 485de5e7, wave/0.8-wave4)
+The Spring-built scrubber gets its descriptor map from the one resolver built from the descriptor file. With the file set, startup refuses `MODEL_DESCRIPTOR_RESOLVER_REPLACED` unless the only resolver bean and every engine bean, in this context and its ancestors, use that exact instance (after AOP unwrap). The check runs in a `SmartInitializingSingleton` on a `@Lazy(false)` `PrivacyEngineWiring`. Base: `origin/wave/0.8-wave4`.
+
+Tests. Sixteen red-first cases cover a described chainable field with its key namespace (also behind an AOP proxy), one parsed model backing resolver and engine, and refusals for an empty-descriptor resolver, a resolver from the same file, another class, a decorator, a factory-bean product, our bean name, a prototype scope, engines built with the default resolver or a different map, lazy initialisation, and parent-context engines and resolvers. Seven guards cover starts without a file and the auto-configured pair, also under lazy initialisation. Dropping `@Lazy(false)` is killed by the auto-configured-pair lazy test; on Boot 4.1.1 the check still runs, so the lazy refusal test refuses either way.
+
+Review: round 1 FIX (parent-context engine bypass, register row), round 2 CLEAN, acceptance review CHANGES (lazy tests were not lazy), fixed.
+
+Known limit: the read-once test asserts shared instances, not a read count.

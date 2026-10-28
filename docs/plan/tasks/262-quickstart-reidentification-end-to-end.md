@@ -2,7 +2,7 @@
 
 **Repo:** `.`
 **Release:** 0.8.0
-**Base branch:** the 0.8 integration branch once 210, 245, 222 and 223 have merged
+**Base branch:** `origin/wave/0.8-wave4`, which holds 210, 245, 222 and 223 (corrected 2026-10-28: 210 landed on `wave/0.8-wave4`, not `main`, OD-W5-1 (a); PR #163 is held). One PR for this task, targeting `wave/0.8-wave4`.
 **Depends on:** 210 (210 owns `docker/server/application.yaml`), 245 (the operator denial behaviour the walkthrough shows), 222 (cluster and name keys, and the keyless multi-member refusal), 223 (the solo-member keys of OD-215-8, which decide what an embedded single member needs configured)
 **Wave:** 6 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Owns:**

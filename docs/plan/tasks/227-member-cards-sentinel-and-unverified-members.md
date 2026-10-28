@@ -4,7 +4,7 @@ Kept for 1.0 under owner decision (b), 2026-10-23: 1.0 supports multiple instanc
 
 **Repo:** `.`
 **Release:** 0.8.0
-**Base branch:** `origin/main` (or the 0.8 integration branch), at a commit that contains 223, 225 and 285.
+**Base branch:** `origin/wave/0.8-wave4`, which holds 223, 225 and 285 (corrected 2026-10-28: those landed on `wave/0.8-wave4`, not `main`, OD-W5-1 (a); PR #163 is held). One PR for this task, targeting `wave/0.8-wave4`.
 **Depends on:** 219 (answers 6 and 11), 220 (`ServingGate`, key check value), 223 (`ClusterSecuritySettings`, `MemberCardMapsBoundary`, sealing context in `PrivacyCluster`), 225 and 285 (they own `CachingSyntheticValueSource`, `ScopeIdentityIndex` and `HazelcastScopeBudget` in wave 5; this task switches those files to `servingInstance()`; added 2026-10-23 after the review of PR #164)
 **Wave:** 6 (moved from 5 on 2026-10-23: it now edits store files that 225 and 285 own in wave 5)
 **Decisions:** OD-215-16 decided 2026-10-20 (a): pause allowed, resume refused until the member serves again.
