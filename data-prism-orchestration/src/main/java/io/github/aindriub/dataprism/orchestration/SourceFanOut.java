@@ -56,6 +56,8 @@ import java.util.function.Consumer;
  */
 public final class SourceFanOut {
 
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(SourceFanOut.class);
+
     /** How often the waiting thread looks at the clock when nothing has finished. */
     private static final long TICK_MILLIS = 5;
     /** Real time allowed for interrupted calls to unwind before the request returns anyway. */
@@ -101,13 +103,16 @@ public final class SourceFanOut {
      * @param callable    the adapters to call, in the order given
      * @param circuitOpen the sources not called because their breaker is open
      * @param requests    the request to put to each source, keyed by source name
+     * @param trials      the half-open trials this plan took, by source name. Each is ended by a
+     *                    recorded outcome, or handed back if the source is not called
      */
     public record Plan(List<DataSourceAdapter<?>> callable, List<Fetched> circuitOpen,
-                       Map<String, DataRequest> requests) {
+                       Map<String, DataRequest> requests, Map<String, SourceCircuitBreaker.Admission> trials) {
         public Plan {
             callable = List.copyOf(callable);
             circuitOpen = List.copyOf(circuitOpen);
             requests = Map.copyOf(requests);
+            trials = Map.copyOf(trials);
         }
     }
 
@@ -134,12 +139,17 @@ public final class SourceFanOut {
     public Plan plan(List<DataSourceAdapter<?>> adapters, Map<String, DataRequest> requests, RequestLimits limits) {
         List<DataSourceAdapter<?>> callable = new ArrayList<>();
         List<Fetched> circuitOpen = new ArrayList<>();
+        Map<String, SourceCircuitBreaker.Admission> trials = new java.util.HashMap<>();
         for (DataSourceAdapter<?> adapter : adapters) {
             String name = adapter.sourceName();
             if (!requests.containsKey(name)) {
                 continue;
             }
-            if (!breaker.allows(name)) {
+            SourceCircuitBreaker.Admission admission = breaker.admit(name);
+            if (admission.holdsTrial()) {
+                trials.put(name, admission);
+            }
+            if (!admission.allowed()) {
                 circuitOpen.add(new Fetched(new SourceOutcome(name,
                         SourceOutcome.Status.CIRCUIT_OPEN, Duration.ZERO,
                         "breaker open after repeated failures"), null));
@@ -147,7 +157,7 @@ public final class SourceFanOut {
             }
             callable.add(adapter);
         }
-        Plan plan = new Plan(callable, circuitOpen, requests);
+        Plan plan = new Plan(callable, circuitOpen, requests, trials);
         if (callable.size() > limits.maxSources()) {
             abandon(plan);
             throw new PrivacyRefusedException("SOURCE_SELECTION_TOO_LARGE", "$",
@@ -157,32 +167,12 @@ public final class SourceFanOut {
     }
 
     /**
-     * Gives up a plan that will not be executed (its reads were refused). A source
-     * that was never called is not a failing source, so nothing is recorded for it
-     * unless the breaker let it through as a half-open trial: that trial is held
-     * until an outcome is recorded, and nothing else would ever end it.
+     * Gives up a plan that will not be executed (its reads were refused). A source that was
+     * never called says nothing about its health, so nothing is recorded for it; a half-open
+     * trial this plan took is handed back, because only a recorded outcome or a release ends it.
      */
     public void abandon(Plan plan) {
-        for (DataSourceAdapter<?> adapter : plan.callable()) {
-            releaseTrial(adapter.sourceName());
-        }
-    }
-
-    /**
-     * A source that was let through and then not called. {@link SourceCircuitBreaker#allows}
-     * is side-effect free for a closed breaker and takes the single half-open
-     * trial otherwise, so asking again tells the two apart: still allowed means
-     * closed, nothing to do; refused means this request holds the trial, which is
-     * ended by recording one failure. The source then waits another cooldown for
-     * its next trial, the conservative reading of a trial that never ran. If the
-     * breaker opened concurrently the extra failure is recorded on an open
-     * breaker, which changes nothing that matters.
-     */
-    private void releaseTrial(String sourceName) {
-        if (!breaker.allows(sourceName)) {
-            breaker.record(new SourceOutcome(sourceName, SourceOutcome.Status.TIMED_OUT,
-                    Duration.ZERO, "not called"));
-        }
+        plan.trials().forEach(breaker::releaseTrial);
     }
 
     /**
@@ -287,18 +277,31 @@ public final class SourceFanOut {
         }
         Set<String> notCalled = new java.util.HashSet<>();
         neverCalled.forEach(call -> notCalled.add(call.adapter.sourceName()));
-        results.forEach(fetched -> {
-            if (notCalled.contains(fetched.outcome().sourceName())) {
+        // The breaker first, and on its own: a metrics implementation that throws must not leave
+        // the remaining sources' outcomes (and any half-open trial they hold) unrecorded.
+        for (Fetched fetched : results) {
+            String name = fetched.outcome().sourceName();
+            if (notCalled.contains(name)) {
                 // Never called, so nothing was learned about the source.
-                releaseTrial(fetched.outcome().sourceName());
+                SourceCircuitBreaker.Admission trial = plan.trials().get(name);
+                if (trial != null) {
+                    breaker.releaseTrial(name, trial);
+                }
             } else {
                 breaker.record(fetched.outcome());
             }
-            metrics.record(Metric.SOURCE_LATENCY, fetched.outcome().sourceName(), fetched.outcome().took());
-            if (fetched.outcome().failure()) {
-                metrics.increment(Metric.SOURCE_ERRORS, fetched.outcome().sourceName());
+        }
+        for (Fetched fetched : results) {
+            try {
+                metrics.record(Metric.SOURCE_LATENCY, fetched.outcome().sourceName(), fetched.outcome().took());
+                if (fetched.outcome().failure()) {
+                    metrics.increment(Metric.SOURCE_ERRORS, fetched.outcome().sourceName());
+                }
+            } catch (RuntimeException e) {
+                // Metrics are not worth a request; the class only, as a message can carry a value.
+                LOG.warn("source metrics failed: {}", e.getClass().getSimpleName());
             }
-        });
+        }
         return new Execution(results, neverCalled.size());
     }
 
