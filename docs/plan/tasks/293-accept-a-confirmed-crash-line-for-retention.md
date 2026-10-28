@@ -113,7 +113,7 @@ After 292, a real crash that leaves an unhashed line that parses keeps its day a
 - [ ] **Help and CHANGELOG.** `--help` documents the subcommand and its exit code. One `### Added` entry under `[Unreleased]` names the command and when to use it: after a purge refuses with `AUDIT_RETENTION_CHAIN_UNVERIFIED` and an investigation finds a crash line, not tampering. The entry and the help text also:
   - say that the checks do not prove a crash, and that the operator's investigation is what decides;
   - say to stop the server and to run the command as the account that owns the anchor store;
-  - say that an anchor store containing an acceptance cannot be read by 0.7.x or earlier. A 0.7.x or earlier verifier stops with an unreadable checkpoint file. A server rolled back to 0.7.x fails every purge closed with `AUDIT_RETENTION_CHAIN_UNVERIFIED: could not read the earlier retention anchors`, because its `FileAuditCheckpointSink.retentionAnchors()` (:87-105) parses every line and rejects the unknown kind.
+  - say that an anchor store containing an acceptance cannot be read by 0.7.x or earlier. A 0.7.x or earlier verifier stops with an unreadable checkpoint file. A server rolled back to 0.7.x fails closed, whenever it has an expired day to purge, with `AUDIT_RETENTION_CHAIN_UNVERIFIED: could not read the earlier retention anchors`, because its `FileAuditCheckpointSink.retentionAnchors()` (:87-105) parses every line and rejects the unknown kind. 0.7.1 reads anchors only when `verified > 0`.
 - [ ] Every existing test under `data-prism-core/src/test/java/io/github/aindriub/dataprism/audit/**` passes with unchanged expectations.
 
 ## Out of scope
