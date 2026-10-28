@@ -94,11 +94,17 @@ class TrustedNetworkConfigurationTest {
     private static void assertNotRefusedForTheNetwork(String mode, AssertableWebApplicationContext result) {
         if (result.getStartupFailure() != null) {
             String all = everyMessage(result.getStartupFailure());
-            // The two environmental failures: no address on this host matches the pattern (tcp-ip), or there is no
-            // Kubernetes service account to discover with (kubernetes). Anything else is a real failure.
-            assertThat(all).as("an environmental failure, not a refusal")
-                    .containsAnyOf("No matching network interface", "Cannot bind to a given address",
-                            "Failed to configure discovery strategies");
+            // The environmental failures: no address on this host matches the pattern or can be bound (tcp-ip, and
+            // kubernetes, which checks the interface first), or there is no Kubernetes service account to discover
+            // with (kubernetes only). Anything else is a real failure.
+            if (mode.equals("kubernetes")) {
+                assertThat(all).as("an environmental failure, not a refusal").containsAnyOf(
+                        "No matching network interface", "Cannot bind to a given address",
+                        "Failed to configure discovery strategies");
+            } else {
+                assertThat(all).as("an environmental failure, not a refusal").containsAnyOf(
+                        "No matching network interface", "Cannot bind to a given address");
+            }
         }
     }
 

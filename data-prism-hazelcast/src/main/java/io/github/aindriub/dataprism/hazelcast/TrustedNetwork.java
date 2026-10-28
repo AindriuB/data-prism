@@ -118,6 +118,11 @@ public final class TrustedNetwork {
                 || Boolean.getBoolean(ClusterProperty.SOCKET_SERVER_BIND_ANY.getName())) {
             return false;
         }
+        // With the advanced network config enabled, Hazelcast takes the member endpoint, interfaces and address
+        // provider from it and ignores the NetworkConfig read below, so none of that could be judged: refused.
+        if (config.getAdvancedNetworkConfig().isEnabled()) {
+            return false;
+        }
         // An enabled member address provider supplies the bind and public addresses itself and bypasses the interface
         // list, so what it returns cannot be judged here: refused.
         if (config.getNetworkConfig().getMemberAddressProviderConfig().isEnabled()) {

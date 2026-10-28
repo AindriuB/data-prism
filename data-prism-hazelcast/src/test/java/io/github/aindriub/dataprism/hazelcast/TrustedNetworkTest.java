@@ -198,6 +198,17 @@ class TrustedNetworkTest {
     }
 
     @Test
+    void an_enabled_advanced_network_config_is_public_because_it_takes_over_the_member_endpoint() {
+        Config config = on("10.0.0.1");
+        config.getAdvancedNetworkConfig().setEnabled(true);
+        config.getAdvancedNetworkConfig().getMemberAddressProviderConfig().setEnabled(true)
+                .setClassName("example.invalid.Provider");
+        assertThat(TrustedNetwork.evaluate(config, List.of())).isEqualTo(Verdict.PUBLIC_MEMBER_INTERFACE);
+        config.getAdvancedNetworkConfig().setEnabled(false);
+        assertThat(TrustedNetwork.evaluate(config, List.of())).isEqualTo(Verdict.TRUSTED);
+    }
+
+    @Test
     void a_name_as_an_advertised_address_is_not_trusted() {
         assertThat(TrustedNetwork.evaluate(on("10.0.*.*").setProperty("hazelcast.local.publicAddress",
                 "member.example.invalid:5701"), List.of())).isEqualTo(Verdict.PUBLIC_MEMBER_INTERFACE);
