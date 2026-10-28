@@ -126,8 +126,8 @@ services:
     # committed, written to a volume or printed, and a restart makes new ones
     # (the member is alone, so nothing else needs to share them). A value
     # already set in the environment wins, which is how docker/multi-instance
-    # supplies one pair to both of its members. The command is the image's own
-    # ENTRYPOINT, run after the two exports.
+    # supplies one pair to both of its members. The last line repeats the image's
+    # own ENTRYPOINT (docker/server/Dockerfile:49); keep the two in step.
     entrypoint:
       - sh
       - -c

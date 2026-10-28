@@ -50,7 +50,9 @@ and `python3`:
 
 By default it builds the four quickstart images from this working tree
 (`compose.build.yaml`), which takes a few minutes the first time. Set
-`SMOKE_IMAGES=published` to use the published `0.8.0` images instead.
+`SMOKE_IMAGES=published` to use the published `0.8.0` images instead; it pulls
+them first, so an image of the same tag built from a working tree on your
+machine is replaced rather than used.
 
 The stack runs under its own project name (`data-prism-reid-smoke-<pid>`) on
 ephemeral loopback ports, so a quickstart you have running on 8080, 8081 or

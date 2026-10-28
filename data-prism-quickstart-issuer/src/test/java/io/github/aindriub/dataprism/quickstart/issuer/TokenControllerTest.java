@@ -10,6 +10,12 @@ import java.text.ParseException;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class TokenControllerTest {
@@ -57,29 +63,56 @@ class TokenControllerTest {
     }
 
     @Test
-    void an_operator_audience_without_a_scope_is_allowed_so_the_403_can_be_shown() throws Exception {
-        JWTClaimsSet claims = claimsOf(controller.issueToken(withAudienceAndScope(OPERATOR, null)));
+    void the_operator_audience_without_the_scope_is_refused() throws Exception {
+        assertRefusedWithoutEcho(controller.issueToken(withAudienceAndScope(OPERATOR, null)), "zzzz");
+    }
 
-        assertThat(claims.getClaim("scope")).isNull();
+    @Test
+    void a_scope_on_the_mcp_audience_is_refused_with_or_without_an_explicit_audience() throws Exception {
+        assertRefusedWithoutEcho(controller.issueToken(withAudienceAndScope(null, "operator")), "zzzz");
+        assertRefusedWithoutEcho(
+                controller.issueToken(withAudienceAndScope("data-prism-quickstart-mcp", "operator")), "zzzz");
+    }
+
+    @Test
+    void any_scope_other_than_the_configured_one_is_refused() throws Exception {
+        for (String other : List.of("admin", "Operator", "operator extra", "operator ", "", " ")) {
+            assertRefusedWithoutEcho(controller.issueToken(withAudienceAndScope(OPERATOR, other)), "admin");
+        }
     }
 
     @Test
     void an_unknown_audience_is_refused_without_echoing_it() throws Exception {
         assertRefusedWithoutEcho(controller.issueToken(withAudienceAndScope("https://evil.example.invalid", null)),
                 "evil");
+        assertRefusedWithoutEcho(
+                controller.issueToken(withAudienceAndScope("https://evil.example.invalid", "operator")), "evil");
     }
 
     @Test
-    void a_malformed_scope_is_refused_without_echoing_it() throws Exception {
-        for (String bad : List.of("op erator\n", "operator;admin", "a".repeat(200), "x\"y", "two  spaces")) {
-            assertRefusedWithoutEcho(controller.issueToken(withAudienceAndScope(OPERATOR, bad)), bad.strip());
-        }
-    }
-
-    @Test
-    void a_blank_scope_or_audience_is_refused() throws Exception {
-        assertRefusedWithoutEcho(controller.issueToken(withAudienceAndScope(OPERATOR, " ")), "zzzz");
+    void a_blank_audience_is_refused() throws Exception {
         assertRefusedWithoutEcho(controller.issueToken(withAudienceAndScope(" ", null)), "zzzz");
+    }
+
+    @Test
+    void json_posted_to_the_endpoint_binds_audience_and_scope() throws Exception {
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(controller).build();
+
+        MockHttpServletResponse ok = mvc.perform(post("/token").contentType("application/json").content(
+                "{\"subject\":\"approver-1\",\"roles\":[\"approver\"],\"audience\":\"" + OPERATOR
+                        + "\",\"scope\":\"operator\"}")).andReturn().getResponse();
+        assertThat(ok.getStatus()).isEqualTo(200);
+        String token = ok.getContentAsString().replaceAll(".*\"access_token\":\"([^\"]+)\".*", "$1");
+        JWTClaimsSet claims = SignedJWT.parse(token).getJWTClaimsSet();
+        assertThat(claims.getAudience()).containsExactly(OPERATOR);
+        assertThat(claims.getStringClaim("scope")).isEqualTo("operator");
+
+        MockHttpServletResponse refused = mvc.perform(post("/token").contentType("application/json")
+                .content("{\"scope\":\"operator\"}")).andReturn().getResponse();
+        assertThat(refused.getStatus()).isEqualTo(400);
+        assertThat(refused.getContentAsString()).isEqualTo("{\"code\":\"INVALID_TOKEN_REQUEST\"}");
+
+        assertThat(mvc.perform(post("/token")).andReturn().getResponse().getStatus()).isEqualTo(200);
     }
 
     private static void assertRefusedWithoutEcho(ResponseEntity<Map<String, Object>> response, String input) {

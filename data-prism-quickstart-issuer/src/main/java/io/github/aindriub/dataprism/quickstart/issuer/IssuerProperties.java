@@ -16,6 +16,7 @@ public class IssuerProperties {
     private String issuerId = "https://issuer.quickstart.invalid";
     private String audience = "data-prism-quickstart-mcp";
     private String operatorAudience = "data-prism-quickstart-operator";
+    private String operatorScope = "operator";
     private String defaultPurpose = "investigation";
 
     public String getIssuerId() {
@@ -41,6 +42,15 @@ public class IssuerProperties {
 
     public void setOperatorAudience(String operatorAudience) {
         this.operatorAudience = operatorAudience;
+    }
+
+    /** The only scope this issuer will stamp, and only with the operator audience; must equal the server's. */
+    public String getOperatorScope() {
+        return operatorScope;
+    }
+
+    public void setOperatorScope(String operatorScope) {
+        this.operatorScope = operatorScope;
     }
 
     public String getDefaultPurpose() {

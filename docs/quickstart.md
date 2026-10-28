@@ -223,6 +223,13 @@ own random source, and passed by reference (`environment-variable`): nothing is
 committed, written to a volume or printed. Restarting makes new ones, which is
 harmless for a member that is alone.
 
+The re-identification index and every pending approval live in the server's
+memory, so any restart of the server, `docker compose restart` as well as
+`docker compose down`, clears them. After a restart, run step 2 again before
+you request: a pseudonym can be re-identified only if the index was running
+when it was handed out. The pseudonyms themselves do not change, because the
+HMAC key (`QUICKSTART_HMAC_KEY`) is fixed.
+
 Every command below was run against this stack, and the output is what it
 printed. The generated identifiers (the approval id and the timestamps) will
 differ on your run. The pseudonym `SUBJ-KNSYWNZ9` is the one the demo above
@@ -232,7 +239,10 @@ shows for subject `1001`, and stays the same for case `CASE-QUICKSTART-1`.
 operator audience and scope in the request body; without them you get the MCP
 token from earlier. The requester also holds the `approver` role, so that
 approving their own request is refused by the four-eyes rule and not merely
-for want of a permission.
+for want of a permission. One principal holding both roles is a demo
+arrangement only: a real deployment gives `investigator` and `approver` to
+different people, and the four-eyes rule then holds because they are different
+people.
 
 ```sh
 field() { python3 -c 'import json,sys; print(json.load(sys.stdin)[sys.argv[1]])' "$1"; }
@@ -243,9 +253,10 @@ REQUESTER=$(mint '{"subject":"requester-1","roles":["investigator","approver"],"
 APPROVER=$(mint '{"subject":"approver-1","roles":["approver"],"caseId":"CASE-QUICKSTART-1","audience":"data-prism-quickstart-operator","scope":"operator"}')
 ```
 
-The issuer accepts only two audiences, the MCP one and the operator one, and
-refuses a malformed `scope` with `400 {"code":"INVALID_TOKEN_REQUEST"}` without
-echoing it. An MCP token on the operator port is refused (`401`), and an
+The issuer mints only two shapes: the MCP token (no `audience`, no `scope`) and
+the operator token (the operator audience with exactly the scope `operator`).
+Any other combination is refused with `400 {"code":"INVALID_TOKEN_REQUEST"}`,
+without echoing the input. An MCP token on the operator port is refused (`401`), and an
 operator token on the MCP port is refused the same way.
 
 **2. Ask for the entity, as an agent would.** This registers the pseudonym in

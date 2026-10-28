@@ -16,7 +16,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
 
 /**
  * Mints a real, signature-verified JWT against {@link SigningKeyHolder}'s own
@@ -26,9 +25,6 @@ import java.util.regex.Pattern;
  */
 @RestController
 class TokenController {
-
-    /** One or more space-separated scope tokens, each of plain characters. */
-    private static final Pattern SCOPE = Pattern.compile("[A-Za-z0-9:._-]{1,64}( [A-Za-z0-9:._-]{1,64}){0,7}");
 
     private final SigningKeyHolder keys;
     private final IssuerProperties properties;
@@ -45,8 +41,12 @@ class TokenController {
                 : request).withDefaults();
 
         String audience = resolved.audience() == null ? properties.getAudience() : resolved.audience();
-        if (!properties.getAudience().equals(audience) && !properties.getOperatorAudience().equals(audience)
-                || resolved.scope() != null && !SCOPE.matcher(resolved.scope()).matches()) {
+        // An allow-list of exactly two shapes: the MCP token (MCP audience, no scope) and the operator
+        // token (operator audience, exactly the configured scope). Everything else is refused.
+        boolean mcp = properties.getAudience().equals(audience) && resolved.scope() == null;
+        boolean operator = properties.getOperatorAudience().equals(audience)
+                && properties.getOperatorScope().equals(resolved.scope());
+        if (!mcp && !operator) {
             // Fixed body: nothing the caller sent is ever echoed back.
             return ResponseEntity.badRequest().body(Map.of("code", "INVALID_TOKEN_REQUEST"));
         }

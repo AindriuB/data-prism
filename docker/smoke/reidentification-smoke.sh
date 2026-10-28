@@ -49,6 +49,11 @@ trap cleanup EXIT
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
+if [ "${SMOKE_IMAGES:-build}" = "published" ]; then
+  # Always run what is published: a 0.8.0 tag built locally must not stand in for it.
+  echo "== pulling the published images"
+  "${COMPOSE[@]}" pull --quiet >/dev/null 2>&1 || fail "could not pull the published images"
+fi
 echo "== starting the stack (project ${PROJECT})"
 "${COMPOSE[@]}" up -d --build >/dev/null 2>&1 || fail "docker compose up did not succeed"
 
@@ -113,7 +118,7 @@ audit() { "${COMPOSE[@]}" logs --no-color server 2>/dev/null; }
 # The scope id is not in the answer; it is in the audit line the call wrote (scope=...).
 # Read the log into a variable first: a pipe that closes early would SIGPIPE under pipefail.
 LOG="$(audit)"
-SCOPE_ID="$(grep -m1 ' tool=get_entity_context ' <<<"$LOG" | sed -E 's/.* scope=([^ ]*) .*/\1/')"
+SCOPE_ID="$(grep -m1 ' tool=get_entity_context ' <<<"$LOG" | sed -E 's/.* scope=([^ ]*) .*/\1/' || true)"
 [ -n "$SCOPE_ID" ] || fail "no scope id in the audit of the get_entity_context call"
 
 op() { # <token> <method> <path> [body]  -> prints "<body> <http-status>"
