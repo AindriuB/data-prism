@@ -23,6 +23,7 @@ Give developers a GitHub "Use this template" starting point. It is the `starter-
 - Include CI (`./mvnw -B verify` on push and pull request), Dependabot for Maven and Actions, a licence matching this repository's, and a README that links back to the guide.
 - The owner's unpushed demo is local to the owner's machine. Do not read, push or delete it. The owner retires it.
 - Never read `~/.m2/settings.xml`, `~/.m2/settings-security.xml`, `~/.gnupg` or any other credential file.
+- From the 2026-10-27 re-plan of 210 (owner decision 2; the client-allowlist part reverses the 2026-10-24 decision): from 0.8 a context with the starter refuses to start unless case authorisation and the client allowlist are each decided. That means a `CaseAuthorizer` bean or `dataprism.security-policy.case-authorisation: token-trusted` (else `MISSING_CASE_AUTHORIZER`), and a `ClientAllowlist` bean, `dataprism.security-policy.allowed-clients`, or `dataprism.security-policy.client-allowlist: unrestricted` (else `MISSING_CLIENT_ALLOWLIST`). The template repository's configuration decides both, as 282's template does.
 
 ## OD-283-1 (open, owner): when, what name, and with what visibility
 - **Timing.** The spec says "after 0.8.0 is published". But the YAML example relies on 0.9 features: 275's path grammar, 273's defaults and derived JWT settings, and 276's auto-configured beans. A template on 0.8.0 would need the pre-0.9 configuration, which the template would then have to unlearn.

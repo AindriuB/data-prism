@@ -28,6 +28,7 @@ A developer who embeds the starter should be able to describe an API in a `json-
 - data-prism-server/src/test/java/io/github/aindriub/dataprism/server/ConfiguredJsonSourcesPackagingIT.java: the server's `-Dloader.path` opt-in, which must keep working unchanged.
 - Fixture values are invented. Repository rule 3.
 - Never read `~/.m2/settings.xml`, `~/.m2/settings-security.xml`, `~/.gnupg` or any other credential file.
+- From the 2026-10-27 re-plan of 210 (owner decision 2; the client-allowlist part reverses the 2026-10-24 decision): from 0.8 a context with the starter refuses to start unless case authorisation and the client allowlist are each decided. That means a `CaseAuthorizer` bean or `dataprism.security-policy.case-authorisation: token-trusted` (else `MISSING_CASE_AUTHORIZER`), and a `ClientAllowlist` bean, `dataprism.security-policy.allowed-clients`, or `dataprism.security-policy.client-allowlist: unrestricted` (else `MISSING_CLIENT_ALLOWLIST`). Every context this task starts, test or example, decides both, with a comment that a real deployment supplies the beans or a list of clients.
 
 ## OD-277-1 (open, owner): does the starter bring `data-prism-connectors-rest`?
 - **(a), recommended:** `data-prism-spring-boot-starter` depends on `data-prism-connectors-rest`. The connector stays inert unless `dataprism.json-sources.config-location` is set, as it is today. One dependency gives both the YAML route and 278's `@DataPrismSource`, which also lives in the connector. No new artifact is published. The standalone server keeps its `-Dloader.path` opt-in.

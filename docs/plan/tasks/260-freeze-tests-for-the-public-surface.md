@@ -3,13 +3,15 @@
 **Repo:** `.`
 **Release:** 0.8.0 (must be in place before the 0.9.0 freeze)
 **Base branch:** the 0.8 integration branch once every 0.8 surface task has merged
-**Depends on:** 245, 250, 253, 255 (the 0.8 core surface), 221 (the `.s1` map names and interface codes), 227 (the member-card map and `CLUSTER_KEY_MISMATCH`), 230 (the remaining cluster settings, startup codes and the `clusterSecurity` health contributor), 264 (sealed-cluster plan; adds the `dataprism.linkattempt.s1` constant to `PrivacyCluster`, which `freeze/map-names.txt` pins. If 264 is cut from 0.8, remove this edge), 256 (may add a public accessor to `SensitiveDataScanner` in the `validation` package, which `freeze/spi-signatures.txt` pins)
-**Wave:** 14 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
+**Depends on:** 245, 250, 253, 255 (the 0.8 core surface), 221 (the `.s1` map names and interface codes), 227 (the member-card map and `CLUSTER_KEY_MISMATCH`), 284 and 287 (the trusted-network properties and the codes `PUBLIC_MEMBER_INTERFACE`, `MISSING_TRUSTED_NETWORK` and `INVALID_TRUSTED_RANGE`), 286 (the `clusterSecurity` health contributor), 256 (may add a public accessor to `SensitiveDataScanner` in the `validation` package, which `freeze/spi-signatures.txt` pins)
+**Wave:** 12 (re-planned 2026-10-23 for owner decision (b): 230 and 264 deferred past 1.0, 284, 286 and 287 added)
 **Owns:**
 - data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/freeze/** *(new)*
 - data-prism-architecture/src/test/resources/freeze/** *(new)*
 - data-prism-mcp/src/test/java/io/github/aindriub/dataprism/mcp/ToolsListGoldenTest.java *(new)*
 - data-prism-mcp/src/test/resources/io/github/aindriub/dataprism/mcp/golden/tools-list.json *(new)*
+
+Re-wired 2026-10-23 for owner decision (b): 230 and 264 are deferred past 1.0, so the edges to them are removed. `freeze/map-names.txt` pins the map names without `dataprism.linkattempt.s1`, which 1.0 does not add (264's fallback (c)).
 
 ## Goal
 The public surface freezes at 0.9.0, and most of it is not pinned today (register section 15). Add the pins that need no further decision: the set of codes extracted from the code, the closed vocabularies whose constants leave the process, a golden `tools/list`, the Hazelcast map names, the operator endpoints and a signature snapshot of the SPI packages. Each fails when a name is added, removed or renamed without the checked-in list changing in the same commit.

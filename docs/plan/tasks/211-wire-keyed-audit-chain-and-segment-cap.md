@@ -5,7 +5,7 @@ Renumbered from 196 on 2026-10-19 (id collision with the 0.7.0 plan). Reconciled
 **Repo:** `.`
 **Release:** 0.8.0 (before the 0.9 API freeze)
 **Base branch:** `origin/main` once 206, 207, 208 and 210 have merged
-**Depends on:** 206, 207, 208, 210 (210 only because both edit the shared Spring files below)
+**Depends on:** 206, 207, 208, 210 and 284 (210 and 284 only because they edit the shared Spring files below; 284 added 2026-10-23)
 **Wave:** 7 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Serialised with:** 210, 208, and the cluster-wiring successor tasks
 **Decided (owner, 2026-10-15), D-1.0-4:** the keyed chain is opt-in and off by default. It uses a key
@@ -61,5 +61,5 @@ be able to verify segments written under a retired key, or it would stop purging
 - Any change under `data-prism-core` (tasks 206 and 207).
 - Key rotation tooling. Rotation is a documented procedure (task 213), not code.
 - The JSON projection's segments.
-- Security, free-text and cluster wiring (tasks 210, 209, and 222 and 230; 212 is retired, superseded by the sealed-cluster tasks).
+- Security, free-text and cluster wiring (tasks 210, 209, 222, 284 and 286; 230 is deferred past 1.0 and 212 is retired, superseded by the sealed-cluster tasks).
 - `docs/audit.md` and every `docs/` file other than `docs/configuration.md` (task 213).
