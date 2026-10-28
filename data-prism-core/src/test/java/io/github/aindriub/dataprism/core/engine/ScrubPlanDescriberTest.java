@@ -522,22 +522,24 @@ class ScrubPlanDescriberTest {
     }
 
     @Test
-    @DisplayName("a record that serialises as a scalar is not described by its components")
+    @DisplayName("a @JsonValue record is described through its components: the walker ignores the annotation")
     void scalarRecords() {
         Map<String, Protection> d = byPath(describe(Holder.class, "DEFAULT", false));
 
-        assertThat(d).doesNotContainKeys("email", "email.value", "code", "code.v", "plain", "plain.v");
+        assertThat(d).containsEntry("email.value", Protection.MARKER)
+                .doesNotContainKeys("email", "code", "code.v", "plain", "plain.v");
     }
 
     @Test
-    @DisplayName("a scalar-serialised record is described when the scalar and structure readings agree")
-    void scalarRecordsAgreeing() {
+    @DisplayName("a record that is not descended into is an unclassified structure, whatever its annotations")
+    void unclassifiedRecordsAreStructures() {
         var profile = new PrivacyProfile("DEFAULT", UnclassifiedBehaviour.REDACT_AND_WARN, Map.of(
                 DataClassification.CONTACT, PrivacyProfile.ClassificationRule.of(PrivacyAction.REDACT)));
         Map<String, Protection> d = byPath(engine(Map.of("DEFAULT", profile))
                 .describe(Holder.class, context("DEFAULT"), false).orElseThrow());
 
-        assertThat(d).containsEntry("redactedCode", Protection.MARKER).doesNotContainKeys("email", "code");
+        assertThat(d).containsEntry("redactedCode", Protection.MARKER).containsEntry("code", Protection.MARKER)
+                .containsEntry("plain", Protection.MARKER).containsEntry("email.value", Protection.MARKER);
     }
 
     @Test
@@ -646,13 +648,13 @@ class ScrubPlanDescriberTest {
     }
 
     @Test
-    @DisplayName("a @JsonValue inherited from an interface makes a record scalar-serialised")
+    @DisplayName("a @JsonValue inherited from an interface changes nothing: the record is described by its components")
     void inheritedJsonValue() {
-        assertThat(byPath(describe(IHolder.class, "DEFAULT", false))).doesNotContainKeys("email", "email.value");
+        assertThat(byPath(describe(IHolder.class, "DEFAULT", false))).containsEntry("email.value", Protection.MARKER);
     }
 
     @Test
-    @DisplayName("a descendable type carrying any @JsonSerialize is omitted, not compared with the structure reading")
+    @DisplayName("a @JsonSerialize on the holding component changes nothing: the record is described by its components")
     void descendableWithJsonSerialize() {
         var profile = new PrivacyProfile("DEFAULT", UnclassifiedBehaviour.REDACT_AND_WARN, Map.of(
                 DataClassification.CONFIDENTIAL, PrivacyProfile.ClassificationRule.of(PrivacyAction.REDACT)));
@@ -660,60 +662,38 @@ class ScrubPlanDescriberTest {
         Map<String, Protection> d = byPath(engine(Map.of("DEFAULT", profile))
                 .describe(AsHolder.class, context("DEFAULT"), false).orElseThrow());
 
-        assertThat(d).doesNotContainKeys("details", "details.a");
+        assertThat(d).containsEntry("details.a", Protection.VERBATIM).doesNotContainKey("details");
     }
 
     @Test
-    @DisplayName("readsAsPlainBean: true only for a record the reader writes as an object of its components")
-    void plainBeanLookup() {
-        assertThat(SourceTree.readsAsPlainBean(PlainHolder.class, "contact", PContact.class)).isTrue();
-        assertThat(SourceTree.readsAsPlainBean(Parcel.class, "details", Inner.class)).isTrue();
-        assertThat(SourceTree.readsAsPlainBean(ArrHolder.class, "contact", ArrContact.class)).isFalse();
-        assertThat(SourceTree.readsAsPlainBean(PropArrHolder.class, "contact", PContact.class)).isFalse();
-        assertThat(SourceTree.readsAsPlainBean(IdHolder.class, "contacts", IdContact.class)).isFalse();
-        assertThat(SourceTree.readsAsPlainBean(IHolder.class, "email", IEmail.class)).isFalse();
-        assertThat(SourceTree.readsAsPlainBean(AsHolder.class, "details", AInner.class)).isFalse();
-        assertThat(SourceTree.readsAsPlainBean(Holder.class, "code", Code.class)).isFalse();
-        assertThat(SourceTree.readsAsPlainBean(PlainHolder.class, "contact", String.class)).isFalse();
-        assertThat(SourceTree.readsAsPlainBean(String.class, "contact", PContact.class)).isFalse();
-    }
-
-    @Test
-    @DisplayName("an array-shaped or object-id record is omitted, a plain one is described through")
+    @DisplayName("an array-shaped, object-id or plain record is described through its components alike")
     void serializerShapes() {
-        for (Class<?> model : List.of(ArrHolder.class, PropArrHolder.class, IdHolder.class)) {
-            assertThat(byPath(describe(model, "DEFAULT", false)).keySet())
-                    .noneMatch(path -> path.startsWith("contact") || path.startsWith("contacts"));
-        }
+        assertThat(byPath(describe(ArrHolder.class, "DEFAULT", false))).containsEntry("contact.email", Protection.MARKER);
+        assertThat(byPath(describe(PropArrHolder.class, "DEFAULT", false)))
+                .containsEntry("contact.email", Protection.MARKER);
+        assertThat(byPath(describe(IdHolder.class, "DEFAULT", false)))
+                .containsEntry("contacts[].email", Protection.MARKER);
         assertThat(byPath(describe(PlainHolder.class, "DEFAULT", false)))
                 .containsEntry("contact.email", Protection.MARKER);
     }
 
     @Test
-    @DisplayName("a format reaching a list, optional or array through a meta-annotation or an interface omits it")
+    @DisplayName("a format reaching a list, optional or array through a meta-annotation or an interface changes nothing")
     void formatOnContainers() {
-        for (Class<?> model : List.of(MetaList.class, MetaOpt.class, MetaArr.class, IfaceList.class)) {
-            assertThat(byPath(describe(model, "DEFAULT", false)).keySet())
-                    .as(model.getSimpleName()).noneMatch(path -> path.startsWith("contact"));
+        for (Class<?> model : List.of(MetaList.class, MetaArr.class, IfaceList.class, PlainList.class)) {
+            assertThat(byPath(describe(model, "DEFAULT", false)))
+                    .as(model.getSimpleName()).containsEntry("contacts[].email", Protection.MARKER);
         }
-        assertThat(byPath(describe(PlainList.class, "DEFAULT", false)))
-                .containsEntry("contacts[].email", Protection.MARKER);
-        assertThat(SourceTree.readsAsPlainBean(PlainList.class, "contacts", PContact.class)).isTrue();
-        assertThat(SourceTree.readsAsPlainBean(MetaList.class, "contacts", PContact.class)).isFalse();
-        assertThat(SourceTree.readsAsPlainBean(MetaOpt.class, "contact", PContact.class)).isFalse();
-        assertThat(SourceTree.readsAsPlainBean(MetaArr.class, "contacts", PContact.class)).isFalse();
-        assertThat(SourceTree.readsAsPlainBean(IfaceList.class, "contacts", PContact.class)).isFalse();
-        assertThat(SourceTree.readsAsPlainBean(PlainList.class, "nope", PContact.class)).isFalse();
+        assertThat(byPath(describe(MetaOpt.class, "DEFAULT", false))).containsEntry("contact.email", Protection.MARKER);
     }
 
     @Test
-    @DisplayName("a class-level array format on an optional's content is seen; plain and object-id contents are as before")
+    @DisplayName("an optional's content is described through its components, whatever its class carries")
     void optionalContent() {
-        assertThat(byPath(describe(OptOfArr.class, "DEFAULT", false)).keySet()).noneMatch(p -> p.startsWith("contact"));
-        assertThat(byPath(describe(IdOpt.class, "DEFAULT", false)).keySet()).noneMatch(p -> p.startsWith("contact"));
-        assertThat(byPath(describe(PlainOpt.class, "DEFAULT", false)))
-                .containsEntry("contact.email", Protection.MARKER);
-        assertThat(SourceTree.readsAsPlainBean(OptOfArr.class, "contact", ArrContact.class)).isFalse();
+        for (Class<?> model : List.of(OptOfArr.class, IdOpt.class, PlainOpt.class)) {
+            assertThat(byPath(describe(model, "DEFAULT", false)))
+                    .as(model.getSimpleName()).containsEntry("contact.email", Protection.MARKER);
+        }
     }
 
     @Test
