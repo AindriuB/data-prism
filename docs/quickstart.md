@@ -253,7 +253,7 @@ REQUESTER=$(mint '{"subject":"requester-1","roles":["investigator","approver"],"
 APPROVER=$(mint '{"subject":"approver-1","roles":["approver"],"caseId":"CASE-QUICKSTART-1","audience":"data-prism-quickstart-operator","scope":"operator"}')
 ```
 
-The issuer mints only two shapes: the MCP token (no `audience`, no `scope`) and
+The issuer mints only two shapes: the MCP token (no `audience` or the MCP audience, and no `scope`) and
 the operator token (the operator audience with exactly the scope `operator`).
 Any other combination is refused with `400 {"code":"INVALID_TOKEN_REQUEST"}`,
 without echoing the input. An MCP token on the operator port is refused (`401`), and an

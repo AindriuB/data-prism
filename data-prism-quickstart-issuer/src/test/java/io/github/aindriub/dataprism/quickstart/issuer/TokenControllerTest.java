@@ -49,7 +49,8 @@ class TokenControllerTest {
                 withAudienceAndScope("data-prism-quickstart-mcp", null)));
 
         assertThat(claims.getAudience()).containsExactly("data-prism-quickstart-mcp");
-        assertThat(claims.getClaim("scope")).isNull();
+        assertThat(claims.getClaims().keySet())
+                .containsExactlyInAnyOrder("sub", "azp", "roles", "purpose", "case_id", "iss", "aud", "exp");
     }
 
     @Test
