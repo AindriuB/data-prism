@@ -35,11 +35,9 @@ class SourceTreeReadersArchitectureTest {
     private static final String SOURCE_TREE = "io.github.aindriub.dataprism.core.engine.SourceTree";
     private static final String WALKER = "io.github.aindriub.dataprism.core.engine.SourceRecordWalker";
 
-    /** The methods that may read the inspecting reader's field (the describer's four go with task 289). */
+    /** The methods that may read the inspecting reader's field. */
     private static final Set<String> INSPECTING_READERS = Set.of("refuseIfReadByGetters", "writtenAsStructure",
-            "referenceTree", "newObject", "newArray", "text",
-            "readsAsPlainBean", "overridesSerialization", "readsAsPlainScalar", "overrides", "plainHolder",
-            "plainBean", "contextual");
+            "referenceTree", "newObject", "newArray", "text");
 
     private static JavaClasses CLASSES;
 

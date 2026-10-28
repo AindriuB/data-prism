@@ -658,11 +658,67 @@ class DescriptionConformsToScrubTest {
     }
 
     @Test
-    @DisplayName("a model with an interface-typed field is described around it and conforms to the scrub")
-    void interfaceFieldIsLeftOut() {
+    @DisplayName("a null interface-typed or class-typed field is written as null; the rest of the model is described and conforms")
+    void nonRecordFieldIsLeftOutWhenNull() {
         for (String profile : BOTH) {
             assertConforms(new DefaultFieldMetadataResolver(), profile,
                     new ScrubPlanDescriberTest.WithIface("w-1", null, null, null, "OPEN"), false);
+        }
+    }
+
+    /** A populated implementation of the interface. */
+    static final class PayloadImpl implements ScrubPlanDescriberTest.Payload {
+    }
+
+    @Test
+    @DisplayName("a populated interface-typed or class-typed field is refused by the scrub, so omitting it hides no content")
+    void nonRecordFieldIsRefusedWhenPopulated() {
+        var engine = engine(new DefaultFieldMetadataResolver());
+        var bean = new ScrubPlanDescriberTest.Bean();
+        bean.name = "secret";
+        var plainBean = new ScrubPlanDescriberTest.PlainBean();
+        plainBean.name = "secret";
+        for (String profile : BOTH) {
+            var context = ScrubPlanDescriberTest.context(profile);
+            for (var source : List.of(
+                    new ScrubPlanDescriberTest.WithIface("w-1", new PayloadImpl(), null, null, "OPEN"),
+                    new ScrubPlanDescriberTest.WithIface("w-1", null, bean, null, "OPEN"),
+                    new ScrubPlanDescriberTest.WithIface("w-1", null, null, plainBean, "OPEN"))) {
+                assertThat(refusalCode(engine, source, context)).isEqualTo(SourceModels.CODE);
+            }
+        }
+    }
+
+    /** A record that is also a CharSequence: the scrubber descends into it as an object. */
+    @LlmExposedModel
+    record CharCode(@InternalIdentifier String id, @NonSensitive(reason = "x") String text)
+            implements CharSequence {
+        @Override
+        public int length() {
+            return text.length();
+        }
+
+        @Override
+        public char charAt(int index) {
+            return text.charAt(index);
+        }
+
+        @Override
+        public CharSequence subSequence(int start, int end) {
+            return text.subSequence(start, end);
+        }
+    }
+
+    @LlmExposedModel
+    record CharHolder(@InternalIdentifier String ref, @NonSensitive(reason = "x") CharCode code) {
+    }
+
+    @Test
+    @DisplayName("a record that implements CharSequence is described through its components, as the scrubber reads it")
+    void charSequenceRecordIsDescribedAsARecord() {
+        for (String profile : BOTH) {
+            assertConforms(new DefaultFieldMetadataResolver(), profile,
+                    new CharHolder("h-1", new CharCode("c-1", "abc")));
         }
     }
 

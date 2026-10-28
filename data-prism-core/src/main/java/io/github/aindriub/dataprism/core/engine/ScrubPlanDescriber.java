@@ -42,8 +42,9 @@ import java.util.stream.Collectors;
  * never described more loosely than the scrubber treats it.
  *
  * <p>A field declared as a user type that is not a record (an interface or a class that startup lets
- * through) is the one case left out by its type: the scrubber writes it with no content, so that field is
- * omitted and the rest of the model is still described.
+ * through) is the one case left out by its type: the scrubber writes it as null when it is null and refuses
+ * the response when it is populated, so omitting that field hides no content the scrub emits, and the rest
+ * of the model is still described.
  *
  * <p>Whether the {@code ValueTokenSource} can hash and tokenize is read afresh for each description, by the
  * caller, and passed in. When it cannot (or its {@code available()} throws), every HASH or TOKENIZE field is
@@ -290,17 +291,24 @@ final class ScrubPlanDescriber {
         if (nested == byte[].class || nested == char[].class) {
             return new Shape(Kind.SCALAR, array, null);
         }
+        // The order is the walker's: a record is read through its components whatever else it implements, so
+        // records come before the scalar test; an enum is a scalar even when marked descendable, so enums come
+        // before the descendable test; any other user type is written with no content when null and refused
+        // when populated, so only that field is left out.
+        if (nested.isRecord()) {
+            return new Shape(resolver.descendable(nested) ? Kind.RECORD : Kind.STRUCTURE, array, nested);
+        }
         if (nested.isPrimitive() || nested.isEnum() || scalar(nested)) {
             return new Shape(Kind.SCALAR, array, null);
         }
         if (resolver.descendable(nested)) {
-            return new Shape(nested.isRecord() ? Kind.RECORD : Kind.OMIT, array, nested);
+            return new Shape(Kind.OMIT, array, null);
         }
         if (Map.class.isAssignableFrom(nested)) {
             return new Shape(Kind.STRUCTURE, array, null);
         }
         if (concrete(nested) && !platform(nested)) {
-            return new Shape(nested.isRecord() ? Kind.STRUCTURE : Kind.OMIT, array, null);
+            return new Shape(Kind.OMIT, array, null);
         }
         return new Shape(Kind.DYNAMIC, array, null);
     }
