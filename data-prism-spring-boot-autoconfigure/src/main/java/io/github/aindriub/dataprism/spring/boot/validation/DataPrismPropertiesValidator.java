@@ -16,8 +16,11 @@ import io.github.aindriub.dataprism.core.model.Capability;
 import io.github.aindriub.dataprism.security.ReservedArguments;
 import io.github.aindriub.dataprism.spring.boot.DataPrismConfigurationException;
 import io.github.aindriub.dataprism.spring.boot.DataPrismProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.net.URI;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -28,6 +31,8 @@ import java.util.Set;
  * could be personal data or a credential.
  */
 public final class DataPrismPropertiesValidator {
+    private static final Logger LOG = LoggerFactory.getLogger(DataPrismPropertiesValidator.class);
+
     private final TransportProperties transport;
     private final SecurityProperties security;
     private final SecurityPolicyProperties securityPolicy;
@@ -236,8 +241,8 @@ public final class DataPrismPropertiesValidator {
         }
         if (clusterSupplied) {
             if (hazelcast.clusterSettingsSet() || hazelcast.approvalSweepIntervalSet()) {
-                refuse("CLUSTER_SETTINGS_IGNORED", "dataprism.hazelcast.cluster-name, join.*, member.* and "
-                        + "approval-sweep-interval have no effect when the application supplies its own "
+                refuse("CLUSTER_SETTINGS_IGNORED", "dataprism.hazelcast.cluster-name, join.*, member.*, trusted-network "
+                        + "and approval-sweep-interval have no effect when the application supplies its own "
                         + "PrivacyCluster");
             }
             if (hazelcast.securitySet()) {
@@ -290,6 +295,11 @@ public final class DataPrismPropertiesValidator {
                     refuse("INVALID_CLUSTER_INTERFACE", "dataprism.hazelcast.member.interface cannot be set "
                             + "with join.mode none, which binds 127.0.0.1");
                 }
+                if (h.trustedNetworkSet() || !h.getMember().getTrustedRanges().isEmpty()) {
+                    refuse("CLUSTER_SETTINGS_IGNORED", "dataprism.hazelcast.trusted-network and "
+                            + "dataprism.hazelcast.member.trusted-ranges have no effect with join.mode none, which "
+                            + "joins no other member");
+                }
             }
             default -> refuse("UNSUPPORTED_CLUSTER_JOIN", "dataprism.hazelcast.join.mode must be tcp-ip, "
                     + "kubernetes or none");
@@ -306,6 +316,9 @@ public final class DataPrismPropertiesValidator {
         }
         if (operator.isEnabled() && operator.getPort() != null && port == operator.getPort()) {
             refuse("CLUSTER_PORT_SHARED", "dataprism.hazelcast.member.port must differ from dataprism.operator.port");
+        }
+        if (!"none".equals(h.getJoin().getMode().strip()) && h.isTrustedNetwork()) {
+            announceTrustedNetwork(h);
         }
     }
 
@@ -373,7 +386,28 @@ public final class DataPrismPropertiesValidator {
                     + "kubernetes joins");
         }
         try {
-            MemberInterfaceCheck.check(h.getMember().getInterface());
+            // Ranges count only where the network is declared trusted; elsewhere they are not read.
+            MemberInterfaceCheck.check(h.getMember().getInterface(), h.isTrustedNetwork(),
+                    h.getMember().getTrustedRanges());
+        } catch (NoClassDefFoundError hazelcastAbsent) {
+            // The optional dependency is missing; startup is refused later for that (MISSING_SHARED_BUDGET).
+        }
+    }
+
+    /**
+     * What a joining member that starts says once: the isolation assertion it was started under, with the port and
+     * no address, and how many trusted ranges lie outside the private blocks, as a count.
+     */
+    private void announceTrustedNetwork(HazelcastProperties h) {
+        int port = h.getMember().getPort() == null ? 5701 : h.getMember().getPort();
+        LOG.info("dataprism.hazelcast.trusted-network is true: this member asserts that only Data Prism members "
+                + "can reach member port {}; approvals and counters on that port are unsealed", port);
+        try {
+            int outside = MemberInterfaceCheck.outsidePrivateBlocks(h.getMember().getTrustedRanges());
+            if (outside > 0) {
+                LOG.warn("dataprism.hazelcast.member.trusted-ranges has {} range(s) outside the private blocks",
+                        outside);
+            }
         } catch (NoClassDefFoundError hazelcastAbsent) {
             // The optional dependency is missing; startup is refused later for that (MISSING_SHARED_BUDGET).
         }
@@ -656,7 +690,7 @@ public final class DataPrismPropertiesValidator {
                 && (hazelcast.clusterSettingsSet() || hazelcast.lockTimeoutSet()
                 || hazelcast.approvalSweepIntervalSet())) {
             refuse("CLUSTER_SETTINGS_IGNORED", "dataprism.hazelcast.cluster-name, join.*, member.*, "
-                    + "approval-minimum-members, lock-timeout and approval-sweep-interval have no effect with "
+                    + "trusted-network, approval-minimum-members, lock-timeout and approval-sweep-interval have no effect with "
                     + "topology single-node; "
                     + "remove them or use topology embedded");
         }

@@ -108,6 +108,15 @@ spec:
             # cluster's pod network; a pattern that matches every address is refused.
             - name: DATAPRISM_HAZELCAST_MEMBER_INTERFACE
               value: "10.*.*.*"
+            # Required: a member that joins others refuses to start unless this
+            # is true. It is your assertion that only Data Prism members can
+            # reach the member port (5701); approvals and counters on that port
+            # are unsealed in 1.0, so anyone else who can reach it can read and
+            # forge them. The NetworkPolicy below (data-prism-cluster-members) is
+            # what makes the assertion true on Kubernetes. (Relaxed binding drops
+            # the hyphen: trusted-network is TRUSTEDNETWORK.)
+            - name: DATAPRISM_HAZELCAST_TRUSTEDNETWORK
+              value: "true"
             - name: DATAPRISM_HAZELCAST_JOIN_KUBERNETES_NAMESPACE
               valueFrom:
                 fieldRef:
@@ -154,6 +163,11 @@ spec:
 ---
 # --8<-- [start:k8s-networkpolicy]
 # Admits member traffic on 5701 only from pods carrying the same app label.
+# It admits any pod labelled app: data-prism, so the assertion that only Data
+# Prism members can reach 5701 holds only if nobody else can create such pods
+# in this namespace: run the members in a dedicated namespace. It also holds
+# only with a network plugin that enforces NetworkPolicy (flannel and kind's
+# default plugin do not) and with no hostNetwork pods, which bypass the policy.
 # Once this policy selects the pods, every other ingress is denied, port 8080
 # included. 8080 therefore stays CLOSED until you add an allow rule for your
 # ingress, for example this extra entry under `ingress:` (placeholder labels):
