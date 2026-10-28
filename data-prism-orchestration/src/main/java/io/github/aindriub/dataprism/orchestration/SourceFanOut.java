@@ -376,7 +376,9 @@ public final class SourceFanOut {
 
     /** A started call that has not answered in time: interrupt it, unless it has just finished. */
     private void resolveRunning(Call call, Map<Call, Fetched> resolved, SourceOutcome.Status status, String detail) {
-        if (call.ended.getCount() == 0 && call.finishedAt != null) {
+        // finishedAt is written after the result, so seeing it means the call finished, whether or not
+        // its thread has yet counted down `ended`.
+        if (call.finishedAt != null) {
             resolved.put(call, completed(call));
             return;
         }

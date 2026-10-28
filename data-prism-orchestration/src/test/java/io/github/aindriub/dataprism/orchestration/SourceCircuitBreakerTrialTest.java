@@ -188,7 +188,6 @@ class SourceCircuitBreakerTrialTest {
                     }
                 };
         var fanOut = new SourceFanOut(breaker, clock, SourceFanOutOptions.defaults().withMetrics(throwing));
-        var calls = new java.util.concurrent.atomic.AtomicInteger();
         DataSourceAdapter<String> failing = new DataSourceAdapter<>() {
             public String sourceName() { return "f"; }
             public Class<String> responseType() { return String.class; }
@@ -208,7 +207,6 @@ class SourceCircuitBreakerTrialTest {
 
         assertThat(breaker.admit("f").allowed()).as("f's failure was recorded").isFalse();
         assertThat(breaker.admit("g").allowed()).as("g's failure was recorded").isFalse();
-        assertThat(calls.get()).isZero();
     }
 
     @Test

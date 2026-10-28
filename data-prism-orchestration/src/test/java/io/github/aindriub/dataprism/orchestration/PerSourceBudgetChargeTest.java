@@ -62,6 +62,7 @@ class PerSourceBudgetChargeTest {
         final InMemoryScopeBudget delegate = new InMemoryScopeBudget();
         final AtomicInteger reserveCalls = new AtomicInteger();
         final AtomicInteger tryReadCalls = new AtomicInteger();
+        volatile boolean throwOnReserve;
         final List<Integer> reserved = java.util.Collections.synchronizedList(new ArrayList<>());
 
         @Override
@@ -84,6 +85,9 @@ class PerSourceBudgetChargeTest {
         public ReadReservation reserve(String scopeId, String subjectId, int reads, int subjectBudget,
                                        int scopeTotalBudget) {
             reserveCalls.incrementAndGet();
+            if (throwOnReserve) {
+                throw new IllegalStateException("budget store down");
+            }
             reserved.add(reads);
             return delegate.reserve(scopeId, subjectId, reads, subjectBudget, scopeTotalBudget);
         }
@@ -357,5 +361,46 @@ class PerSourceBudgetChargeTest {
         assertThat(budget.reserved).containsExactly(3);
         assertThat(calls.get()).as("only one source got the single permit").isEqualTo(1);
         assertThat(budget.reads("S", "1")).as("only the read that started stays charged").isEqualTo(1);
+    }
+
+    private static SourceCircuitBreaker breakerOpenPastCooldown(SourceFanOutDeadlineTest.MutableClock clock) {
+        var breaker = new SourceCircuitBreaker(1, Duration.ofSeconds(5), clock);
+        breaker.record(new SourceOutcome("s", SourceOutcome.Status.FAILED, Duration.ZERO, "x"));
+        clock.advance(Duration.ofSeconds(6));
+        return breaker;
+    }
+
+    @Test
+    @DisplayName("a refused reservation hands back the half-open trial it took, so the source can be tried again")
+    void refusedReservationFreesTheTrial() {
+        var clock = new SourceFanOutDeadlineTest.MutableClock();
+        var breaker = breakerOpenPastCooldown(clock);
+        var fanOut = new SourceFanOut(breaker, clock, SourceFanOutOptions.defaults());
+        var sources = List.of(new Source("s", false), new Source("t", false));
+
+        assertThatThrownBy(() -> orchestrator(sources, new CountingBudget(), limits(8, 1, 50_000), fanOut)
+                .buildContext(ContextRequest.of("THING", "1"), context("S"), caller()))
+                .satisfies(t -> assertThat(refusalCode(t)).isEqualTo("SCOPE_READ_BUDGET"));
+
+        assertThat(sources).allSatisfy(s -> assertThat(s.calls.get()).isZero());
+        assertThat(breaker.admit("s").holdsTrial()).as("the trial was not left taken").isTrue();
+    }
+
+    @Test
+    @DisplayName("a reservation that throws hands back the half-open trial it took")
+    void throwingReservationFreesTheTrial() {
+        var clock = new SourceFanOutDeadlineTest.MutableClock();
+        var breaker = breakerOpenPastCooldown(clock);
+        var fanOut = new SourceFanOut(breaker, clock, SourceFanOutOptions.defaults());
+        var budget = new CountingBudget();
+        budget.throwOnReserve = true;
+        var sources = List.of(new Source("s", false));
+
+        assertThatThrownBy(() -> orchestrator(sources, budget, limits(8, 100, 50_000), fanOut)
+                .buildContext(ContextRequest.of("THING", "1"), context("S"), caller()))
+                .isInstanceOf(RuntimeException.class);
+
+        assertThat(sources.get(0).calls.get()).isZero();
+        assertThat(breaker.admit("s").holdsTrial()).as("the trial was not left taken").isTrue();
     }
 }
