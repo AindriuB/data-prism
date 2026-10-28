@@ -18,6 +18,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class SensitivePatternValidatorRecogniserTest {
 
+    private static final class FreeTextRecogniserTestSupport {
+        @SuppressWarnings("unchecked")
+        static <E extends Throwable> Set<DataClassification> sneaky(Throwable t) throws E {
+            throw (E) t;
+        }
+    }
+
     private static final String SENTINEL = "SENTINEL-NAME-IN-PROSE";
 
     private static final FreeTextRecogniser SENTINEL_RECOGNISER =
@@ -95,6 +102,39 @@ class SensitivePatternValidatorRecogniserTest {
         assertThat(r.violations()).isNotEmpty().allSatisfy(v ->
                 assertThat(v.code()).isEqualTo(SensitivePatternValidator.FREE_TEXT_RECOGNISER_FAILED));
         assertThat(r.violations().toString()).doesNotContain(SENTINEL).doesNotContain("IllegalState");
+    }
+
+    @Test
+    @DisplayName("a sneakily thrown checked exception refuses and its message, which quotes the value, is not kept")
+    void sneakyCheckedRefuses() {
+        FreeTextRecogniser sneaky = v -> FreeTextRecogniserTestSupport.<RuntimeException>sneaky(
+                new java.io.IOException("leaked " + v));
+        ValidationResult r = run(List.of(sneaky), note(SENTINEL), Set.of());
+        assertThat(r.violations()).isNotEmpty().allSatisfy(v ->
+                assertThat(v.code()).isEqualTo(SensitivePatternValidator.FREE_TEXT_RECOGNISER_FAILED));
+        assertThat(r.violations().toString()).doesNotContain(SENTINEL).doesNotContain("leaked");
+    }
+
+    @Test
+    @DisplayName("a linkage Error from a recogniser refuses")
+    void linkageErrorRefuses() {
+        FreeTextRecogniser broken = v -> {
+            throw new NoClassDefFoundError("leaked " + v);
+        };
+        ValidationResult r = run(List.of(broken), note(SENTINEL), Set.of());
+        assertThat(r.violations()).isNotEmpty().allSatisfy(v ->
+                assertThat(v.code()).isEqualTo(SensitivePatternValidator.FREE_TEXT_RECOGNISER_FAILED));
+        assertThat(r.violations().toString()).doesNotContain(SENTINEL);
+    }
+
+    @Test
+    @DisplayName("a null element in the returned set is a failure, not an exception")
+    void nullElementRefuses() {
+        Set<DataClassification> withNull = new java.util.HashSet<>();
+        withNull.add(null);
+        ValidationResult r = run(List.of(v -> withNull), note("x"), Set.of());
+        assertThat(r.violations()).isNotEmpty().allSatisfy(v ->
+                assertThat(v.code()).isEqualTo(SensitivePatternValidator.FREE_TEXT_RECOGNISER_FAILED));
     }
 
     @Test

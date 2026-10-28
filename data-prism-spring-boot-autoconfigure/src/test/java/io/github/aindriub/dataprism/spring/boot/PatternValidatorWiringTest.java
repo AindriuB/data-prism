@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.spring.boot;
 
+import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.InternalIdentifier;
 import io.github.aindriub.dataprism.annotations.LlmExposedModel;
 import io.github.aindriub.dataprism.annotations.NonSensitive;
@@ -17,7 +18,6 @@ import io.github.aindriub.dataprism.core.spi.PassThroughIdentityResolver;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.ContextRequest;
 import io.github.aindriub.dataprism.pseudonymisation.vocabulary.VocabularyRegistry;
-import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.validation.FreeTextRecogniser;
 import io.github.aindriub.dataprism.validation.SensitivePatternValidator;
 import io.modelcontextprotocol.common.McpTransportContext;
@@ -100,11 +100,15 @@ class PatternValidatorWiringTest {
     }
 
     @Test
-    void an_unrecognised_value_adds_no_recogniser_refusal() {
-        context.withBean("none", FreeTextRecogniser.class, () -> value -> Set.of()).run(result ->
-                assertThatThrownBy(() -> buildContext(result.getBean(ContextOrchestrator.class)))
-                        .isInstanceOfSatisfying(PrivacyRefusedException.class, e ->
-                                assertThat(e.getMessage()).doesNotContain("FREE_TEXT")));
+    void an_unrecognised_inert_value_passes_with_a_recogniser_present() {
+        context.withPropertyValues("test.label=plain inert label")
+                .withBean("sentinel", FreeTextRecogniser.class,
+                        () -> value -> value.contains("casework.sample")
+                                ? Set.of(DataClassification.PII) : Set.of())
+                .run(result -> {
+                    assertThat(result).hasNotFailed();
+                    buildContext(result.getBean(ContextOrchestrator.class));
+                });
     }
 
     @Test
@@ -131,12 +135,14 @@ class PatternValidatorWiringTest {
     @Configuration(proxyBeanMethods = false)
     static class Integrations {
         @Bean
-        DataSourceAdapter<PlainDto> customerAdapter() {
+        DataSourceAdapter<PlainDto> customerAdapter(org.springframework.core.env.Environment env) {
+            // The label defaults to the email-shaped value 209's tests refuse; a test overrides it with an inert one.
+            String label = env.getProperty("test.label", "casework.sample@mail.invalid");
             return new DataSourceAdapter<>() {
                 public String sourceName() { return "customer"; }
                 public Class<PlainDto> responseType() { return PlainDto.class; }
                 public PlainDto fetch(DataRequest request) {
-                    return new PlainDto("CUST-1", "casework.sample@mail.invalid");
+                    return new PlainDto("CUST-1", label);
                 }
             };
         }

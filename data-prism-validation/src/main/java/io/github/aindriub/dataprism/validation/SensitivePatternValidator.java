@@ -97,18 +97,24 @@ public final class SensitivePatternValidator implements LlmResponseValidator {
             if (violations.size() >= MAX_RECOGNISER_VIOLATIONS) {
                 return;
             }
-            Set<DataClassification> recognised;
+            String names;
             try {
-                recognised = recogniser.recognise(value);
-            } catch (RuntimeException | StackOverflowError e) {
-                // Nothing from the exception is kept: its message may quote the value.
-                violations.add(new Violation("$", FREE_TEXT_RECOGNISER_FAILED, "recogniser-failed"));
-                continue;
+                Set<DataClassification> recognised = recogniser.recognise(value);
+                // Read inside the guard: a null set or null element is a failure, not an NPE.
+                names = recognised == null ? null : recognised.stream()
+                        .map(Enum::name).sorted().collect(Collectors.joining(","));
+                if (recognised != null && recognised.isEmpty()) {
+                    continue;
+                }
+            } catch (VirtualMachineError e) {
+                throw e;
+            } catch (Exception | Error e) {
+                // Nothing from the throwable is kept: its message may quote the value.
+                names = null;
             }
-            if (recognised == null) {
+            if (names == null) {
                 violations.add(new Violation("$", FREE_TEXT_RECOGNISER_FAILED, "recogniser-failed"));
-            } else if (!recognised.isEmpty()) {
-                String names = recognised.stream().map(Enum::name).sorted().collect(Collectors.joining(","));
+            } else {
                 violations.add(new Violation("$", FREE_TEXT_RECOGNISED, "free-text:" + names));
             }
         }
