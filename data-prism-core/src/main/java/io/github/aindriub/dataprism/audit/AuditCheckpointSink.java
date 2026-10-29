@@ -20,4 +20,15 @@ public interface AuditCheckpointSink {
     default java.util.List<AuditCheckpoint> retentionAnchors() {
         return java.util.List.of();
     }
+
+    /**
+     * The {@link AuditCheckpoint.Kind#SHUTDOWN} checkpoints already recorded here, which
+     * {@link io.github.aindriub.dataprism.audit.retention.AuditRetention} reads so it can tell where a
+     * cleanly closed writer's chain ended and stop reading retained segments for it. A sink that cannot read
+     * back returns the empty list, and then purge reads on to the last segment for every writer without a
+     * next record, as it does after a crash. A read that throws makes purge fail closed.
+     */
+    default java.util.List<AuditCheckpoint> shutdownCheckpoints() {
+        return java.util.List.of();
+    }
 }
