@@ -220,13 +220,13 @@ Amendments 3 and 4 below replace the first versions, which are kept, marked supe
 
 ### 9. Resume response (revision; owner decision 5, revised 2026-10-29)
 - `POST /operator/resume` keeps `status` and `target` and gains one additive top-level field, `stillPaused` (boolean), matching the controller's flat response maps: `{"status": "RESUMED", "target": "TOOL", "stillPaused": false}`.
-  - The controller computes it from `OversightState.snapshot()`, read after the resume returns, for the resumed target only: `ALL` reads `allPaused()`; `TOOL` reads `pausedTools().contains(name)`; `SCOPE` reads `pausedScopes().contains(name)`. A global pause does not make a tool or scope target `stillPaused`.
+  - The controller computes it from `OversightState.snapshot()`, read after the resume returns, for the resumed target only: `ALL` reads `allPaused()`; `TOOL` reads `pausedTools().contains(name) || allPaused()`; `SCOPE` reads `pausedScopes().contains(name) || allPaused()`. A global pause still refuses calls to a tool or scope target, so it keeps that target `stillPaused` true: the response never suggests a target is unblocked while calls to it are still refused (fail closed; coordinator decision 2026-10-29, owner may override).
   - It is true when a concurrent pause that the resume did not observe keeps the target paused.
-  - If that `snapshot()` throws, the response reports `stillPaused` true (fail closed: never claim a lift that cannot be confirmed). The resume has already applied and been audited, so no further audit is written and the status stays 200.
+  - If that `snapshot()` throws, the response reports `stillPaused` true (fail closed: never claim a lift that cannot be confirmed). The resume has already applied and been audited, so no further audit is written and the status stays 200 (coordinator decision 2026-10-29, owner may override).
   - No other field changes, and a refused resume's body and audit are unchanged.
 - No cleared count. The `OversightState` SPI, `OversightSnapshot`, `InMemoryOversightState` and `HazelcastOversightState`'s public surface are unchanged; no core file is edited.
 - Tests:
-  - [ ] `ResumeEffectTest` (new, `data-prism-server`): `stillPaused` is true after a resume when a concurrent unobserved pause keeps the target paused (on Hazelcast, a pause of the same target committed via `beforeCommit` while the resume is built), and false otherwise (a clean resume; a tool target resumed while the global pause holds);
+  - [ ] `ResumeEffectTest` (new, `data-prism-server`): `stillPaused` is true after a resume when a concurrent unobserved pause keeps the target paused (on Hazelcast, a pause of the same target committed via `beforeCommit` while the resume is built), true when a tool target X is resumed while `pause all` is active, and the same for a scope target; and false otherwise (a clean resume with no global pause);
   - [ ] `stillPaused` true when the post-resume `snapshot()` throws;
   - [ ] `ResumeAuditOrderingTest`'s exact-map assertion at :155 gains `"stillPaused", false` and nothing else.
 
@@ -247,7 +247,7 @@ Amendments 3 and 4 below replace the first versions, which are kept, marked supe
 - [ ] Property tests over random sequences of documents (seeded JUnit loops; no new dependency): merge is commutative, associative and idempotent; no merge removes a live element without its tombstone.
 - [ ] Decode rejects a duplicate id with a different target, and rejects an unknown format tag; a tombstone for an unknown id is kept through a decode and encode round trip.
 - [ ] Memo: identical sealed bytes are not decoded twice (a counting decoder seam), and different bytes are.
-- [ ] `stillPaused` is true after a resume when a concurrent unobserved pause keeps the target paused, and false otherwise (amendment 9).
+- [ ] `stillPaused` is true after a resume when a concurrent unobserved pause keeps the target paused, true when TOOL X is resumed while `pause all` is active, and false otherwise (amendment 9).
 - [ ] Mutants, each of which must fail at least one test (list them in the Outcome with the failing test):
   - accept replaces held instead of merging;
   - `next` drops a stored element or tombstone;
@@ -258,7 +258,8 @@ Amendments 3 and 4 below replace the first versions, which are kept, marked supe
   - the memo ignores the bytes (keys on sequence alone);
   - endScope removes elements by name, or across kinds, instead of tombstoning the scope's ids;
   - the peer-derived sequence bump is restored;
-  - `stillPaused` is always false.
+  - `stillPaused` is always false;
+  - `stillPaused` ignores `allPaused()` for TOOL or SCOPE targets.
 
 ### Superseded (kept for the record; replaced by the revision above)
 
