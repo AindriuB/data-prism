@@ -6,6 +6,10 @@ dataprism.audit.credential-reference | java.lang.String | rw | null
 dataprism.audit.directory | java.lang.String | rw | null
 dataprism.audit.entity-types | java.util.List<java.lang.String> | rw | []
 dataprism.audit.file-path | java.lang.String | rw | null
+dataprism.audit.hmac-key | bean | ro
+dataprism.audit.hmac-key.environment-variable | java.lang.String | rw | null
+dataprism.audit.hmac-key.key-id | java.lang.String | rw | null
+dataprism.audit.hmac-key.provider-reference | java.lang.String | rw | null
 dataprism.audit.listeners | bean | ro
 dataprism.audit.listeners.queue-capacity | int | rw | 1024
 dataprism.audit.output | bean | ro
@@ -19,6 +23,10 @@ dataprism.audit.output.routing.data-stream-type | java.lang.String | rw | null
 dataprism.audit.output.routing.event-dataset | java.lang.String | rw | null
 dataprism.audit.retention | java.time.Period | rw | P6M
 dataprism.audit.retention-override | boolean | rw | false
+dataprism.audit.retired-hmac-keys | java.util.Map<java.lang.String,bean> | rw | {}
+dataprism.audit.retired-hmac-keys.*.environment-variable | java.lang.String | rw | null
+dataprism.audit.retired-hmac-keys.*.provider-reference | java.lang.String | rw | null
+dataprism.audit.segment-max-size | org.springframework.util.unit.DataSize | rw | null
 dataprism.audit.sink | java.lang.String | rw | null
 dataprism.audit.writer-id | java.lang.String | rw | null
 dataprism.correlation | bean | rw

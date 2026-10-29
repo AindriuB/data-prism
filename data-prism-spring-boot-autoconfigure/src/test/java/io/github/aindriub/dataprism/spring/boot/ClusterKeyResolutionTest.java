@@ -188,4 +188,92 @@ class ClusterKeyResolutionTest {
                 .hasMessageStartingWith("MISSING_KEY_PROVIDER:")
                 .hasMessageNotContaining("vault:secret-ref");
     }
+
+    private static DataPrismProperties keyedAudit() {
+        DataPrismProperties p = properties();
+        p.getAudit().getHmacKey().setKeyId("audit-1");
+        p.getAudit().getHmacKey().setEnvironmentVariable("AUDIT_REF");
+        AuditProperties.RetiredKey retired = new AuditProperties.RetiredKey();
+        retired.setEnvironmentVariable("RETIRED_REF");
+        p.getAudit().getRetiredHmacKeys().put("audit-0", retired);
+        return p;
+    }
+
+    private static HmacKeyReferenceResolver auditResolver(Map<String, byte[]> overrides) {
+        Map<String, byte[]> keys = new HashMap<>(Map.of("HMAC_REF", bytes('h'), "CLUSTER_REF", bytes('c'),
+                "NAME_REF", bytes('n'), "AUDIT_REF", bytes('a'), "RETIRED_REF", bytes('r')));
+        keys.putAll(overrides);
+        return (id, reference) -> keys.get(reference);
+    }
+
+    @Test
+    void distinctAuditKeysDoNotStopTheClusterKeys() {
+        assertThat(ClusterKeyResolution.resolve(keyedAudit(), () -> auditResolver(Map.of()))).isPresent();
+    }
+
+    @Test
+    void aClusterKeyWithTheMaterialOfTheAuditKeyOrARetiredOneIsRefused() {
+        for (String shared : List.of("AUDIT_REF", "RETIRED_REF")) {
+            DataPrismConfigurationException refused = catchThrowableOfType(DataPrismConfigurationException.class,
+                    () -> ClusterKeyResolution.resolve(keyedAudit(),
+                            () -> auditResolver(Map.of("CLUSTER_REF", bytes(shared.equals("AUDIT_REF") ? 'a' : 'r')))));
+            assertThat(refused.getMessage()).startsWith("CLUSTER_KEY_SHARED:");
+        }
+    }
+
+    @Test
+    void aNameKeyWithTheMaterialOfTheAuditKeyOrARetiredOneIsRefused() {
+        for (char shared : new char[] {'a', 'r'}) {
+            DataPrismConfigurationException refused = catchThrowableOfType(DataPrismConfigurationException.class,
+                    () -> ClusterKeyResolution.resolve(keyedAudit(), () -> auditResolver(Map.of("NAME_REF", bytes(shared)))));
+            assertThat(refused.getMessage()).startsWith("NAME_KEY_SHARED:");
+        }
+    }
+
+    @Test
+    void aClusterOrNameKeyWithTheKeyIdOfTheAuditKeyOrARetiredOneIsRefused() {
+        for (String id : List.of("audit-1", "audit-0")) {
+            DataPrismProperties clusterShared = keyedAudit();
+            clusterShared.getHazelcast().getSecurity().getClusterKey().setKeyId(id);
+            assertThat(catchThrowableOfType(DataPrismConfigurationException.class,
+                    () -> ClusterKeyResolution.resolve(clusterShared, () -> auditResolver(Map.of()))).getMessage())
+                    .startsWith("CLUSTER_KEY_SHARED:");
+            DataPrismProperties nameShared = keyedAudit();
+            nameShared.getHazelcast().getSecurity().getNameKey().setKeyId(id);
+            assertThat(catchThrowableOfType(DataPrismConfigurationException.class,
+                    () -> ClusterKeyResolution.resolve(nameShared, () -> auditResolver(Map.of()))).getMessage())
+                    .startsWith("NAME_KEY_SHARED:");
+        }
+    }
+
+    @Test
+    void anAuditKeyThatCannotBeResolvedAgainIsRefusedWithoutItsReference() {
+        DataPrismConfigurationException refused = catchThrowableOfType(DataPrismConfigurationException.class,
+                () -> ClusterKeyResolution.resolve(keyedAudit(), () -> auditResolver(Map.of("AUDIT_REF", new byte[0]))));
+        assertThat(refused.getMessage()).startsWith("AUDIT_HMAC_KEY_TOO_SHORT:").doesNotContain("AUDIT_REF");
+    }
+
+    @Test
+    void theAuditKeysAreResolvedOnceAndTheRecorderRetentionAndClusterChecksSeeTheFirstMaterial() {
+        DataPrismProperties p = keyedAudit();
+        Map<String, Integer> calls = new HashMap<>();
+        HmacKeyReferenceResolver changing = (id, reference) -> {
+            int n = calls.merge(reference, 1, Integer::sum);
+            return switch (reference) {
+                case "AUDIT_REF" -> bytes(n == 1 ? 'a' : 'z');
+                case "RETIRED_REF" -> bytes(n == 1 ? 'r' : 'y');
+                case "HMAC_REF" -> bytes('h');
+                case "CLUSTER_REF" -> bytes('a');
+                default -> bytes('n');
+            };
+        };
+        AuditChainKeyResolution.Keys recorder = AuditChainKeyResolution.resolve(p, changing);
+        AuditChainKeyResolution.Keys retention = AuditChainKeyResolution.resolve(p, changing);
+        assertThat(retention).isSameAs(recorder);
+        // the cluster key equals the audit key's FIRST material; a second resolution would have returned 'z'
+        DataPrismConfigurationException refused = catchThrowableOfType(DataPrismConfigurationException.class,
+                () -> ClusterKeyResolution.resolve(p, () -> changing));
+        assertThat(refused.getMessage()).startsWith("CLUSTER_KEY_SHARED:");
+        assertThat(calls).containsEntry("AUDIT_REF", 1).containsEntry("RETIRED_REF", 1);
+    }
 }
