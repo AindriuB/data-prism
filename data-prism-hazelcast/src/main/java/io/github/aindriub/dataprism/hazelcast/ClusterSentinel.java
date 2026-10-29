@@ -20,6 +20,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 /**
  * The sentinel of docs/plan/design/cluster-security.md 4.7: a sealed constant that the first member writes, under
@@ -37,6 +38,22 @@ final class ClusterSentinel {
 
     /** The reserved map key. A keyed name is 43 characters, so no member card can have this key. */
     static final String KEY = "sentinel";
+
+    /**
+     * What is added to Hazelcast's backup timeout for the periodic invocation-monitor scan that enforces it: the
+     * scan runs on a period of its own, so a write that lost its backup acknowledgement finishes a little after
+     * the timeout, not at it.
+     */
+    static final Duration BACKUP_SWEEP_ALLOWANCE = Duration.ofSeconds(2);
+
+    /**
+     * The most of Hazelcast's backup timeout that the start-up bound takes. A member may set the property to any
+     * long; a huge value must neither overflow the bound nor make the start-up write effectively unbounded.
+     */
+    static final Duration BACKUP_TIMEOUT_CEILING = Duration.ofSeconds(60);
+
+    /** Called with the map key just after a card or sentinel write has been started. For tests. */
+    static volatile Consumer<String> afterWriteStarted = key -> { };
 
     private static final byte[] CONSTANT = "dp-sentinel".getBytes(StandardCharsets.UTF_8);
 
@@ -71,12 +88,6 @@ final class ClusterSentinel {
         return inFlight.get();
     }
 
-    /**
-     * What is added to Hazelcast's backup timeout for the invocation monitor that enforces it, which runs on a
-     * period of its own: a write that lost its backup acknowledgement was seen to finish 0.5 s to 0.6 s after it.
-     */
-    static final Duration BACKUP_SWEEP_ALLOWANCE = Duration.ofSeconds(2);
-
     ClusterSentinel(PrivacyCluster cluster, ClusterKeys keys, Sealer sealer, Duration writeTimeout) {
         this.cluster = Objects.requireNonNull(cluster, "cluster");
         this.keys = Objects.requireNonNull(keys, "keys");
@@ -101,7 +112,8 @@ final class ClusterSentinel {
             config = new Config();
         }
         long backupMillis = new HazelcastProperties(config).getMillis(ClusterProperty.OPERATION_BACKUP_TIMEOUT_MILLIS);
-        return writeTimeout.plusMillis(Math.max(0, backupMillis)).plus(BACKUP_SWEEP_ALLOWANCE);
+        long clamped = Math.min(Math.max(0, backupMillis), BACKUP_TIMEOUT_CEILING.toMillis());
+        return writeTimeout.plusMillis(clamped).plus(BACKUP_SWEEP_ALLOWANCE);
     }
 
     /** Any value can be stored under a card key by a member without the key, so values are read as objects. */
@@ -172,6 +184,7 @@ final class ClusterSentinel {
                 throw notStarted;
             }
             writes.incrementAndGet();
+            afterWriteStarted.accept(KEY);
             write.whenComplete((done, failure) -> inFlight.set(false));
             if (Boolean.TRUE.equals(bounded(write, bound))) {
                 return Outcome.CURRENT;

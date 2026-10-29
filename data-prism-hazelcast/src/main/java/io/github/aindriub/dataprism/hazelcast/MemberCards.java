@@ -544,6 +544,7 @@ public final class MemberCards {
             throw notStarted;
         }
         writes.incrementAndGet();
+        ClusterSentinel.afterWriteStarted.accept(key);
         write.whenComplete((done, failure) -> inFlight.set(false));
         ClusterSentinel.bounded(write, bound);
         synchronized (state) {
