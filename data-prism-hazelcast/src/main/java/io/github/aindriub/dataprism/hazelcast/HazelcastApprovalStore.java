@@ -759,15 +759,15 @@ public final class HazelcastApprovalStore implements ApprovalStore {
     }
 
     private IMap<String, String> idClaims() {
-        return cluster.instance().getMap(PrivacyCluster.APPROVAL_ID_MAP);
+        return cluster.servingInstance().getMap(PrivacyCluster.APPROVAL_ID_MAP);
     }
 
     private IMap<String, String> pendingSets() {
-        return cluster.instance().getMap(PrivacyCluster.APPROVAL_PENDING_MAP);
+        return cluster.servingInstance().getMap(PrivacyCluster.APPROVAL_PENDING_MAP);
     }
 
     private IMap<String, String> approvals() {
-        return cluster.instance().getMap(PrivacyCluster.APPROVAL_MAP);
+        return cluster.servingInstance().getMap(PrivacyCluster.APPROVAL_MAP);
     }
 
     /** Length-free, NUL-separated, with backslash escaping; a null field is a lone tilde. */

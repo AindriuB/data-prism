@@ -774,12 +774,15 @@ class ArchitectureTest {
      * T14, second rule: an envelope read from the re-identification map is opened in one place, {@code
      * ScopeIdentityIndex.subjectFor}, through {@code IdentityMaps.subjectOf}. Nothing else calls that helper, and
      * outside the seal package only the two identity classes call {@code Sealer.open} at all, so no other class can
-     * open an index entry and return a subject.
+     * open an index entry and return a subject. The two classes of task 227 open the member-card map (the sentinel
+     * and the cards) and no other, and return no subject: they are the only other openers.
      */
     private static final String IDENTITY_MAPS = "io.github.aindriub.dataprism.hazelcast.IdentityMaps";
     private static final String SEALER = "io.github.aindriub.dataprism.hazelcast.seal.Sealer";
     private static final String INDEX = ScopeIdentityIndex.class.getName();
     private static final String IDENTITY_CACHE = "io.github.aindriub.dataprism.hazelcast.CachingSyntheticValueSource";
+    private static final String MEMBER_CARDS = "io.github.aindriub.dataprism.hazelcast.MemberCards";
+    private static final String CLUSTER_SENTINEL = "io.github.aindriub.dataprism.hazelcast.ClusterSentinel";
 
     private static final String SEAL_PACKAGE = "io.github.aindriub.dataprism.hazelcast.seal";
 
@@ -820,7 +823,8 @@ class ArchitectureTest {
     @Test
     void onlyScopeIdentityIndexOpensTheReidentificationMap() {
         onlyTheseOpen(IDENTITY_MAPS, "subjectOf", INDEX).check(CLASSES);
-        onlyTheseOpen(SEALER, "open", INDEX, IDENTITY_CACHE, IDENTITY_MAPS).check(CLASSES);
+        onlyTheseOpen(SEALER, "open", INDEX, IDENTITY_CACHE, IDENTITY_MAPS, MEMBER_CARDS, CLUSTER_SENTINEL)
+                .check(CLASSES);
     }
 
     @Test

@@ -23,9 +23,6 @@ public record ClusterMembership(String clusterName, Join join, int port, String 
 
     public static final int DEFAULT_PORT = 5701;
 
-    /** Hazelcast reads this as a Config property or a system property, and it overrides the picked address. */
-    private static final String LOCAL_ADDRESS = "hazelcast.local.localAddress";
-
     private static final Pattern OCTET = Pattern.compile("\\*|\\d{1,3}(-\\d{1,3})?");
 
     /** Exactly one way of finding the other members. */
@@ -180,20 +177,26 @@ public record ClusterMembership(String clusterName, Join join, int port, String 
         }
     }
 
-    /** Hazelcast reads this too; it sets the address a member advertises to the others. */
-    private static final String PUBLIC_ADDRESS = "hazelcast.local.publicAddress";
-
     /** The host part of {@code host} or {@code host:port}; a bare IPv6 literal has no port to strip. */
     private static String hostOf(String address) {
         int colon = address.lastIndexOf(':');
         return colon > 0 && address.indexOf(':') == colon ? address.substring(0, colon) : address;
     }
 
+    /** Hazelcast reads this as a Config property or a system property, and it overrides the picked address. */
+    private static final String LOCAL_ADDRESS = "hazelcast.local.localAddress";
+
+    /** Hazelcast reads this too; it sets the address a member advertises to the others. */
+    private static final String PUBLIC_ADDRESS = "hazelcast.local.publicAddress";
+
     private static final Pattern LOOPBACK_LITERAL = Pattern.compile("127\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})");
 
-    /** An IPv4 literal in 127/8, {@code localhost} or {@code ::1}; any other name could resolve elsewhere. */
+    /**
+     * An IPv4 literal in 127/8 or {@code ::1}. {@code localhost} and every other name are refused: a name is
+     * resolved through the hosts file or DNS and could point anywhere.
+     */
     static boolean loopbackLiteral(String value) {
-        if (value.equals("localhost") || value.equals("::1")) {
+        if (value.equals("::1")) {
             return true;
         }
         var matcher = LOOPBACK_LITERAL.matcher(value);
@@ -250,12 +253,23 @@ public record ClusterMembership(String clusterName, Join join, int port, String 
         return !network.getMemberAddressProviderConfig().isEnabled();
     }
 
-    /** With an interface, listen only there; without one Hazelcast binds every interface. */
+    /**
+     * With an interface, listen only there; without one Hazelcast binds every interface. Both bind-any settings are
+     * set to false and then read back the way Hazelcast reads them, so a system property that still wins (as
+     * {@code -Dhazelcast.socket.server.bind.any=true} would) is refused here and does not override the interface.
+     */
     private void bindToInterface(Config config) {
         if (interfaceAddressOrNull != null) {
             String a = interfaceAddressOrNull;
             config.getNetworkConfig().getInterfaces().setEnabled(true).addInterface(a);
             config.setProperty("hazelcast.socket.bind.any", "false");
+            config.setProperty("hazelcast.socket.server.bind.any", "false");
+            HazelcastProperties effective = new HazelcastProperties(config);
+            if (effective.getBoolean(ClusterProperty.SOCKET_BIND_ANY)
+                    || effective.getBoolean(ClusterProperty.SOCKET_SERVER_BIND_ANY)) {
+                throw refuse(Code.INVALID_CLUSTER_INTERFACE,
+                        "a bind-any setting makes the member listen on every interface, overriding member.interface");
+            }
         }
     }
 

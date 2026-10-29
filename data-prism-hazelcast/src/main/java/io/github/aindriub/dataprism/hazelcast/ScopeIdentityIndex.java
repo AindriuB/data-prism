@@ -65,7 +65,7 @@ public final class ScopeIdentityIndex {
         this.cluster = Objects.requireNonNull(cluster, "cluster");
         this.metrics = Objects.requireNonNull(metrics, "metrics");
         this.lockTimeout = ClusterLocks.checked(lockTimeout);
-        this.maps = name -> cluster.instance().getMap(name);
+        this.maps = name -> cluster.servingInstance().getMap(name);
         this.approvals = HazelcastApprovalStore.forScopeEnd(cluster, lockTimeout, metrics);
         this.sealer = IdentityMaps.sealerFor(cluster, metrics, Objects.requireNonNull(gate, "gate"));
     }
@@ -85,7 +85,7 @@ public final class ScopeIdentityIndex {
         if (!cluster.reidentificationEnabled()) {
             return Optional.empty();
         }
-        IMap<String, String> index = cluster.instance().getMap(PrivacyCluster.REIDENTIFICATION_MAP);
+        IMap<String, String> index = cluster.servingInstance().getMap(PrivacyCluster.REIDENTIFICATION_MAP);
         String key = cluster.scopeKeys().reidentification(scopeId, namespace, synthetic);
         String stored = index.get(key);
         Optional<String> subject = stored == null ? Optional.empty()
