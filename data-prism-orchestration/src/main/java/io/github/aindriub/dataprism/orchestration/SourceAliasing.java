@@ -45,7 +45,7 @@ public final class SourceAliasing {
      * @deprecated ignores {@code dataprism.catalog.real-names-scopes}, so it can show a real name where the
      *             scope forbids it. Use {@code SourceLabels} for anything a client sees.
      */
-    @Deprecated(forRemoval = true)
+    @Deprecated(since = "0.8.0", forRemoval = true)
     public String nameFor(String sourceName, InvestigationContext investigationContext,
                           PrivacyContext context) {
         if (investigationContext.has(Capability.EXPOSE_SOURCE_NAMES)) {

@@ -372,10 +372,13 @@ class McpHttpEndToEndTest {
         String token = mintToken(Set.of("investigator"), CONFIGURED_PURPOSE, CASE_ID);
         McpSyncClient client = clientWithToken(token);
         try {
-            String body = text(callGetEntityContext(client, "123"));
+            McpSchema.CallToolResult result = callGetEntityContext(client, "123");
+            assertThat(result.isError()).isNotEqualTo(Boolean.TRUE);
+            String body = text(result);
 
             assertThat(body).doesNotContain("customer-api").doesNotContain("account-api")
                     .doesNotContain("order-api");
+            assertAliasedAnswer(result);
         } finally {
             client.closeGracefully();
         }
@@ -383,19 +386,37 @@ class McpHttpEndToEndTest {
 
     @Test
     @DisplayName("a caller with EXPOSE_SOURCE_NAMES still sees aliases while no scope permits real names")
-    void callerWithExposeCapabilitySeesRealSourceNames() throws Exception {
+    void callerWithExposeCapabilityStillSeesAliasesWhileRealNamesScopesIsEmpty() throws Exception {
         String token = mintToken(Set.of("privileged-investigator"), CONFIGURED_PURPOSE, CASE_ID);
         McpSyncClient client = clientWithToken(token);
         try {
-            String body = text(callGetEntityContext(client, "123"));
+            McpSchema.CallToolResult result = callGetEntityContext(client, "123");
+            assertThat(result.isError()).isNotEqualTo(Boolean.TRUE);
 
             // Task 247: real names need the scope setting as well as the capability, and the setting is empty
-            // by default. The real-name assertion (contains "customer-api") comes back in task 254, once
-            // dataprism.catalog.real-names-scopes is bound.
-            assertThat(body).doesNotContain("customer-api");
+            // by default. Formerly callerWithExposeCapabilitySeesRealSourceNames: task 254 restores the
+            // real-name assertion (contains "customer-api") once dataprism.catalog.real-names-scopes is bound.
+            assertThat(text(result)).doesNotContain("customer-api");
+            assertAliasedAnswer(result);
         } finally {
             client.closeGracefully();
         }
+    }
+
+    /**
+     * The answer is a real one, labelled by aliases: three source labels, none a real name, each an
+     * answered source in the audit trail, and the audit event records {@code names} = {@code ALIAS}.
+     */
+    private static void assertAliasedAnswer(McpSchema.CallToolResult result) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> sources = (Map<String, Object>) ((Map<String, Object>) result.structuredContent())
+                .get("sources");
+        assertThat(sources).hasSize(3);
+        assertThat(sources.keySet()).allSatisfy(label -> assertThat(label).isNotBlank()
+                .isNotIn("customer-api", "account-api", "order-api"));
+        AuditEvent event = orchestratorEvent();
+        assertThat(event.fieldDispositions()).containsEntry("names", "ALIAS");
+        assertThat(event.sourceSystems()).contains("customer-api:ANSWERED");
     }
 
     /** The entity of the source that holds {@code field}: each source keeps its own record. */

@@ -538,7 +538,8 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
 
     /**
      * Which adapters this call asks, decided before the budget is touched: the ones the caller chose
-     * by label, or, with no choice, every permitted source, if there are few enough of them. A source
+     * by label, or, with no choice, the permitted sources that serve the entity type or declare none, if
+     * there are few enough of them. A source
      * the catalog does not hold is never asked.
      */
     private List<DataSourceAdapter<?>> select(ContextRequest request, SourceLabels labels) {

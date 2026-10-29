@@ -26,6 +26,7 @@ class SourceAliasingTest {
 
     @Test
     @DisplayName("a caller without the capability sees an alias, never the real name")
+    @SuppressWarnings("removal")
     void aliasesWithoutCapability() {
         InvestigationContext noCapability = new InvestigationContext(
                 "investigator-1", "client-1", "CASE-1", Set.of());
@@ -37,6 +38,7 @@ class SourceAliasingTest {
 
     @Test
     @DisplayName("a caller holding EXPOSE_SOURCE_NAMES sees the real name")
+    @SuppressWarnings("removal")
     void namesWithCapability() {
         InvestigationContext exposed = new InvestigationContext(
                 "investigator-1", "client-1", "CASE-1", Set.of(Capability.EXPOSE_SOURCE_NAMES));
@@ -48,6 +50,7 @@ class SourceAliasingTest {
 
     @Test
     @DisplayName("the alias is stable within a scope")
+    @SuppressWarnings("removal")
     void aliasIsStableWithinScope() {
         InvestigationContext noCapability = new InvestigationContext(
                 "investigator-1", "client-1", "CASE-1", Set.of());
