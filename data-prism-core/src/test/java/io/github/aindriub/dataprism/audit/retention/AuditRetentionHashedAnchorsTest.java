@@ -440,6 +440,58 @@ class AuditRetentionHashedAnchorsTest {
         assertThat(lab.names()).contains(D1, "audit-2026-03-01.0001.log", D2, "audit-2026-09-09.log");
     }
 
+    // -- a planted line between the cut and the next record -------------------------------------------
+
+    @ParameterizedTest
+    @CsvSource({"false,true", "false,false", "true,true", "true,false"})
+    void aLastRecordCutFromTheExpiringDayAndPlantedInAnotherExpiredDayDoesNotLetTheDayGo(boolean keyed,
+                                                                                         boolean cutToPrefix)
+            throws IOException {
+        Lab lab = new Lab(tempDir.resolve("seg"), keyed);
+        AuditRecorder w = lab.writer("w");
+        List<AuditEvent> d1 = lab.record(w, "2026-03-01T01:00:00Z", "2026-03-01T02:00:00Z", "2026-03-01T03:00:00Z");
+        lab.record(w, "2026-09-09T01:00:00Z");
+        lab.close();
+        String third = AuditRecordFormat.serialize(d1.get(2));
+        if (cutToPrefix) {
+            lab.replaceLastLine(D1, third.substring(0, 60) + "\r\n");
+        } else {
+            String content = lab.read(D1);
+            lab.write(D1, content.substring(0, content.lastIndexOf(third)));
+        }
+        lab.write(D2, third + SEP + "forged\n");
+
+        Outcome outcome = lab.purge(lab.retention());
+
+        outcome.refused("does not chain from the last record verified there");
+        assertThat(outcome.thrown().getMessage()).contains(D1);
+        assertThat(lab.names()).contains(D1, D2);
+        assertThat(lab.anchors()).isEmpty();
+    }
+
+    @Test
+    void aWriterCleanThroughEveryExpiringDayUnderTheSecondOfTwoKeysIsAnchoredAtItsLastRecords()
+            throws IOException {
+        Lab lab = new Lab(tempDir.resolve("seg"), true);
+        AuditChainKey k0 = new AuditChainKey("k0", new byte[]{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+                17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32});
+        AuditRecorder w = lab.writer("w");
+        List<AuditEvent> d1 = lab.record(w, "2026-03-01T01:00:00Z", "2026-03-01T02:00:00Z");
+        List<AuditEvent> d2 = lab.record(w, "2026-03-02T01:00:00Z", "2026-03-02T02:00:00Z");
+        lab.record(lab.writer("other"), "2026-09-09T01:00:00Z");
+        lab.close();
+        List<AuditChainKey> both = List.of(k0, lab.key);
+
+        Outcome outcome = lab.purge(lab.retention(both), both);
+
+        outcome.succeeded();
+        assertThat(lab.names()).containsExactly("audit-2026-09-09.log");
+        assertThat(lab.anchors()).extracting(AuditCheckpoint::sequence, AuditCheckpoint::headHash)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple(d1.get(1).sequence(), d1.get(1).eventHash()),
+                        org.assertj.core.groups.Tuple.tuple(d2.get(1).sequence(), d2.get(1).eventHash()));
+    }
+
     // -- a crash line that parses ---------------------------------------------------------------------
 
     /** The line of {@code e} cut inside field {@code index} (0-based), keeping a prefix of that field. */

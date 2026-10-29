@@ -274,8 +274,7 @@ public final class AuditRetention {
                 from = to;
             }
             BoundaryScan scan = new BoundaryScan(segments, retained, segmentReader, starts,
-                    hashed.probed(), false,
-                    verified < segments.size() ? verified : Integer.MAX_VALUE);
+                    hashed.probed(), false);
             BoundaryScan.Refusal refusal = scan.run(tasks);
             if (refusal != null) {
                 verified = refusal.dayStart();
@@ -433,7 +432,7 @@ public final class AuditRetention {
             tasks.add(new BoundaryScan.Task(0, n, w.getKey(), w.getValue().sequence(), w.getValue().headHash(),
                     0, shutdowns.get(w.getKey())));
         }
-        BoundaryScan scan = new BoundaryScan(segments, retained, segmentReader, starts, hashed.probed(), true, Integer.MAX_VALUE);
+        BoundaryScan scan = new BoundaryScan(segments, retained, segmentReader, starts, hashed.probed(), true);
         return scan.run(tasks) == null ? n : 0;
     }
 
@@ -613,14 +612,12 @@ public final class AuditRetention {
         private final List<Long> starts;
         private final Map<String, Map<Long, AuditChainVerifier.HashedRecord>> probed;
         private final boolean partial;
-        /** Expiring segments from here on are kept for their own reasons and reported where they are. */
-        private final int keptFrom;
         private int refusedDay = Integer.MAX_VALUE;
         private Refusal refusal;
 
         BoundaryScan(List<Path> expiring, List<Path> retained, AuditChainVerifier.SegmentReader reader,
                      List<Long> starts, Map<String, Map<Long, AuditChainVerifier.HashedRecord>> probed,
-                     boolean partial, int keptFrom) {
+                     boolean partial) {
             this.paths.addAll(expiring);
             this.retainedFrom = expiring.size();
             this.paths.addAll(retained);
@@ -628,7 +625,6 @@ public final class AuditRetention {
             this.starts = starts;
             this.probed = probed;
             this.partial = partial;
-            this.keptFrom = keptFrom;
         }
 
         /** The refusal of the lowest refused day, or {@code null} if every task resolves. */
@@ -734,12 +730,6 @@ public final class AuditRetention {
             if (!t.nextSeen) {
                 t.nextSeen = true;
                 if (!r.previousHash().equals(t.lHash)) {
-                    if (t.shutdown == null && segmentIndex > keptFrom) {
-                        // A segment between the day and this record is kept for a break of its own, and holds
-                        // whatever should have linked; the verifier reports it there, so the day can go.
-                        t.state = State.DONE;
-                        return;
-                    }
                     refuse(live, t, CHAIN_UNVERIFIED + ": writer " + t.instanceId + "'s next record after "
                             + paths.get(t.lSegment).getFileName() + " does not chain from the last record verified "
                             + "there, so records between them were deleted or altered; it and every later expired "
