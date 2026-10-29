@@ -1288,7 +1288,8 @@ public final class PrivacyCluster implements AutoCloseable {
     }
 
     /**
-     * The same instance as {@link #instance()} while this member is serving, and a refusal while it is not. Every
+     * The same instance as {@link #instance()} while this member is serving, and a refusal while it is not. A member
+     * is serving while every live wrapper of its instance says so; there is one gate per instance. Every
      * Data Prism store that reads or writes a sealed or counted map reaches it through this accessor, so a member
      * that is not serving (design 2.4 d2: a member without a valid card past the grace period, a sentinel that does
      * not open, a key check value that differs) refuses them all, including the stores that never call the sealer.
@@ -1301,7 +1302,9 @@ public final class PrivacyCluster implements AutoCloseable {
      */
     public HazelcastInstance servingInstance() {
         HazelcastInstance running = instance();
-        if (cards != null && !cards.status().serving()) {
+        // One gate per instance: the same aggregate the registered sealer asks. A wrapper that is closed or has not
+        // started is not among the live wrappers, so it refuses whatever the others say.
+        if (cards != null && (!liveWrappers(instance).contains(this) || !instanceStatus(instance).serving())) {
             throw new ClusterOperationRefusedException(new IllegalStateException("the member is not serving"));
         }
         return running;

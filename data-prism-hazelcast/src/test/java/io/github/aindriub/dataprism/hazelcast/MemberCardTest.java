@@ -777,6 +777,121 @@ class MemberCardTest {
         assertThat(Card.decode(opened.plaintext()).keyCheckValues()).containsKey("test-link-1");
     }
 
+    // ---- review round 4: one gate and one card for an instance ------------------------------------------------
+
+    private Card cardOf(PrivacyCluster wrapper) {
+        UUID member = wrapper.instance().getCluster().getLocalMember().getUuid();
+        String key = new KeyedNames(TestMembers.KEYS).mapKey(PrivacyCluster.MEMBER_CARD_MAP, member.toString());
+        String stored = (String) wrapper.instance().getMap(PrivacyCluster.MEMBER_CARD_MAP).get(key);
+        Opened opened = Sealer.builder(TestMembers.KEYS, PrivacyMetrics.none()).build()
+                .open(PrivacyCluster.MEMBER_CARD_MAP, key, stored);
+        return Card.decode(opened.plaintext());
+    }
+
+    /** Two wrappers with different policies and an outsider past both graces: there is one gate, and it is closed. */
+    @Test
+    @Timeout(240)
+    void theStoresOfEveryWrapperRefuseWheneverTheInstanceGateRefuses() {
+        int port = FreePorts.consecutive(2);
+        List<String> everyone = List.of("127.0.0.1:" + port, "127.0.0.1:" + (port + 1));
+        Config config = PrivacyCluster.configure(ClusterMembership.tcpIp(TestMembers.uniqueName("policies"), everyone)
+                .withPort(port).withInterface("127.0.0.1").toConfig());
+        HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
+        var environment = fixture.environment(new Fixture.Metrics(), new RecordingLogger());
+        PrivacyCluster refusing = PrivacyCluster.using(instance, false, Duration.ofMinutes(1), TestMembers.KEYS,
+                Fixture.settings(UnverifiedMemberAction.REFUSE), environment);
+        PrivacyCluster alerting = PrivacyCluster.using(instance, false, Duration.ofMinutes(1), TestMembers.KEYS,
+                Fixture.settings(UnverifiedMemberAction.ALERT), environment);
+        HazelcastInstance outsider = Fixture.plain(config.getClusterName(), port + 1, everyone);
+        assertThat(Fixture.awaitMembers(refusing, 2)).isTrue();
+
+        for (PrivacyCluster wrapper : List.of(refusing, alerting)) {
+            wrapper.memberCards().orElseThrow().tick();
+        }
+        fixture.clock.advance(GRACE.plusSeconds(1));
+        for (PrivacyCluster wrapper : List.of(refusing, alerting)) {
+            wrapper.memberCards().orElseThrow().tick();
+        }
+
+        assertThat(alerting.securityStatus().serving()).as("its own policy alone would serve").isTrue();
+        for (PrivacyCluster wrapper : List.of(refusing, alerting)) {
+            assertThatThrownBy(() -> new HazelcastScopeBudget(wrapper).tryRead("CASE-1", "subject-1", 3))
+                    .isInstanceOf(ClusterOperationRefusedException.class);
+            assertThatThrownBy(wrapper::servingInstance).isInstanceOf(ClusterOperationRefusedException.class);
+        }
+        outsider.shutdown();
+        assertThat(Fixture.awaitMembers(refusing, 1)).isTrue();
+        for (PrivacyCluster wrapper : List.of(refusing, alerting)) {
+            wrapper.memberCards().orElseThrow().tick();
+        }
+        assertThat(refusing.servingInstance()).isNotNull();
+        assertThat(alerting.servingInstance()).isNotNull();
+    }
+
+    @Test
+    void aWrapperThatHasNotStartedRefusesNextToOneThatServes() {
+        PrivacyCluster[] wrappers = twoWrappers();
+        PrivacyCluster unstarted = PrivacyCluster.wrap(wrappers[0].instance(), false, Duration.ofMinutes(1),
+                TestMembers.KEYS, false);
+        assertThat(wrappers[0].servingInstance()).isNotNull();
+        assertThatThrownBy(unstarted::servingInstance).isInstanceOf(ClusterOperationRefusedException.class);
+        unstarted.close();
+    }
+
+    @Test
+    @Timeout(240)
+    void thePurposeKeysOfAllWrappersAreOnTheOneCardAndNoRefreshDropsOne() {
+        PrivacyCluster[] wrappers = twoWrappers();
+        wrappers[0].memberCards().orElseThrow().addPurposeKey("test-link-a", Fixture.filled('a'));
+        wrappers[1].memberCards().orElseThrow().addPurposeKey("test-link-b", Fixture.filled('b'));
+        assertThat(cardOf(wrappers[0]).keyCheckValues()).containsKeys("test-link-a", "test-link-b");
+
+        for (int refresh = 0; refresh < 2; refresh++) {
+            for (PrivacyCluster wrapper : wrappers) {
+                fixture.clock.advance(LEASE.dividedBy(2));
+                wrapper.memberCards().orElseThrow().tick();
+                assertThat(cardOf(wrapper).keyCheckValues()).as("after a refresh by a wrapper")
+                        .containsKeys("test-link-a", "test-link-b");
+            }
+        }
+    }
+
+    @Test
+    void theReportedPauseSequenceOfAnInstanceNeverGoesDown() {
+        PrivacyCluster[] wrappers = twoWrappers();
+        long[] first = {7L};
+        wrappers[0].memberCards().orElseThrow().reportPauseSequence(() -> first[0]);
+        wrappers[1].memberCards().orElseThrow().reportPauseSequence(() -> 3L);
+
+        wrappers[1].memberCards().orElseThrow().publishNow();
+        assertThat(cardOf(wrappers[1]).highestPauseSequence()).as("the other wrapper's refresh").isEqualTo(7L);
+        first[0] = 2L;
+        wrappers[0].memberCards().orElseThrow().publishNow();
+        assertThat(cardOf(wrappers[0]).highestPauseSequence()).as("a lower report").isEqualTo(7L);
+        wrappers[0].close();
+        wrappers[1].memberCards().orElseThrow().publishNow();
+        assertThat(cardOf(wrappers[1]).highestPauseSequence()).as("after the reporter closed").isEqualTo(7L);
+    }
+
+    @Test
+    @Timeout(240)
+    void closingOneWrapperKeepsTheDeclarationsOfTheOtherAndClosingTheLastStopsTheCard() {
+        PrivacyCluster[] wrappers = twoWrappers();
+        wrappers[0].memberCards().orElseThrow().addPurposeKey("test-link-a", Fixture.filled('a'));
+        wrappers[1].memberCards().orElseThrow().addPurposeKey("test-link-b", Fixture.filled('b'));
+
+        wrappers[0].close();
+        wrappers[1].memberCards().orElseThrow().publishNow();
+        assertThat(cardOf(wrappers[1]).keyCheckValues()).containsKey("test-link-b").doesNotContainKey("test-link-a");
+
+        MemberCards last = wrappers[1].memberCards().orElseThrow();
+        int writes = last.writesStarted();
+        wrappers[1].close();
+        fixture.clock.advance(LEASE);
+        last.tick();
+        assertThat(last.writesStarted()).as("the card is no longer refreshed").isEqualTo(writes);
+    }
+
     // ---- disagreeing keys ------------------------------------------------------------------------------------
 
     @Test

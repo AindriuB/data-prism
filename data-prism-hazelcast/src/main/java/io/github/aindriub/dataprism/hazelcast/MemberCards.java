@@ -34,12 +34,14 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
 
 /**
@@ -147,6 +149,52 @@ public final class MemberCards {
         }
     }
 
+    private static final String DECLARATIONS_CONTEXT_KEY = "dataprism.cluster.card.declarations";
+
+    /**
+     * What the one card of a member says, shared by every wrapper of its instance. The card describes the member, not
+     * a wrapper: it carries the key check values of all live wrappers and the highest pause sequence any of them has
+     * reported, so a refresh by either wrapper writes the same content. Kept in the instance's user context.
+     */
+    static final class Declarations {
+        final Set<MemberCards> live = ConcurrentHashMap.newKeySet();
+        /** Changes whenever the declared content changes; a write that started under an older value is stale. */
+        final AtomicLong generation = new AtomicLong();
+        /** The highest pause sequence ever reported by any wrapper: it does not go down when a reporter closes. */
+        final AtomicLong highestPause = new AtomicLong();
+
+        Map<String, byte[]> checks() {
+            Map<String, byte[]> union = new LinkedHashMap<>();
+            for (MemberCards wrapper : live) {
+                union.putAll(wrapper.declaredChecks());
+            }
+            return union;
+        }
+
+        long pause() {
+            long highest = highestPause.get();
+            for (MemberCards wrapper : live) {
+                highest = Math.max(highest, wrapper.pauseSequence.getAsLong());
+            }
+            final long candidate = highest;
+            return highestPause.accumulateAndGet(candidate, Math::max);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Declarations declarations() {
+        return (Declarations) cluster.instance().getUserContext().computeIfAbsent(DECLARATIONS_CONTEXT_KEY,
+                key -> new Declarations());
+    }
+
+    private Map<String, byte[]> declaredChecks() {
+        synchronized (state) {
+            Map<String, byte[]> copy = new LinkedHashMap<>();
+            ownCheckValues.forEach((id, value) -> copy.put(id, value.clone()));
+            return copy;
+        }
+    }
+
     private final PrivacyCluster cluster;
     private final ClusterKeys keys;
     private final ClusterSecuritySettings settings;
@@ -191,8 +239,6 @@ public final class MemberCards {
     private volatile Instant lastPublishAt;
     /** The first look of an instance judges the members already there: they get no grace. */
     private boolean firstLook = true;
-    /** Changes whenever the key set of the card changes, so a write of an older card can be told from the latest. */
-    private long keyGeneration;
     private final AtomicInteger writes = new AtomicInteger();
     /** True from the start of a card write until the owner has completed it, however long the caller waited. */
     private final AtomicBoolean inFlight = new AtomicBoolean();
@@ -284,10 +330,10 @@ public final class MemberCards {
         Objects.requireNonNull(material, "material");
         synchronized (state) {
             ownCheckValues.put(id, KeyCheckValue.compute(id, material));
-            keyGeneration++;
             // Due at the next tick even if the write below fails.
             publishedAt = null;
         }
+        declarations().generation.incrementAndGet();
         if (running && !closed) {
             try {
                 publish(clock.instant());
@@ -341,6 +387,7 @@ public final class MemberCards {
             thread.setDaemon(true);
             return thread;
         });
+        declarations().live.add(this);
         publish(clock.instant());
         UUID id = cluster.instance().getCluster().addMembershipListener(new MembershipListener() {
             @Override
@@ -379,6 +426,13 @@ public final class MemberCards {
             } catch (RuntimeException ignored) {
                 // The instance may already be gone.
             }
+        }
+        try {
+            Declarations declarations = declarations();
+            declarations.live.remove(this);
+            declarations.generation.incrementAndGet();
+        } catch (RuntimeException ignored) {
+            // The instance may already be gone.
         }
         if (executor != null) {
             // Interrupts a card write that is waiting on a key somebody else has locked.
@@ -443,14 +497,15 @@ public final class MemberCards {
     /** Writes the card, waiting at most the write timeout for a key somebody else may have locked. */
     private void publish(Instant now) {
         UUID self = cluster.instance().getCluster().getLocalMember().getUuid();
-        Map<String, byte[]> checks;
-        long generation;
-        synchronized (state) {
-            checks = new LinkedHashMap<>(ownCheckValues);
-            generation = keyGeneration;
+        Declarations declarations = declarations();
+        long generation = declarations.generation.get();
+        Map<String, byte[]> checks = declarations.checks();
+        if (checks.isEmpty()) {
+            // Not yet joined (a card written before start): at least this wrapper's own.
+            checks = declaredChecks();
         }
         Card card = new Card(self, FORMAT_VERSION, keys.held().stream().map(ClusterKeys.Key::id).toList(),
-                checks, pauseSequence.getAsLong(), now.plus(settings.pauseLease()));
+                checks, declarations.pause(), now.plus(settings.pauseLease()));
         afterCardBuilt.run();
         String key = keyOf(self);
         String sealed = sealer.seal(PrivacyCluster.MEMBER_CARD_MAP, key, card.encode());
@@ -472,14 +527,15 @@ public final class MemberCards {
             lastPublishAt = now;
             // A key added while this card was being written is not in it, and this write may have replaced a newer
             // card: the next tick must publish again.
-            publishedAt = generation == keyGeneration ? now : null;
+            publishedAt = generation == declarations.generation.get() ? now : null;
         }
     }
 
     // ---- the cards of the members ------------------------------------------------------------------------
 
     /** What one look read from the cluster, before anything is judged. */
-    private record Snapshot(List<UUID> members, Map<UUID, Object> stored, ClusterSentinel.Outcome sentinel) {
+    private record Snapshot(List<UUID> members, Map<UUID, Object> stored, ClusterSentinel.Outcome sentinel,
+                            Map<String, byte[]> declared) {
     }
 
     /**
@@ -516,7 +572,8 @@ public final class MemberCards {
             // Deleted by someone: write it back under the current key, then judge what is there.
             outcome = sentinel.ensure();
         }
-        return new Snapshot(members, stored, outcome);
+        // Read here, with no lock held: it takes the state lock of every wrapper of the instance in turn.
+        return new Snapshot(members, stored, outcome, declarations().checks());
     }
 
     private void judge(Snapshot snapshot, Instant now) {
@@ -534,7 +591,7 @@ public final class MemberCards {
                 continue;
             }
             found.put(uuid, card);
-            keyCheckMismatch |= disagrees(uuid, card);
+            keyCheckMismatch |= disagrees(uuid, card, snapshot.declared());
         }
         // One clock for the cluster as this instance sees it, not one per member UUID (OD-W6-8). It starts when the
         // view goes from no unverified member to one, and returns to null only after this instance has seen none,
@@ -610,10 +667,10 @@ public final class MemberCards {
     }
 
     /** Whether the card holds a key check value that differs from this member's for a key id both hold. */
-    private boolean disagrees(UUID member, Card card) {
+    private boolean disagrees(UUID member, Card card, Map<String, byte[]> declared) {
         boolean differs = false;
         for (Map.Entry<String, byte[]> entry : card.keyCheckValues().entrySet()) {
-            byte[] own = ownCheckValues.get(entry.getKey());
+            byte[] own = declared.get(entry.getKey());
             if (own != null && !MessageDigest.isEqual(own, entry.getValue())) {
                 differs = true;
                 if (mismatchesCounted.add(member + "/" + entry.getKey())) {
