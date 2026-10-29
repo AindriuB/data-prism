@@ -40,3 +40,14 @@ Line numbers are as on `origin/wave/0.8-wave4` (de5cf9dc); re-check them on the 
 - The startup annotation refusal, docs, `CHANGELOG.md` and the contract register (290).
 - `JsonTreeScrubbingEngine.describe` and `ChainableFields` (unchanged; 271 edits the engine in wave 5).
 - Configured JSON sources' description (249).
+
+## Outcome (2026-10-28, 0.8; PR #179, tip af057d61, wave/0.8-wave4)
+`ScrubPlanDescriber` describes a source model by the walker's rules. The ambiguous-shape branch and the eight describe-only `SourceTree` methods are gone; a declared record is described through its components, a declared scalar as a scalar. Conformance cases pair each Jackson-annotated fixture with its annotation-free twin, and 270's repros 1 to 4 and 8a to 8d are added. Base: `origin/wave/0.8-wave4`.
+
+Mutants: describing a declared record as DYNAMIC fails 16 tests; restoring the `@JsonValue` scan fails `reprosAreDescribedByTheRecordsClassification`, `annotatedFixturesAreDescribedAsTheirBareTwins` and `scalarRecords`.
+
+Deviation (OD-W6-6): the task removed OMIT for declared records and user types. A field declared as a non-record, non-enum user type (an interface or class that startup lets through, for example `@SensitiveObject interface Payload`) is still described as OMIT, because the scrub writes it as null when null and refuses the response (`SOURCE_MODEL_NOT_A_RECORD`) when populated, so omission hides no emitted content. Only that field is omitted. Records, enums and scalars never reach it: a descendable enum is a scalar, and a record, even one implementing `CharSequence`, is read through its components. Tests cover null and populated values.
+
+Owns widening (coordinator): `SourceTreeReadersArchitectureTest` `INSPECTING_READERS` and its comment only; the deleted method names are removed. A probe `static Object contextual() { return READER; }` in `SourceTree` passed the old list and fails the rule now.
+
+Test gap, not closed: a descendable non-record OMIT under a redacting profile (179-4, 179-5).
