@@ -315,6 +315,11 @@ public final class PrivacyCluster implements AutoCloseable {
                 key -> ConcurrentHashMap.<PrivacyCluster>newKeySet());
     }
 
+    /** How many wrappers of the instance are live, for tests. */
+    static int liveWrapperCount(HazelcastInstance instance) {
+        return liveWrappers(instance).size();
+    }
+
     /**
      * What the registered sealer's gate asks: the member serves while it has at least one live wrapper and every
      * live wrapper says it serves. A closed wrapper no longer speaks for the instance, however stale its cards;

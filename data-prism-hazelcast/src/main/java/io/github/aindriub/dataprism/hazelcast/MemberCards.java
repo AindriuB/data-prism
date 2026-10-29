@@ -210,6 +210,20 @@ public final class MemberCards {
     /** Runs in a card write after the card is built and before it is written; a seam for tests. */
     volatile Runnable afterCardBuilt = () -> { };
 
+    /** The members whose rejected card text is remembered, for tests. */
+    Set<UUID> rejectedMembers() {
+        synchronized (state) {
+            return Set.copyOf(rejected.keySet());
+        }
+    }
+
+    /** How many (member, key) disagreements are remembered as counted, for tests. */
+    int mismatchesCountedSize() {
+        synchronized (state) {
+            return mismatchesCounted.size();
+        }
+    }
+
     int sentinelWritesStarted() {
         return sentinel.writesStarted();
     }
@@ -612,6 +626,10 @@ public final class MemberCards {
                 clearSince = null;
             }
         }
+        // Nothing is remembered about a member that has left: an outsider with a fresh UUID each time must not grow
+        // these without bound.
+        rejected.keySet().retainAll(live);
+        mismatchesCounted.removeIf(pair -> live.stream().noneMatch(uuid -> pair.startsWith(uuid + "/")));
         verified = Map.copyOf(found);
 
         boolean sentinelMismatch = snapshot.sentinel() == ClusterSentinel.Outcome.MISMATCH;

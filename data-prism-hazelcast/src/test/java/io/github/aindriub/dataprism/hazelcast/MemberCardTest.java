@@ -892,6 +892,120 @@ class MemberCardTest {
         assertThat(last.writesStarted()).as("the card is no longer refreshed").isEqualTo(writes);
     }
 
+    // ---- review round 5: pruning, the order of registration, the initial status --------------------------------
+
+    /** Outsiders that come with fresh UUIDs and leave garbage must not be remembered for ever. */
+    @Test
+    @Timeout(240)
+    void whatIsRememberedAboutDepartedMembersIsPruned() {
+        int port = FreePorts.consecutive(4);
+        List<String> everyone = List.of("127.0.0.1:" + port, "127.0.0.1:" + (port + 1), "127.0.0.1:" + (port + 2),
+                "127.0.0.1:" + (port + 3));
+        PrivacyCluster a = fixture.keyed(TestMembers.uniqueName("pruning"), port, everyone, TestMembers.KEYS,
+                Fixture.settings(UnverifiedMemberAction.ALERT), new Fixture.Metrics(), new RecordingLogger(), true);
+        MemberCards cards = a.memberCards().orElseThrow();
+        String clusterName = a.instance().getConfig().getClusterName();
+        for (int round = 1; round <= 3; round++) {
+            HazelcastInstance outsider = Fixture.plain(clusterName, port + round, everyone);
+            assertThat(Fixture.awaitMembers(a, 2)).isTrue();
+            String key = cards.keyForTest(outsider.getCluster().getLocalMember().getUuid());
+            outsider.getMap(PrivacyCluster.MEMBER_CARD_MAP).put(key, "x".repeat(10_000));
+            cards.tick();
+            assertThat(cards.rejectedMembers()).as("while it is there").hasSize(1);
+            outsider.shutdown();
+            assertThat(Fixture.awaitMembers(a, 1)).isTrue();
+            cards.tick();
+            Fixture.cardMap(a).delete(key);
+        }
+        assertThat(cards.rejectedMembers()).as("only live members are remembered").isEmpty();
+    }
+
+    @Test
+    void theCountedDisagreementsOfADepartedMemberAreForgotten() {
+        Pair pair = pair(Fixture.keys("test-cluster-1", 'c', "k0", 'x'), Fixture.keys("test-cluster-1", 'c', "k0", 'y'));
+        MemberCards cards = pair.a().memberCards().orElseThrow();
+        cards.tick();
+        assertThat(cards.mismatchesCountedSize()).isEqualTo(1);
+
+        pair.b().close();
+        assertThat(Fixture.awaitMembers(pair.a(), 1)).isTrue();
+        cards.tick();
+        assertThat(cards.mismatchesCountedSize()).isZero();
+    }
+
+    /** A wrapper whose first card write is blocked is not yet an owner of the gate: the serving one decides. */
+    @Test
+    @Timeout(240)
+    void aWrapperBlockedInStartDoesNotCloseTheGateOfAServingWrapper() throws Exception {
+        int port = FreePorts.consecutive(2);
+        List<String> everyone = List.of("127.0.0.1:" + port, "127.0.0.1:" + (port + 1));
+        Config config = PrivacyCluster.configure(ClusterMembership.tcpIp(TestMembers.uniqueName("blocked"), everyone)
+                .withPort(port).withInterface("127.0.0.1").toConfig());
+        HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
+        var environment = fixture.environment(new Fixture.Metrics(), new RecordingLogger());
+        var settings = Fixture.settings(UnverifiedMemberAction.ALERT);
+        PrivacyCluster serving = PrivacyCluster.using(instance, false, Duration.ofMinutes(1), TestMembers.KEYS,
+                settings, environment);
+        Sealer registered = registeredSealer(serving);
+        HazelcastInstance outsider = Fixture.plain(config.getClusterName(), port + 1, everyone);
+        String cardKey = serving.memberCards().orElseThrow()
+                .keyForTest(instance.getCluster().getLocalMember().getUuid());
+        outsider.getMap(PrivacyCluster.MEMBER_CARD_MAP).lock(cardKey);
+
+        CompletableFuture<Object> second = CompletableFuture.supplyAsync(() -> {
+            try {
+                return PrivacyCluster.using(instance, false, Duration.ofMinutes(1), TestMembers.KEYS, settings,
+                        environment);
+            } catch (RuntimeException failed) {
+                return failed;
+            }
+        });
+        while (!second.isDone()) {
+            assertThat(registered.seal(PrivacyCluster.IDENTITY_MAP, "k", new byte[] {1}))
+                    .as("while the second wrapper is blocked in start").isNotNull();
+        }
+        assertThat(second.get()).isInstanceOf(RuntimeException.class);
+        assertThat(PrivacyCluster.liveWrapperCount(instance)).as("only the serving wrapper is live").isEqualTo(1);
+    }
+
+    @Test
+    void aWrapperThatHasNotStartedIsNotServing() {
+        PrivacyCluster[] wrappers = twoWrappers();
+        PrivacyCluster unstarted = PrivacyCluster.wrap(wrappers[0].instance(), false, Duration.ofMinutes(1),
+                TestMembers.KEYS, false);
+        assertThat(unstarted.memberCards().orElseThrow().status().serving()).isFalse();
+        unstarted.close();
+    }
+
+    /** A look that is under way when the wrapper closes must not bring a closed wrapper back to serving. */
+    @Test
+    @Timeout(120)
+    void aLookThatFinishesAfterCloseDoesNotMakeTheClosedWrapperServe() throws Exception {
+        PrivacyCluster[] wrappers = twoWrappers();
+        MemberCards cards = wrappers[0].memberCards().orElseThrow();
+        CountDownLatch inLook = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        cards.lookFault = () -> {
+            inLook.countDown();
+            try {
+                release.await();
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        };
+        Thread ticking = new Thread(cards::tick);
+        ticking.start();
+        try {
+            assertThat(inLook.await(30, TimeUnit.SECONDS)).isTrue();
+            wrappers[0].close();
+        } finally {
+            release.countDown();
+            ticking.join();
+        }
+        assertThat(cards.status().serving()).isFalse();
+        assertThatThrownBy(wrappers[0]::servingInstance).isInstanceOf(ClusterOperationRefusedException.class);
+    }
+
     // ---- disagreeing keys ------------------------------------------------------------------------------------
 
     @Test
