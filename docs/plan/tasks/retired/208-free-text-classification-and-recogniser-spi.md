@@ -54,3 +54,10 @@ recogniser can only add refusals and can never relax one. Core gains no recognit
 - `RawValueLeakValidator` and `DefaultContextOrchestrator`. Recognisers live inside `SensitivePatternValidator`, which is already in the validator list, so neither needs a change.
 - Any bundled recogniser, language model or entity-recognition library.
 - `docs/faq.md`, `docs/extending.md` and every other doc (task 213).
+
+## Outcome (2026-10-28, 0.8; PR #178, tip 2376d753, wave/0.8-wave4)
+`DataClassification.FREE_TEXT` exists (DEFAULT redacts, STRICT removes). A `FreeTextRecogniser` functional interface and a `(SensitiveDataScanner, List<FreeTextRecogniser>)` constructor on `SensitivePatternValidator` let a deployer add recognisers. Recognisers only add refusals (`FREE_TEXT_RECOGNISED`, `FREE_TEXT_RECOGNISER_FAILED`), share the scan budget, and the Spring bean collects them in `@Order`. Base: `origin/wave/0.8-wave4`.
+
+Mutation proof: deleting the STRICT FREE_TEXT line makes `PrivacyProfilesTest.freeTextMappedAndEveryClassificationCovered` fail. Review round 1: recogniser failures catch `Exception` and every `Error` except `VirtualMachineError` (including sneakily thrown checked exceptions); a null set or null element is a failure; the wiring test has an inert-value passing case.
+
+Orchestrator calls (recorded as such). (1) Recognisers also run on property names, not only on string leaves: map keys can carry data, so scanning them fails closed, as the scanner already treats keys as payload text; the `FreeTextRecogniser` Javadoc says so. (2) The interrupt flag is deliberately not restored after a recogniser failure, unlike `ResolverInvoker`: this runs on the request thread before the audit write, and a restored interrupt makes the sink's `FileChannel` write throw `ClosedByInterruptException` and poison the sink. The response is refused regardless. A test asserts the refusal and that the flag is not set. `VirtualMachineError`s other than `StackOverflowError` are rethrown.

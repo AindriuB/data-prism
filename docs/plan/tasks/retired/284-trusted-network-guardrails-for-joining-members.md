@@ -93,3 +93,12 @@ A Spring-configured member that joins other members (`join.mode` `tcp-ip` or `ku
 - Addresses in tests and docs are from the private blocks or the documentation blocks (`192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`), never a real host.
 - Say "supports", never "compliant".
 - No Hazelcast Enterprise feature (D-0.4.1-A). No new dependency.
+
+## Outcome (2026-10-28, 0.8; PR #181, tip 214995fe, wave/0.8-wave4)
+A Spring-configured member that joins others (`tcp-ip` or `kubernetes`) starts only when the operator sets `dataprism.hazelcast.trusted-network: true` and the member listens and advertises only on private (or allow-listed) addresses. `TrustedNetwork` in `data-prism-hazelcast` is the one copy of the rule: `evaluate(Config, ranges)` returns TRUSTED, PUBLIC_MEMBER_INTERFACE or INVALID_TRUSTED_RANGE and never throws; the Spring check delegates to it. Base: `origin/wave/0.8-wave4`.
+
+New properties `trusted-network` and `member.trusted-ranges`; new codes `PUBLIC_MEMBER_INTERFACE`, `MISSING_TRUSTED_NETWORK`, `INVALID_TRUSTED_RANGE`. Refusal order: interface codes, then PUBLIC, then MISSING. Both properties are `CLUSTER_SETTINGS_IGNORED` with single-node, `none` and a supplied `PrivacyCluster`. One INFO line (assertion and member port, no address) and, for ranges outside the private blocks, one WARN line (count only). Compose and Kubernetes manifests opt in with the isolation-assertion comments; `MultiInstanceManifestTest` checks the NetworkPolicy, `hostNetwork` and the Compose sentences. Full reactor `verify` passed.
+
+Orchestrator call: an enabled `MemberAddressProvider` or advanced network config gives `PUBLIC_MEMBER_INTERFACE`. It supplies the bind and public addresses and bypasses the interface list, so it fails closed; added after review so that 287 inherits it. When `member.trusted-ranges` is set without `trusted-network: true`, the refusal message also says so (property names only).
+
+The environment variable is `DATAPRISM_HAZELCAST_TRUSTEDNETWORK`: the task's `DATAPRISM_HAZELCAST_TRUSTED_NETWORK` would never bind (it maps to `dataprism.hazelcast.trusted.network`). Not run: `mkdocs build --strict` and the site hooks (mkdocs was not installed); `check_snippet_markers.py` passes. Follow-ups: `server.json` lacks the `TRUSTEDNETWORK` and `MEMBER_INTERFACE` settings; the `hazelcast.*` system properties are read at validation time, not at member start (close it if 287's check also runs on the Spring path).
