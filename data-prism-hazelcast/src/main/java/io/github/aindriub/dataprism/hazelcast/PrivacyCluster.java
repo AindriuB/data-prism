@@ -970,7 +970,7 @@ public final class PrivacyCluster implements AutoCloseable {
             return;
         }
         try {
-            if (sentinel.ensure() == ClusterSentinel.Outcome.MISMATCH) {
+            if (sentinel.ensure(sentinel.startupBound()) == ClusterSentinel.Outcome.MISMATCH) {
                 throw new PrivacyClusterRefusal(Code.CLUSTER_KEY_MISMATCH,
                         "the cluster's sentinel does not open under any key this member holds; this member does "
                                 + "not join");

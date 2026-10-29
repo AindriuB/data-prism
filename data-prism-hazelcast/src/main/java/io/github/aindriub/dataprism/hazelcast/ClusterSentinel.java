@@ -1,6 +1,9 @@
 package io.github.aindriub.dataprism.hazelcast;
 
+import com.hazelcast.config.Config;
 import com.hazelcast.map.IMap;
+import com.hazelcast.spi.properties.ClusterProperty;
+import com.hazelcast.spi.properties.HazelcastProperties;
 import io.github.aindriub.dataprism.hazelcast.seal.ClusterKeys;
 import io.github.aindriub.dataprism.hazelcast.seal.Opened;
 import io.github.aindriub.dataprism.hazelcast.seal.SealedWrites;
@@ -17,6 +20,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 /**
  * The sentinel of docs/plan/design/cluster-security.md 4.7: a sealed constant that the first member writes, under
@@ -34,6 +38,22 @@ final class ClusterSentinel {
 
     /** The reserved map key. A keyed name is 43 characters, so no member card can have this key. */
     static final String KEY = "sentinel";
+
+    /**
+     * What is added to Hazelcast's backup timeout for the periodic invocation-monitor scan that enforces it: the
+     * scan runs on a period of its own, so a write that lost its backup acknowledgement finishes a little after
+     * the timeout, not at it.
+     */
+    static final Duration BACKUP_SWEEP_ALLOWANCE = Duration.ofSeconds(2);
+
+    /**
+     * The most of Hazelcast's backup timeout that the start-up bound takes. A member may set the property to any
+     * long; a huge value must neither overflow the bound nor make the start-up write effectively unbounded.
+     */
+    static final Duration BACKUP_TIMEOUT_CEILING = Duration.ofSeconds(60);
+
+    /** Called with the map key just after a card or sentinel write has been started. For tests. */
+    static volatile Consumer<String> afterWriteStarted = key -> { };
 
     private static final byte[] CONSTANT = "dp-sentinel".getBytes(StandardCharsets.UTF_8);
 
@@ -73,6 +93,27 @@ final class ClusterSentinel {
         this.keys = Objects.requireNonNull(keys, "keys");
         this.sealer = Objects.requireNonNull(sealer, "sealer");
         this.writeTimeout = Objects.requireNonNull(writeTimeout, "writeTimeout");
+    }
+
+    /**
+     * How long the first write of a member may take as it starts. A write that races the partition migration a
+     * join sets off can lose the acknowledgement of its synchronous backup; Hazelcast then completes it only when
+     * its own backup timeout has gone by (5 s unless the member sets it), which is as long as the ordinary bound.
+     * Refusing to start on such a write would refuse a healthy member for nothing a retry could mend, because the
+     * write has been made and a second one is not started while it is outstanding. The bound is the ordinary one,
+     * then Hazelcast's own, then the sweep that enforces it. It is still a bound: a write that does not finish
+     * even then is refused.
+     */
+    Duration startupBound() {
+        Config config;
+        try {
+            config = cluster.instance().getConfig();
+        } catch (RuntimeException unreadable) {
+            config = new Config();
+        }
+        long backupMillis = new HazelcastProperties(config).getMillis(ClusterProperty.OPERATION_BACKUP_TIMEOUT_MILLIS);
+        long clamped = Math.min(Math.max(0, backupMillis), BACKUP_TIMEOUT_CEILING.toMillis());
+        return writeTimeout.plusMillis(clamped).plus(BACKUP_SWEEP_ALLOWANCE);
     }
 
     /** Any value can be stored under a card key by a member without the key, so values are read as objects. */
@@ -119,6 +160,11 @@ final class ClusterSentinel {
      * sentinel that another member wrote in the meantime is the one judged.
      */
     Outcome ensure() {
+        return ensure(writeTimeout);
+    }
+
+    /** As {@link #ensure()}, waiting at most {@code bound} for the write. */
+    Outcome ensure(Duration bound) {
         IMap<String, Object> cards = map();
         Object stored = cards.get(KEY);
         if (stored == null) {
@@ -138,8 +184,9 @@ final class ClusterSentinel {
                 throw notStarted;
             }
             writes.incrementAndGet();
+            afterWriteStarted.accept(KEY);
             write.whenComplete((done, failure) -> inFlight.set(false));
-            if (Boolean.TRUE.equals(bounded(write, writeTimeout))) {
+            if (Boolean.TRUE.equals(bounded(write, bound))) {
                 return Outcome.CURRENT;
             }
             stored = cards.get(KEY);

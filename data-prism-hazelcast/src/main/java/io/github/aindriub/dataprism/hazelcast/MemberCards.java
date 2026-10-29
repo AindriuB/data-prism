@@ -402,7 +402,7 @@ public final class MemberCards {
             return thread;
         });
         declarations().live.add(this);
-        publish(clock.instant());
+        publish(clock.instant(), startupWriteBound());
         UUID id = cluster.instance().getCluster().addMembershipListener(new MembershipListener() {
             @Override
             public void memberAdded(MembershipEvent event) {
@@ -508,8 +508,17 @@ public final class MemberCards {
         return cluster.keyedNames().mapKey(PrivacyCluster.MEMBER_CARD_MAP, member.toString());
     }
 
-    /** Writes the card, waiting at most the write timeout for a key somebody else may have locked. */
+    /** How long the first write of this member may take as it starts; see {@link ClusterSentinel#startupBound()}. */
+    Duration startupWriteBound() {
+        return sentinel.startupBound();
+    }
+
     private void publish(Instant now) {
+        publish(now, writeTimeout);
+    }
+
+    /** Writes the card, waiting at most {@code bound} for a key somebody else may have locked. */
+    private void publish(Instant now, Duration bound) {
         UUID self = cluster.instance().getCluster().getLocalMember().getUuid();
         Declarations declarations = declarations();
         long generation = declarations.generation.get();
@@ -535,8 +544,9 @@ public final class MemberCards {
             throw notStarted;
         }
         writes.incrementAndGet();
+        ClusterSentinel.afterWriteStarted.accept(key);
         write.whenComplete((done, failure) -> inFlight.set(false));
-        ClusterSentinel.bounded(write, writeTimeout);
+        ClusterSentinel.bounded(write, bound);
         synchronized (state) {
             lastPublishAt = now;
             // A key added while this card was being written is not in it, and this write may have replaced a newer
