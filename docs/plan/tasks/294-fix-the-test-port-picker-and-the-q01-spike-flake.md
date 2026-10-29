@@ -5,20 +5,21 @@
 **Base branch:** `origin/main`. One PR for this task, targeting `main`.
 **Depends on:** none
 **Wave:** 7 (filed 2026-10-29; the owner-approved harness fix from the wave-6 decisions, PLAN "Harness fix approved").
-- The Owns are disjoint from every wave-7 brief in flight. 211 owns Spring audit and cluster-key files, not `ClusterConfigurationTest.java`. 247 owns orchestration, MCP and the `new DefaultContextOrchestrator(` call sites. 256 owns validation. 292 owns core audit. 228 owns `HazelcastOversightTest.java`, `PauseDocumentTest.java`, `PauseSplitBrainTest.java` and `OversightMapsBoundary.java`, and reads `TestMembers.java` without editing it. This task edits none of 228's files.
-- 287 (wave 8) owns the existing hazelcast tests and `TestMembers.java` for its trusted-network declaration. 287 therefore depends on 294 for those files, and starts after 294 has merged.
+- The Owns are disjoint from every wave-7 brief in flight. 211 owns Spring audit and cluster-key files, not `ClusterConfigurationTest.java`. 247 owns orchestration, MCP and the `new DefaultContextOrchestrator(` call sites. 256 owns validation. 292 owns core audit. 228, as amended on PR #194, owns `HazelcastOversightTest.java`, `PauseDocumentTest.java`, `PauseSplitBrainTest.java`, `OversightMapsBoundary.java`, `ScopeIdentityIndex.java`, `KeyedScopeEndTest.java`, `SoloMemberKeysTest.java` and `UnverifiedMemberTest.java`, and reads `TestMembers.java` and `OperatorHarness.java` without editing them. This task edits none of 228's files. `KeyedScopeEndTest` calls `TestMembers.pair` and gets the settle wait through it, with no edit to the file. The multi-member set-ups in `HazelcastOversightTest` and `UnverifiedMemberTest` are left to a follow-up after 228 (see Out of scope), not sequenced behind it, so this harness fix does not wait on 228.
+- 287 (wave 8) owns the existing hazelcast tests and `TestMembers.java` for its trusted-network declaration. That includes `ApprovalStoreContractTest.java`, which this task now also edits (the settle wait only). 287 therefore depends on 294 for those files, and starts after 294 has merged.
 - Test code only. Under D-149-A, if a clean fix needs `src/main` or a POM, stop and report. Do not widen the Owns.
 
 **Owns:**
 - data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/FreePorts.java
 - data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/FreePortsTest.java *(new)*
-- data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/TestMembers.java *(`pair` and a private settle helper only)*
+- data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/TestMembers.java *(`pair`, and one settle helper only. The helper may be package-private so that `MemberCardTest` and `ApprovalStoreContractTest` can call it)*
 - data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/spike/SpikePorts.java
 - data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/spike/Q01InboundAllowlistSpikeTest.java
 - data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/spike/package-info.java *(row 1 of the answers table only)*
-- data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/seal/SealedWritesTest.java *(`freePort` and its two call sites only)*
+- data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/seal/SealedWritesTest.java *(`freePort` and its two call sites, plus an `isClusterSafe()` settle wait in `start` (:49-63 at ca7e9b0c) after both members are listed and before `keyOwnedBy(owner)`; nothing else)*
 - data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/ApprovalRaceTest.java *(the `RACE_LOCK_TIMEOUT` Javadoc; the await in `start` may be removed if `pair` now does the same)*
-- data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/MemberCardTest.java *(the `Fixture` card-write bound, and the tests that rely on it running out)*
+- data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/MemberCardTest.java *(the `Fixture` card-write bound, and the tests that rely on it running out; plus an `isClusterSafe()` settle wait wherever the file forms a two-member cluster of keyed members and then works on it: the private `pair(keysA, keysB)` (:233-247 at ca7e9b0c), which every `pair()` test goes through. The tests that join a `Fixture.plain` outsider on purpose, to hold a card key or to be rejected (:695, :909, :948), and the duplicate-UUID test (:1265), whose second member never joins, keep their set-up. :801 and :1192 already settle)*
+- data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/ApprovalStoreContractTest.java *(an `isClusterSafe()` settle wait in `concurrentCreatesFromTwoMembersNeverExceedTheCap` (:326-333 at ca7e9b0c), after both members start and before the first `create`; nothing else)*
 - data-prism-server/src/test/java/io/github/aindriub/dataprism/server/operator/OperatorHarness.java *(`freePort` and its comment, :443-487 at ca7e9b0c, only)*
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/ClusterConfigurationTest.java *(the port-claim method and its comment, around :56-100 at ca7e9b0c, only)*
 
@@ -26,7 +27,7 @@
 The cluster tests fail at random in CI for reasons that have nothing to do with the code under test, and every red run costs a rerun and a triage. This task removes five such causes.
 1. The port picker gives up after 3 draws that hit ports this same JVM already holds.
 2. The Q01 spike picks whichever non-loopback address it enumerates first, even when that address cannot carry a join.
-3. Tests write under the 2 s cluster-lock default while `TestMembers.pair` is still migrating partitions.
+3. Tests write under the 2 s cluster-lock default while partitions are still migrating, after `TestMembers.pair` and after three fixtures that start their members themselves.
 4. `MemberCardTest`'s 1 s card-write bound is shorter than a slow write on one CPU.
 5. `ApprovalRaceTest` has one wrong Javadoc line.
 
@@ -54,7 +55,8 @@ The same pattern has four copies:
 - data-prism-server/src/test/java/io/github/aindriub/dataprism/server/operator/OperatorHarness.java:443-487 and data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/ClusterConfigurationTest.java:56-100 — the other two copies.
 - docs/plan/PLAN.md, D-149-A, D-149-B and D-149-C (around :977-979), and notes (o) to (r) (around :1014-1017). Proof on macOS alone is enough for acceptance (D-149-B).
 - data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/ApprovalRaceTest.java:38-53 and ClusterLockTimeoutTest.java:49 — the settle await that PR #187 added, which this task moves into `TestMembers.pair`.
-- data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/MemberCardTest.java:76-210 (`Fixture`), :641-654 (`twoWrappers`) and :982 (`SHORT_WRITE_BOUND`, the tests that pin a short bound on purpose).
+- data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/MemberCardTest.java:76-210 (`Fixture`), :233-247 (`pair(keysA, keysB)`), :641-654 (`twoWrappers`), :814 (an existing settle await to copy) and :982 (`SHORT_WRITE_BOUND`, the tests that pin a short bound on purpose).
+- data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/ApprovalStoreContractTest.java:326-333 and seal/SealedWritesTest.java:49-63 — the other two set-ups that join members without `TestMembers.pair` and that this task settles.
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/MemberCards.java:519-545 and PrivacyCluster.java:188-210 — read only.
 - data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/spike/Spike.java:166-176 — `await` returns a boolean; read only.
 - docs/conventions.md — tests state observed behaviour in their names; no real addresses or personal data in fixtures.
@@ -86,7 +88,11 @@ The same pattern has four copies:
 **Settling after `pair`:**
 - [ ] `TestMembers.pair` returns only when both members list 2 members and `isClusterSafe()` is true on both, within 30 s. Otherwise it shuts both members down and throws `IllegalStateException("the pair did not settle within 30 s")`. This is a precondition of the fixture, not a retried assertion.
 - [ ] The PR lists every caller of `TestMembers.pair` on the base (`rg -l 'TestMembers\.pair\(' data-prism-hazelcast/src/test`). For each, it says whether the caller writes under a cluster lock right after `pair` returns. If any caller needs an unsettled pair, stop and report; do not add an opt-out on your own.
-- [ ] The PR lists the multi-member set-ups that do not go through `TestMembers.pair` and that take a `ClusterLocks` lock right after start, each with a file and line. Examples are `HazelcastOversightTest`'s private `pair()` (228's file), `ApprovalStoreContractTest:328` and `MemberCardTest`'s `pair(keysA, keysB)`. This task edits only those in its Owns: `MemberCardTest` and `SealedWritesTest`. The rest are reported as follow-ups.
+- [ ] These three set-ups, which form a two-member cluster without `TestMembers.pair`, wait until every member lists 2 members and `isClusterSafe()` is true on each, within 30 s, before the test body runs. A timeout fails the set-up with a message saying the members did not settle. This is a precondition of the fixture, not a retried assertion:
+  - `MemberCardTest`'s private `pair(keysA, keysB)` (:233-247 at ca7e9b0c);
+  - `ApprovalStoreContractTest.concurrentCreatesFromTwoMembersNeverExceedTheCap` (:326-333), before the first `create`;
+  - `SealedWritesTest.start` (:49-63), before `keyOwnedBy(owner)`.
+- [ ] No other fixture gains a settle wait. The multi-member set-ups listed under Out of scope are unchanged in the diff.
 - [ ] `ApprovalRaceTest`'s `RACE_LOCK_TIMEOUT` Javadoc says the bound is required: `exactlyOneCallConsumesAnApprovalWhileTheHolderStallsPastTheDefaultLockBound` holds the lock past `ClusterLocks.DEFAULT_TIMEOUT` + 1 s, and the waiter must still get it. The Javadoc no longer says it "should not be needed".
 
 **MemberCardTest:**
@@ -100,7 +106,14 @@ The same pattern has four copies:
 ## Out of scope
 - Making the four pickers one shared class. That needs a shared test-support artifact across three modules: a follow-up, not this task.
 - `QuickstartSmokeIT.freePort()` and `load-test`'s `ServerProcess`, which use `ServerSocket(0)` (PLAN note (p)).
-- `HazelcastOversightTest`'s private `pair()`: 228 owns the file in wave 7. Report it as a follow-up for after 228.
+- Settle waits in the other set-ups that form a multi-member cluster without `TestMembers.pair`. Each is a follow-up, filed after this task merges; the PR lists them. Line numbers are at ca7e9b0c.
+  - `HazelcastOversightTest.java:64-90`, the private `pair()`: 228 owns the file in wave 7. Follow-up for after 228 merges.
+  - `UnverifiedMemberTest.java` (3- to 5-member set-ups from :44, :176, :220, :265, :286, :304, :327 and :355; approvals are created at :400-432): 228 owns parts of the file in wave 7. Follow-up for after 228 merges.
+  - `ClusterKeyMismatchTest.java:117-170`: the joining-member cases write the card map right after `awaitMembers(holder, 2)`, but take no `ClusterLocks` lock. Follow-up only if it flakes.
+  - `ClusterCutoverTest.java:98-103, :158-170 and :215-245`: raw members join a running member; no `ClusterLocks` lock. Follow-up only if it flakes.
+  - `PrivacyClusterMembershipTest.java:316-345`: asserts membership only, writes nothing. No follow-up needed.
+  - `ApprovalSplitBrainHealTest.java:35-80`: two clusters of one that merge on purpose; a settle wait would defeat the test. No follow-up needed.
+  - The spike package: `spike/Spike.configs` (:46) and its users Q04, Q06, Q07, Q08, Q09 and Q10, plus `Q03AdministrationSpikeTest.java:30` and `Q11MergedEventSpikeTest.java:71`. They pin Hazelcast behaviour and take no `ClusterLocks` lock. Follow-up only if one flakes.
 - Raising `ClusterLocks.DEFAULT_TIMEOUT` or `PrivacyCluster.DEFAULT_CARD_WRITE_TIMEOUT`, or any change to `MemberCards`, which are production code (D-149-A).
 - These other flakes seen in the CI history while filing. Report them, do not fix them:
   - `ApprovalCreationTokenTest.start:45`: "a member card write did not finish in time" inside `TestMembers.pair` at the 5 s default (run 40890295207 attempt 2);
