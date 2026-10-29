@@ -22,6 +22,7 @@ import io.github.aindriub.dataprism.core.refusal.RefusalCodes;
 import io.github.aindriub.dataprism.core.refusal.RefusalPaths;
 import io.github.aindriub.dataprism.core.spi.PassThroughIdentityResolver;
 import io.github.aindriub.dataprism.core.limits.InMemoryScopeBudget;
+import io.github.aindriub.dataprism.core.limits.ReadReservation;
 import io.github.aindriub.dataprism.core.limits.RequestLimits;
 import io.github.aindriub.dataprism.core.limits.ScopeBudget;
 import io.github.aindriub.dataprism.core.model.ScrubResult;
@@ -175,15 +176,6 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
 
         ContextResponse response;
         try {
-            if (!budget.tryRead(context.scopeId(), request.subjectId(), limits.scopeReadBudget())) {
-                // Refused rather than throttled. A banded value narrows under
-                // repeated asking and every individual answer looks correct,
-                // so there is nothing later in the pipeline that could notice.
-                throw new PrivacyRefusedException("SCOPE_READ_BUDGET", request.entityType(),
-                        "this subject has been read " + limits.scopeReadBudget()
-                                + " times in this scope");
-            }
-
             FetchOutcome fetched = fetchAndScrub(request, context, investigationContext,
                     sources, prohibited, dispositions);
             trees = fetched.trees();
@@ -377,8 +369,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                                        Map<String, String> dispositions) {
         List<PrivacyRefusedException> scrubRefusals = new ArrayList<>();
         List<Scrubbed> scrubbed = new ArrayList<>();
-        for (SourceFanOut.Fetched fetched : fanOut.fetchAll(adapters,
-                requestsPerSource(request), limits)) {
+        for (SourceFanOut.Fetched fetched : fetchAll(request, context)) {
             Object record = fetched.record();
             if (record == null) {
                 sources.add(fetched.outcome());
@@ -433,6 +424,77 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
             trees.put(sourceName, s.result().tree());
         }
         return new FetchOutcome(raw, trees, emitted, declared, scrubRefusals, validationRefusals);
+    }
+
+    /**
+     * Calls the sources, charging the read budget first and once.
+     *
+     * <p>The fan-out decides which sources it will call (and refuses a selection that
+     * is too large, before anything is reserved); one read per such source is then
+     * reserved against the subject and the scope total in a single call, and nothing
+     * is called if that is refused. Reads for sources the deadline passed before
+     * they started are given back: they never happened. Refused rather than
+     * throttled: a banded value narrows under repeated asking and every individual
+     * answer looks correct, so there is nothing later in the pipeline that could
+     * notice.
+     */
+    private List<SourceFanOut.Fetched> fetchAll(ContextRequest request, PrivacyContext context) {
+        SourceFanOut.Plan plan = fanOut.plan(adapters, requestsPerSource(request), limits);
+        ReadReservation reservation = null;
+        if (!plan.callable().isEmpty()) {
+            try {
+                reservation = budget.reserve(context.scopeId(), request.subjectId(), plan.callable().size(),
+                        limits.scopeReadBudget(), limits.scopeTotalReadBudget());
+            } catch (RuntimeException failure) {
+                fanOut.abandon(plan);
+                throw failure;
+            }
+            if (!reservation.granted()) {
+                fanOut.abandon(plan);
+                throw new PrivacyRefusedException("SCOPE_READ_BUDGET", request.entityType(),
+                        reservation.refusedBy() == ReadReservation.Refusal.SCOPE_TOTAL
+                                ? "this scope has reached its read total of " + limits.scopeTotalReadBudget()
+                                : "this subject would pass " + limits.scopeReadBudget()
+                                        + " source reads in this scope");
+            }
+        }
+        int unused = 0;
+        try {
+            SourceFanOut.Execution execution = fanOut.execute(plan, limits);
+            unused = execution.notStarted();
+            return execution.results();
+        } catch (SourceFanOut.ExecutionFailure failure) {
+            // Cancelled and its trials handed back by the fan-out; the sources it never called go back too.
+            unused = failure.notStarted();
+            throw failure.failure();
+        } finally {
+            settle(reservation, unused);
+        }
+    }
+
+    /**
+     * Ends a reservation: the reads of sources never called go back, the rest were used and stay charged.
+     * The used reads are forfeited from the reservation itself, so that a budget that tracks its reservations
+     * can drop this one; without that, every request's reservation would stay tracked until its scope ends.
+     */
+    private void settle(ReadReservation reservation, int unused) {
+        if (reservation == null) {
+            return;
+        }
+        try {
+            if (unused > 0) {
+                budget.release(reservation, unused);
+            }
+        } catch (RuntimeException e) {
+            // The reads stay charged: stricter, never looser. Nothing to refuse for.
+            LOG.warn("could not give back {} unused read(s): {}", unused, e.getClass().getSimpleName());
+        }
+        try {
+            reservation.takeUnused(reservation.reads());
+            budget.release(reservation, 0);
+        } catch (RuntimeException e) {
+            LOG.warn("could not settle a read reservation: {}", e.getClass().getSimpleName());
+        }
     }
 
     /**

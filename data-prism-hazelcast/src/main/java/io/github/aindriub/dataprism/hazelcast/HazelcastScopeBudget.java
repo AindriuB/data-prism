@@ -340,6 +340,12 @@ public final class HazelcastScopeBudget implements ScopeBudget {
                 || origin.reservation != reservation || !origin.live) {
             return;
         }
+        if (unused == 0) {
+            // Nothing to give back, so nothing to claim or write: no lock is taken and the reservation is left
+            // whole (a caller that has used every read settles this way on every request). Tracking is weak, so
+            // there is nothing to drop either.
+            return;
+        }
         ScopeKeys keys = cluster.scopeKeys();
         String scopeKey = keys.budgetTotal(reservation.scopeId());
         String subjectKey = keys.budget(reservation.scopeId(), reservation.subjectId());

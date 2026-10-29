@@ -60,6 +60,16 @@ class LimitsConfigurationTest {
     }
 
     @Test
+    void a_per_source_timeout_above_the_default_deadline_starts_with_the_deadline_raised_to_match() {
+        context.withPropertyValues("dataprism.limits.per-source-timeout=15s").run(result -> {
+            assertThat(result).hasNotFailed();
+            RequestLimits limits = orchestratorLimits(result.getBean(ContextOrchestrator.class));
+            assertThat(limits.perSourceTimeout()).isEqualTo(Duration.ofSeconds(15));
+            assertThat(limits.requestTimeout()).isEqualTo(Duration.ofSeconds(15));
+        });
+    }
+
+    @Test
     void per_source_timeout_is_bound() {
         context.withPropertyValues("dataprism.limits.per-source-timeout=7s").run(result -> {
             assertThat(result).hasNotFailed();
