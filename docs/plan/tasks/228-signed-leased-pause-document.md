@@ -25,12 +25,10 @@ Kept for 1.0 under owner decision (b), 2026-10-23: 1.0 supports multiple instanc
   - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/ClusterPauseGaugeWiringTest.java *(new; name may differ; amendment 7)*
   - data-prism-server/src/test/java/io/github/aindriub/dataprism/server/operator/RefusedResumeAuditCodeTest.java *(new; amendment 6. ~~`ResumeAuditOrderingTest.java` is not edited~~ (revised: see below), and `OperatorHarness.java` is read only: 294 owns its `freePort`)*
 - Added 2026-10-29 in the revision after the external review of PR #194 (amendment 9; line numbers at `main` ca7e9b0c):
-  - data-prism-server/src/main/java/io/github/aindriub/dataprism/server/operator/OversightOperatorController.java *(the `resume` method's response shape and its call to the reporting variants, :109-133, only)*
+  - data-prism-server/src/main/java/io/github/aindriub/dataprism/server/operator/OversightOperatorController.java *(the `resume` method's response shape, :109-133, only: the `stillPaused` read from `snapshot()` after the resume)*
   - data-prism-server/src/test/java/io/github/aindriub/dataprism/server/operator/ResumeAuditOrderingTest.java *(the exact-map assertion at :155 only)*
   - data-prism-server/src/test/java/io/github/aindriub/dataprism/server/operator/ResumeEffectTest.java *(new; name may differ)*
-  - data-prism-core/src/main/java/io/github/aindriub/dataprism/oversight/OversightState.java *(insertions only: the three `default` reporting methods)*
-  - data-prism-core/src/main/java/io/github/aindriub/dataprism/oversight/ResumeOutcome.java *(new)*
-  - data-prism-core/src/test/java/io/github/aindriub/dataprism/oversight/ResumeOutcomeDefaultsTest.java *(new; name may differ)*
+  - ~~`OversightState.java` (three `default` reporting methods), `ResumeOutcome.java` (new), `ResumeOutcomeDefaultsTest.java` (new)~~ *(removed 2026-10-29 by owner decision 5, revised: no core change; `OversightState.java` is read only)*
   - Not owned and not needed: `MemberCards.java`, `PrivacyCluster.java`, `HazelcastApprovalStore.java`. If a clean fix seems to need one of them, stop and report.
 
 ## Goal
@@ -40,7 +38,7 @@ A deleted, forged or replayed entry can no longer lift a pause. Pause state beco
 - docs/plan/design/cluster-security.md 1.4, 2.3.3 (the whole section, including the residual paragraph), 4.4 (`pause.fresh`, `pause.age_seconds`, `pause.conflict`), OD-3, OD-4, OD-14, OD-15, as amended by 218 (OD-215-5 gauges, OD-215-10 code for a document that is not fresh).
 - Task 219 answer 10 (`replace(k, old, new)` against a held lock) and answer 11 (`MERGED` delivery and its order relative to merge policies).
 - Task 227: `MemberCards.reportPauseSequence`, `highestReportedPauseSequence`, `verifiedMembers`; `ClusterSecurityStatus`; the gate never blocks the pause map; OD-215-16 for oversight writes while not serving.
-- data-prism-core/src/main/java/io/github/aindriub/dataprism/oversight/OversightState.java: the SPI, unchanged *(except amendment 9's additive defaults)*.
+- data-prism-core/src/main/java/io/github/aindriub/dataprism/oversight/OversightState.java: the SPI, unchanged.
 - From 218/219 (2026-10-21): This task owns the 0.7 fence write (`all` = TRUE in `dataprism.oversight`) and its re-assertion at each lease refresh.
 - From 227 (folded in 2026-10-23, shape changed after the review of PR #164): the stores use the gated `PrivacyCluster.servingInstance()`; `instance()` stays ungated, and `HazelcastOversightState` keeps using it, so the pause document stays readable and writable while not serving. OD-215-16 (a) is enforced here: while `ClusterSecurityStatus` says not serving, a pause is accepted and a resume is refused.
 - Settings: 230 is deferred, so `pause-lease` and `clock-skew-tolerance` are not Spring properties in 1.0. The `ClusterSecuritySettings` defaults apply (`PT30S` and `PT5S`), on a joining member and on a solo member alike, and the tests construct settings directly.
@@ -58,7 +56,7 @@ A deleted, forged or replayed entry can no longer lift a pause. Pause state beco
 - [ ] T4 merge cases, in `PauseSplitBrainTest`: a pause issued on the smaller side of a split is present after the heal; equal-order documents with different content merge by union and count `pause.conflict`; ~~a resume on one side may be undone by the heal, and the test is named for that cost (OD-14)~~ *(superseded 2026-10-29 by amendment 3: a resume on one side and a pause on the other both hold after the heal)*.
 - [ ] OD-15 rule: a member that missed a pause (partitioned) does not rewrite an older document while a verified member reports a higher sequence; a member that accepted the latest document within the lease does rewrite a deleted one. *(Kept; amendments 1, 2 and 8 add cases.)*
 - [ ] An attacker document (plaintext, 0.7 format, random envelope, envelope under another key) written by a keyless member or client never lifts a pause, and is counted.
-- [ ] Every existing `HazelcastOversightTest` case passes; changes are only where a raw value was read or written. The `OversightState` SPI and `OversightSnapshot` are unchanged *(amended 2026-10-29 by amendment 9: `OversightState` gains three additive `default` methods and the `ResumeOutcome` record; the six existing methods and `OversightSnapshot` are unchanged)*.
+- [ ] Every existing `HazelcastOversightTest` case passes; changes are only where a raw value was read or written. The `OversightState` SPI and `OversightSnapshot` are unchanged *(an interim amendment 9 of 2026-10-29 added default methods; withdrawn the same day by owner decision 5, revised)*.
 - [ ] `pause.fresh` and `pause.age_seconds` are emitted as decided under OD-215-5, and `ClusterSecurityStatus` reports freshness without any pause content.
 - [ ] *(Amended 2026-10-29 by amendment 6: the audit order and both codes are also pinned in the new server-module test.)* OD-215-16 (a), with the serving gate closed by an unverified member under `refuse` (227): a pause is written and seen by every instance; a resume is refused with `CLUSTER_OPERATION_REFUSED` and audited as 245 audits a resume whose apply fails (`ALLOW:RESUMED`, then a linked `DENY`); after the gate reopens, the resume succeeds. `HazelcastOversightState` reaches the document through `instance()`, never `servingInstance()` (227's `ServingInstanceArchitectureTest` allows it), and the resume refusal comes from the status check, not from the accessor.
 - [ ] `OversightMapsBoundary`: the oversight map holds exactly the document, which opens under the test key; scope ids appear only inside the plaintext.
@@ -73,7 +71,7 @@ The review of PR #191 (branch `task/228-signed-leased-pause-document`, head 9387
 2. No automatic tombstone GC in 0.8. The ack-gated GC is follow-up brief 295.
 3. Operating cap: 16,384 elements plus tombstones, with 16 slots reserved for `pause all`. `1 << 20` stays as the decode guard.
 4. A pause always mints a fresh element. Pauses are never deduped.
-5. The resume response gains one additive field reporting whether the target is still paused and how many ids were cleared (amendment 9).
+5. ~~The resume response gains one additive field reporting whether the target is still paused and how many ids were cleared (amendment 9).~~ **(5, revised 2026-10-29, owner)** The resume response gains one additive field, `stillPaused`, and nothing else. There is no cleared count, and no change to the core `OversightState` interface (amendment 9).
 6. `pause.conflict` is redefined (amendment 7). No new metric.
 
 Amendments 3 and 4 below replace the first versions, which are kept, marked superseded, at the end of this section. Amendments 1, 2 and 5 to 8 are touched up in place. Where a touched-up amendment and the superseded text disagree, the revision wins.
@@ -135,7 +133,7 @@ Amendments 3 and 4 below replace the first versions, which are kept, marked supe
 
 **Every write is lock → read → compute from base.** Under the oversight lock, re-read and judge the stored value, form `base = held ⊔ stored` (or `held` alone when stored is ABSENT), and compute:
 - pause: add one fresh element for the target. Always, even if the target is already live; never deduped.
-- resume: tombstone exactly the ids live for the target in base. If there are none, write nothing and report `cleared = 0`.
+- resume: tombstone exactly the ids live for the target in base. If there are none, write nothing (no cleared count is reported; amendment 9).
 - endScope: tombstone the ended scope's live ids in base (kind `SCOPE`, that name). Elements of other kinds with the same name are untouched.
 - `sequence = max(held.sequence, stored.sequence) + 1`, `refresh = 0`.
 - No peer-derived term appears in any sequence. That covers pause, resume, endScope, `pushHeld`, restore (amendment 8) and `reconcileAfterMerge`. `PauseDocument.java` ~:692 at 93877409 (`top = Math.max(top, peers.highestReportedSequence())`) is removed, as is the `peers.highestReportedSequence() + 1` term at :485.
@@ -220,28 +218,26 @@ Amendments 3 and 4 below replace the first versions, which are kept, marked supe
 - The MERGING→MERGED `mergeBase` capture gets a test. `reconcileAfterMerge` writes `mergeBase ⊔ held ⊔ stored` at `max(held, stored) + 1` only if stored lacks something. Test:
   - [ ] a mutant whose `beginMerge` is a no-op fails it (today such a mutant still passes 5 of 5 `PauseSplitBrainTest` cases).
 
-### 9. Resume response (revision; owner decision 5)
-- `POST /operator/resume` keeps `status` and `target` and gains one additive field, `effect`: `{"stillPaused": <boolean>, "cleared": <int>}`.
-  - `cleared` is the number of ids this resume tombstoned.
-  - `stillPaused` is whether the target itself (not the global pause) has a live id after the commit. That happens when a concurrent pause raced in.
+### 9. Resume response (revision; owner decision 5, revised 2026-10-29)
+- `POST /operator/resume` keeps `status` and `target` and gains one additive top-level field, `stillPaused` (boolean), matching the controller's flat response maps: `{"status": "RESUMED", "target": "TOOL", "stillPaused": false}`.
+  - The controller computes it from `OversightState.snapshot()`, read after the resume returns, for the resumed target only: `ALL` reads `allPaused()`; `TOOL` reads `pausedTools().contains(name)`; `SCOPE` reads `pausedScopes().contains(name)`. A global pause does not make a tool or scope target `stillPaused`.
+  - It is true when a concurrent pause that the resume did not observe keeps the target paused.
+  - If that `snapshot()` throws, the response reports `stillPaused` true (fail closed: never claim a lift that cannot be confirmed). The resume has already applied and been audited, so no further audit is written and the status stays 200.
   - No other field changes, and a refused resume's body and audit are unchanged.
-- The SPI stays `void` for the existing six methods. `OversightState` gains three additive `default` methods, `resumeAllReporting()`, `resumeToolReporting(String)` and `resumeScopeReporting(String)`, each returning a new record `ResumeOutcome(boolean stillPaused, int cleared)`.
-  - The defaults compute from `snapshot()` before and after the plain resume (`cleared` is 1 or 0), so `InMemoryOversightState` and third-party implementations need no change.
-  - `HazelcastOversightState` overrides them with exact values from the committed write.
-  - The controller calls the reporting variants, so a stub that throws from the plain method still drives the refusal path.
-  - The final names may differ. Shape and placement may not, without a stop-and-report.
+- No cleared count. The `OversightState` SPI, `OversightSnapshot`, `InMemoryOversightState` and `HazelcastOversightState`'s public surface are unchanged; no core file is edited.
 - Tests:
-  - [ ] the controller returns `effect` with `stillPaused` false and the cleared count after a clean resume of a target paused twice (`cleared` 2 on Hazelcast);
-  - [ ] `stillPaused` true when a pause of the same target commits between read and commit (`beforeCommit`);
-  - [ ] `cleared` 0 and no write for a target with no live id;
-  - [ ] the core defaults give `cleared` 1 then 0 over `InMemoryOversightState`;
-  - [ ] `ResumeAuditOrderingTest`'s exact-map assertion at :155 gains the field and nothing else.
+  - [ ] `ResumeEffectTest` (new, `data-prism-server`): `stillPaused` is true after a resume when a concurrent unobserved pause keeps the target paused (on Hazelcast, a pause of the same target committed via `beforeCommit` while the resume is built), and false otherwise (a clean resume; a tool target resumed while the global pause holds);
+  - [ ] `stillPaused` true when the post-resume `snapshot()` throws;
+  - [ ] `ResumeAuditOrderingTest`'s exact-map assertion at :155 gains `"stillPaused", false` and nothing else.
+
+#### Superseded amendment 9 (interim version of 2026-10-29; withdrawn by owner decision 5, revised)
+- ~~`effect`: `{"stillPaused": <boolean>, "cleared": <int>}`, computed by three additive `default` methods on `OversightState` (`resumeAllReporting()`, `resumeToolReporting(String)`, `resumeScopeReporting(String)`) returning a new `ResumeOutcome(boolean stillPaused, int cleared)` record, overridden by `HazelcastOversightState`, with a `ResumeOutcomeDefaultsTest` in core.~~
 
 ### Acceptance for the revision (all in `PauseDocumentTest` or `PauseSplitBrainTest` unless named)
 - [ ] The reviewer's shape: A and B hold {p, q} at seq 5. Storage is rolled back to seq 3; in two more runs the document is deleted instead, or replaced by garbage. C, behind at 3, pauses x three times and so climbs to seq 6. In every run: every instance ends with targets {p, q, x} paused; a repair write happens at seq 7; no tombstone exists for any id of p or q.
 - [ ] Variants of that shape: C cold (`held == null`); C stalled (its cards look is old); and the rollback taken after a resume of p (p stays lifted on A and B, and on C once it merges).
 - [ ] Split-brain: a resume of p on one side and a pause of y on the other both hold after the heal.
-- [ ] A concurrent pause of X committed (via `beforeCommit`) while a resume of X is built: X stays paused, the resume reports `stillPaused` true, and a second resume clears it.
+- [ ] A concurrent pause of X committed (via `beforeCommit`) while a resume of X is built: X stays paused, the operator resume response reports `stillPaused` true (amendment 9), and a second resume clears it.
 - [ ] Two writers race on the CAS, a pause each: both elements survive.
 - [ ] A replay of an old document holding an element that is now tombstoned: the element stays lifted on every warm member.
 - [ ] A cold member given a replay within the cold-start gate shows the replay's state until the next repair tick (by any warm member), then shows the union.
@@ -251,7 +247,7 @@ Amendments 3 and 4 below replace the first versions, which are kept, marked supe
 - [ ] Property tests over random sequences of documents (seeded JUnit loops; no new dependency): merge is commutative, associative and idempotent; no merge removes a live element without its tombstone.
 - [ ] Decode rejects a duplicate id with a different target, and rejects an unknown format tag; a tombstone for an unknown id is kept through a decode and encode round trip.
 - [ ] Memo: identical sealed bytes are not decoded twice (a counting decoder seam), and different bytes are.
-- [ ] The resume response field reports still-paused and the cleared count (amendment 9).
+- [ ] `stillPaused` is true after a resume when a concurrent unobserved pause keeps the target paused, and false otherwise (amendment 9).
 - [ ] Mutants, each of which must fail at least one test (list them in the Outcome with the failing test):
   - accept replaces held instead of merging;
   - `next` drops a stored element or tombstone;
@@ -261,7 +257,8 @@ Amendments 3 and 4 below replace the first versions, which are kept, marked supe
   - the cap truncates instead of refusing;
   - the memo ignores the bytes (keys on sequence alone);
   - endScope removes elements by name, or across kinds, instead of tombstoning the scope's ids;
-  - the peer-derived sequence bump is restored.
+  - the peer-derived sequence bump is restored;
+  - `stillPaused` is always false.
 
 ### Superseded (kept for the record; replaced by the revision above)
 
@@ -289,7 +286,7 @@ Amendments 3 and 4 below replace the first versions, which are kept, marked supe
 
 ### Ownership and ordering (checked 2026-10-29; rechecked in the revision)
 - The added Owns (in the Owns block, marked "Added 2026-10-29") are disjoint from the other wave-7 briefs: 211 (Spring audit and cluster-key files), 247 (orchestration, MCP, the `new DefaultContextOrchestrator(` call sites), 256 (validation), 292 (core audit) and 294 (the test harness, filed on PR #190: `FreePorts`, `TestMembers.pair`, `MemberCardTest`, `ApprovalRaceTest`, `SealedWritesTest`, `ApprovalStoreContractTest`, `OperatorHarness.freePort`). 294 does not own `UnverifiedMemberTest`, `KeyedScopeEndTest` or `SoloMemberKeysTest`.
-- *(Revision)* `OversightOperatorController.java`, `ResumeAuditOrderingTest.java`, `OversightState.java` and the new `ResumeOutcome.java` are in no other open brief's Owns: not 211, 247, 256, 292, 294 (PR #190), 286 or 287. 294 owns only `OperatorHarness.freePort` in the server module. 273 (wave 15) owns `data-prism-server/src/test/java/**` for configuration arguments only, and runs long after 228. 260 (wave 12) snapshots the SPI signatures after 228, so it picks up the three default methods.
+- *(Revision)* `OversightOperatorController.java` and `ResumeAuditOrderingTest.java` are in no other open brief's Owns: not 211, 247, 256, 292, 294 (PR #190), 286 or 287. 294 owns only `OperatorHarness.freePort` in the server module. 273 (wave 15) owns `data-prism-server/src/test/java/**` for configuration arguments only, and runs long after 228. 260 (wave 12) snapshots the SPI signatures after 228; 228 no longer changes them (owner decision 5, revised).
 - `ClusterBackedState.java` is shared, and serialised: 228 (wave 7, the oversight bean only), then 287 (wave 8, the trusted-network pass-through; depends on 228), then 286 (wave 10, the health bean and the lock-timeout pass-through; depends on 228 and 287). 286 no longer passes the lock timeout to the oversight store; 228 does.
 - 287 also owns the existing hazelcast tests for its declaration, which includes the three test files added here; it depends on 228, so it edits them afterwards.
 - *(Revision)* 295 (ack-gated tombstone GC) owns `PauseDocument.java` and its tests after 228 and 287 have merged.
@@ -303,7 +300,7 @@ Pause, resume and snapshot semantics for operators; the audit-first operator flo
 - Spring binding of `pause-lease` and `clock-skew-tolerance` (230, deferred past 1.0; the defaults apply). The readiness contributor that reports freshness (286).
 - `TestMembers.java` is read only. `docs/` pages: facts for 213 in the Outcome.
 - Tombstone garbage collection of any kind, including acks on tombstones (295). The document only grows in 0.8, up to the cap in amendment 4.
-- The operator API reference pages for the new `effect` field: facts for 261 in the Outcome.
+- The operator API reference pages for the new `stillPaused` field: facts for 261 in the Outcome.
 
 ## Rules
 - Never read `~/.m2/settings.xml`, `~/.m2/settings-security.xml`, `~/.gnupg` or any other credential file.
