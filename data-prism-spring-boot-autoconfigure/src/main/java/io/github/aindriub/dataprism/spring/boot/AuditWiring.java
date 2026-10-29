@@ -52,7 +52,10 @@ class AuditWiring {
             if (blank(key.getKeyId()) && blank(key.getEnvironmentVariable()) && blank(key.getProviderReference())) {
                 return;
             }
-            for (String name : factory.getBeanNamesForType(AuditRecorder.class, true, false)) {
+            // Ancestors included: the built-in recorder's @ConditionalOnMissingBean searches them too, and an
+            // ancestor's own built-in recorder signs under the ancestor's properties, not this key.
+            for (String name : org.springframework.beans.factory.BeanFactoryUtils
+                    .beanNamesForTypeIncludingAncestors(factory, AuditRecorder.class, true, false)) {
                 if (!isOwnRecorder(factory, name)) {
                     throw new DataPrismConfigurationException("AUDIT_RECORDER_REPLACED_WITH_HMAC_KEY",
                             "dataprism.audit.hmac-key is set but an application AuditRecorder bean replaces the"
@@ -68,6 +71,7 @@ class AuditWiring {
 
     private static boolean isOwnRecorder(ConfigurableListableBeanFactory factory, String name) {
         return name.equals("dataPrismAuditRecorder")
+                && factory.containsBeanDefinition(name)
                 && factory.getBeanDefinition(name) instanceof org.springframework.beans.factory.annotation.AnnotatedBeanDefinition annotated
                 && annotated.getFactoryMethodMetadata() != null
                 && AuditWiring.class.getName().equals(annotated.getFactoryMethodMetadata().getDeclaringClassName());

@@ -435,8 +435,8 @@ Refusal codes, each at startup:
 
 The hash chain is plain SHA-256 by default. An operator can switch it to HMAC-SHA256 under a key of their own.
 This is opt-in and off by default. The keyed chain resists a writer who does not have the key: such a writer
-cannot recompute the hashes, so a changed or inserted record is detected. Deleting the last records, or a whole
-segment, still verifies; catching that needs the checkpoint file (`--checkpoints`). It does not resist anyone who holds the key,
+cannot recompute the hashes, so a changed or inserted record is detected in the hashed fields. Deleting a writer's most recent records
+(including whole trailing segments) still verifies; catching that needs the checkpoint file (`--checkpoints`). It does not resist anyone who holds the key,
 the operator and the process that writes the file included. It is not tamper-proof, immutable, or evidence against
 the operator. Nothing written to the audit file records whether it is keyed; the verifier is told by its caller.
 

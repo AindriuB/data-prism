@@ -212,6 +212,34 @@ class KeyedAuditChainConfigurationTest {
     }
 
     @Test
+    void a_parent_context_recorder_with_the_key_set_is_refused(@TempDir Path dir) {
+        org.springframework.context.support.GenericApplicationContext parent =
+                new org.springframework.context.support.GenericApplicationContext();
+        parent.registerBean("appRecorder", AuditRecorder.class, () -> new AuditRecorder(
+                new SegmentedFileAuditSink(dir.resolve("other")), Clock.systemUTC(), "app"));
+        parent.refresh();
+        try {
+            assertRefusedWith(keyed(dir).withParent(parent), "AUDIT_RECORDER_REPLACED_WITH_HMAC_KEY", "AUDIT_KEY_REF");
+        } finally {
+            parent.close();
+        }
+    }
+
+    @Test
+    void a_manually_registered_singleton_named_like_the_built_in_recorder_is_refused(@TempDir Path dir) {
+        keyed(dir).withInitializer(context -> context.getBeanFactory().registerSingleton("dataPrismAuditRecorder",
+                new AuditRecorder(new SegmentedFileAuditSink(dir.resolve("other")), Clock.systemUTC(), "app")))
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    Throwable failure = context.getStartupFailure();
+                    while (failure.getCause() != null && !(failure instanceof DataPrismConfigurationException)) {
+                        failure = failure.getCause();
+                    }
+                    assertThat(failure).isInstanceOf(DataPrismConfigurationException.class);
+                });
+    }
+
+    @Test
     void an_application_recorder_without_the_key_starts(@TempDir Path dir) {
         file(dir).withBean("appRecorder", AuditRecorder.class, () -> new AuditRecorder(
                 new SegmentedFileAuditSink(dir.resolve("other")), Clock.systemUTC(), "app"))
