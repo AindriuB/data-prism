@@ -1093,6 +1093,10 @@ public final class PrivacyCluster implements AutoCloseable {
             "com.hazelcast.core.HazelcastException", "com.hazelcast.core.OperationTimeoutException",
             "com.hazelcast.core.HazelcastInstanceNotActiveException",
             "com.hazelcast.transaction.TransactionException",
+            // A member answers a migration operation with this "when the cluster member list changes during
+            // migration"; the master expects it and retries. Refused, the reply is lost and the migration waits for
+            // its timeout. Allowed as the exact class: com.hazelcast.internal.partition is not a prefix we allow.
+            "com.hazelcast.internal.partition.PartitionStateVersionMismatchException",
             "com.hazelcast.splitbrainprotection.SplitBrainProtectionException",
             // What an entry processor or merge policy can throw back to its caller: a foreign value under a key
             // (ClassCastException, NullPointerException), an unreadable stored string (NumberFormatException,

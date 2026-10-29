@@ -10,6 +10,8 @@ import com.hazelcast.instance.impl.DefaultNodeExtension;
 import com.hazelcast.instance.impl.HazelcastInstanceFactory;
 import com.hazelcast.instance.impl.Node;
 import com.hazelcast.instance.impl.NodeExtension;
+import com.hazelcast.internal.partition.PartitionStateVersionMismatchException;
+import com.hazelcast.map.EntryProcessor;
 import com.hazelcast.map.IMap;
 import io.github.aindriub.dataprism.core.metrics.Metric;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
@@ -49,6 +51,7 @@ import java.util.function.DoubleSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 /**
  * The member card: what it holds, how it is read, and what a replayed, deleted, foreign or disagreeing card does
@@ -804,6 +807,8 @@ class MemberCardTest {
                 Fixture.settings(UnverifiedMemberAction.ALERT), environment);
         HazelcastInstance outsider = Fixture.plain(config.getClusterName(), port + 1, everyone);
         assertThat(Fixture.awaitMembers(refusing, 2)).isTrue();
+        // The partitions move to the joiner after it joined; do not look while they still do.
+        assertThat(Fixture.await(30, () -> instance.getPartitionService().isClusterSafe())).isTrue();
 
         for (PrivacyCluster wrapper : List.of(refusing, alerting)) {
             wrapper.memberCards().orElseThrow().tick();
@@ -1004,6 +1009,56 @@ class MemberCardTest {
         }
         assertThat(cards.status().serving()).isFalse();
         assertThatThrownBy(wrappers[0]::servingInstance).isInstanceOf(ClusterOperationRefusedException.class);
+    }
+
+    // ---- the serialisation filter and a migration-time error -----------------------------------------------------
+
+    /** Throws what a member answers with when the member list changed under a migration. */
+    static final class ThrowsPartitionStateMismatch
+            implements EntryProcessor<String, String, Object> {
+        @Override
+        public Object process(Map.Entry<String, String> entry) {
+            throw new PartitionStateVersionMismatchException(3, 4);
+        }
+    }
+
+    /**
+     * Hazelcast answers a migration operation with this exception "when the cluster member list changes during
+     * migration", and the master expects it (it then retries). It travels as a Java-serialised error reply, so a
+     * filter that refuses it turns a prompt failure into a lost reply that lasts until the migration timeout.
+     */
+    @Test
+    @Timeout(120)
+    void aPartitionStateMismatchRaisedByAnotherMemberReachesTheCallerThroughTheFilter() {
+        PrivacyCluster[] members = TestMembers.pair(TestMembers.uniqueName("mismatch-filter"), OptionalInt.empty());
+        try {
+            assertThat(Fixture.await(30, () -> members[0].instance().getPartitionService().isClusterSafe())).isTrue();
+            HazelcastInstance owner = members[1].instance();
+            String[] key = new String[1];
+            assertThat(Fixture.await(30, () -> {
+                for (int i = 0; i < 10_000; i++) {
+                    String candidate = "mismatch-" + i;
+                    if (members[0].instance().getPartitionService().getPartition(candidate).getOwner()
+                            .equals(owner.getCluster().getLocalMember())) {
+                        key[0] = candidate;
+                        return true;
+                    }
+                }
+                return false;
+            })).isTrue();
+
+            IMap<String, String> map = members[0].instance().getMap(PrivacyCluster.IDENTITY_MAP);
+            Throwable thrown = catchThrowable(() -> map.executeOnKey(key[0], new ThrowsPartitionStateMismatch()));
+
+            boolean reached = false;
+            for (Throwable cause = thrown; cause != null; cause = cause.getCause()) {
+                reached |= cause instanceof PartitionStateVersionMismatchException;
+            }
+            assertThat(reached).as("the caller saw the owner's exception").isTrue();
+        } finally {
+            members[0].close();
+            members[1].close();
+        }
     }
 
     // ---- disagreeing keys ------------------------------------------------------------------------------------
