@@ -456,8 +456,9 @@ class AuditRetentionSizeCapTest {
         assertThatThrownBy(() -> new AuditRetention(dir, Period.ofMonths(6), store, NOW).purge())
                 .hasMessageContaining("AUDIT_RETENTION_CHAIN_UNVERIFIED");
 
-        // The partial path refuses. The normal path then refuses the next day, but it still purges the
-        // earlier day, because the verifier skips an interrupted-write fragment unhashed: the known gap.
-        assertThat(names(dir)).contains("audit-2026-03-02.log", "audit-2026-09-09.log");
+        // The partial path refuses. The normal path refuses the whole day too: the tampered last record parses
+        // but the verifier never hashed it, so every remaining segment of the day is kept.
+        assertThat(names(dir)).contains("audit-2026-03-01.log", "audit-2026-03-01.0001.log",
+                "audit-2026-03-02.log", "audit-2026-09-09.log");
     }
 }
