@@ -27,10 +27,14 @@ class AuditWiring {
     @Bean @ConditionalOnMissingBean @ConditionalOnBean(AuditSink.class)
     AuditRecorder dataPrismAuditRecorder(AuditSink sink, Clock clock, DataPrismProperties properties,
             ObjectProvider<AuditCheckpointSink> checkpoints,
-            @Qualifier("dataPrismAuditEventListeners") AuditEventListeners listeners) {
+            @Qualifier("dataPrismAuditEventListeners") AuditEventListeners listeners,
+            ObjectProvider<HmacKeyReferenceResolver> keyResolver) {
         AuditCheckpointSink checkpoint = checkpoints.getIfAvailable();
+        // Only the current key signs; a retired key is verification-only and never reaches the recorder.
+        AuditChainKeyResolution.Keys keys = AuditChainKeyResolution.resolve(properties, keyResolver.getIfAvailable());
         return new AuditRecorder(sink, clock, properties.getAudit().getWriterId(), checkpoint, listeners,
-                io.github.aindriub.dataprism.audit.AuditChainMode.unkeyed());
+                keys == null ? io.github.aindriub.dataprism.audit.AuditChainMode.unkeyed()
+                        : io.github.aindriub.dataprism.audit.AuditChainMode.keyed(keys.current()));
     }
 
     /**
@@ -91,10 +95,14 @@ class AuditWiring {
     @Bean @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "dataprism.audit", name = "directory")
     AuditRetention dataPrismAuditRetention(DataPrismProperties properties, Clock clock,
-            ObjectProvider<AuditCheckpointSink> checkpoints) {
+            ObjectProvider<AuditCheckpointSink> checkpoints, ObjectProvider<HmacKeyReferenceResolver> keyResolver) {
         AuditProperties audit = properties.getAudit();
+        // Keyed: the current key and every retired key verify an expiring segment, and a segment from a writer
+        // with neither is not deleted (allowUnkeyedWriters=false), so a key rotation does not stop the purge.
+        AuditChainKeyResolution.Keys keys = AuditChainKeyResolution.resolve(properties, keyResolver.getIfAvailable());
         return new AuditRetention(Path.of(audit.getDirectory()), audit.getRetention(),
-                checkpoints.getObject(), clock, audit.isRetentionOverride(), java.util.List.of(), false);
+                checkpoints.getObject(), clock, audit.isRetentionOverride(),
+                keys == null ? java.util.List.of() : keys.forVerification(), false);
     }
     /**
      * Runs the purge once now and then every 24h, and a PERIODIC checkpoint every {@code

@@ -16,7 +16,8 @@ import java.util.function.Supplier;
  *
  * <p>Refusals are checked in a fixed order, which {@code docs/configuration.md} lists: key ids that are blank or
  * hold a dot, then each key in turn (current, next, previous, name) for resolution and strength, the privacy HMAC key
- * itself, the cluster keys and then the name key against that key, a name key equal to a cluster key, then key ids
+ * itself, the cluster keys and then the name key against that key, the same against the audit chain key and its
+ * retired keys (when the chain is keyed), a name key equal to a cluster key, then key ids
  * that are not pairwise distinct. A message names a property and never a key id's material, a reference, or anything
  * the resolver said. The resolver's arrays are copied on receipt and only the copies are cleared, as soon as
  * {@link ClusterKeys} has copied them in turn.
@@ -60,6 +61,7 @@ final class ClusterKeyResolution {
         List<Resolved> clusterKeys = new ArrayList<>();
         Resolved nameKey = null;
         byte[] hmac = null;
+        List<AuditChainKeyResolution.Entry> auditKeys = List.of();
         usableId("CLUSTER_KEY", CLUSTER_KEY, cluster.getKeyId());
         usableId("CLUSTER_KEY", CLUSTER_KEY + ".next", cluster.getNext().getKeyId());
         usableId("CLUSTER_KEY", CLUSTER_KEY + ".previous", cluster.getPrevious().getKeyId());
@@ -77,6 +79,11 @@ final class ClusterKeyResolution {
                 shared(key, hmac, properties.getPrivacy().getHmacKey().getKeyId());
             }
             shared(nameKey, hmac, properties.getPrivacy().getHmacKey().getKeyId());
+            auditKeys = AuditChainKeyResolution.materials(properties, resolver);
+            for (Resolved key : clusterKeys) {
+                sharedWithAudit(key, auditKeys);
+            }
+            sharedWithAudit(nameKey, auditKeys);
             for (Resolved key : clusterKeys) {
                 if (MessageDigest.isEqual(nameKey.material, key.material)) {
                     throw new DataPrismConfigurationException("NAME_KEY_SHARED",
@@ -102,6 +109,7 @@ final class ClusterKeyResolution {
             if (hmac != null) {
                 Arrays.fill(hmac, (byte) 0);
             }
+            auditKeys.forEach(AuditChainKeyResolution.Entry::wipe);
         }
     }
 
@@ -195,6 +203,17 @@ final class ClusterKeyResolution {
         if (sameId || sameMaterial) {
             throw new DataPrismConfigurationException(key.ref.area() + "_SHARED",
                     key.ref.property() + " must differ from dataprism.privacy.hmac-key");
+        }
+    }
+
+    /** The audit chain key (current and retired), by key id and by material, when the chain is keyed. */
+    private static void sharedWithAudit(Resolved key, List<AuditChainKeyResolution.Entry> auditKeys) {
+        for (AuditChainKeyResolution.Entry audit : auditKeys) {
+            if (key.ref.keyId().equals(audit.keyId()) || MessageDigest.isEqual(key.material, audit.material())) {
+                throw new DataPrismConfigurationException(key.ref.area() + "_SHARED",
+                        key.ref.property() + " must differ from dataprism.audit.hmac-key and"
+                                + " dataprism.audit.retired-hmac-keys");
+            }
         }
     }
 
