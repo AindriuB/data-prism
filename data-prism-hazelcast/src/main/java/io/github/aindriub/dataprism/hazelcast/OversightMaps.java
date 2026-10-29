@@ -6,7 +6,7 @@ import com.hazelcast.config.MapConfig;
 
 import java.util.List;
 
-/** The pause state and the member cards. */
+/** The pause document (one sealed entry, task 228) and the member cards. */
 final class OversightMaps {
 
     static final List<String> NAMES = List.of(PrivacyCluster.OVERSIGHT_MAP, PrivacyCluster.MEMBER_CARD_MAP);
@@ -16,7 +16,8 @@ final class OversightMaps {
 
     static void configure(Config config) {
         MapConfig oversight = PrivacyCluster.privacyMap(new MapConfig(PrivacyCluster.OVERSIGHT_MAP));
-        // An evicted pause flag is a path silently reopened.
+        // An evicted pause document is a path silently reopened, or at best a refusal of everything until a pause
+        // re-creates it.
         oversight.getEvictionConfig().setEvictionPolicy(EvictionPolicy.NONE);
         config.addMapConfig(oversight);
         MapConfig cards = PrivacyCluster.privacyMap(new MapConfig(PrivacyCluster.MEMBER_CARD_MAP));
