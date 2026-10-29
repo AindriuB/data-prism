@@ -5,6 +5,7 @@ import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.metrics.Metric;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.limits.RequestLimits;
+import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -17,6 +18,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SourceFanOutTest {
 
@@ -65,7 +67,8 @@ class SourceFanOutTest {
     }
 
     private static RequestLimits limits(int maxSources, Duration timeout, int concurrency) {
-        return new RequestLimits(maxSources, 500, 512 * 1024, timeout, concurrency, 100);
+        return TestLimits.defaults().maxSources(maxSources).perSourceTimeout(timeout).maxConcurrency(concurrency)
+                .requestTimeout(timeout.compareTo(Duration.ofSeconds(10)) > 0 ? timeout : Duration.ofSeconds(10)).build();
     }
 
     private SourceFanOut fanOut() {
@@ -156,19 +159,17 @@ class SourceFanOutTest {
     }
 
     @Test
-    @DisplayName("sources beyond the cap are refused rather than quietly dropped")
+    @DisplayName("sources beyond the cap refuse the whole call rather than being quietly dropped")
     void sourceCapIsEnforced() {
         List<DataSourceAdapter<?>> adapters = List.of(
                 Stub.answering("a", "A"), Stub.answering("b", "B"), Stub.answering("c", "C"));
 
-        List<SourceFanOut.Fetched> results = fanOut().fetchAll(adapters, askAll(adapters),
-                limits(2, Duration.ofSeconds(5), 4));
-
-        // An answer silently built from the first two of three is worse than one
-        // that says the third was skipped: nothing downstream could tell.
-        assertThat(results).filteredOn(f -> f.outcome().status() == SourceOutcome.Status.SKIPPED_OVER_LIMIT)
-                .singleElement()
-                .satisfies(f -> assertThat(f.outcome().sourceName()).isEqualTo("c"));
+        // An answer silently built from the first two of three is worse than a
+        // refusal: nothing downstream could tell.
+        assertThatThrownBy(() -> fanOut().fetchAll(adapters, askAll(adapters),
+                limits(2, Duration.ofSeconds(5), 4)))
+                .isInstanceOfSatisfying(PrivacyRefusedException.class,
+                        e -> assertThat(e.code()).isEqualTo("SOURCE_SELECTION_TOO_LARGE"));
     }
 
     @Test

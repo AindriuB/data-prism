@@ -41,6 +41,7 @@ class ClusterLockTimeoutConfigurationTest {
     private static final String TCP_IP = "dataprism.hazelcast.join.mode=tcp-ip";
     /** A joining member names the network it listens on. */
     private static final String IFACE = "dataprism.hazelcast.member.interface=127.0.0.1";
+    private static final String TRUSTED = "dataprism.hazelcast.trusted-network=true";
 
     /** The shared runner, with the cluster and name keys a member that joins others must have. */
     private static org.springframework.boot.test.context.runner.WebApplicationContextRunner keyedRunner(
@@ -165,9 +166,11 @@ class ClusterLockTimeoutConfigurationTest {
                 ApprovalRequest request = new ApprovalRequest("ctx-1", ApprovalRequest.Kind.TOOL_CALL, "alice", "c",
                         "scope-1", "search", "fp", null, null, "p", "case", now, now.plusSeconds(60),
                         ApprovalRequest.Status.PENDING, null, null);
-                holdWhile(cluster.instance().getMap(PrivacyCluster.APPROVAL_ID_MAP), "ctx-1",
+                holdWhile(cluster.instance().getMap(PrivacyCluster.APPROVAL_ID_MAP),
+                        cluster.keyedNames().mapKey(PrivacyCluster.APPROVAL_ID_MAP, "ctx-1"),
                         () -> refusesWithinTheTimeoutAndHalfASecond(() -> approvals.create(request), caller));
-                holdWhile(cluster.instance().getMap(PrivacyCluster.CALLER_RATE_MAP), "alice",
+                holdWhile(cluster.instance().getMap(PrivacyCluster.CALLER_RATE_MAP),
+                        cluster.keyedNames().mapKey(PrivacyCluster.CALLER_RATE_MAP, "alice"),
                         () -> refusesWithinTheTimeoutAndHalfASecond(
                                 () -> limiter.tryAcquire("alice", 5, Duration.ofMinutes(1), now), caller));
                 // One read first, so the subject's key exists and can be found without knowing how it is built.
@@ -200,7 +203,7 @@ class ClusterLockTimeoutConfigurationTest {
                 approvals.create(new ApprovalRequest("end-1", ApprovalRequest.Kind.TOOL_CALL, "alice", "c",
                         "scope-end", "search", "fp", null, null, "p", "case", now, now.plusSeconds(60),
                         ApprovalRequest.Status.PENDING, null, null));
-                String entry = "scope-end\0end-1";
+                String entry = cluster.keyedNames().scoped(PrivacyCluster.APPROVAL_MAP, "scope-end", "scope-end\0end-1");
                 // A held approval lock refuses the scope end within the configured 0.2 s, not the default 2 s.
                 holdWhile(cluster.instance().getMap(PrivacyCluster.APPROVAL_MAP), entry,
                         () -> refusesWithinTheTimeoutAndHalfASecond(() -> {
@@ -219,27 +222,27 @@ class ClusterLockTimeoutConfigurationTest {
     // ---- approval quorum -----------------------------------------------------------------------
 
     @Test void refuses_a_minimum_above_the_listed_members() {
-        refuses("INVALID_APPROVAL_QUORUM", "embedded", TCP_IP, IFACE, "dataprism.hazelcast.cluster-name=quorum-1",
+        refuses("INVALID_APPROVAL_QUORUM", "embedded", TCP_IP, IFACE, TRUSTED, "dataprism.hazelcast.cluster-name=quorum-1",
                 "dataprism.hazelcast.join.members[0]=127.0.0.1:5999", "dataprism.hazelcast.join.members[1]=127.0.0.1:6000",
                 "dataprism.hazelcast.approval-minimum-members=3");
     }
     @Test void counts_distinct_members_only() {
-        refuses("INVALID_APPROVAL_QUORUM", "embedded", TCP_IP, IFACE, "dataprism.hazelcast.cluster-name=quorum-1",
+        refuses("INVALID_APPROVAL_QUORUM", "embedded", TCP_IP, IFACE, TRUSTED, "dataprism.hazelcast.cluster-name=quorum-1",
                 "dataprism.hazelcast.join.members[0]=127.0.0.1:5999", "dataprism.hazelcast.join.members[1]=127.0.0.1:5999",
                 "dataprism.hazelcast.approval-minimum-members=2");
     }
     @Test void counts_a_range_and_a_comma_list_as_their_members() {
-        refuses("INVALID_APPROVAL_QUORUM", "embedded", TCP_IP, IFACE, "dataprism.hazelcast.cluster-name=quorum-1",
+        refuses("INVALID_APPROVAL_QUORUM", "embedded", TCP_IP, IFACE, TRUSTED, "dataprism.hazelcast.cluster-name=quorum-1",
                 "dataprism.hazelcast.join.members[0]=10.0.0.1-3", "dataprism.hazelcast.approval-minimum-members=4");
-        refuses("INVALID_APPROVAL_QUORUM", "embedded", TCP_IP, IFACE, "dataprism.hazelcast.cluster-name=quorum-1",
+        refuses("INVALID_APPROVAL_QUORUM", "embedded", TCP_IP, IFACE, TRUSTED, "dataprism.hazelcast.cluster-name=quorum-1",
                 "dataprism.hazelcast.join.members[0]=10.0.0.1,10.0.0.2,10.0.0.3", "dataprism.hazelcast.approval-minimum-members=4");
-        refuses("INVALID_APPROVAL_QUORUM", "embedded", TCP_IP, IFACE, "dataprism.hazelcast.cluster-name=quorum-1",
+        refuses("INVALID_APPROVAL_QUORUM", "embedded", TCP_IP, IFACE, TRUSTED, "dataprism.hazelcast.cluster-name=quorum-1",
                 "dataprism.hazelcast.join.members[0]=10.0.0.1", "dataprism.hazelcast.join.members[1]=10.0.0.1:5701",
                 "dataprism.hazelcast.member.port=5701", "dataprism.hazelcast.approval-minimum-members=2");
     }
     @Test void accepts_a_minimum_of_two_for_a_range_of_three() {
         int port = ClusterConfigurationTest.freePort();
-        keyedRunner("embedded").withPropertyValues(TCP_IP, IFACE,
+        keyedRunner("embedded").withPropertyValues(TCP_IP, IFACE, TRUSTED,
                 "dataprism.hazelcast.join.members[0]=127.0.0.1-3:" + port,
                 "dataprism.hazelcast.approval-minimum-members=2",
                 "dataprism.hazelcast.member.port=" + port, "dataprism.hazelcast.member.interface=127.0.0.1")
@@ -249,23 +252,23 @@ class ClusterLockTimeoutConfigurationTest {
                 });
     }
     @Test void refuses_an_uncountable_entry_when_approvals_are_in_use() {
-        refuses("INVALID_APPROVAL_QUORUM", "embedded", join(OPERATOR, TOOL_APPROVALS, new String[] {TCP_IP, IFACE,
+        refuses("INVALID_APPROVAL_QUORUM", "embedded", join(OPERATOR, TOOL_APPROVALS, new String[] {TCP_IP, IFACE, TRUSTED,
                 "dataprism.hazelcast.cluster-name=quorum-1", "dataprism.hazelcast.join.members[0]=10.0.0.*"}));
-        refuses("INVALID_APPROVAL_QUORUM", "embedded", join(OPERATOR, REIDENTIFICATION, new String[] {TCP_IP, IFACE,
+        refuses("INVALID_APPROVAL_QUORUM", "embedded", join(OPERATOR, REIDENTIFICATION, new String[] {TCP_IP, IFACE, TRUSTED,
                 "dataprism.hazelcast.cluster-name=quorum-1", "dataprism.hazelcast.join.members[0]=10.0.0.*"}));
     }
     @Test void a_hostname_requires_an_explicit_minimum_when_approvals_are_in_use() {
-        refuses("MISSING_APPROVAL_QUORUM", "embedded", join(OPERATOR, TOOL_APPROVALS, new String[] {TCP_IP, IFACE,
+        refuses("MISSING_APPROVAL_QUORUM", "embedded", join(OPERATOR, TOOL_APPROVALS, new String[] {TCP_IP, IFACE, TRUSTED,
                 "dataprism.hazelcast.cluster-name=quorum-1", "dataprism.hazelcast.join.members[0]=10.0.0.1",
                 "dataprism.hazelcast.join.members[1]=db.internal"}));
-        refuses("MISSING_APPROVAL_QUORUM", "embedded", join(OPERATOR, REIDENTIFICATION, new String[] {TCP_IP, IFACE,
+        refuses("MISSING_APPROVAL_QUORUM", "embedded", join(OPERATOR, REIDENTIFICATION, new String[] {TCP_IP, IFACE, TRUSTED,
                 "dataprism.hazelcast.cluster-name=quorum-1", "dataprism.hazelcast.join.members[0]=10.0.0.1",
                 "dataprism.hazelcast.join.members[1]=db.internal"}));
     }
     @Test void hostnames_need_no_quorum_when_approvals_are_not_in_use() {
         int port = ClusterConfigurationTest.freePort();
         for (String member : new String[] {"localhost:" + (port + 1)}) {
-            keyedRunner("embedded").withPropertyValues(TCP_IP, IFACE,
+            keyedRunner("embedded").withPropertyValues(TCP_IP, IFACE, TRUSTED,
                     "dataprism.hazelcast.join.members[0]=127.0.0.1:" + port, "dataprism.hazelcast.join.members[1]=" + member,
                     "dataprism.hazelcast.member.port=" + port, "dataprism.hazelcast.member.interface=127.0.0.1")
                     .run(result -> {
@@ -284,6 +287,7 @@ class ClusterLockTimeoutConfigurationTest {
         h.getJoin().setMode("tcp-ip");
         h.getJoin().setMembers(java.util.List.of(member));
         h.getMember().setInterface("127.0.0.1");
+        h.setTrustedNetwork(true);
         h.getSecurity().getClusterKey().setKeyId("cluster-1");
         h.getSecurity().getClusterKey().setEnvironmentVariable("DATAPRISM_CLUSTER_KEY_REF");
         h.getSecurity().getNameKey().setKeyId("name-1");
@@ -305,24 +309,24 @@ class ClusterLockTimeoutConfigurationTest {
     }
     @Test void kubernetes_requires_a_minimum_when_reidentification_is_enabled() {
         refuses("MISSING_APPROVAL_QUORUM", "embedded", join(OPERATOR, REIDENTIFICATION, new String[] {
-                "dataprism.hazelcast.cluster-name=quorum-1", "dataprism.hazelcast.join.mode=kubernetes", IFACE,
+                "dataprism.hazelcast.cluster-name=quorum-1", "dataprism.hazelcast.join.mode=kubernetes", IFACE, TRUSTED,
                 "dataprism.hazelcast.join.kubernetes.namespace=ns", "dataprism.hazelcast.join.kubernetes.service-name=svc"}));
     }
     @Test void a_hostname_with_an_explicit_minimum_is_accepted() {
         int port = ClusterConfigurationTest.freePort();
-        keyedRunner("embedded").withPropertyValues(TCP_IP, IFACE,
+        keyedRunner("embedded").withPropertyValues(TCP_IP, IFACE, TRUSTED,
                 "dataprism.hazelcast.join.members[0]=127.0.0.1:" + port, "dataprism.hazelcast.join.members[1]=localhost:" + (port + 1),
                 "dataprism.hazelcast.approval-minimum-members=2",
                 "dataprism.hazelcast.member.port=" + port, "dataprism.hazelcast.member.interface=127.0.0.1")
                 .run(result -> assertThat(result).hasNotFailed());
     }
     @Test void a_portless_entry_is_the_configured_member_port() {
-        refuses("INVALID_APPROVAL_QUORUM", "embedded", TCP_IP, IFACE, "dataprism.hazelcast.cluster-name=quorum-1",
+        refuses("INVALID_APPROVAL_QUORUM", "embedded", TCP_IP, IFACE, TRUSTED, "dataprism.hazelcast.cluster-name=quorum-1",
                 "dataprism.hazelcast.join.members[0]=10.0.0.1", "dataprism.hazelcast.join.members[1]=10.0.0.1:5702",
                 "dataprism.hazelcast.member.port=5702", "dataprism.hazelcast.approval-minimum-members=2");
     }
     @Test void refuses_a_minimum_below_one() {
-        refuses("INVALID_APPROVAL_QUORUM", "embedded", TCP_IP, IFACE, "dataprism.hazelcast.cluster-name=quorum-1",
+        refuses("INVALID_APPROVAL_QUORUM", "embedded", TCP_IP, IFACE, TRUSTED, "dataprism.hazelcast.cluster-name=quorum-1",
                 "dataprism.hazelcast.join.members[0]=127.0.0.1:5999", "dataprism.hazelcast.approval-minimum-members=0");
     }
     @Test void refuses_a_minimum_with_a_single_member() {
@@ -330,7 +334,7 @@ class ClusterLockTimeoutConfigurationTest {
                 "dataprism.hazelcast.join.mode=none", "dataprism.hazelcast.approval-minimum-members=1");
     }
     @Test void kubernetes_requires_a_minimum_when_approval_tools_are_configured() {
-        String[] kubernetes = {"dataprism.hazelcast.cluster-name=quorum-1", "dataprism.hazelcast.join.mode=kubernetes", IFACE,
+        String[] kubernetes = {"dataprism.hazelcast.cluster-name=quorum-1", "dataprism.hazelcast.join.mode=kubernetes", IFACE, TRUSTED,
                 "dataprism.hazelcast.join.kubernetes.namespace=ns", "dataprism.hazelcast.join.kubernetes.service-name=svc",
                 "dataprism.oversight.approval-required-tools[0]=get_entity_context"};
         String[] all = new String[OPERATOR.length + kubernetes.length];
@@ -357,7 +361,7 @@ class ClusterLockTimeoutConfigurationTest {
     }
     @Test void tcp_ip_defaults_to_a_majority_of_the_listed_members() {
         int port = ClusterConfigurationTest.freePort();
-        keyedRunner("embedded").withPropertyValues(join(OPERATOR, TOOL_APPROVALS)).withPropertyValues(TCP_IP, IFACE,
+        keyedRunner("embedded").withPropertyValues(join(OPERATOR, TOOL_APPROVALS)).withPropertyValues(TCP_IP, IFACE, TRUSTED,
                 "dataprism.hazelcast.join.members[0]=127.0.0.1:" + port,
                 "dataprism.hazelcast.join.members[1]=127.0.0.1:" + (port + 1),
                 "dataprism.hazelcast.join.members[2]=127.0.0.1:" + (port + 2),
@@ -369,7 +373,7 @@ class ClusterLockTimeoutConfigurationTest {
     }
     @Test void an_explicit_minimum_reaches_the_approval_map() {
         int port = ClusterConfigurationTest.freePort();
-        keyedRunner("embedded").withPropertyValues(TCP_IP, IFACE,
+        keyedRunner("embedded").withPropertyValues(TCP_IP, IFACE, TRUSTED,
                 "dataprism.hazelcast.join.members[0]=127.0.0.1:" + port,
                 "dataprism.hazelcast.join.members[1]=127.0.0.1:" + (port + 1),
                 "dataprism.hazelcast.join.members[2]=127.0.0.1:" + (port + 2),

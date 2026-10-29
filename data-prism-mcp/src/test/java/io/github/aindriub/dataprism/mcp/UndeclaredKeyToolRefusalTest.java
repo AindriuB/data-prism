@@ -1,6 +1,5 @@
 package io.github.aindriub.dataprism.mcp;
 
-import com.fasterxml.jackson.annotation.JsonAnyGetter;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.InternalIdentifier;
 import io.github.aindriub.dataprism.annotations.LlmExposedModel;
@@ -12,6 +11,7 @@ import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.engine.DefaultFieldMetadataResolver;
 import io.github.aindriub.dataprism.core.spi.FieldMetadataResolver;
 import io.github.aindriub.dataprism.core.limits.InMemoryScopeBudget;
+import io.github.aindriub.dataprism.core.model.FieldMetadata;
 import io.github.aindriub.dataprism.core.engine.JsonTreeScrubbingEngine;
 import io.github.aindriub.dataprism.core.spi.PassThroughIdentityResolver;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
@@ -33,6 +33,8 @@ import io.github.aindriub.dataprism.pseudonymisation.HmacValueTokenSource;
 import io.github.aindriub.dataprism.pseudonymisation.StaticSecretKeyProvider;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
+import io.github.aindriub.dataprism.security.CaseAuthorizer;
+import io.github.aindriub.dataprism.security.ClientAllowlist;
 import io.github.aindriub.dataprism.security.PurposeValidator;
 import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.SecurityPolicy;
@@ -44,6 +46,7 @@ import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -73,13 +76,49 @@ class UndeclaredKeyToolRefusalTest {
             new AuthenticatedCaller("principal-1", "client-1", Set.of("investigator"), "demonstration", "case-1", null);
     private static final Map<String, Object> ARGS = Map.of("entityType", "THING", "subjectId", "1");
 
+    /** The declared fields of the exposed tree. */
     @LlmExposedModel
-    record Open(@InternalIdentifier String id, @JsonAnyGetter Map<String, Object> extra) {
+    record Open(@InternalIdentifier String id) {
     }
 
     @LlmExposedModel
-    record WithEmail(@InternalIdentifier String id, @InternalIdentifier String email,
-                     @JsonAnyGetter Map<String, Object> extra) {
+    record WithEmail(@InternalIdentifier String id, @InternalIdentifier String email) {
+    }
+
+    /**
+     * Exposes an {@link ObjectNode} root with the declared fields of a record. A record source can no longer
+     * carry undeclared keys (task 288, OD-288-1 (a)); a JsonNode root can, as a configured JSON source does.
+     */
+    static final class ExposedTree implements FieldMetadataResolver {
+        private final DefaultFieldMetadataResolver delegate = new DefaultFieldMetadataResolver();
+        private final Class<?> declared;
+
+        ExposedTree(Class<?> declared) {
+            this.declared = declared;
+        }
+
+        @Override
+        public List<FieldMetadata> resolve(Class<?> type) {
+            return delegate.resolve(type == ObjectNode.class ? declared : type);
+        }
+
+        @Override
+        public boolean exposed(Class<?> type) {
+            return type == ObjectNode.class || delegate.exposed(type);
+        }
+    }
+
+    /** The tree a record with an any-getter used to write: the declared properties, then the undeclared key. */
+    private static ObjectNode tree(Map<String, String> declared, String key, Object value) {
+        ObjectNode tree = io.github.aindriub.dataprism.core.engine.SourceTree.newObject();
+        declared.forEach(tree::put);
+        if (value instanceof Map<?, ?> nested) {
+            ObjectNode inner = tree.putObject(key);
+            nested.forEach((k, v) -> inner.put((String) k, (String) v));
+        } else {
+            tree.put(key, (String) value);
+        }
+        return tree;
     }
 
     private final List<AuditEvent> audited = new ArrayList<>();
@@ -105,25 +144,27 @@ class UndeclaredKeyToolRefusalTest {
     }
 
     private DefaultContextOrchestrator orchestrator(PrivacyPolicyResolver policies, Object value) {
-        return orchestrator(policies, Open.class, new Open("1", Map.of(KEY, value)));
+        return orchestrator(policies, Open.class, tree(Map.of("id", "1"), KEY, value));
     }
 
-    private <T> DefaultContextOrchestrator orchestrator(PrivacyPolicyResolver policies, Class<T> type, T payload) {
-        FieldMetadataResolver resolver = new DefaultFieldMetadataResolver();
+    private DefaultContextOrchestrator orchestrator(PrivacyPolicyResolver policies, Class<?> declared,
+                                                    ObjectNode payload) {
+        Class<ObjectNode> type = ObjectNode.class;
+        FieldMetadataResolver resolver = new ExposedTree(declared);
         var scrubber = new JsonTreeScrubbingEngine(resolver, policies, (subject, namespace, ctx) -> "synthetic");
-        DataSourceAdapter<T> adapter = new DataSourceAdapter<>() {
+        DataSourceAdapter<ObjectNode> adapter = new DataSourceAdapter<>() {
             @Override
             public String sourceName() {
                 return "open-api";
             }
 
             @Override
-            public Class<T> responseType() {
+            public Class<ObjectNode> responseType() {
                 return type;
             }
 
             @Override
-            public T fetch(DataRequest request) {
+            public ObjectNode fetch(DataRequest request) {
                 return payload;
             }
         };
@@ -143,10 +184,10 @@ class UndeclaredKeyToolRefusalTest {
     private void assertBothToolsRefuse(DefaultContextOrchestrator orchestrator, String code, String forbidden) {
         SecurityPolicy security = new SecurityPolicy(Set.of("demonstration"),
                 Map.of("investigator", Set.of("GET_ENTITY_CONTEXT", "COMPARE_ENTITY_SOURCES")));
-        AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION);
+        AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION, ClientAllowlist.unrestricted());
         ScopeResolver scopes = new ScopeResolver(
                 PseudonymisationVersion.HMAC_SHA256_V1.withKey("key-1").withVocabulary("vocab-1"),
-                Duration.ofHours(8), new PurposeValidator(Set.of("demonstration")));
+                Duration.ofHours(8), new PurposeValidator(Set.of("demonstration")), CaseAuthorizer.tokenTrusted());
         AuditRecorder toolAudit = new AuditRecorder(audited::add, FIXED, "test-mcp");
         var get = new GetEntityContextTool(orchestrator, authz, scopes, PrivacyMetrics.none(), toolAudit, FIXED, null, ToolOptions.defaults().noAdmission().build());
         var compare = new CompareEntitySourcesTool(orchestrator, authz, scopes, PrivacyMetrics.none(), toolAudit, FIXED, null, ToolOptions.defaults().noAdmission().build());
@@ -194,7 +235,8 @@ class UndeclaredKeyToolRefusalTest {
     @Test
     @DisplayName("VALIDATION_FAILED text carries no digits from a bracketed payload key after a declared name")
     void bracketedDigitKey() {
-        var payload = new WithEmail("1", "plain", Map.of("email[07700900123]", "someone.else@example.com"));
+        var payload = tree(Map.of("id", "1", "email", "plain"), "email[07700900123]",
+                "someone.else@example.com");
         assertBothToolsRefuse(orchestrator(profile(PrivacyProfile.UnclassifiedBehaviour.PASS_THROUGH_UNSAFE),
                 WithEmail.class, payload), "VALIDATION_FAILED", "07700900123");
     }

@@ -40,6 +40,11 @@ public final class HmacValueTokenSource implements ValueTokenSource {
     }
 
     @Override
+    public boolean available() {
+        return true;
+    }
+
+    @Override
     public String hash(String value, PrivacyNamespace namespace, PrivacyContext context) {
         return HexFormat.of().formatHex(mac(value, namespace, context), 0, 16);
     }

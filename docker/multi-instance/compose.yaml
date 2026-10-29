@@ -2,6 +2,11 @@
 # Local proving only; kubernetes.yaml in this directory is the production
 # shape. Every value labelled "fixture-only" is the quickstart's, not yours.
 #
+# This file is a local demonstration, not a deployment. The isolation
+# assertion that trusted-network: true makes holds only on a Linux Docker
+# engine where cross-network routing to the member port has been checked and
+# found blocked; on OrbStack or Docker Desktop it does not hold.
+#
 # Both servers refuse to start without a cluster key and a name key (task 222).
 # Generate the two, distinct and at least 32 characters each, and export them
 # before `up`; the file reads them from these two variables and never holds
@@ -12,7 +17,9 @@
 # Run from the repository root, building the images locally:
 #   docker compose -f docker/multi-instance/compose.yaml \
 #     -f docker/multi-instance/compose.build.yaml up --build
-# or, with published images:
+# or, with published images (0.8.0 or later: an older image ignores the
+# cluster-key and name-key settings below, and does not read the
+# security-policy settings baked into the server image's application.yaml):
 #   docker compose -f docker/multi-instance/compose.yaml up
 #
 # Requires Docker Compose >= 2.24.4: `ports: !override` needs 2.24.4 and
@@ -89,6 +96,17 @@ services:
       DATAPRISM_HAZELCAST_MEMBER_PORT: 5701
       # Bind and advertise only on the cluster subnet.
       DATAPRISM_HAZELCAST_MEMBER_INTERFACE: 172.28.57.*
+      # A member that joins others refuses to start unless this is true. It is
+      # your assertion that only Data Prism members can reach the member port
+      # (5701); approvals and counters on that port are unsealed in 1.0, so
+      # anyone else who can reach it can read and forge them.
+      # This file is a local demonstration, not a deployment.
+      # The isolation assertion that trusted-network: true makes holds only on
+      # a Linux Docker engine where cross-network routing to the member port
+      # has been checked and found blocked; on OrbStack or Docker Desktop it
+      # does not hold. (Relaxed binding drops the hyphen: trusted-network is
+      # TRUSTEDNETWORK.)
+      DATAPRISM_HAZELCAST_TRUSTEDNETWORK: "true"
       # The cluster key and the name key, by reference: each names a variable,
       # and the variable holds the key. Every member needs the same two keys, and
       # they must differ from each other and from the privacy HMAC key. Before
@@ -125,6 +143,7 @@ services:
       DATAPRISM_HAZELCAST_JOIN_MEMBERS: 172.28.57.11:5701,172.28.57.12:5701
       DATAPRISM_HAZELCAST_MEMBER_PORT: 5701
       DATAPRISM_HAZELCAST_MEMBER_INTERFACE: 172.28.57.*
+      DATAPRISM_HAZELCAST_TRUSTEDNETWORK: "true"
       DATAPRISM_HAZELCAST_SECURITY_CLUSTERKEY_KEYID: cluster-1
       DATAPRISM_HAZELCAST_SECURITY_CLUSTERKEY_ENVIRONMENTVARIABLE: DATAPRISM_CLUSTER_KEY_MATERIAL
       DATAPRISM_HAZELCAST_SECURITY_NAMEKEY_KEYID: name-1

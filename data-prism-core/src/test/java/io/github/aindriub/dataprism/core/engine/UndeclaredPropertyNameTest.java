@@ -1,6 +1,5 @@
 package io.github.aindriub.dataprism.core.engine;
 
-import com.fasterxml.jackson.annotation.JsonAnyGetter;
 import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.InternalIdentifier;
@@ -43,16 +42,52 @@ class UndeclaredPropertyNameTest {
     private static final String ALPHA = "alpha@example.com";
 
     @SensitiveObject
-    record Child(@NonSensitive(reason = "enumerated") String state,
-                 @JsonAnyGetter Map<String, Object> extra) {
+    record Child(@NonSensitive(reason = "enumerated") String state) {
     }
 
     @LlmExposedModel
     record Open(@InternalIdentifier String subjectRef,
                 @NonSensitive(reason = "enumerated") String status,
-                @NonSensitive(reason = "reviewed separately") Child child,
-                @NonSensitive(reason = "carrier for undeclared properties") @JsonAnyGetter
-                Map<String, Object> extra) {
+                @NonSensitive(reason = "reviewed separately") Child child) {
+    }
+
+    /**
+     * Exposes an {@link ObjectNode} root with the declared fields of {@link Open}. A record source can no longer
+     * carry undeclared keys (task 288, OD-288-1 (a)); a JsonNode root can, as a configured JSON source does.
+     */
+    static final class ExposedTree implements FieldMetadataResolver {
+        private final DefaultFieldMetadataResolver delegate = new DefaultFieldMetadataResolver();
+
+        @Override
+        public List<FieldMetadata> resolve(Class<?> type) {
+            return delegate.resolve(type == ObjectNode.class ? Open.class : type);
+        }
+
+        @Override
+        public boolean exposed(Class<?> type) {
+            return type == ObjectNode.class || delegate.exposed(type);
+        }
+    }
+
+    /** The tree a record with an any-getter used to write: the declared properties, then the extras in map order. */
+    private static ObjectNode open(String ref, String status, ObjectNode child, Map<String, Object> extra) {
+        ObjectNode tree = SourceTree.newObject();
+        tree.put("subjectRef", ref);
+        tree.put("status", status);
+        if (child == null) {
+            tree.putNull("child");
+        } else {
+            tree.set("child", child);
+        }
+        extra.forEach((k, v) -> tree.put(k, (String) v));
+        return tree;
+    }
+
+    private static ObjectNode child(String state, Map<String, Object> extra) {
+        ObjectNode tree = SourceTree.newObject();
+        tree.put("state", state);
+        extra.forEach((k, v) -> tree.put(k, (String) v));
+        return tree;
     }
 
     private static PrivacyContext context() {
@@ -67,7 +102,7 @@ class UndeclaredPropertyNameTest {
     }
 
     private static JsonTreeScrubbingEngine engine(UnclassifiedBehaviour behaviour) {
-        return new JsonTreeScrubbingEngine(new DefaultFieldMetadataResolver(), policies(behaviour),
+        return new JsonTreeScrubbingEngine(new ExposedTree(), policies(behaviour),
                 (subject, namespace, ctx) -> "synthetic");
     }
 
@@ -88,8 +123,8 @@ class UndeclaredPropertyNameTest {
     @Test
     @DisplayName("REDACT_AND_WARN renames undeclared properties alphabetically, in place, and restarts per object")
     void renamesAlphabetically() {
-        var source = new Open("s-1", "ACTIVE",
-                new Child("OPEN", ordered("yy@example.com", "bb@example.com")),
+        var source = open("s-1", "ACTIVE",
+                child("OPEN", ordered("yy@example.com", "bb@example.com")),
                 ordered(ZETA, ALPHA, "mid"));
 
         ObjectNode out = engine(UnclassifiedBehaviour.REDACT_AND_WARN).scrub(source, context()).tree();
@@ -107,9 +142,9 @@ class UndeclaredPropertyNameTest {
     @Test
     @DisplayName("the same input in a different insertion order gets the same name-to-placeholder assignment")
     void assignmentIsOrderIndependent() {
-        var child = new Child("OPEN", ordered("yy@example.com", "bb@example.com"));
-        var forward = new Open("s-1", "ACTIVE", child, ordered(ZETA, ALPHA, "mid"));
-        var reverse = new Open("s-1", "ACTIVE", child, ordered("mid", ALPHA, ZETA));
+        var child = child("OPEN", ordered("yy@example.com", "bb@example.com"));
+        var forward = open("s-1", "ACTIVE", child, ordered(ZETA, ALPHA, "mid"));
+        var reverse = open("s-1", "ACTIVE", child.deepCopy(), ordered("mid", ALPHA, ZETA));
         var engine = engine(UnclassifiedBehaviour.REDACT_AND_WARN);
 
         ObjectNode outA = engine.scrub(forward, context()).tree();
@@ -124,8 +159,6 @@ class UndeclaredPropertyNameTest {
     @Test
     @DisplayName("a placeholder never overwrites a declared property of the same name")
     void placeholderSkipsDeclaredName() {
-        record Mixed(String id, @JsonAnyGetter Map<String, Object> extra) {
-        }
         var resolver = new FieldMetadataResolver() {
             @Override
             public List<FieldMetadata> resolve(Class<?> type) {
@@ -139,7 +172,7 @@ class UndeclaredPropertyNameTest {
 
             @Override
             public boolean exposed(Class<?> type) {
-                return type == Mixed.class;
+                return type == ObjectNode.class;
             }
         };
         var engine = new JsonTreeScrubbingEngine(resolver, policies(UnclassifiedBehaviour.REDACT_AND_WARN),
@@ -149,7 +182,11 @@ class UndeclaredPropertyNameTest {
         extra.put("a@example.com", "x");
         extra.put("b@example.com", "y");
 
-        ObjectNode out = engine.scrub(new Mixed("1", extra), context()).tree();
+        ObjectNode source = SourceTree.newObject();
+        source.put("id", "1");
+        extra.forEach((k, v) -> source.put(k, (String) v));
+
+        ObjectNode out = engine.scrub(source, context()).tree();
 
         assertThat(out.get("<undeclared-1>").asString()).isEqualTo("declared-value");
         assertThat(out.get("<undeclared-2>").asString()).isEqualTo("[REDACTED]");
@@ -160,7 +197,7 @@ class UndeclaredPropertyNameTest {
     @Test
     @DisplayName("DROP_AND_WARN emits no property, and no placeholder, for an undeclared key")
     void dropEmitsNothing() {
-        var source = new Open("s-1", "ACTIVE", null, ordered(ZETA, ALPHA));
+        var source = open("s-1", "ACTIVE", null, ordered(ZETA, ALPHA));
 
         ObjectNode out = engine(UnclassifiedBehaviour.DROP_AND_WARN).scrub(source, context()).tree();
 
@@ -173,7 +210,7 @@ class UndeclaredPropertyNameTest {
     void passThroughKeepsKey() {
         Map<String, Object> extra = new LinkedHashMap<>();
         extra.put(ZETA, "z");
-        var source = new Open("s-1", "ACTIVE", null, extra);
+        var source = open("s-1", "ACTIVE", null, extra);
 
         ObjectNode out = engine(UnclassifiedBehaviour.PASS_THROUGH_UNSAFE).scrub(source, context()).tree();
 
@@ -184,7 +221,7 @@ class UndeclaredPropertyNameTest {
     @Test
     @DisplayName("FAIL_REQUEST still refuses with UNKNOWN_FIELD")
     void failRequestUnchanged() {
-        var source = new Open("s-1", "ACTIVE", null, ordered(ZETA));
+        var source = open("s-1", "ACTIVE", null, ordered(ZETA));
 
         assertThatThrownBy(() -> engine(UnclassifiedBehaviour.FAIL_REQUEST).scrub(source, context()))
                 .isInstanceOfSatisfying(PrivacyRefusedException.class,
@@ -194,8 +231,8 @@ class UndeclaredPropertyNameTest {
     @Test
     @DisplayName("dispositions keep the single <undeclared> segment, never <undeclared-N>")
     void dispositionsUnchanged() {
-        var source = new Open("s-1", "ACTIVE",
-                new Child("OPEN", ordered("yy@example.com", "bb@example.com")),
+        var source = open("s-1", "ACTIVE",
+                child("OPEN", ordered("yy@example.com", "bb@example.com")),
                 ordered(ZETA, ALPHA, "mid"));
 
         ScrubResult result = engine(UnclassifiedBehaviour.REDACT_AND_WARN).scrub(source, context());

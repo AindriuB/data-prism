@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.core.env.Environment;
 import org.springframework.util.ClassUtils;
 
@@ -36,6 +37,7 @@ class PropertiesValidation {
      * genuinely never includes that module at all (the base standalone
      * server's own {@code pom.xml} declares it test-scope only).
      */
+    @Lazy(false)
     @Bean
     Object dataPrismPropertiesValidated(DataPrismProperties properties, List<DataSourceAdapter<?>> adapters,
             ObjectProvider<IdentityResolver> identities, ObjectProvider<HmacKeyReferenceResolver> keys,
@@ -102,6 +104,7 @@ class PropertiesValidation {
      */
     private static final String CONFIGURED_JSON_SOURCE_NAMES_BEAN = "dataPrismConfiguredJsonSourceNames";
 
+    @Lazy(false)
     @Bean
     DataPrismContractValidator dataPrismContractValidator(DataPrismProperties properties,
             ObjectProvider<DataSourceAdapter<?>> adapters, ObjectProvider<IdentityResolver> identities,

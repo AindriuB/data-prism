@@ -53,7 +53,8 @@ class IdentityMetricsTest {
         config.getJetConfig().setEnabled(false);
         config.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
         config.getNetworkConfig().getJoin().getTcpIpConfig().setEnabled(false);
-        notReidentifying = PrivacyCluster.embedded(config, false);
+        // Both wrappers share one instance, so they must hold the same keys.
+        notReidentifying = PrivacyCluster.embedded(config, false, java.util.OptionalInt.empty(), TestMembers.KEYS);
         reidentifying = PrivacyCluster.using(notReidentifying.instance(), true, TestMembers.KEYS);
     }
 
@@ -119,6 +120,14 @@ class IdentityMetricsTest {
         };
     }
 
+    /** An authentic envelope for the identity entry, holding a value the generator did not produce. */
+    private static String sealed(PrivacyCluster cluster, String key, String scopeId, String subjectId, String value) {
+        var sealer = (io.github.aindriub.dataprism.hazelcast.seal.Sealer) cluster.instance().getUserContext()
+                .get("dataprism.cluster.sealer");
+        return sealer.seal(PrivacyCluster.IDENTITY_MAP, key, IdentityMaps.plaintext(
+                ScopeKeys.identityCanonical(scopeId, subjectId, PrivacyNamespace.PERSON_NAME), value));
+    }
+
     private static PrivacyContext scope(String scopeId) {
         return new PrivacyContext(scopeId, PrivacyScopeType.CASE, "DEFAULT", "test",
                 Instant.now().plus(1, ChronoUnit.HOURS), PseudonymisationVersion.HMAC_SHA256_V1);
@@ -146,7 +155,7 @@ class IdentityMetricsTest {
     void collisionIsRecordedWhenAConcurrentWriteDisagrees() throws Exception {
         var metrics = new RecordingPrivacyMetrics();
         var context = scope("M-CASE-COLLISION");
-        String key = ScopeKeys.identity(context.scopeId(), "s-1", PrivacyNamespace.PERSON_NAME);
+        String key = notReidentifying.scopeKeys().identity(context.scopeId(), "s-1", PrivacyNamespace.PERSON_NAME);
 
         // Ordering is enforced with latches, not timing: the generator signals
         // that the lookup already came back empty (a real miss) and then blocks,
@@ -171,7 +180,7 @@ class IdentityMetricsTest {
             assertThat(generatorEntered.await(5, TimeUnit.SECONDS)).isTrue();
             // What "the key, algorithm version or vocabulary changed mid-scope"
             // looks like from the cache's point of view.
-            notReidentifying.instance().getMap(PrivacyCluster.IDENTITY_MAP).set(key, "stale-value");
+            notReidentifying.instance().getMap(PrivacyCluster.IDENTITY_MAP).set(key, sealed(notReidentifying, key, context.scopeId(), "s-1", "stale-value"));
             proceed.countDown();
 
             String result = pending.get(5, TimeUnit.SECONDS);
@@ -281,7 +290,7 @@ class IdentityMetricsTest {
     @DisplayName("a metrics failure on a collision still overwrites the disagreeing cached value")
     void metricsFailureOnCollisionStillOverwritesTheStaleValue() throws Exception {
         var context = scope("M-CASE-COLLISIONTHROW");
-        String key = ScopeKeys.identity(context.scopeId(), "s-1", PrivacyNamespace.PERSON_NAME);
+        String key = notReidentifying.scopeKeys().identity(context.scopeId(), "s-1", PrivacyNamespace.PERSON_NAME);
 
         // Same latch technique as the collision test above: the generator signals
         // that its own lookup already came back empty, then blocks, so the direct
@@ -307,7 +316,7 @@ class IdentityMetricsTest {
                     () -> caching.syntheticValue("s-1", PrivacyNamespace.PERSON_NAME, context));
 
             assertThat(generatorEntered.await(5, TimeUnit.SECONDS)).isTrue();
-            notReidentifying.instance().getMap(PrivacyCluster.IDENTITY_MAP).set(key, "stale-value");
+            notReidentifying.instance().getMap(PrivacyCluster.IDENTITY_MAP).set(key, sealed(notReidentifying, key, context.scopeId(), "s-1", "stale-value"));
             proceed.countDown();
 
             String result = pending.get(5, TimeUnit.SECONDS);
@@ -321,7 +330,11 @@ class IdentityMetricsTest {
         // disagreeing value in place for every later lookup to return.
         String storedAfter = notReidentifying.instance()
                 .<String, String>getMap(PrivacyCluster.IDENTITY_MAP).get(key);
-        assertThat(storedAfter).isEqualTo("generated-value");
+        var sealer = (io.github.aindriub.dataprism.hazelcast.seal.Sealer) notReidentifying.instance()
+                .getUserContext().get("dataprism.cluster.sealer");
+        assertThat(IdentityMaps.valueOf(sealer.open(PrivacyCluster.IDENTITY_MAP, key, storedAfter),
+                ScopeKeys.identityCanonical(context.scopeId(), "s-1", PrivacyNamespace.PERSON_NAME)))
+                .contains("generated-value");
     }
 
     @Test
@@ -369,7 +382,7 @@ class IdentityMetricsTest {
         // Collision, so the assertion below also covers CachingSyntheticValueSource:125.
         String collisionScopeId = "M-CASE-SAFE-COLLISION";
         var collisionContext = scope(collisionScopeId);
-        String collisionKey = ScopeKeys.identity(collisionScopeId, subjectId, PrivacyNamespace.PERSON_NAME);
+        String collisionKey = reidentifying.scopeKeys().identity(collisionScopeId, subjectId, PrivacyNamespace.PERSON_NAME);
         CountDownLatch generatorEntered = new CountDownLatch(1);
         CountDownLatch proceed = new CountDownLatch(1);
         var blockingGenerator = new SyntheticValueSource() {
@@ -386,7 +399,7 @@ class IdentityMetricsTest {
             Future<String> pending = executor.submit(() ->
                     collisionCaching.syntheticValue(subjectId, PrivacyNamespace.PERSON_NAME, collisionContext));
             assertThat(generatorEntered.await(5, TimeUnit.SECONDS)).isTrue();
-            reidentifying.instance().getMap(PrivacyCluster.IDENTITY_MAP).set(collisionKey, "stale-value");
+            reidentifying.instance().getMap(PrivacyCluster.IDENTITY_MAP).set(collisionKey, sealed(reidentifying, collisionKey, collisionScopeId, subjectId, "stale-value"));
             proceed.countDown();
             pending.get(5, TimeUnit.SECONDS);
         } finally {

@@ -5,6 +5,7 @@ import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
 import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
 
 import java.time.Duration;
+import java.util.Collection;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
@@ -55,9 +56,18 @@ final class ClusterLocks {
      *                                          {@code hazelcast.lock.max.lease.time.seconds} is below it)
      */
     static void acquire(IMap<String, ?> map, String key, Duration timeout) {
+        acquire(map, key, timeout.toMillis(), leaseMillis(timeout));
+    }
+
+    /** As {@link #acquire(IMap, String, Duration)}, waiting only for what is left of a deadline the caller fixed. */
+    static void acquireUntil(IMap<String, ?> map, String key, long deadlineNanos, Duration timeout) {
+        long remaining = Math.max(0, TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime()));
+        acquire(map, key, remaining, leaseMillis(timeout));
+    }
+
+    private static void acquire(IMap<String, ?> map, String key, long waitMillis, long leaseMillis) {
         try {
-            if (!map.tryLock(key, timeout.toMillis(), TimeUnit.MILLISECONDS, leaseMillis(timeout),
-                    TimeUnit.MILLISECONDS)) {
+            if (!map.tryLock(key, waitMillis, TimeUnit.MILLISECONDS, leaseMillis, TimeUnit.MILLISECONDS)) {
                 throw new ClusterLockTimeoutException();
             }
         } catch (InterruptedException interrupted) {
@@ -90,5 +100,101 @@ final class ClusterLocks {
         } catch (RuntimeException ignored) {
             // The lock dies with the member, or its lease ran out; throwing here would mask the real failure.
         }
+    }
+
+    /**
+     * Bounded writes. A {@code set}, {@code put}, {@code delete} or {@code putIfAbsent} on a key another owner has
+     * locked waits for that lock without bound (spike 219, answer 10), so each of these takes the key's lock first,
+     * waiting at most {@code timeout}, and refuses with {@link ClusterLockTimeoutException} if it cannot. The write
+     * itself is then not blocked by anyone else's lock. The lock bounds the wait only; correctness never rests on it.
+     */
+    static <V> void set(IMap<String, V> map, String key, V value, long ttlMillis, Duration timeout) {
+        acquire(map, key, timeout);
+        try {
+            map.set(key, value, ttlMillis, TimeUnit.MILLISECONDS);
+        } finally {
+            release(map, key);
+        }
+    }
+
+    /** {@code putIfAbsent} under the key's bounded lock; returns the existing value, or null if it stored. */
+    static <V> V putIfAbsent(IMap<String, V> map, String key, V value, long ttlMillis, Duration timeout) {
+        acquire(map, key, timeout);
+        try {
+            return map.putIfAbsent(key, value, ttlMillis, TimeUnit.MILLISECONDS);
+        } finally {
+            release(map, key);
+        }
+    }
+
+    /** {@code delete} under the key's bounded lock. */
+    static void delete(IMap<String, ?> map, String key, Duration timeout) {
+        acquire(map, key, timeout);
+        try {
+            map.delete(key);
+        } finally {
+            release(map, key);
+        }
+    }
+
+    /**
+     * Deletes each key under its own bounded lock and goes on after a key whose lock times out; returns how many it
+     * left in place for that reason. The whole call shares one deadline of {@code timeout}: each lock waits for what
+     * is left of it, and once it has passed a key is still deleted if its lock is free right now. A caller that must
+     * report the failure throws {@link ClusterLockTimeoutException} when the count is not zero, after the last key,
+     * so one held key does not stop the rest of a scope from ending. A lock Hazelcast refuses is treated the same way
+     * for the remaining keys, and the first such refusal is rethrown after the last key.
+     */
+    static int deleteAll(IMap<String, ?> map, Collection<String> keys, Duration timeout) {
+        Sweep sweep = deleteAll(map, keys, System.nanoTime() + timeout.toNanos(), timeout);
+        if (sweep.refusal() != null) {
+            throw sweep.refusal();
+        }
+        return sweep.skipped();
+    }
+
+    /**
+     * What a sweep left behind: how many keys it skipped for a lock timeout, and the first refusal, if any. Nothing
+     * is thrown, so a caller sweeping several maps can finish them all and then throw once.
+     */
+    record Sweep(int skipped, RuntimeException refusal) {
+        Sweep plus(Sweep other) {
+            return new Sweep(skipped + other.skipped, refusal != null ? refusal : other.refusal);
+        }
+    }
+
+    /**
+     * As {@link #deleteAll(IMap, Collection, Duration)} against a deadline the caller fixed ({@link
+     * System#nanoTime()} units), so several sweeps can share one. Any other failure of a delete counts as a refusal
+     * for that key ({@link ClusterRefusals#mapped}) and the sweep goes on. Never throws for a key.
+     */
+    static Sweep deleteAll(IMap<String, ?> map, Collection<String> keys, long deadlineNanos,
+                           Duration timeout) {
+        long lease = leaseMillis(timeout);
+        int skipped = 0;
+        RuntimeException firstRefusal = null;
+        for (String key : keys) {
+            long remaining = Math.max(0, TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime()));
+            try {
+                acquire(map, key, remaining, lease);
+                try {
+                    map.delete(key);
+                } finally {
+                    release(map, key);
+                }
+            } catch (ClusterLockTimeoutException held) {
+                skipped++;
+            } catch (ClusterOperationRefusedException refused) {
+                if (firstRefusal == null) {
+                    firstRefusal = refused;
+                }
+            } catch (RuntimeException failed) {
+                RuntimeException mapped = ClusterRefusals.mapped(failed);
+                if (firstRefusal == null) {
+                    firstRefusal = mapped;
+                }
+            }
+        }
+        return new Sweep(skipped, firstRefusal);
     }
 }

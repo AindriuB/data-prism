@@ -118,8 +118,8 @@ class ApprovalGuardMapsTest {
 
     @Test
     void aClaimMapHealWithDifferingValuesKeepsTheExistingClaim() throws Exception {
-        String existing = ClaimEntries.value(ScopeKeys.approval("s", "x"), TestMembers.token(1));
-        String merging = ClaimEntries.value(ScopeKeys.approval("s", "x"), TestMembers.token(2));
+        String existing = ClaimEntries.value(TestMembers.SCOPE_KEYS.approval("s", "x"), TestMembers.token(1));
+        String merging = ClaimEntries.value(TestMembers.SCOPE_KEYS.approval("s", "x"), TestMembers.token(2));
         var policy = (com.hazelcast.spi.merge.SplitBrainMergePolicy) Class.forName(
                 "com.hazelcast.spi.merge.PutIfAbsentMergePolicy").getDeclaredConstructor().newInstance();
         assertThat(policy.merge(entry(merging), entry(existing))).isEqualTo(existing);

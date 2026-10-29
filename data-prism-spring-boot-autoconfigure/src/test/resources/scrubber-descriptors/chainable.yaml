@@ -1,0 +1,10 @@
+models:
+  io.github.aindriub.dataprism.spring.boot.descriptors.ScrubberDescriptorWiringTest$Plain:
+    exposed: true
+    fields:
+      ref: { identifier: self, chainable: true, keyNamespace: parcel-ref }
+      state: { nonSensitive: enumerated lifecycle state }
+  io.github.aindriub.dataprism.spring.boot.descriptors.ScrubberDescriptorWiringTest$Other:
+    exposed: true
+    fields:
+      code: { nonSensitive: enumerated lifecycle state }

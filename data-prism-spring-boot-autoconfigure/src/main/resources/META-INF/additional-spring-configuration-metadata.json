@@ -10,9 +10,32 @@
       "name": "dataprism.hazelcast.member.interface",
       "type": "java.lang.String",
       "description": "Network interface the member binds. Required for tcp-ip and kubernetes; refused with join mode none."
+    },
+    {
+      "name": "dataprism.hazelcast.trusted-network",
+      "type": "java.lang.Boolean",
+      "description": "The operator's assertion that only Data Prism members can reach the member port (dataprism.hazelcast.member.port, 5701 by default). Approvals and counters on that port are unsealed, so anyone else who can reach it can read and forge them. Required for tcp-ip and kubernetes; refused with single-node, join mode none and an application-supplied PrivacyCluster. On Kubernetes the shipped NetworkPolicy admits every pod labelled app: data-prism, so run the members in a dedicated namespace; it protects only where the network plugin enforces NetworkPolicy and no pod uses hostNetwork.",
+      "defaultValue": false
+    },
+    {
+      "name": "dataprism.hazelcast.member.trusted-ranges",
+      "type": "java.util.List<java.lang.String>",
+      "description": "IPv4 CIDR blocks to trust beyond 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 and 127.0.0.0/8, for the member interface and the advertised addresses. A block outside those must be /24 or longer. Applies only with trusted-network; refused with single-node, join mode none and an application-supplied PrivacyCluster."
     }
   ],
   "hints": [
+    {
+      "name": "dataprism.security-policy.case-authorisation",
+      "values": [
+        { "value": "token-trusted", "description": "Trust the case claim in the token without assignment checks. Development only; startup logs a warning." }
+      ]
+    },
+    {
+      "name": "dataprism.security-policy.client-allowlist",
+      "values": [
+        { "value": "unrestricted", "description": "Allow every client. Startup logs a warning." }
+      ]
+    },
     {
       "name": "dataprism.audit.sink",
       "values": [

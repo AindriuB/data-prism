@@ -91,8 +91,7 @@ public class ConfiguredJsonSourcesAutoConfiguration {
      * binds {@code dataprism.limits.*} into the one bean. This module cannot read those properties itself. A test pins
      * these values to the framework defaults.
      */
-    static final RequestLimits STANDALONE_LIMITS = new RequestLimits(
-            8, 500, 512 * 1024, java.time.Duration.ofSeconds(3), 4, 100);
+    static final RequestLimits STANDALONE_LIMITS = RequestLimits.DEFAULT;
 
 
     static final String CONFIG_LOCATION_PROPERTY = "dataprism.json-sources.config-location";

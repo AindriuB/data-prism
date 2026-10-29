@@ -182,6 +182,28 @@ class ClusterCutoverTest {
     }
 
     @Test
+    void aRawNulKeyedPauseWrittenAfterConstructionIsCountedByTheWatch() {
+        old.getLifecycleService().terminate();
+        HazelcastInstance late = null;
+        HazelcastInstance trigger = null;
+        try (PrivacyCluster running = startNewMember()) {
+            assertThat(running.legacyEntries()).isZero();
+            late = rawMember(FreePorts.consecutive(1));
+            assertThat(await(30, () -> running.instance().getCluster().getMembers().size() == 2)).isTrue();
+            late.getMap(PrivacyCluster.OVERSIGHT_MAP).put("CASE-A" + NUL + "paused", Boolean.TRUE);
+            trigger = rawMember(FreePorts.consecutive(1));
+            assertThat(await(30, () -> running.legacyEntries() > 0)).as("raw NUL pause counted").isTrue();
+        } finally {
+            if (trigger != null) {
+                trigger.getLifecycleService().terminate();
+            }
+            if (late != null) {
+                late.getLifecycleService().terminate();
+            }
+        }
+    }
+
+    @Test
     void aStalledLegacyCheckIsInterruptedAtTheLimitAndNeverHoldsUpTheNextJoin() throws Exception {
         List<HazelcastInstance> joiners = new java.util.ArrayList<>();
         try (PrivacyCluster running = startNewMember()) {

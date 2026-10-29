@@ -38,6 +38,8 @@ import io.github.aindriub.dataprism.pseudonymisation.HmacValueTokenSource;
 import io.github.aindriub.dataprism.pseudonymisation.StaticSecretKeyProvider;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
+import io.github.aindriub.dataprism.security.CaseAuthorizer;
+import io.github.aindriub.dataprism.security.ClientAllowlist;
 import io.github.aindriub.dataprism.security.OversightPolicy;
 import io.github.aindriub.dataprism.security.PurposeValidator;
 import io.github.aindriub.dataprism.security.ScopeResolver;
@@ -151,9 +153,9 @@ class ExternalCorrelationToolTest {
             ContextOrchestrator orchestrator, CorrelationRequirement requirement, ToolAdmission admission) {
         SecurityPolicy security = new SecurityPolicy(Set.of("demonstration"),
                 Map.of("investigator", Set.of("GET_ENTITY_CONTEXT", "COMPARE_ENTITY_SOURCES")));
-        AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION);
+        AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION, ClientAllowlist.unrestricted());
         ScopeResolver scopes = new ScopeResolver(VERSION, Duration.ofHours(8),
-                new PurposeValidator(Set.of("demonstration")));
+                new PurposeValidator(Set.of("demonstration")), CaseAuthorizer.tokenTrusted());
         ParameterFingerprinter fingerprinter = new ParameterFingerprinter(KEYS);
         GetEntityContextTool get = new GetEntityContextTool(orchestrator, authz, scopes,
                 metrics, audit, FIXED, null, ToolOptions.defaults().admission(admission, fingerprinter).correlationRequirement(requirement).build());
@@ -388,9 +390,9 @@ class ExternalCorrelationToolTest {
     void toolsListUnchanged() {
         SecurityPolicy security = new SecurityPolicy(Set.of("demonstration"),
                 Map.of("investigator", Set.of("GET_ENTITY_CONTEXT")));
-        AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION);
+        AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION, ClientAllowlist.unrestricted());
         ScopeResolver scopes = new ScopeResolver(VERSION, Duration.ofHours(8),
-                new PurposeValidator(Set.of("demonstration")));
+                new PurposeValidator(Set.of("demonstration")), CaseAuthorizer.tokenTrusted());
         McpSyncServer optional = DataPrismMcpServer.stdio(recording, authz, scopes, CALLER, true, false,
                 PrivacyMetrics.none(), audit, FIXED, ToolOptions.defaults().noAdmission().build());
         McpSyncServer required = DataPrismMcpServer.stdio(recording, authz, scopes, CALLER, true, false,
@@ -427,9 +429,9 @@ class ExternalCorrelationToolTest {
     @DisplayName("a real admission with a null fingerprinter is refused, naming the fingerprinter, on both tools and both factories")
     void nullFingerprinterWithAdmissionIsRefused() {
         SecurityPolicy security = new SecurityPolicy(Set.of("demonstration"), Map.of());
-        AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION);
+        AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION, ClientAllowlist.unrestricted());
         ScopeResolver scopes = new ScopeResolver(VERSION, Duration.ofHours(8),
-                new PurposeValidator(Set.of("demonstration")));
+                new PurposeValidator(Set.of("demonstration")), CaseAuthorizer.tokenTrusted());
         ToolAdmission real = new ToolAdmission(new InMemoryOversightState(), new InMemoryApprovalStore(),
                 new InMemoryCallerRateLimiter(),
                 new OversightPolicy(Set.of(TOOLS), OptionalInt.empty(), Duration.ofMinutes(1), Duration.ofHours(1)),

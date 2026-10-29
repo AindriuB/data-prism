@@ -1,0 +1,59 @@
+package io.github.aindriub.dataprism.security;
+
+import java.util.Objects;
+import java.util.Set;
+
+/**
+ * Optionally restricts which client ids may call at all. Matching is exact and
+ * case-sensitive; nothing is trimmed or normalised.
+ *
+ * <p>An allowlist is a value: two are equal when they allow the same set of client ids, and
+ * {@link #unrestricted()} is equal only to another unrestricted allowlist. A wiring check can therefore tell
+ * a service built with an equal allowlist (for example one built again from the same configuration in a child
+ * context) from one built with a different allowlist.
+ */
+public final class ClientAllowlist {
+
+    private static final ClientAllowlist UNRESTRICTED = new ClientAllowlist(null);
+
+    private final Set<String> allowed;
+
+    private ClientAllowlist(Set<String> allowed) {
+        this.allowed = allowed;
+    }
+
+    /** Permits every client id. */
+    public static ClientAllowlist unrestricted() {
+        return UNRESTRICTED;
+    }
+
+    /**
+     * @throws IllegalArgumentException when {@code clientIds} is empty or holds a blank entry
+     */
+    public static ClientAllowlist of(Set<String> clientIds) {
+        Objects.requireNonNull(clientIds, "clientIds");
+        if (clientIds.isEmpty()) {
+            throw new IllegalArgumentException("clientIds must not be empty");
+        }
+        for (String id : clientIds) {
+            if (id == null || id.isBlank()) {
+                throw new IllegalArgumentException("clientIds must not contain a blank entry");
+            }
+        }
+        return new ClientAllowlist(Set.copyOf(clientIds));
+    }
+
+    public boolean permits(String clientId) {
+        return allowed == null || (clientId != null && allowed.contains(clientId));
+    }
+
+    @Override
+    public boolean equals(Object other) {
+        return this == other || (other instanceof ClientAllowlist that && Objects.equals(allowed, that.allowed));
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hashCode(allowed);
+    }
+}

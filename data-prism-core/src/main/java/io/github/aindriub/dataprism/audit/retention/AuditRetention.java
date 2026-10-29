@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.audit.retention;
 
+import io.github.aindriub.dataprism.audit.AuditChainKey;
 import io.github.aindriub.dataprism.audit.AuditCheckpoint;
 import io.github.aindriub.dataprism.audit.AuditCheckpointSink;
 import io.github.aindriub.dataprism.audit.AuditEvent;
@@ -33,7 +34,19 @@ import java.util.stream.Stream;
  *
  * <p>Purge is deletion: the records are gone, and an anchor keeps only a
  * sequence and a hash. Anchors are written first, and if any anchor write
- * fails nothing is deleted.
+ * fails nothing is deleted, with one exception: a day an earlier purge anchored
+ * and only part deleted is finished first. Its remaining segments are removed
+ * only if, verified on their own (never joined to the next day), they show no break,
+ * no structural anomaly and no unterminated tail, and each writer's first remaining
+ * record starts at GENESIS or follows an earlier anchor; otherwise it takes the
+ * normal path. This does not catch every edit to an anchored day: lines the verifier
+ * skips unhashed, such as interrupted-write fragments, are a known gap. A failure
+ * after that names the finished day in its message.
+ *
+ * <p>Trust assumption: the retention anchor store is trusted. Anyone who can
+ * write to it can vouch for a chain's start and can make a day look partly
+ * purged; that was already so for the anchors that vouch for a chain's start.
+ * A day recognised as partly purged is still verified, within the limits above, before it is deleted.
  */
 public final class AuditRetention {
 
@@ -51,6 +64,16 @@ public final class AuditRetention {
     private final AuditCheckpointSink anchors;
     private final Clock clock;
     private final boolean allowBelowMinimum;
+    private final List<AuditChainKey> chainKeys;
+    private final boolean allowUnkeyedWriters;
+
+    /** Deletes one segment; replaceable in tests to inject a delete failure. */
+    @FunctionalInterface
+    interface Deleter {
+        void delete(Path segment) throws IOException;
+    }
+
+    Deleter deleter = Files::delete;
 
     public AuditRetention(Path directory, Period retention, AuditCheckpointSink anchors, Clock clock) {
         this(directory, retention, anchors, clock, false);
@@ -58,6 +81,18 @@ public final class AuditRetention {
 
     public AuditRetention(Path directory, Period retention, AuditCheckpointSink anchors, Clock clock,
                           boolean allowBelowMinimum) {
+        this(directory, retention, anchors, clock, allowBelowMinimum, List.of(), false);
+    }
+
+    /**
+     * As above, and additionally verifies expiring segments with {@code chainKeys} the way {@link
+     * AuditChainVerifier#verify(Path, Path, Period, List, boolean)} does: an expiring keyed segment whose
+     * key is not supplied does not verify and is not deleted. An empty list means unkeyed.
+     */
+    public AuditRetention(Path directory, Period retention, AuditCheckpointSink anchors, Clock clock,
+                          boolean allowBelowMinimum, List<AuditChainKey> chainKeys, boolean allowUnkeyedWriters) {
+        this.chainKeys = List.copyOf(Objects.requireNonNull(chainKeys, "chainKeys"));
+        this.allowUnkeyedWriters = allowUnkeyedWriters;
         this.directory = Objects.requireNonNull(directory, "directory");
         this.retention = Objects.requireNonNull(retention, "retention");
         this.anchors = Objects.requireNonNull(anchors, "anchors");
@@ -116,27 +151,38 @@ public final class AuditRetention {
         LocalDate today = clock.instant().atZone(ZoneOffset.UTC).toLocalDate();
         LocalDate cutoff = cutoff(today, retention, allowBelowMinimum);
 
-        Map<LocalDate, Path> expired = new java.util.TreeMap<>();
+        List<Path> segments = new ArrayList<>();
         try (Stream<Path> files = Files.list(directory)) {
             files.filter(Files::isRegularFile).forEach(f -> {
                 LocalDate date = SegmentedFileAuditSink.segmentDate(f);
                 if (date != null && date.isBefore(cutoff) && date.isBefore(today)) {
-                    expired.put(date, f);
+                    segments.add(f);
                 }
             });
         } catch (IOException e) {
             throw new RetentionException(ANCHOR_FAILED + ": could not list " + directory, e);
         }
 
-        List<LocalDate> dates = new ArrayList<>(expired.keySet());
-        List<Path> segments = new ArrayList<>(expired.values());
+        segments.sort(SegmentedFileAuditSink.SEGMENT_ORDER);
+        List<Path> deleted = new ArrayList<>();
+        // A day an earlier run anchored and then failed to finish deleting is finished first, once its remainder verifies on its own.
+        int partial = partlyPurgedDayLength(segments);
+        String finishedDay = null;
+        if (partial > 0) {
+            finishedDay = SegmentedFileAuditSink.segmentDate(segments.get(0)).toString();
+            List<Path> rest = deleteDay(new ArrayList<>(segments.subList(0, partial)));
+            deleted.addAll(rest);
+            segments.subList(0, partial).clear();
+        }
+        String deletedNote = finishedDay == null ? "nothing was deleted"
+                : "nothing was deleted beyond finishing the partly purged day " + finishedDay;
         int verified = segments.size();
         String unverified = null;
         if (!segments.isEmpty()) {
             List<Long> starts = new ArrayList<>();
             AuditChainVerifier.VerificationReport report;
             try {
-                report = AuditChainVerifier.verifySegments(segments, starts);
+                report = AuditChainVerifier.verifySegments(segments, starts, chainKeys, allowUnkeyedWriters);
             } catch (IOException e) {
                 throw new RetentionException(ANCHOR_FAILED + ": could not read the expiring segments", e);
             }
@@ -155,7 +201,7 @@ public final class AuditRetention {
         }
 
         if (verified > 0) {
-            int unanchored = firstUnanchoredStart(segments.subList(0, verified), earlierAnchors());
+            int unanchored = firstUnanchoredStart(segments.subList(0, verified), earlierAnchors(deletedNote));
             if (unanchored >= 0) {
                 verified = unanchored;
                 unverified = CHAIN_UNVERIFIED + ": a writer's first expiring record in "
@@ -165,27 +211,42 @@ public final class AuditRetention {
             }
         }
 
+        // A day's segments are one unit: purge all of them or none, so a refusal inside a day keeps the day.
+        while (verified > 0 && verified < segments.size()
+                && SegmentedFileAuditSink.segmentDate(segments.get(verified - 1))
+                .equals(SegmentedFileAuditSink.segmentDate(segments.get(verified)))) {
+            verified--;
+        }
+
         List<AuditCheckpoint> toAnchor = new ArrayList<>();
-        for (int i = 0; i < verified; i++) {
-            toAnchor.addAll(anchorsFor(segments.get(i), dates.get(i)));
+        int from = 0;
+        while (from < verified) {
+            LocalDate day = SegmentedFileAuditSink.segmentDate(segments.get(from));
+            int to = from;
+            while (to < verified && day.equals(SegmentedFileAuditSink.segmentDate(segments.get(to)))) {
+                to++;
+            }
+            toAnchor.addAll(anchorsFor(segments.subList(from, to), day));
+            from = to;
         }
         for (AuditCheckpoint anchor : toAnchor) {
             try {
                 anchors.record(anchor);
             } catch (RuntimeException e) {
                 throw new RetentionException(ANCHOR_FAILED + ": could not record the retention anchor for writer "
-                        + anchor.instanceId() + " at sequence " + anchor.sequence() + "; nothing was deleted", e);
+                        + anchor.instanceId() + " at sequence " + anchor.sequence() + "; " + deletedNote, e);
             }
         }
 
-        List<Path> deleted = new ArrayList<>();
-        for (Path segment : segments.subList(0, verified)) {
-            try {
-                Files.delete(segment);
-            } catch (IOException e) {
-                throw new RetentionException("AUDIT_RETENTION_DELETE_FAILED: could not delete " + segment, e);
+        int dayStart = 0;
+        while (dayStart < verified) {
+            LocalDate day = SegmentedFileAuditSink.segmentDate(segments.get(dayStart));
+            int dayEnd = dayStart;
+            while (dayEnd < verified && day.equals(SegmentedFileAuditSink.segmentDate(segments.get(dayEnd)))) {
+                dayEnd++;
             }
-            deleted.add(segment);
+            deleted.addAll(deleteDay(segments.subList(dayStart, dayEnd)));
+            dayStart = dayEnd;
         }
         if (unverified != null) {
             throw new RetentionException(unverified, null);
@@ -193,12 +254,110 @@ public final class AuditRetention {
         return deleted;
     }
 
-    private List<AuditCheckpoint> earlierAnchors() {
+    /**
+     * Deletes one day's segments, highest index first, and returns them in index order. If a delete fails,
+     * what remains is a prefix of the day. The next purge recognises the prefix by the day's own
+     * anchors, verifies it on its own, and finishes it (see {@link #partlyPurgedDayLength}).
+     */
+    private List<Path> deleteDay(List<Path> day) {
+        for (int i = day.size() - 1; i >= 0; i--) {
+            try {
+                deleter.delete(day.get(i));
+            } catch (IOException e) {
+                throw new RetentionException("AUDIT_RETENTION_DELETE_FAILED: could not delete " + day.get(i), e);
+            }
+        }
+        return List.copyOf(day);
+    }
+
+    /**
+     * The number of leading segments that are the remains of a day an earlier purge anchored and part
+     * deleted, or 0. The oldest remaining expired day is such a day only if it has at least one parseable
+     * record and every writer in it has a recorded retention anchor for this very day whose sequence is
+     * at least that writer's last remaining record, and at least one writer's anchor is beyond it, which
+     * proves records were deleted. A writer whose records all remain loses nothing. The anchors say the day
+     * was once verified, not that its files are unchanged, so the remaining segments must then verify as
+     * a chain on their own (never joined to the next day, under the same chain keys as the normal path)
+     * with no break, no structural anomaly and no unterminated tail, and each writer's first remaining
+     * record must start at GENESIS or follow an earlier anchor. This is a check, not a proof: lines the
+     * verifier skips unhashed, such as interrupted-write fragments, are a known gap. Anything else,
+     * including a missing or other-day anchor, takes the normal verification path.
+     */
+    private int partlyPurgedDayLength(List<Path> segments) {
+        if (segments.isEmpty()) {
+            return 0;
+        }
+        LocalDate day = SegmentedFileAuditSink.segmentDate(segments.get(0));
+        int n = 0;
+        while (n < segments.size() && day.equals(SegmentedFileAuditSink.segmentDate(segments.get(n)))) {
+            n++;
+        }
+        Map<String, Long> lastRemaining = new LinkedHashMap<>();
+        for (Path segment : segments.subList(0, n)) {
+            List<String> lines;
+            try {
+                lines = Files.readAllLines(segment, java.nio.charset.StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                throw new RetentionException(ANCHOR_FAILED + ": could not read " + segment, e);
+            }
+            for (String line : lines) {
+                if (line.isEmpty()) {
+                    continue;
+                }
+                try {
+                    AuditEvent event = AuditRecordFormat.parse(line);
+                    lastRemaining.merge(event.instanceId(), event.sequence(), Math::max);
+                } catch (RuntimeException e) {
+                    // a torn fragment carries no chain position
+                }
+            }
+        }
+        if (lastRemaining.isEmpty()) {
+            return 0;
+        }
+        List<AuditCheckpoint> earlier = earlierAnchors("nothing was deleted");
+        boolean deletionProven = false;
+        for (Map.Entry<String, Long> w : lastRemaining.entrySet()) {
+            long best = -1;
+            for (AuditCheckpoint a : earlier) {
+                if (a.instanceId().equals(w.getKey()) && day.equals(a.segmentDate())) {
+                    best = Math.max(best, a.sequence());
+                }
+            }
+            if (best < w.getValue()) {
+                return 0;
+            }
+            deletionProven |= best > w.getValue();
+        }
+        if (!deletionProven) {
+            return 0;
+        }
+        // The anchors only say the day was once verified. The files may have been edited since, so the
+        // remainder is verified on its own (never joined to the next day) before it is deleted. That is a
+        // check, not a proof: lines the verifier skips unhashed (interrupted-write fragments) are a known gap.
+        List<Path> prefix = segments.subList(0, n);
+        AuditChainVerifier.VerificationReport report;
+        try {
+            report = AuditChainVerifier.verifySegments(prefix, new ArrayList<>(), chainKeys, allowUnkeyedWriters);
+        } catch (IOException e) {
+            throw new RetentionException(ANCHOR_FAILED + ": could not read the expiring segments", e);
+        }
+        // Refuse on any break, structural anomaly (a duplicate sequence, say: a rewritten sequence number
+        // shows up as one), unterminated tail (its last record is never hashed) or unanchored start. A clean
+        // partial deletion leaves none of them.
+        if (firstBadOffset(report) >= 0 || report.hasStructuralAnomaly() || report.tail().isPresent()
+                || firstUnanchoredStart(prefix, earlier) >= 0) {
+            return 0;
+        }
+        return n;
+    }
+
+    private List<AuditCheckpoint> earlierAnchors(String deletedNote) {
         try {
             return anchors.retentionAnchors();
         } catch (RuntimeException e) {
             throw new RetentionException(CHAIN_UNVERIFIED + ": could not read the earlier retention anchors, so "
-                    + "the start of the expiring chain cannot be checked; nothing was deleted", e);
+                    + "the start of the expiring chain cannot be checked; " + deletedNote, e);
         }
     }
 
@@ -250,20 +409,26 @@ public final class AuditRetention {
             }
         }
         for (AuditChainVerifier.StructuralAnomaly a : report.anomalies()) {
-            if (a.type().isBreak()) {
+            // A duplicate sequence is not counted as a break by the verifier, but purge must not erase it: a
+            // rewritten sequence number looks exactly like one, and the break that follows is blamed on a
+            // later record, which would let the altered day be deleted.
+            if (a.type().isBreak() || a.type() == AuditChainVerifier.AnomalyType.DUPLICATE_SEQUENCE) {
                 bad = Math.min(bad, a.primaryOffset());
             }
         }
         return bad == Long.MAX_VALUE ? -1 : bad;
     }
 
-    private List<AuditCheckpoint> anchorsFor(Path segment, LocalDate segmentDate) {
+    /** Anchors for one day: each writer's last record across all of the day's segments. */
+    private List<AuditCheckpoint> anchorsFor(List<Path> daySegments, LocalDate segmentDate) {
         Map<String, AuditEvent> lastPerWriter = new LinkedHashMap<>();
-        List<String> lines;
-        try {
-            lines = Files.readAllLines(segment, java.nio.charset.StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new RetentionException(ANCHOR_FAILED + ": could not read " + segment, e);
+        List<String> lines = new ArrayList<>();
+        for (Path segment : daySegments) {
+            try {
+                lines.addAll(Files.readAllLines(segment, java.nio.charset.StandardCharsets.UTF_8));
+            } catch (IOException e) {
+                throw new RetentionException(ANCHOR_FAILED + ": could not read " + segment, e);
+            }
         }
         for (String line : lines) {
             if (line.isEmpty()) {

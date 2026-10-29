@@ -16,26 +16,39 @@ import com.hazelcast.config.MaxSizePolicy;
 import com.hazelcast.config.RestEndpointGroup;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.instance.impl.HazelcastInstanceImpl;
+import com.hazelcast.instance.impl.HazelcastInstanceProxy;
+import com.hazelcast.internal.server.tcp.ServerSocketRegistry;
+import com.hazelcast.internal.server.tcp.TcpServer;
 import com.hazelcast.spi.properties.ClusterProperty;
 import com.hazelcast.spi.properties.HazelcastProperties;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
+import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
 import io.github.aindriub.dataprism.hazelcast.PrivacyClusterRefusal.Code;
 import io.github.aindriub.dataprism.hazelcast.seal.ClusterKeys;
-
-import java.net.InetAddress;
+import io.github.aindriub.dataprism.hazelcast.seal.KeyedNames;
+import io.github.aindriub.dataprism.hazelcast.seal.SealedWrites;
+import io.github.aindriub.dataprism.hazelcast.seal.Sealer;
+import io.github.aindriub.dataprism.hazelcast.seal.ServingGate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.InetAddress;
+import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -83,6 +96,13 @@ import java.util.regex.Pattern;
  * set, and the Management Center trusted interfaces are set so that no client matches. A member that finds state
  * from before 0.8 refuses to start. {@link #using} checks a supplied instance for the same things it cannot change
  * and never shuts down an instance it did not start.
+ *
+ * <p>A member with keys proves it to the others. At start it reads the sentinel in the member-card map (writing it
+ * if absent) and refuses with {@code CLUSTER_KEY_MISMATCH} if no held key opens it; then it publishes a sealed member
+ * card and refreshes it. A joined member without a valid card past the grace period makes every instance report not
+ * serving (under the default {@code refuse}); {@link #securityStatus()} says so, and {@link #servingInstance()}
+ * refuses while it does. The stores reach their maps through {@link #servingInstance()}; {@link #instance()} is not
+ * gated. This detects a member that cannot be evicted: it is not prevention.
  */
 public final class PrivacyCluster implements AutoCloseable {
 
@@ -145,17 +165,80 @@ public final class PrivacyCluster implements AutoCloseable {
     private final PendingSweeper sweeper;
     private final Duration approvalSweepInterval;
     private final ClusterKeys keys;
+    private final ClusterSecuritySettings settings;
+    private final KeyedNames names;
+    private final ScopeKeys scopeKeys;
+    /** Whether this wrapper still holds its share of the instance's sealing registration. */
+    private final AtomicBoolean sealingRegistered = new AtomicBoolean();
+
+    /** Null for a member without keys, which is solo and has no cards. */
+    private final MemberCards cards;
+    private final ClusterSentinel sentinel;
 
     private final boolean owned;
     private final AtomicBoolean refused = new AtomicBoolean();
     private final AtomicInteger refusalsLogged = new AtomicInteger();
     private final AtomicReference<UUID> joinerWatch = new AtomicReference<>();
 
+    /**
+     * What the member cards read from outside: the clock (the lease and the grace period), where the signals go,
+     * where the status changes are logged, and how often the cards look at the cluster. The public entry points use
+     * {@link #system()}; tests inject their own.
+     */
+    record Environment(Clock clock, PrivacyMetrics metrics, Logger log, Duration tickInterval,
+                       Duration cardWriteTimeout) {
+
+        Environment(Clock clock, PrivacyMetrics metrics, Logger log, Duration tickInterval) {
+            this(clock, metrics, log, tickInterval, DEFAULT_CARD_WRITE_TIMEOUT);
+        }
+
+        Environment {
+            Objects.requireNonNull(clock, "clock");
+            Objects.requireNonNull(metrics, "metrics");
+            Objects.requireNonNull(log, "log");
+            Objects.requireNonNull(tickInterval, "tickInterval");
+            Objects.requireNonNull(cardWriteTimeout, "cardWriteTimeout");
+        }
+
+        static Environment system() {
+            return new Environment(Clock.systemUTC(), PrivacyMetrics.none(),
+                    LoggerFactory.getLogger(MemberCards.class), Duration.ofSeconds(1));
+        }
+    }
+
+    /** How long a write of a card or of the sentinel may take before it counts as failed. */
+    static final Duration DEFAULT_CARD_WRITE_TIMEOUT = Duration.ofSeconds(5);
+
     private PrivacyCluster(HazelcastInstance instance, boolean reidentificationEnabled,
-                           Duration approvalSweepInterval, ClusterKeys keys, boolean owned) {
+                           Duration approvalSweepInterval, ClusterKeys keys, boolean owned,
+                           ClusterSecuritySettings settings, Environment environment) {
         this.instance = instance;
         this.owned = owned;
         this.keys = keys;
+        this.settings = Objects.requireNonNull(settings, "settings");
+        // A member without keys is solo by construction (OD-215-8 (a)): it names and seals under keys drawn at random
+        // for this process, which nothing else can share, so two such members never derive the same name. A joining
+        // member never gets here without keys.
+        ClusterKeys effective = keys != null ? keys : soloKeysOf(instance);
+        this.names = new KeyedNames(effective);
+        this.scopeKeys = new ScopeKeys(names);
+        // A member with keys serves only while its security status says so; a solo member has nothing to verify.
+        // The sealer stays registered on the instance until its last wrapper closes, so its gate must belong to the
+        // instance and not to the wrapper that registered it (see instanceStatus).
+        ServingGate gate = keys == null ? ServingGate.open() : new MemberServingGate(() -> instanceStatus(instance));
+        SealedWrites.register(instance, effective, Sealer.builder(effective, environment.metrics())
+                .clock(environment.clock()).servingGate(gate).build(), names);
+        this.sealingRegistered.set(true);
+        if (keys == null) {
+            this.sentinel = null;
+            this.cards = null;
+        } else {
+            // The cards and the sentinel use a sealer with no gate: a member that is not serving can still prove
+            // itself and read what proves the others.
+            Sealer ungated = Sealer.builder(keys, environment.metrics()).clock(environment.clock()).build();
+            this.sentinel = new ClusterSentinel(this, keys, ungated, environment.cardWriteTimeout());
+            this.cards = new MemberCards(this, keys, settings, ungated, sentinel, environment);
+        }
         this.reidentificationEnabled = reidentificationEnabled;
         this.approvalSweepInterval = approvalSweepInterval;
         this.sweeper = new PendingSweeper(instance, approvalSweepInterval, Clock.systemUTC());
@@ -223,8 +306,75 @@ public final class PrivacyCluster implements AutoCloseable {
         return refusalsLogged.get();
     }
 
-    /** Removes both listeners this wrapper put on the instance; safe to call twice and after a shutdown. */
+    private static final String SOLO_KEYS_CONTEXT_KEY = "dataprism.cluster.solo.keys";
+    private static final String LIVE_WRAPPERS_CONTEXT_KEY = "dataprism.cluster.live.wrappers";
+
+    /**
+     * The keyed wrappers of {@code instance} that are not closed, kept in its member-local user context beside the
+     * registered sealer, which belongs to the instance and outlives the wrapper that registered it.
+     */
+    @SuppressWarnings("unchecked")
+    private static Set<PrivacyCluster> liveWrappers(HazelcastInstance instance) {
+        return (Set<PrivacyCluster>) instance.getUserContext().computeIfAbsent(LIVE_WRAPPERS_CONTEXT_KEY,
+                key -> ConcurrentHashMap.<PrivacyCluster>newKeySet());
+    }
+
+    /** How many wrappers of the instance are live, for tests. */
+    static int liveWrapperCount(HazelcastInstance instance) {
+        return liveWrappers(instance).size();
+    }
+
+    /**
+     * What the registered sealer's gate asks: the member serves while it has at least one live wrapper and every
+     * live wrapper says it serves. A closed wrapper no longer speaks for the instance, however stale its cards;
+     * with no live wrapper nobody keeps the cards, so the gate is closed.
+     */
+    private static ClusterSecurityStatus instanceStatus(HazelcastInstance instance) {
+        ClusterSecurityStatus first = null;
+        for (PrivacyCluster wrapper : liveWrappers(instance)) {
+            ClusterSecurityStatus status = wrapper.securityStatus();
+            if (!status.serving()) {
+                return status;
+            }
+            first = status;
+        }
+        return first != null ? first
+                : ClusterSecurityStatus.notServing(ClusterSecurityStatus.Reason.CARDS_UNAVAILABLE, 0, 0);
+    }
+
+    /**
+     * The random cluster and name keys of a keyless solo instance, drawn once per {@code HazelcastInstance}: every
+     * wrapper of the instance, including a re-wrap after {@code close()}, reuses them, so the keyed names it wrote
+     * stay reachable. They live in the instance's member-local user context, so they die with the instance; they are
+     * never shared with another member, never persisted and never logged. Owner decision of 2026-10-23, amending
+     * OD-215-8.
+     */
+    private static ClusterKeys soloKeysOf(HazelcastInstance instance) {
+        return (ClusterKeys) instance.getUserContext().computeIfAbsent(SOLO_KEYS_CONTEXT_KEY,
+                key -> generatedSoloKeys());
+    }
+
+    private static ClusterKeys generatedSoloKeys() {
+        SecureRandom random = new SecureRandom();
+        byte[] cluster = new byte[ClusterKeys.MIN_KEY_BYTES];
+        byte[] name = new byte[ClusterKeys.MIN_KEY_BYTES];
+        random.nextBytes(cluster);
+        random.nextBytes(name);
+        ClusterKeys built = new ClusterKeys("solo-cluster", cluster, null, null, null, null, "solo-name", name);
+        // ClusterKeys holds its own copy; clear only the copy this code holds.
+        Arrays.fill(cluster, (byte) 0);
+        Arrays.fill(name, (byte) 0);
+        return built;
+    }
+
+    /**
+     * Removes both listeners this wrapper put on the instance, and the member-local sealing context; safe to call
+     * twice and after a shutdown.
+     */
     private void removeListeners() {
+        if (sealingRegistered.compareAndSet(true, false)) {
+            SealedWrites.unregister(instance);
+        }
         for (var holder : List.of(legacyWatch, joinerWatch)) {
             UUID id = holder.getAndSet(null);
             if (id != null) {
@@ -261,7 +411,7 @@ public final class PrivacyCluster implements AutoCloseable {
     /** What a check asks; a seam for tests. */
     volatile Function<HazelcastInstance, Map<String, Integer>> legacyProbe =
             ClusterMembership::legacyEntryCounts;
-    private final java.util.concurrent.atomic.AtomicInteger legacyEntries = new java.util.concurrent.atomic.AtomicInteger();
+    private final AtomicInteger legacyEntries = new AtomicInteger();
     private volatile long lastLegacyWarnNanos = System.nanoTime() - LEGACY_WARN_INTERVAL_NANOS;
     private final AtomicReference<UUID> legacyWatch = new AtomicReference<>();
 
@@ -321,7 +471,13 @@ public final class PrivacyCluster implements AutoCloseable {
         return sweeper.sweepClaims();
     }
 
-    /** Tells the sweep the lock timeout in use, so the locks it takes carry the same lease as everyone's. */
+    /**
+     * Tells the sweep the lock timeout in use, so the locks it takes carry the same lease as everyone's.
+     *
+     * <p>Last store wins: every {@code HazelcastApprovalStore} built over this cluster calls this, so with stores
+     * built with different timeouts the sweep uses the timeout of the one built last. Build every store of a cluster
+     * with the same timeout, as the Spring wiring does.
+     */
     void useLockTimeout(Duration lockTimeout) {
         sweeper.useLockTimeout(lockTimeout);
     }
@@ -387,6 +543,24 @@ public final class PrivacyCluster implements AutoCloseable {
     public static PrivacyCluster embedded(ClusterMembership membership, boolean reidentificationEnabled,
                                           OptionalInt approvalMinimumMembers,
                                           Duration approvalSweepInterval, ClusterKeys keys) {
+        return embedded(membership, reidentificationEnabled, approvalMinimumMembers, approvalSweepInterval, keys,
+                ClusterSecuritySettings.defaults());
+    }
+
+    /** As above, with the runtime cluster-security settings (the defaults when the overload above is used). */
+    public static PrivacyCluster embedded(ClusterMembership membership, boolean reidentificationEnabled,
+                                          OptionalInt approvalMinimumMembers,
+                                          Duration approvalSweepInterval, ClusterKeys keys,
+                                          ClusterSecuritySettings settings) {
+        return embedded(membership, reidentificationEnabled, approvalMinimumMembers, approvalSweepInterval, keys,
+                settings, Environment.system());
+    }
+
+    /** As above, with the environment the member cards read from; for tests. */
+    static PrivacyCluster embedded(ClusterMembership membership, boolean reidentificationEnabled,
+                                   OptionalInt approvalMinimumMembers,
+                                   Duration approvalSweepInterval, ClusterKeys keys,
+                                   ClusterSecuritySettings settings, Environment environment) {
         PendingSweeper.checked(approvalSweepInterval);
         if (keys == null && !(membership.join() instanceof ClusterMembership.None)) {
             throw missingKeys();
@@ -395,7 +569,8 @@ public final class PrivacyCluster implements AutoCloseable {
         return launch(membership.toConfig(keys == null ? Code.MISSING_CLUSTER_KEY : Code.INVALID_CLUSTER_INTERFACE),
                 reidentificationEnabled,
                 approvalMinimumMembers.isPresent() ? approvalMinimumMembers
-                        : defaultApprovalMinimumMembers(membership), approvalSweepInterval, keys, false);
+                        : defaultApprovalMinimumMembers(membership), approvalSweepInterval, keys, false, settings,
+                environment);
     }
 
     private static PrivacyClusterRefusal missingKeys() {
@@ -406,15 +581,52 @@ public final class PrivacyCluster implements AutoCloseable {
     /**
      * Whether the instance can be reached only from this host. All must hold: it listens on no more than the
      * interfaces named ({@code bind.any} false, for the general and the server socket setting), those interfaces
-     * are enabled and loopback entries only, no public address is advertised, and its member's own address is a
-     * loopback address. The advertised address alone says nothing about the listening socket.
+     * are enabled and loopback entries only, no public address is advertised, and every address the member listens
+     * on is loopback. The advertised address says nothing about the listening socket and is not consulted.
      */
     private static boolean boundToLoopback(HazelcastInstance instance, Config config) {
         if (!ClusterMembership.reachableOnlyFromThisHost(config)) {
             return false;
         }
-        InetAddress address = instance.getCluster().getLocalMember().getSocketAddress().getAddress();
-        return address != null && address.isLoopbackAddress();
+        return boundToLoopbackOnly(listeningAddresses(instance));
+    }
+
+    /** Whether there is at least one listening address and every one is loopback. Nothing known is not loopback. */
+    private static boolean boundToLoopbackOnly(Set<InetAddress> listening) {
+        return !listening.isEmpty() && listening.stream().allMatch(InetAddress::isLoopbackAddress);
+    }
+
+    /**
+     * The addresses the member's server sockets are really bound to: the local address of each open server socket
+     * channel Hazelcast holds. {@code getLocalMember().getSocketAddress()} is the address advertised to others,
+     * which can differ from the listening one both ways (a wildcard bind advertising 127.0.0.1, a private-interface
+     * bind advertising a translated address), so it is never used to judge where the member listens. Empty when
+     * they cannot be determined (not Hazelcast's own instance, a server of another kind, a closed socket), which
+     * every caller treats as a refusal.
+     */
+    static Set<InetAddress> listeningAddresses(HazelcastInstance instance) {
+        try {
+            // A decorated instance is resolved to the member of the same name that this JVM's factory holds.
+            boolean hazelcasts = instance instanceof HazelcastInstanceProxy || instance instanceof HazelcastInstanceImpl;
+            HazelcastInstance real = hazelcasts ? instance : Hazelcast.getHazelcastInstanceByName(instance.getName());
+            HazelcastInstanceImpl impl = real instanceof HazelcastInstanceProxy proxy ? proxy.getOriginal()
+                    : real instanceof HazelcastInstanceImpl direct ? direct : null;
+            if (impl == null || !(impl.node.getServer() instanceof TcpServer server)) {
+                return Set.of();
+            }
+            Set<InetAddress> bound = new HashSet<>();
+            for (ServerSocketRegistry.Pair pair : server.getRegistry()) {
+                var channel = pair.getChannel();
+                InetAddress address = channel == null || !channel.isOpen() ? null : channel.socket().getInetAddress();
+                if (address == null) {
+                    return Set.of();
+                }
+                bound.add(address);
+            }
+            return Set.copyOf(bound);
+        } catch (RuntimeException | LinkageError unknown) {
+            return Set.of();
+        }
     }
 
     /** Whether the config names any way of finding other members. */
@@ -629,37 +841,147 @@ public final class PrivacyCluster implements AutoCloseable {
     public static PrivacyCluster embedded(Config config, boolean reidentificationEnabled,
                                           OptionalInt approvalMinimumMembers,
                                           Duration approvalSweepInterval, ClusterKeys keys) {
+        return embedded(config, reidentificationEnabled, approvalMinimumMembers, approvalSweepInterval, keys,
+                ClusterSecuritySettings.defaults());
+    }
+
+    /** As above, with the runtime cluster-security settings (the defaults when the overload above is used). */
+    public static PrivacyCluster embedded(Config config, boolean reidentificationEnabled,
+                                          OptionalInt approvalMinimumMembers,
+                                          Duration approvalSweepInterval, ClusterKeys keys,
+                                          ClusterSecuritySettings settings) {
+        return embedded(config, reidentificationEnabled, approvalMinimumMembers, approvalSweepInterval, keys,
+                settings, Environment.system());
+    }
+
+    /** As above, with the environment the member cards read from; for tests. */
+    static PrivacyCluster embedded(Config config, boolean reidentificationEnabled,
+                                   OptionalInt approvalMinimumMembers,
+                                   Duration approvalSweepInterval, ClusterKeys keys,
+                                   ClusterSecuritySettings settings, Environment environment) {
         PendingSweeper.checked(approvalSweepInterval);
         if (keys == null && joins(config)) {
             throw missingKeys();
         }
         return launch(config, reidentificationEnabled, approvalMinimumMembers, approvalSweepInterval, keys,
-                keys == null);
+                keys == null, settings, environment);
     }
 
     private static PrivacyCluster launch(Config config, boolean reidentificationEnabled,
                                          OptionalInt approvalMinimumMembers,
                                          Duration approvalSweepInterval, ClusterKeys keys,
-                                         boolean isolate) {
+                                         boolean isolate, ClusterSecuritySettings settings,
+                                         Environment environment) {
         Config hardened = configure(config, approvalMinimumMembers);
         if (isolate) {
             ClusterMembership.isolate(hardened);
         }
         HazelcastInstance started = Hazelcast.newHazelcastInstance(hardened);
         try {
+            // The address the member really bound, not the one it was asked for, before anything is served.
+            refuseUnlessBoundWithinMembership(started, hardened, isolate);
             ClusterMembership.refuseUnsealedState(started);
-        } catch (RuntimeException refused) {
-            // Started here, so stopped here: a member that refuses serves nothing.
-            started.shutdown();
+        } catch (RuntimeException | Error refused) {
+            // Started here, so stopped here: a member that refuses serves nothing, and a check that failed in any
+            // way short of the JVM itself failing leaves no member running.
+            if (!(refused instanceof VirtualMachineError)) {
+                started.shutdown();
+            }
             throw refused;
         }
         PrivacyCluster cluster = new PrivacyCluster(started, reidentificationEnabled, approvalSweepInterval, keys,
-                true);
+                true, settings, environment);
         if (cluster.refused.get()) {
             cluster.removeListeners();
             throw missingKeys();
         }
+        cluster.joinVerified();
         return cluster;
+    }
+
+    /**
+     * Refuses a member whose bound address is not one its membership allows. A keyless member must be bound to a
+     * loopback address with a configuration that reaches no further (the same test {@link #using} applies); a keyed
+     * member with named interfaces must be bound to an address one of them matches. Interfaces that are not IPv4
+     * patterns cannot be matched here and are not checked. The message names no address.
+     *
+     * @throws PrivacyClusterRefusal {@code MISSING_CLUSTER_KEY} for a keyless member, {@code INVALID_CLUSTER_INTERFACE}
+     *                               for a keyed one
+     */
+    static void refuseUnlessBoundWithinMembership(HazelcastInstance started, Config config, boolean keyless) {
+        if (keyless) {
+            if (!boundToLoopback(started, config)) {
+                throw new PrivacyClusterRefusal(Code.MISSING_CLUSTER_KEY,
+                        "a member without cluster keys is bound beyond this host; it is stopped");
+            }
+            return;
+        }
+        var interfaces = config.getNetworkConfig().getInterfaces();
+        List<String> named = interfaces.isEnabled() ? List.copyOf(interfaces.getInterfaces()) : List.of();
+        if (named.isEmpty() || !named.stream().allMatch(ClusterMembership::validInterface)) {
+            return;
+        }
+        if (!listeningWithin(listeningAddresses(started), named)) {
+            throw new PrivacyClusterRefusal(Code.INVALID_CLUSTER_INTERFACE,
+                    "the member is bound to an address outside member.interface; it is stopped");
+        }
+    }
+
+    /**
+     * Whether there is at least one listening address and every one matches a named interface. A wildcard socket
+     * listens on every interface, so no named interface describes it, even a pattern that matches 0.0.0.0.
+     */
+    static boolean listeningWithin(Set<InetAddress> listening, List<String> named) {
+        return !listening.isEmpty() && listening.stream().noneMatch(a -> a.isAnyLocalAddress()
+                || named.stream().noneMatch(pattern -> matchesInterface(pattern, a)));
+    }
+
+    /** Whether the IPv4 address matches an interface pattern: each octet a number, a range or a wildcard. */
+    private static boolean matchesInterface(String pattern, InetAddress address) {
+        byte[] octets = address.getAddress();
+        if (octets.length != 4) {
+            return false;
+        }
+        String[] parts = pattern.strip().split("\\.", -1);
+        for (int i = 0; i < 4; i++) {
+            int value = octets[i] & 0xFF;
+            String part = parts[i];
+            if (part.equals("*")) {
+                continue;
+            }
+            String[] bounds = part.split("-", -1);
+            int low = Integer.parseInt(bounds[0]);
+            int high = bounds.length == 2 ? Integer.parseInt(bounds[1]) : low;
+            if (value < low || value > high) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * For a member with keys, the start-up of the cluster-security checks, after the pre-0.8 state check and before
+     * anything is served: read the sentinel (writing it if absent), refuse with {@code CLUSTER_KEY_MISMATCH} if it
+     * does not open under a held key, and only then publish the member card. A member that refuses is closed: an
+     * instance this class started is shut down, one somebody else started is left running.
+     */
+    private void joinVerified() {
+        if (cards == null) {
+            return;
+        }
+        try {
+            if (sentinel.ensure(sentinel.startupBound()) == ClusterSentinel.Outcome.MISMATCH) {
+                throw new PrivacyClusterRefusal(Code.CLUSTER_KEY_MISMATCH,
+                        "the cluster's sentinel does not open under any key this member holds; this member does "
+                                + "not join");
+            }
+            cards.start();
+            // Only a wrapper whose cards are running speaks for the instance's gate.
+            liveWrappers(instance).add(this);
+        } catch (RuntimeException failed) {
+            close();
+            throw failed;
+        }
     }
 
     /**
@@ -702,6 +1024,22 @@ public final class PrivacyCluster implements AutoCloseable {
      */
     public static PrivacyCluster using(HazelcastInstance instance, boolean reidentificationEnabled,
                                        Duration approvalSweepInterval, ClusterKeys keys) {
+        return using(instance, reidentificationEnabled, approvalSweepInterval, keys,
+                ClusterSecuritySettings.defaults());
+    }
+
+    /** As above, with the runtime cluster-security settings (the defaults when the overload above is used). */
+    public static PrivacyCluster using(HazelcastInstance instance, boolean reidentificationEnabled,
+                                       Duration approvalSweepInterval, ClusterKeys keys,
+                                       ClusterSecuritySettings settings) {
+        return using(instance, reidentificationEnabled, approvalSweepInterval, keys, settings,
+                Environment.system());
+    }
+
+    /** As above, with the environment the member cards read from; for tests. */
+    static PrivacyCluster using(HazelcastInstance instance, boolean reidentificationEnabled,
+                                Duration approvalSweepInterval, ClusterKeys keys,
+                                ClusterSecuritySettings settings, Environment environment) {
         PendingSweeper.checked(approvalSweepInterval);
         Config config = instance.getConfig();
         if (keys == null && (joins(config) || instance.getCluster().getMembers().size() > 1
@@ -718,19 +1056,21 @@ public final class PrivacyCluster implements AutoCloseable {
         checkInstanceSettings(config);
         ClusterMembership.refuseUnsealedState(instance, true);
         PrivacyCluster wrapped = new PrivacyCluster(instance, reidentificationEnabled, approvalSweepInterval, keys,
-                false);
+                false, settings, environment);
         if (wrapped.refused.get()) {
             wrapped.removeListeners();
             // A member joined between the checks above and the listener's registration.
             throw missingKeys();
         }
+        wrapped.joinVerified();
         return wrapped;
     }
 
     /** As {@code using}'s tail, for a test that says whether this class owns the instance. */
     static PrivacyCluster wrap(HazelcastInstance instance, boolean reidentificationEnabled,
                                Duration approvalSweepInterval, ClusterKeys keys, boolean owned) {
-        return new PrivacyCluster(instance, reidentificationEnabled, approvalSweepInterval, keys, owned);
+        return new PrivacyCluster(instance, reidentificationEnabled, approvalSweepInterval, keys, owned,
+                ClusterSecuritySettings.defaults(), Environment.system());
     }
 
     /**
@@ -805,6 +1145,10 @@ public final class PrivacyCluster implements AutoCloseable {
             "com.hazelcast.core.HazelcastException", "com.hazelcast.core.OperationTimeoutException",
             "com.hazelcast.core.HazelcastInstanceNotActiveException",
             "com.hazelcast.transaction.TransactionException",
+            // A member answers a migration operation with this "when the cluster member list changes during
+            // migration"; the master expects it and retries. Refused, the reply is lost and the migration waits for
+            // its timeout. Allowed as the exact class: com.hazelcast.internal.partition is not a prefix we allow.
+            "com.hazelcast.internal.partition.PartitionStateVersionMismatchException",
             "com.hazelcast.splitbrainprotection.SplitBrainProtectionException",
             // What an entry processor or merge policy can throw back to its caller: a foreign value under a key
             // (ClassCastException, NullPointerException), an unreadable stored string (NumberFormatException,
@@ -1004,8 +1348,75 @@ public final class PrivacyCluster implements AutoCloseable {
         return instance;
     }
 
+    /**
+     * The same instance as {@link #instance()} while this member is serving, and a refusal while it is not. A member
+     * is serving while every live wrapper of its instance says so; there is one gate per instance. Every
+     * Data Prism store that reads or writes a sealed or counted map reaches it through this accessor, so a member
+     * that is not serving (design 2.4 d2: a member without a valid card past the grace period, a sentinel that does
+     * not open, a key check value that differs) refuses them all, including the stores that never call the sealer.
+     * {@link #instance()} stays ungated: card refresh and pause state need it while the member is closed, and an
+     * embedder's own code that calls it is not gated. A store of your own should call this method.
+     *
+     * @throws ClusterOperationRefusedException {@code CLUSTER_OPERATION_REFUSED} while this member is not serving
+     * @throws PrivacyClusterRefusal            {@code MISSING_CLUSTER_KEY} as {@link #instance()} does, for a keyless
+     *                                          wrapper that was refused
+     */
+    public HazelcastInstance servingInstance() {
+        HazelcastInstance running = instance();
+        // One gate per instance: the same aggregate the registered sealer asks. A wrapper that is closed or has not
+        // started is not among the live wrappers, so it refuses whatever the others say.
+        if (cards != null && (!liveWrappers(instance).contains(this) || !instanceStatus(instance).serving())) {
+            throw new ClusterOperationRefusedException(new IllegalStateException("the member is not serving"));
+        }
+        return running;
+    }
+
+    /**
+     * Whether this member serves, and why not (design 4.4). A member without keys is solo and always serves. The text
+     * of the status names no key, address or member UUID.
+     */
+    public ClusterSecurityStatus securityStatus() {
+        MemberCards current = cards;
+        if (current != null) {
+            return current.status();
+        }
+        int members;
+        try {
+            members = instance.getCluster().getMembers().size();
+        } catch (RuntimeException unreadable) {
+            members = 1;
+        }
+        return ClusterSecurityStatus.serving(members, 0);
+    }
+
+    /** The member cards of a member with keys; empty for a solo member without them. */
+    public Optional<MemberCards> memberCards() {
+        return Optional.ofNullable(cards);
+    }
+
     public boolean reidentificationEnabled() {
         return reidentificationEnabled;
+    }
+
+    /**
+     * The runtime cluster-security settings this member was started with: the defaults of design 4.1 unless supplied.
+     * The stores of tasks 226 to 228 read them.
+     */
+    public ClusterSecuritySettings securitySettings() {
+        return settings;
+    }
+
+    /**
+     * The keyed names this member derives every map key and lock key with: the supplied name key, or for a solo
+     * member without keys the one drawn at random for this process. For diagnostics and tests; a name reveals nothing
+     * without the name key. Internal: for tests and cluster code; not a stable API.
+     */
+    public KeyedNames keyedNames() {
+        return names;
+    }
+
+    ScopeKeys scopeKeys() {
+        return scopeKeys;
     }
 
     /**
@@ -1039,10 +1450,22 @@ public final class PrivacyCluster implements AutoCloseable {
 
     @Override
     public void close() {
+        if (cards != null) {
+            cards.close();
+            try {
+                liveWrappers(instance).remove(this);
+            } catch (RuntimeException ignored) {
+                // The instance may already be gone.
+            }
+        }
         removeListeners();
         legacyChecks.shutdownNow();
         legacyWatchdog.shutdownNow();
         sweeper.close();
-        instance.shutdown();
+        if (owned) {
+            // An instance somebody else started is left running, as the class Javadoc says of using(): it may be
+            // wrapped again, and the random solo keys it holds stay with it.
+            instance.shutdown();
+        }
     }
 }

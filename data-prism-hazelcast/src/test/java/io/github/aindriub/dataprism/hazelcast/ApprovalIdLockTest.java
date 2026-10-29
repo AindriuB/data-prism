@@ -42,11 +42,11 @@ class ApprovalIdLockTest {
                     if (capped) other.create(b, 1); else other.create(b);
                 }).isInstanceOf(ClusterLockTimeoutException.class);
                 // Wait for every lock the paused caller may hold to expire; it is still stopped.
-                StalledInsert.awaitFree(members[1], PrivacyCluster.APPROVAL_ID_MAP, a.approvalId());
+                StalledInsert.awaitFree(members[1], PrivacyCluster.APPROVAL_ID_MAP, TestMembers.SCOPE_KEYS.claim(a.approvalId()));
                 StalledInsert.awaitFree(members[1], PrivacyCluster.APPROVAL_PENDING_MAP,
-                        HazelcastApprovalStore.pendingKey(a.kind(), a.requesterPrincipalId()));
+                        TestMembers.SCOPE_KEYS.pending(a.kind(), a.requesterPrincipalId()));
                 StalledInsert.awaitFree(members[1], PrivacyCluster.APPROVAL_MAP,
-                        ScopeKeys.approval(a.scopeId(), a.approvalId()));
+                        TestMembers.SCOPE_KEYS.approval(a.scopeId(), a.approvalId()));
                 assertThat(stalled.isDone()).isFalse();
 
                 // The claim names an entry that does not exist yet, so it reads as stale: the second caller takes
@@ -58,8 +58,8 @@ class ApprovalIdLockTest {
                         .hasCauseInstanceOf(IllegalArgumentException.class)
                         .cause().hasMessage("duplicate approval id");
                 assertThat(other.find(a.approvalId())).contains(b);
-                assertThat(map.keySet().stream().filter(key -> ScopeKeys.approvalId(key).equals(a.approvalId())))
-                        .containsExactly(ScopeKeys.approval("scope-b", a.approvalId()));
+                assertThat(TestMembers.keysOfApproval(map, a.approvalId()))
+                        .containsExactly(TestMembers.SCOPE_KEYS.approval("scope-b", a.approvalId()));
                 assertThatThrownBy(() -> other.create(a)).isInstanceOf(IllegalArgumentException.class)
                         .hasMessage("duplicate approval id");
                 assertThat(other.approve(a.approvalId(), "bob", NOW).status())

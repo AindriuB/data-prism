@@ -141,6 +141,20 @@ class ServerStartupTest {
         assertConfigurationFailure(failure, "STANDALONE_HTTP_ONLY");
     }
 
+    @Test
+    void stdioTransportModeRefusesStartupUnderLazyInitialisation() {
+        String[] configuration = java.util.stream.Stream.concat(
+                java.util.Arrays.stream(validConfiguration()),
+                java.util.stream.Stream.of("--dataprism.transport.mode=stdio",
+                        "--dataprism.transport.fixture-development=true", "--spring.main.lazy-initialization=true"))
+                .toArray(String[]::new);
+        Throwable failure = catchThrowable(() -> {
+            try (var ignored = start(true, configuration)) { }
+        });
+
+        assertConfigurationFailure(failure, "STANDALONE_HTTP_ONLY");
+    }
+
     /**
      * data-prism-server never wires a non-servlet MCP transport, so a
      * {@code spring.main.web-application-type=none} deployment at the default
@@ -278,6 +292,9 @@ class ServerStartupTest {
                 "--dataprism.security.caller-claims.principal=sub",
                 "--dataprism.security.caller-claims.roles=roles",
                 "--dataprism.security.caller-claims.investigation=case_id",
+                // A real deployment supplies a CaseAuthorizer bean and lists its allowed clients; this one trusts the token.
+                "--dataprism.security-policy.case-authorisation=token-trusted",
+                "--dataprism.security-policy.client-allowlist=unrestricted",
                 "--dataprism.security-policy.purposes[0]=investigation",
                 "--dataprism.security-policy.roles.investigator[0]=GET_ENTITY_CONTEXT",
                 "--dataprism.privacy.profile=DEFAULT",

@@ -398,6 +398,21 @@ class LinkCodecTest {
     }
 
     @Test
+    void theScopeEndAndTheTokenEndAreExactOnOpen() {
+        Instant later = T0.plus(Duration.ofDays(1));
+        Instant end = T0.plusSeconds(10);
+        for (LinkBinding live : List.of(new LinkBinding("case-1", "alice", end, later),
+                new LinkBinding("case-1", "alice", later, end))) {
+            String token = codec.seal(follow(5), live).orElseThrow().token();
+            clock.set(end.minusSeconds(1));
+            assertThat(codec.open(token, live, follows())).isInstanceOf(Opened.class);
+            clock.set(end);
+            assertThat(refused(codec.open(token, live, follows())).reason()).isEqualTo(LinkReason.EXPIRED);
+            clock.set(T0);
+        }
+    }
+
+    @Test
     void skewNeverExtendsTheScopeOrTheToken() {
         Instant later = T0.plus(Duration.ofDays(1));
         LinkBinding shortScope = new LinkBinding("case-1", "alice", T0.plusSeconds(10), later);

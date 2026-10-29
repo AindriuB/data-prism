@@ -71,8 +71,12 @@ spec:
       # serviceAccountName: data-prism-discovery   # API mode only
       containers:
         - name: data-prism
-          # Pin a released tag; never "latest" in production.
-          image: ghcr.io/aindriub/data-prism-server:0.7.0
+          # Pin a released tag; never "latest" in production. 0.8.0 is the first
+          # release that reads the cluster-key and name-key settings below and
+          # the two security-policy settings; it is published by the 0.8.0
+          # release, so this tag does not exist until then. An older image
+          # ignores the keys.
+          image: ghcr.io/aindriub/data-prism-server:0.8.0
           ports:
             - name: mcp
               containerPort: 8080
@@ -80,6 +84,18 @@ spec:
               containerPort: 5701
           # --8<-- [start:k8s-join]
           env:
+            # The image bakes in case-authorisation: token-trusted and client-allowlist:
+            # unrestricted (/app/config/application.yaml), and these two variables
+            # repeat them. This deployment therefore trusts the case claim in the
+            # token and allows every client. A real deployment supplies a
+            # CaseAuthorizer bean and lists its allowed clients; for that, build
+            # your own image or override /app/config/application.yaml, and drop
+            # these two variables. Setting a list or a CaseAuthorizer on top of
+            # the baked-in settings is refused as a conflict.
+            - name: DATAPRISM_SECURITYPOLICY_CASEAUTHORISATION
+              value: token-trusted
+            - name: DATAPRISM_SECURITYPOLICY_CLIENTALLOWLIST
+              value: unrestricted
             - name: DATAPRISM_HAZELCAST_TOPOLOGY
               value: embedded
             - name: DATAPRISM_HAZELCAST_CLUSTERNAME
@@ -92,6 +108,15 @@ spec:
             # cluster's pod network; a pattern that matches every address is refused.
             - name: DATAPRISM_HAZELCAST_MEMBER_INTERFACE
               value: "10.*.*.*"
+            # Required: a member that joins others refuses to start unless this
+            # is true. It is your assertion that only Data Prism members can
+            # reach the member port (5701); approvals and counters on that port
+            # are unsealed in 1.0, so anyone else who can reach it can read and
+            # forge them. The NetworkPolicy below (data-prism-cluster-members) is
+            # what makes the assertion true on Kubernetes. (Relaxed binding drops
+            # the hyphen: trusted-network is TRUSTEDNETWORK.)
+            - name: DATAPRISM_HAZELCAST_TRUSTEDNETWORK
+              value: "true"
             - name: DATAPRISM_HAZELCAST_JOIN_KUBERNETES_NAMESPACE
               valueFrom:
                 fieldRef:
@@ -138,6 +163,11 @@ spec:
 ---
 # --8<-- [start:k8s-networkpolicy]
 # Admits member traffic on 5701 only from pods carrying the same app label.
+# It admits any pod labelled app: data-prism, so the assertion that only Data
+# Prism members can reach 5701 holds only if nobody else can create such pods
+# in this namespace: run the members in a dedicated namespace. It also holds
+# only with a network plugin that enforces NetworkPolicy (flannel and kind's
+# default plugin do not) and with no hostNetwork pods, which bypass the policy.
 # Once this policy selects the pods, every other ingress is denied, port 8080
 # included. 8080 therefore stays CLOSED until you add an allow rule for your
 # ingress, for example this extra entry under `ingress:` (placeholder labels):

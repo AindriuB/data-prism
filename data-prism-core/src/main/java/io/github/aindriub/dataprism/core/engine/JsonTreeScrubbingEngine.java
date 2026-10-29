@@ -4,7 +4,9 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
+import io.github.aindriub.dataprism.core.descriptor.ModelDescriptor;
 import io.github.aindriub.dataprism.core.model.FieldMetadata;
+import io.github.aindriub.dataprism.core.model.ModelDescription;
 import io.github.aindriub.dataprism.core.model.PrivacyContext;
 import io.github.aindriub.dataprism.core.model.ScrubResult;
 import io.github.aindriub.dataprism.core.policy.EffectivePrivacyPolicy;
@@ -17,13 +19,18 @@ import io.github.aindriub.dataprism.core.spi.FieldMetadataResolver;
 import io.github.aindriub.dataprism.core.spi.ScrubbingEngine;
 import io.github.aindriub.dataprism.core.spi.SyntheticValueSource;
 import io.github.aindriub.dataprism.core.spi.ValueTokenSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -64,10 +71,14 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
      */
     private static final int MAX_DEPTH = 16;
 
+    private static final Logger LOG = LoggerFactory.getLogger(JsonTreeScrubbingEngine.class);
+
     private final FieldMetadataResolver resolver;
     private final PrivacyPolicyResolver policies;
     private final SyntheticValueSource synthetics;
     private final ValueTokenSource tokens;
+    private final Map<String, ModelDescriptor> descriptors;
+    private final AtomicBoolean warnedTokenSource = new AtomicBoolean();
 
     /** Without a token source, HASH and TOKENIZE refuse rather than degrade. */
     public JsonTreeScrubbingEngine(FieldMetadataResolver resolver, PrivacyPolicyResolver policies,
@@ -77,10 +88,31 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
 
     public JsonTreeScrubbingEngine(FieldMetadataResolver resolver, PrivacyPolicyResolver policies,
                                    SyntheticValueSource synthetics, ValueTokenSource tokens) {
+        this(resolver, policies, synthetics, tokens, Map.of());
+    }
+
+    /**
+     * @param descriptors the model descriptors behind {@code resolver}, by type name. Only
+     *                    {@link #describe} reads them, to find the chainable paths a descriptor declares
+     */
+    public JsonTreeScrubbingEngine(FieldMetadataResolver resolver, PrivacyPolicyResolver policies,
+                                   SyntheticValueSource synthetics, ValueTokenSource tokens,
+                                   Map<String, ModelDescriptor> descriptors) {
         this.resolver = Objects.requireNonNull(resolver, "resolver");
         this.policies = Objects.requireNonNull(policies, "policies");
         this.synthetics = Objects.requireNonNull(synthetics, "synthetics");
         this.tokens = Objects.requireNonNull(tokens, "tokens");
+        this.descriptors = Map.copyOf(Objects.requireNonNull(descriptors, "descriptors"));
+    }
+
+    /** The resolver this engine was constructed with. */
+    public FieldMetadataResolver resolver() {
+        return resolver;
+    }
+
+    /** The descriptors this engine describes chainable fields from; equal to the map it was given, unmodifiable. */
+    public Map<String, ModelDescriptor> descriptors() {
+        return descriptors;
     }
 
     @Override
@@ -102,6 +134,50 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
         Run run = new Run(context, new HashSet<>(), new TreeMap<>());
         ObjectNode tree = scrubObject((ObjectNode) read, type, run, "$", "", 0, null);
         return new ScrubResult(tree, run.emitted(), run.dispositions());
+    }
+
+    /**
+     * Describes the model from the plan {@link #scrub} applies: the same resolver, the same policy
+     * resolver and the same nested-type rule. Chainable paths come from the annotations and from the
+     * descriptors given at construction.
+     */
+    @Override
+    public Optional<ModelDescription> describe(Class<?> model, PrivacyContext context, boolean linksEnabled) {
+        Objects.requireNonNull(model, "model");
+        Objects.requireNonNull(context, "context");
+        if (!resolver.exposed(model)) {
+            return Optional.empty();
+        }
+        List<ChainableField> chainables = List.of();
+        if (linksEnabled) {
+            try {
+                chainables = ChainableFields.of(model, descriptors);
+            } catch (IllegalStateException e) {
+                return Optional.empty();
+            }
+        }
+        return ScrubPlanDescriber.describe(model, context, linksEnabled, resolver, policies, chainables,
+                tokensAvailable());
+    }
+
+    /**
+     * Read on every description, and fail closed: a source whose {@code available()} throws is unavailable.
+     * Only the exception's class is logged, never its message, which could carry a value.
+     */
+    private boolean tokensAvailable() {
+        try {
+            return tokens.available();
+        } catch (RuntimeException e) {
+            // One WARN per engine (it has one token source); a source that keeps throwing then logs at DEBUG.
+            if (warnedTokenSource.compareAndSet(false, true)) {
+                LOG.warn("ValueTokenSource.available() threw {}; treating the token source as unavailable",
+                        e.getClass().getName());
+            } else {
+                LOG.debug("ValueTokenSource.available() threw {}; treating the token source as unavailable",
+                        e.getClass().getName());
+            }
+            return false;
+        }
     }
 
     /**

@@ -275,6 +275,14 @@ class ClusterConfigurationTest {
 
     @Configuration(proxyBeanMethods = false)
     static class SuppliedCluster {
+        /** close() leaves an instance it did not start, so the instances built here are stopped on context close. */
+        static final java.util.List<com.hazelcast.core.HazelcastInstance> STARTED =
+                new java.util.concurrent.CopyOnWriteArrayList<>();
+
+        @Bean(destroyMethod = "run") Runnable stopSuppliedInstances() {
+            return () -> STARTED.forEach(i -> i.getLifecycleService().terminate());
+        }
+
         @Bean(destroyMethod = "close") PrivacyCluster suppliedCluster() {
             Config config = new Config().setClusterName(uniqueName());
             config.getNetworkConfig().setPort(freePort()).setPortAutoIncrement(false);
@@ -283,7 +291,9 @@ class ClusterConfigurationTest {
             config.setProperty("hazelcast.socket.bind.any", "false");
             config.getNetworkConfig().getJoin().getAutoDetectionConfig().setEnabled(false);
             config.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
-            return PrivacyCluster.using(Hazelcast.newHazelcastInstance(hardened(config)), false);
+            com.hazelcast.core.HazelcastInstance instance = Hazelcast.newHazelcastInstance(hardened(config));
+            STARTED.add(instance);
+            return PrivacyCluster.using(instance, false);
         }
     }
 
@@ -361,7 +371,7 @@ class ClusterConfigurationTest {
                 "dataprism.hazelcast.join.members[0]=127.0.0.1:" + portA,
                 "dataprism.hazelcast.join.members[1]=127.0.0.1:" + portB,
                 "dataprism.hazelcast.member.port=" + port,
-                "dataprism.hazelcast.member.interface=127.0.0.1");
+                "dataprism.hazelcast.member.interface=127.0.0.1", "dataprism.hazelcast.trusted-network=true");
     }
 
     // ---- bean graph ----------------------------------------------------------------------------
@@ -386,7 +396,7 @@ class ClusterConfigurationTest {
                 "DATAPRISM_HAZELCAST_JOIN_MODE=tcp-ip",
                 "DATAPRISM_HAZELCAST_JOIN_MEMBERS=127.0.0.1:" + port + ",127.0.0.1:" + (port + 1),
                 "DATAPRISM_HAZELCAST_MEMBER_PORT=" + port,
-                "DATAPRISM_HAZELCAST_MEMBER_INTERFACE=127.0.0.1")
+                "DATAPRISM_HAZELCAST_MEMBER_INTERFACE=127.0.0.1", "DATAPRISM_HAZELCAST_TRUSTEDNETWORK=true")
                 .applyTo(context.getEnvironment(), TestPropertyValues.Type.SYSTEM_ENVIRONMENT)).run(result -> {
             assertThat(result).hasNotFailed();
             Config config = result.getBean(PrivacyCluster.class).instance().getConfig();

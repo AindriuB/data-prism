@@ -117,7 +117,7 @@ class DenyDecisionCodeTest {
     @DisplayName("an exhausted read budget records DENY:SCOPE_READ_BUDGET")
     void scopeReadBudget() {
         var events = new ArrayList<AuditEvent>();
-        var limits = new RequestLimits(8, 500, 512 * 1024, Duration.ofSeconds(3), 4, 1);
+        var limits = TestLimits.defaults().scopeReadBudget(1).build();
         var orchestrator = orchestrator(false, OK, PASS, limits, events);
         orchestrator.buildContext(ContextRequest.of("THING", "1"), context(), caller());
         events.clear();

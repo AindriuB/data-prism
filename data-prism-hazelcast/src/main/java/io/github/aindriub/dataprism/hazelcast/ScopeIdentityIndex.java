@@ -4,10 +4,14 @@ import com.hazelcast.map.IMap;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.core.metrics.Metric;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
+import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
+import io.github.aindriub.dataprism.hazelcast.seal.Sealer;
+import io.github.aindriub.dataprism.hazelcast.seal.ServingGate;
 
 import java.time.Duration;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Function;
 
 /**
  * Maps a pseudonym back to the subject it stands for, and ends scopes.
@@ -32,6 +36,10 @@ public final class ScopeIdentityIndex {
     private final PrivacyCluster cluster;
     private final PrivacyMetrics metrics;
     private final HazelcastApprovalStore approvals;
+    private final Duration lockTimeout;
+    private final Sealer sealer;
+    /** Resolves a map by name; a seam for tests. */
+    Function<String, IMap<String, ?>> maps;
 
     /** With the default lock timeout of two seconds. */
     public ScopeIdentityIndex(PrivacyCluster cluster) {
@@ -49,22 +57,40 @@ public final class ScopeIdentityIndex {
      * @throws IllegalArgumentException if the timeout is outside that range
      */
     public ScopeIdentityIndex(PrivacyCluster cluster, PrivacyMetrics metrics, Duration lockTimeout) {
+        this(cluster, metrics, lockTimeout, ServingGate.open());
+    }
+
+    /** As the public constructor, with the serving gate of the member (a seam until the gate is wired). */
+    ScopeIdentityIndex(PrivacyCluster cluster, PrivacyMetrics metrics, Duration lockTimeout, ServingGate gate) {
         this.cluster = Objects.requireNonNull(cluster, "cluster");
         this.metrics = Objects.requireNonNull(metrics, "metrics");
+        this.lockTimeout = ClusterLocks.checked(lockTimeout);
+        this.maps = name -> cluster.servingInstance().getMap(name);
         this.approvals = HazelcastApprovalStore.forScopeEnd(cluster, lockTimeout, metrics);
+        this.sealer = IdentityMaps.sealerFor(cluster, metrics, Objects.requireNonNull(gate, "gate"));
     }
 
     /**
+     * The only place an envelope of the re-identification map is opened and its subject returned. An entry that
+     * does not authenticate for exactly these parts (written by a member without the key, in another format, or
+     * moved from another key or map) is counted by the sealer and reads as empty, never as another subject. A
+     * deleted entry also reads as empty: deleted re-identification entries are lost for good.
+     *
      * @return the subject a pseudonym stands for, or empty if the scope has ended,
      *         the entry expired, or the index was never enabled
+     * @throws io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException if this member is not
+     *         serving; that is a refusal, not an empty result and not a tamper
      */
     public Optional<String> subjectFor(String scopeId, PrivacyNamespace namespace, String synthetic) {
         if (!cluster.reidentificationEnabled()) {
             return Optional.empty();
         }
-        IMap<String, String> index = cluster.instance().getMap(PrivacyCluster.REIDENTIFICATION_MAP);
-        Optional<String> subject = Optional.ofNullable(index.get(
-                ScopeKeys.reidentification(scopeId, namespace, synthetic)));
+        IMap<String, String> index = cluster.servingInstance().getMap(PrivacyCluster.REIDENTIFICATION_MAP);
+        String key = cluster.scopeKeys().reidentification(scopeId, namespace, synthetic);
+        String stored = index.get(key);
+        Optional<String> subject = stored == null ? Optional.empty()
+                : IdentityMaps.subjectOf(sealer, key, stored,
+                        ScopeKeys.reidentificationCanonical(scopeId, namespace, synthetic));
         subject.ifPresent(ignored -> metrics.increment(Metric.REIDENTIFICATION, namespace.name()));
         return subject;
     }
@@ -76,24 +102,49 @@ public final class ScopeIdentityIndex {
      * an investigation ending is a real event rather than a matter of waiting for
      * a TTL: the mapping stops existing when someone says it should.
      *
-     * <p>The identity, reverse, budget and oversight maps are deleted without a lock bound, as before: a key
-     * another member holds makes that delete wait. The approvals of the scope are bounded: each of their locks waits
-     * at most the lock timeout.
+     * <p>Every delete waits for its key's lock at most the lock timeout, in the identity, reverse, budget and
+     * oversight maps as in the approval map. A key whose lock times out is left in place and the others are still
+     * removed; the call throws after the last one. The whole call shares one deadline of the lock timeout for its
+     * four maps. A refusal in one map does not stop the others or the approvals: all of them run, then the first
+     * refusal (else the timeout) is thrown.
      *
-     * @throws io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException if the lock of an approval of the
-     *         scope timed out; that approval, its id claim and its pending slot are left in place
+     * @throws ClusterLockTimeoutException if the lock of an entry of the
+     *         scope timed out; that entry is left in place (for an approval, with its id claim and its pending slot)
      */
     public void endScope(String scopeId) {
-        String prefix = ScopeKeys.scopePrefix(scopeId);
+        String prefix = cluster.scopeKeys().scopePrefix(scopeId);
+        // One deadline for the whole call, shared by every map, so it waits about one lock timeout, not one per map.
+        long deadline = System.nanoTime() + lockTimeout.toNanos();
+        int skipped = 0;
+        RuntimeException failure = null;
         for (String map : new String[]{PrivacyCluster.IDENTITY_MAP,
                 PrivacyCluster.REIDENTIFICATION_MAP, PrivacyCluster.BUDGET_MAP,
                 PrivacyCluster.OVERSIGHT_MAP}) {
-            IMap<String, ?> entries = cluster.instance().getMap(map);
-            entries.keySet().stream()
-                    .filter(key -> key.startsWith(prefix))
-                    .forEach(entries::delete);
+            try {
+                IMap<String, ?> entries = maps.apply(map);
+                ClusterLocks.Sweep sweep = ClusterLocks.deleteAll(entries,
+                        ScopeKeys.keysWithPrefix(entries, prefix), deadline, lockTimeout);
+                skipped += sweep.skipped();
+                failure = failure != null ? failure : sweep.refusal();
+            } catch (RuntimeException failed) {
+                failure = failure != null ? failure : ClusterRefusals.mapped(failed);
+            }
         }
-        // Approvals go with their id claims and pending counts, so those ids and slots are free again.
-        approvals.forgetScope(scopeId);
+        // Approvals go with their id claims and pending counts, so those ids and slots are free again. They share
+        // the call's deadline, so held approvals do not each wait a full lock timeout.
+        try {
+            approvals.forgetScope(scopeId, deadline);
+        } catch (ClusterLockTimeoutException held) {
+            skipped++;
+        } catch (RuntimeException failed) {
+            failure = failure != null ? failure : ClusterRefusals.mapped(failed);
+        }
+        // Everything has run; now report the first refusal in the order seen, else a timeout.
+        if (failure != null) {
+            throw failure;
+        }
+        if (skipped > 0) {
+            throw new ClusterLockTimeoutException();
+        }
     }
 }

@@ -23,13 +23,13 @@ class CounterLeaseExpiryTest {
     private static final Duration TIMEOUT = Duration.ofMillis(100);
 
     @Test void budgetRemainsAtomicAfterTheCallerLeaseExpires() throws Exception {
-        afterLeaseExpiry(PrivacyCluster.BUDGET_MAP, ScopeKeys.budget("scope", "subject"),
+        afterLeaseExpiry(PrivacyCluster.BUDGET_MAP, TestMembers.SCOPE_KEYS.budget("scope", "subject"),
                 cluster -> new HazelcastScopeBudget(cluster, TIMEOUT).tryRead("scope", "subject", 1),
                 stored -> (Integer) stored);
     }
 
     @Test void rateLimitRemainsAtomicAfterTheCallerLeaseExpires() throws Exception {
-        afterLeaseExpiry(PrivacyCluster.CALLER_RATE_MAP, "operator",
+        afterLeaseExpiry(PrivacyCluster.CALLER_RATE_MAP, TestMembers.SCOPE_KEYS.callerRate("operator"),
                 cluster -> new HazelcastCallerRateLimiter(cluster, TIMEOUT)
                         .tryAcquire("operator", 1, Duration.ofMinutes(10), NOW),
                 stored -> Integer.parseInt(((String) stored).substring(((String) stored).indexOf(':') + 1)));

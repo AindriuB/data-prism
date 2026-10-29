@@ -17,34 +17,50 @@ import io.github.aindriub.dataprism.core.model.PseudonymisationVersion;
 import io.github.aindriub.dataprism.core.spi.SyntheticValueSource;
 import io.github.aindriub.dataprism.core.policy.PrivacyProfile;
 import io.github.aindriub.dataprism.core.policy.ProfilePrivacyPolicyResolver;
+import io.github.aindriub.dataprism.hazelcast.boundary.ApprovalMapsBoundary;
+import io.github.aindriub.dataprism.hazelcast.boundary.AreaBoundary;
+import io.github.aindriub.dataprism.hazelcast.boundary.CounterMapsBoundary;
+import io.github.aindriub.dataprism.hazelcast.boundary.IdentityMapsBoundary;
+import io.github.aindriub.dataprism.hazelcast.boundary.Inputs;
+import io.github.aindriub.dataprism.hazelcast.boundary.MemberCardMapsBoundary;
+import io.github.aindriub.dataprism.hazelcast.boundary.OversightMapsBoundary;
+import io.github.aindriub.dataprism.oversight.ApprovalRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.fail;
 
 /**
- * Verifies the durable-cluster boundary by recomputing every stored value from
- * its decomposed key. Identity entries must equal the generator output for the
- * key's scope, namespace and subject; re-identification keys must contain the
- * generator output for their stored subject; and budget values must be counts.
- * This is the right property because the generator never receives a source
- * value, so a raw value cannot satisfy it, unlike a brittle scan for a fixed
- * pseudonym. The raw fixture enters the real tree-scrubbing path before it
- * invokes the cache-backed generator; the separate scan catches a writer that
- * stores that source value alongside otherwise valid state.
+ * Verifies the durable-cluster boundary by recomputing every stored key from the canonical inputs the test wrote.
+ * Every key is the keyed name of those inputs (docs/plan/design/cluster-security.md 2.3.2) and contains none of them;
+ * identity entries equal the generator output for their inputs; re-identification entries name the subject the
+ * pseudonym stands for; and budget values are counts. This is the right property because the generator never
+ * receives a source value, so a raw value cannot satisfy it, unlike a brittle scan for a fixed pseudonym. The raw
+ * fixture enters the real tree-scrubbing path before it invokes the cache-backed generator; the separate scan
+ * catches a writer that stores that source value alongside otherwise valid state.
+ *
+ * <p>This class enumerates the maps and fails on one it does not know. The map list comes from the constants of
+ * {@link PrivacyCluster}, so a task that adds a map adds a constant and a checker in
+ * {@code io.github.aindriub.dataprism.hazelcast.boundary}, and does not edit this file. Each area's checks live in
+ * its own checker.
  */
 class HazelcastStoredValueBoundaryTest {
 
     private static final String RAW_SENSITIVE_VALUE = "TEST-PPSN-0000000ZZ";
     private static final String SUBJECT_ID = "subject-42";
     private static final String SCOPE_ID = "CASE-42";
+    private static final String APPROVAL_ID = "approval-7f3a";
+    private static final String REQUESTER = "alice";
+    private static final String TOOL = "search";
 
     private PrivacyCluster cluster;
 
@@ -69,30 +85,30 @@ class HazelcastStoredValueBoundaryTest {
                 .contains(SUBJECT_ID);
         assertThat(new HazelcastScopeBudget(cluster).tryRead(SCOPE_ID, SUBJECT_ID, 3)).isTrue();
 
-        Map<String, IMap<Object, Object>> maps = privacyMaps();
-        assertThat(maps).isNotEmpty();
+        Map<String, IMap<Object, Object>> maps = allPrivacyMaps();
+        assertThat(maps.keySet()).containsExactlyInAnyOrder(
+                PrivacyCluster.IDENTITY_MAP, PrivacyCluster.REIDENTIFICATION_MAP, PrivacyCluster.BUDGET_MAP);
         assertThat(List.copyOf(maps.values())).allSatisfy(map -> assertThat(map.size()).isPositive());
         assertRawValueIsAbsent(maps);
-        maps.forEach((name, map) -> assertMapContainsOnlyExpectedState(name, map, generator));
+        checkEveryMap(maps, inputs(generator, synthetic, "ap-unused", "alice"));
     }
 
     @Test
     void oversightMapsContainOnlyPrincipalsFingerprintsAndCounts() {
         start();
+        var generator = new DeterministicGenerator();
         String synthetic = "generated:" + SCOPE_ID + ":PERSON_NAME:pseudonym-7";
         Instant now = Instant.now();
         var approvals = new HazelcastApprovalStore(cluster);
-        approvals.create(new io.github.aindriub.dataprism.oversight.ApprovalRequest("ap-1",
-                io.github.aindriub.dataprism.oversight.ApprovalRequest.Kind.REIDENTIFICATION, "alice", "client",
-                SCOPE_ID, "reidentify", "fp-1", "PERSON_NAME", synthetic, "audit", "CASE-42", now,
-                now.plus(1, ChronoUnit.HOURS),
-                io.github.aindriub.dataprism.oversight.ApprovalRequest.Status.PENDING, null, null));
+        approvals.create(new ApprovalRequest(APPROVAL_ID, ApprovalRequest.Kind.REIDENTIFICATION, REQUESTER, "client",
+                SCOPE_ID, "reidentify", "fp-1", "PERSON_NAME", synthetic, "audit", SCOPE_ID, now,
+                now.plus(1, ChronoUnit.HOURS), ApprovalRequest.Status.PENDING, null, null));
         var state = new HazelcastOversightState(cluster);
         state.pauseAll();
-        state.pauseTool("search");
+        state.pauseTool(TOOL);
         state.pauseScope(SCOPE_ID);
         assertThat(new HazelcastCallerRateLimiter(cluster)
-                .tryAcquire("alice", 5, java.time.Duration.ofMinutes(1), now)).isTrue();
+                .tryAcquire(REQUESTER, 5, java.time.Duration.ofMinutes(1), now)).isTrue();
 
         Map<String, IMap<Object, Object>> maps = allPrivacyMaps();
         assertThat(maps.keySet()).containsExactlyInAnyOrder(PrivacyCluster.OVERSIGHT_MAP,
@@ -104,13 +120,109 @@ class HazelcastStoredValueBoundaryTest {
             assertThat(map.keySet().toString()).doesNotContain(SUBJECT_ID);
             assertThat(map.values().toString()).doesNotContain(SUBJECT_ID);
         });
-        maps.forEach((name, map) -> assertMapContainsOnlyExpectedState(name, map, new DeterministicGenerator()));
+        checkEveryMap(maps, inputs(generator, synthetic, APPROVAL_ID, REQUESTER));
 
         // The guard bites: a raw value smuggled into any of these maps is caught.
         cluster.instance().<String, String>getMap(PrivacyCluster.APPROVAL_MAP)
                 .put(SCOPE_ID + "\0ap-2", RAW_SENSITIVE_VALUE);
         assertThatThrownBy(() -> assertRawValueIsAbsent(allPrivacyMaps()))
                 .isInstanceOf(AssertionError.class);
+    }
+
+    @Test
+    void anUnknownMapFailsTheEnumeration() {
+        start();
+        cluster.instance().getMap("dataprism.not-a-known-map").put("k", "v");
+        assertThatThrownBy(() -> checkEveryMap(allPrivacyMaps(), inputs(new DeterministicGenerator(), "unused-pseudonym", "unused-approval", "unused-requester")))
+                .isInstanceOf(AssertionError.class).hasMessageContaining("dataprism.not-a-known-map");
+    }
+
+    @Test
+    void aKeyThatIsNotTheKeyedNameOfItsInputsFails() {
+        start();
+        var generator = new DeterministicGenerator();
+        new HazelcastScopeBudget(cluster).tryRead(SCOPE_ID, SUBJECT_ID, 3);
+        // The pre-0.8 shape of the key: the scope, a NUL and the subject, in the clear.
+        cluster.instance().<String, Integer>getMap(PrivacyCluster.BUDGET_MAP).put(SCOPE_ID + "\0" + SUBJECT_ID, 1);
+        assertThatThrownBy(() -> checkEveryMap(allPrivacyMaps(), inputs(generator, "unused-pseudonym", "unused-approval", "unused-requester")))
+                .isInstanceOf(AssertionError.class);
+    }
+
+    private Inputs inputs(SyntheticValueSource generator, String synthetic, String approvalId, String requester) {
+        return new Inputs(cluster.keyedNames(), generator, SCOPE_ID, SUBJECT_ID, PrivacyNamespace.PERSON_NAME,
+                synthetic, approvalId, requester, ApprovalRequest.Kind.REIDENTIFICATION, TOOL);
+    }
+
+    /** Every checker, one per area. A later task changes only the checker of its own area. */
+    private static List<AreaBoundary> areas() {
+        return List.of(new IdentityMapsBoundary(), new OversightMapsBoundary(), new CounterMapsBoundary(),
+                new MemberCardMapsBoundary(), new ApprovalMapsBoundary(new ApprovalMapsBoundary.Decoders() {
+                    @Override
+                    public String[] approval(String value) {
+                        var request = HazelcastApprovalStore.Codec.decode(value);
+                        return new String[]{request.approvalId(), request.scopeId()};
+                    }
+
+                    @Override
+                    public String[] claim(String value) {
+                        return ClaimEntries.read(value).filter(named -> !named.marked())
+                                .map(named -> new String[]{named.entryKey(), named.token()}).orElse(null);
+                    }
+
+                    @Override
+                    public Set<String> pendingIds(String value) {
+                        return PendingSet.decode(value).keySet();
+                    }
+                }));
+    }
+
+    /** The full name of every sealed map, taken from the constants of {@link PrivacyCluster}. */
+    private static Set<String> knownMaps() {
+        Set<String> names = new java.util.TreeSet<>();
+        for (var field : PrivacyCluster.class.getDeclaredFields()) {
+            if (java.lang.reflect.Modifier.isStatic(field.getModifiers()) && field.getType() == String.class
+                    && field.getName().endsWith("_MAP")) {
+                try {
+                    field.setAccessible(true);
+                    String name = (String) field.get(null);
+                    if (name.endsWith(".s1")) {
+                        names.add(name);
+                    }
+                } catch (ReflectiveOperationException unreadable) {
+                    throw new AssertionError(unreadable);
+                }
+            }
+        }
+        return names;
+    }
+
+    /**
+     * Fails on a map that no area owns, runs the owning area's checker over each existing map, and runs the checkers
+     * of the maps that must be empty for now (the consumed-approval and member-card maps).
+     */
+    private void checkEveryMap(Map<String, IMap<Object, Object>> existing, Inputs inputs) {
+        Set<String> known = knownMaps();
+        List<AreaBoundary> areas = areas();
+        for (String name : existing.keySet()) {
+            if (!known.contains(name)) {
+                fail("unrecognised distributed map %s must be given a decomposition rule", name);
+            }
+        }
+        for (String name : known) {
+            assertThat(areas.stream().filter(area -> area.maps().contains(name)).count())
+                    .as("map %s is owned by exactly one area", name).isEqualTo(1);
+        }
+        existing.forEach((name, map) -> owner(areas, name).check(name, map, inputs));
+        for (String name : List.of(PrivacyCluster.APPROVAL_CONSUMED_MAP, PrivacyCluster.MEMBER_CARD_MAP)) {
+            if (!existing.containsKey(name)) {
+                owner(areas, name).check(name, cluster.instance().getMap(name), inputs);
+            }
+        }
+    }
+
+    private static AreaBoundary owner(List<AreaBoundary> areas, String map) {
+        return areas.stream().filter(area -> area.maps().contains(map)).findFirst()
+                .orElseThrow(() -> new AssertionError("unrecognised distributed map " + map));
     }
 
     @SuppressWarnings("unchecked")
@@ -141,80 +253,6 @@ class HazelcastStoredValueBoundaryTest {
                         PrivacyProfile.ClassificationRule.of(PrivacyAction.SYNTHESIZE)));
         return new JsonTreeScrubbingEngine(new DefaultFieldMetadataResolver(),
                 new ProfilePrivacyPolicyResolver(Map.of("DEFAULT", profile)), syntheticValues);
-    }
-
-    @SuppressWarnings("unchecked")
-    private Map<String, IMap<Object, Object>> privacyMaps() {
-        Map<String, IMap<Object, Object>> maps = new java.util.LinkedHashMap<>();
-        for (DistributedObject object : cluster.instance().getDistributedObjects()) {
-            if (object instanceof IMap<?, ?> map) {
-                maps.put(object.getName(), (IMap<Object, Object>) map);
-            }
-        }
-        assertThat(maps.keySet()).containsExactlyInAnyOrder(
-                PrivacyCluster.IDENTITY_MAP,
-                PrivacyCluster.REIDENTIFICATION_MAP,
-                PrivacyCluster.BUDGET_MAP);
-        return maps;
-    }
-
-    private static void assertMapContainsOnlyExpectedState(String name, IMap<Object, Object> map,
-                                                            SyntheticValueSource generator) {
-        switch (name) {
-            case PrivacyCluster.IDENTITY_MAP -> map.forEach((key, value) -> {
-                String[] parts = parts(key, 3, name);
-                PrivacyNamespace namespace = PrivacyNamespace.valueOf(parts[1]);
-                assertThat(value).isEqualTo(generator.syntheticValue(parts[2], namespace, scope(parts[0])));
-            });
-            case PrivacyCluster.REIDENTIFICATION_MAP -> map.forEach((key, value) -> {
-                String[] parts = parts(key, 3, name);
-                PrivacyNamespace namespace = PrivacyNamespace.valueOf(parts[1]);
-                assertThat(parts[2]).isEqualTo(generator.syntheticValue((String) value, namespace, scope(parts[0])));
-            });
-            case PrivacyCluster.BUDGET_MAP -> map.forEach((key, value) -> {
-                parts(key, 2, name);
-                assertThat(value).isInstanceOf(Integer.class);
-                Long.parseLong(value.toString());
-            });
-            case PrivacyCluster.OVERSIGHT_MAP -> map.forEach((key, value) -> {
-                assertThat(key).as("%s key", name).isInstanceOf(String.class);
-                assertThat(value).isEqualTo(Boolean.TRUE);
-            });
-            case PrivacyCluster.APPROVAL_MAP -> map.forEach((key, value) -> {
-                String[] parts = parts(key, 2, name);
-                assertThat(value).isInstanceOf(String.class);
-                var request = HazelcastApprovalStore.Codec.decode((String) value);
-                assertThat(request.approvalId()).isEqualTo(parts[1]);
-                assertThat(request.scopeId()).isEqualTo(parts[0]);
-            });
-            case PrivacyCluster.APPROVAL_ID_MAP -> map.forEach((key, value) -> {
-                // A bare approval id, claiming the approval entry key (scope, NUL, the same id) and the random
-                // token of the creation, which carries no personal data.
-                assertThat(key).isInstanceOf(String.class);
-                assertThat((String) key).doesNotContain("\0");
-                var named = ClaimEntries.read((String) value).orElseThrow();
-                assertThat(named.entryKey()).isEqualTo(SCOPE_ID + "\0" + key);
-                assertThat(named.marked()).isFalse();
-                assertThat(java.util.UUID.fromString(named.token()).toString()).isEqualTo(named.token());
-            });
-            case PrivacyCluster.APPROVAL_PENDING_MAP -> map.forEach((key, value) -> {
-                parts(key, 2, name);
-                assertThat(value).isInstanceOf(String.class);
-                assertThat(PendingSet.decode((String) value)).isNotEmpty().containsOnlyKeys("ap-1");
-            });
-            case PrivacyCluster.CALLER_RATE_MAP -> map.forEach((key, value) -> {
-                assertThat(key).as("%s key", name).isInstanceOf(String.class);
-                assertThat(value.toString()).matches("\\d+:\\d+");
-            });
-            default -> fail("unrecognised distributed map %s must be given a decomposition rule", name);
-        }
-    }
-
-    private static String[] parts(Object key, int expectedParts, String mapName) {
-        assertThat(key).as("%s key", mapName).isInstanceOf(String.class);
-        String[] parts = ((String) key).split("\\u0000", -1);
-        assertThat(parts).as("%s key components", mapName).hasSize(expectedParts);
-        return parts;
     }
 
     private static void assertRawValueIsAbsent(Map<String, IMap<Object, Object>> maps) {

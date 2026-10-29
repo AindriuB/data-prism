@@ -146,9 +146,10 @@ class SourceTreeJacksonParityTest {
     }
 
     @Test
-    void aJsonFormatOnADatePropertyIsHonoured() {
+    void aJsonFormatOnADatePropertyHasNoEffect() {
+        // The walker ignores every Jackson annotation (task 288); the startup refusal of the annotation is 290's.
         assertThat(SourceTree.of(new Formatted(new Date(1_700_000_000_123L))).get("d").asString())
-                .isEqualTo("2023-11-14");
+                .isEqualTo("1700000000123");
     }
 
     @Test
@@ -236,8 +237,9 @@ class SourceTreeJacksonParityTest {
     }
 
     @Test
-    void aJsonFormatStringDateWithoutAPatternCarriesAColonOffsetForUtc() {
+    void aJsonFormatStringOnADateHasNoEffect() {
+        // The walker ignores every Jackson annotation (task 288): the Date is its epoch millis, as unannotated.
         assertThat(SourceTree.of(new Shaped(new Date(1_700_000_000_123L))).get("d").asString())
-                .isEqualTo("2023-11-14T22:13:20.123+00:00");
+                .isEqualTo("1700000000123");
     }
 }

@@ -1,18 +1,25 @@
 package io.github.aindriub.dataprism.core.engine;
 
-import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JacksonAnnotationsInside;
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonSetter;
 import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ValueSerializer;
-import tools.jackson.databind.introspect.AnnotatedField;
-import tools.jackson.databind.introspect.AnnotatedMember;
-import tools.jackson.databind.introspect.AnnotatedMethod;
-import tools.jackson.databind.ser.AnyGetterWriter;
-import tools.jackson.databind.ser.PropertyWriter;
+import tools.jackson.databind.annotation.JsonDeserialize;
 import tools.jackson.databind.ser.bean.BeanSerializerBase;
 import tools.jackson.databind.ser.impl.UnknownSerializer;
 
+import java.lang.annotation.Annotation;
+import java.lang.reflect.AnnotatedElement;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.GenericArrayType;
+import java.lang.reflect.Method;
+import java.lang.reflect.Parameter;
+import java.lang.reflect.Proxy;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.RecordComponent;
 import java.lang.reflect.TypeVariable;
@@ -26,12 +33,21 @@ import java.time.temporal.TemporalAmount;
 import java.util.Calendar;
 import java.util.Currency;
 import java.util.Date;
+import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.Locale;
+import java.util.Spliterator;
 import java.util.TimeZone;
 import java.util.UUID;
 import java.util.Set;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicMarkableReference;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicReferenceArray;
+import java.util.concurrent.atomic.AtomicStampedReference;
+import java.util.stream.BaseStream;
 
 /**
  * The shape a source model may have: a record, whose components are records, enums, JDK value
@@ -42,12 +58,10 @@ import java.util.Set;
  * depend on the library version. A record has exactly one reading. Such a class is refused with
  * {@link #CODE}, naming the class's simple name only, never a value.
  *
- * <p>A model author's explicit choices stay allowed: a {@code @JsonSerialize(using/keyUsing)} on a record
- * component or record class, {@code @JsonAnyGetter} and {@code @JsonValue}. The engine still classifies
- * what they produce, and any bean looked up through them is refused. A property the
- * serializer emits that is not backed by a record component (an annotated method on the record or on an
- * interface it implements, however inherited) is refused, since the property name it implies depends on
- * the Jackson major.
+ * <p>The engine builds the tree of a source record itself ({@link SourceRecordWalker}), so a Jackson
+ * annotation on a record has no effect on it. An author who wrote one expected it to, so startup refuses it
+ * with {@link #JACKSON_ANNOTATION_CODE}, except the closed allowlist {@link #ALLOWED_JACKSON_ANNOTATIONS} of
+ * annotations that only change how an adapter reads the upstream response into the record.
  *
  * <p>{@link #require(Class)} checks the declared types at startup. A component declared as
  * {@code Object} or an interface can hold a bean at runtime, so {@link SourceTree#of} checks the
@@ -66,6 +80,36 @@ public final class SourceModels {
     /** A record at array level two or deeper: inside a collection or array that is itself inside one. */
     public static final String NESTED_COLLECTION_OF_RECORD_CODE = "SOURCE_MODEL_NESTED_COLLECTION_OF_RECORD";
 
+    /** A non-null record value at a position whose declared type is not exactly that record class. */
+    public static final String RECORD_NOT_DECLARED_CODE = "SOURCE_MODEL_RECORD_NOT_DECLARED";
+
+    /** A record class whose fields the engine may not read (a named module that does not open its package). */
+    public static final String NOT_READABLE_CODE = "SOURCE_MODEL_NOT_READABLE";
+
+    /** A {@code JsonNode} that is not made of Jackson's own node classes, exactly. */
+    public static final String FOREIGN_NODE_CODE = "SOURCE_MODEL_FOREIGN_NODE";
+
+    /** A built record node whose property names are not exactly the record's component names. */
+    public static final String TREE_NOT_COMPONENT_EXACT_CODE = "SOURCE_TREE_NOT_COMPONENT_EXACT";
+
+    /** A read of the source value threw. */
+    public static final String VALUE_READ_FAILED_CODE = "SOURCE_VALUE_READ_FAILED";
+
+    /** A Jackson annotation, not on the allowlist, on a source model: it has no effect, so it is refused. */
+    public static final String JACKSON_ANNOTATION_CODE = "SOURCE_MODEL_JACKSON_ANNOTATION";
+
+    /**
+     * The Jackson annotations a source model may carry, matched by annotation type: they affect only how an
+     * adapter reads the upstream response into the record, so the walker, which writes, is unaffected.
+     * {@code @JsonIgnoreProperties} passes only as {@code ignoreUnknown = true} with no names.
+     */
+    static final Set<Class<? extends Annotation>> ALLOWED_JACKSON_ANNOTATIONS = Set.of(
+            JsonAlias.class, JsonCreator.class, JsonDeserialize.class, JsonSetter.class,
+            JsonIgnoreProperties.class);
+
+    /** A source value nested beyond the walker's depth bound. */
+    public static final String TOO_DEEP_CODE = "TOO_DEEP";
+
     private SourceModels() {
     }
 
@@ -82,16 +126,6 @@ public final class SourceModels {
     }
 
     /**
-     * The top-level object must be a record, or a Jackson tree node (a configured JSON source reads its
-     * payload as one); its components are checked as the tree is built.
-     */
-    static void refuseUnlessRecord(Class<?> type) {
-        if (!type.isRecord() && !JsonNode.class.isAssignableFrom(type)) {
-            throw refusal(type);
-        }
-    }
-
-    /**
      * Called as a serializer is built for {@code type}. A record is read by its components, so it
      * passes. Anything else is refused if it would be read by getters (a bean serializer, which
      * includes JDK classes such as Throwable and Color, and an enum written as an object) or is a user
@@ -99,14 +133,8 @@ public final class SourceModels {
      * serializer, enums, and Jackson tree nodes pass.
      */
     static void refuseSerializer(Class<?> type, ValueSerializer<?> serializer) {
-        if (type.isRecord()) {
-            if (type.getTypeParameters().length > 0) {
-                throw genericRefusal(null, type);
-            }
-            refuseForeignProperties(type, serializer);
-            return;
-        }
-        if (JsonNode.class.isAssignableFrom(type) || type.getName().startsWith("tools.jackson.")) {
+        // A record is judged by the walk (generic, readable, no Jackson annotation).
+        if (type.isRecord() || JsonNode.class.isAssignableFrom(type)) {
             return;
         }
         boolean gettersRead = serializer instanceof BeanSerializerBase || serializer instanceof UnknownSerializer;
@@ -115,47 +143,10 @@ public final class SourceModels {
         }
     }
 
-    /**
-     * A record is read by its components only. Whatever route adds another property (an annotated
-     * method on the record, on an interface or a super-interface it implements, or a mix-in), the
-     * serializer then emits a property whose backing member is not a component accessor, and its name
-     * would depend on the Jackson major (getURL is "URL" or "url"). Every property the bean serializer
-     * emits is therefore compared with the record's components; a component renamed with
-     * {@code @JsonProperty}, or left out with {@code @JsonIgnore}, is still its component. {@code
-     * @JsonAnyGetter} output (a real any-getter writer; {@code enabled=false} makes it an ordinary
-     * property) is not a bean property and {@code @JsonValue} replaces the bean shape, so
-     * both stay allowed.
-     */
-    static void refuseForeignProperties(Class<?> record, ValueSerializer<?> serializer) {
-        if (!(serializer instanceof BeanSerializerBase bean)) {
-            return;
-        }
-        Set<String> components = new HashSet<>();
-        for (RecordComponent component : record.getRecordComponents()) {
-            components.add(component.getName());
-        }
-        for (Iterator<PropertyWriter> properties = bean.properties(); properties.hasNext(); ) {
-            PropertyWriter writer = properties.next();
-            if (writer instanceof AnyGetterWriter) {
-                continue;
-            }
-            AnnotatedMember member = writer.getMember();
-            // A real field or method of the record: a virtual property (@JsonAppend) is neither, even
-            // when it is named like a component.
-            boolean real = member instanceof AnnotatedField
-                    || (member instanceof AnnotatedMethod method && method.getParameterCount() == 0);
-            boolean backed = real && components.contains(member.getName());
-            if (!backed) {
-                throw new PrivacyRefusedException(CODE, "$", simpleName(record)
-                        + " has a property that is not a record component");
-            }
-        }
-    }
-
     /** A user class that is not a record or an enum, however its serializer is supplied. */
     static void refuseUserClass(Class<?> type) {
         if (!type.isArray() && !type.isRecord() && !platform(type) && !isEnum(type) && !JsonNode.class.isAssignableFrom(type)
-                && !type.getName().startsWith("tools.jackson.")) {
+                && !SourceTree.fromJacksonDatabind(type)) {
             throw refusal(type);
         }
     }
@@ -203,19 +194,169 @@ public final class SourceModels {
         }
     }
 
-    /** An enum written as an object is read through its getters, like a bean. */
-    private static boolean objectShaped(Class<?> enumType) {
-        JsonFormat format = enumType.getAnnotation(JsonFormat.class);
-        return format != null && format.shape() == JsonFormat.Shape.OBJECT;
+    /**
+     * Refuses a Jackson annotation, not on the allowlist, anywhere on a record or an enum of the model: the
+     * class and the interfaces it implements, each record component as reflected on the component, its
+     * field, its accessor and the canonical constructor's parameter, every method the type or its
+     * interfaces declare, and each constant of an enum. The message names the annotation's simple name and
+     * the place, never a value. A JDK type is not looked at.
+     */
+    private static void refuseJacksonAnnotations(Class<?> type) {
+        if (platform(type)) {
+            return;
+        }
+        String simple = simpleName(type);
+        refuseAnnotationsOn(type, simple);
+        Set<Class<?>> interfaces = new LinkedHashSet<>();
+        collectInterfaces(type, interfaces);
+        for (Class<?> iface : interfaces) {
+            refuseAnnotationsOn(iface, simpleName(iface));
+        }
+        if (type.isRecord()) {
+            RecordComponent[] components = type.getRecordComponents();
+            for (RecordComponent component : components) {
+                String where = simple + "." + component.getName();
+                // The accessor is one of the type's declared methods, checked by refuseMethods below.
+                refuseAnnotationsOn(component, where);
+                try {
+                    refuseAnnotationsOn(type.getDeclaredField(component.getName()), where);
+                } catch (NoSuchFieldException e) {
+                    // A record always has the field; nothing to read otherwise.
+                }
+            }
+            Constructor<?> canonical = canonicalConstructor(type, components);
+            if (canonical != null) {
+                refuseAnnotationsOn(canonical, simple);
+                Parameter[] parameters = canonical.getParameters();
+                for (int i = 0; i < parameters.length && i < components.length; i++) {
+                    refuseAnnotationsOn(parameters[i], simple + "." + components[i].getName());
+                }
+            }
+        } else {
+            for (Field field : type.getDeclaredFields()) {
+                if (field.isEnumConstant()) {
+                    refuseAnnotationsOn(field, simple + "." + field.getName());
+                }
+            }
+        }
+        refuseMethods(type, simple);
+        for (Class<?> iface : interfaces) {
+            refuseMethods(iface, simpleName(iface));
+        }
+    }
+
+    private static void refuseMethods(Class<?> type, String simple) {
+        for (Method method : type.getDeclaredMethods()) {
+            refuseAnnotationsOn(method, simple + "." + method.getName());
+        }
+    }
+
+    private static Constructor<?> canonicalConstructor(Class<?> record, RecordComponent[] components) {
+        Class<?>[] types = new Class<?>[components.length];
+        for (int i = 0; i < components.length; i++) {
+            types[i] = components[i].getType();
+        }
+        try {
+            return record.getDeclaredConstructor(types);
+        } catch (NoSuchMethodException e) {
+            return null;
+        }
+    }
+
+    private static void collectInterfaces(Class<?> type, Set<Class<?>> into) {
+        for (Class<?> iface : type.getInterfaces()) {
+            if (into.add(iface)) {
+                collectInterfaces(iface, into);
+            }
+        }
+    }
+
+    private static void refuseAnnotationsOn(AnnotatedElement element, String where) {
+        for (Annotation annotation : element.getDeclaredAnnotations()) {
+            if (jackson(annotation.annotationType()) && !allowed(annotation)) {
+                throw new PrivacyRefusedException(JACKSON_ANNOTATION_CODE, "$", where + ": @"
+                        + simpleName(annotation.annotationType()) + " has no effect on a source model; remove it");
+            }
+        }
+    }
+
+    /** In a Jackson annotation package, or itself annotated {@code @JacksonAnnotationsInside}. */
+    private static boolean jackson(Class<? extends Annotation> type) {
+        String name = type.getName();
+        return name.startsWith("com.fasterxml.jackson.annotation.")
+                || name.startsWith("tools.jackson.databind.annotation.")
+                || type.isAnnotationPresent(JacksonAnnotationsInside.class);
+    }
+
+    /** On the allowlist, by type; {@code @JsonIgnoreProperties} only as {@code ignoreUnknown = true}, no names. */
+    private static boolean allowed(Annotation annotation) {
+        if (!ALLOWED_JACKSON_ANNOTATIONS.contains(annotation.annotationType())) {
+            return false;
+        }
+        return !(annotation instanceof JsonIgnoreProperties ignore)
+                || (ignore.ignoreUnknown() && ignore.value().length == 0);
     }
 
     private static boolean isEnum(Class<?> c) {
         return c.isEnum() || (c.getSuperclass() != null && c.getSuperclass().isEnum());
     }
 
-    private static boolean platform(Class<?> c) {
+    /**
+     * The JDK-class test: loaded by the bootstrap or platform loader, not a dynamic proxy class (every
+     * method of a proxy runs the caller's handler, and a proxy for JDK interfaces can be defined by the
+     * bootstrap loader) and not hidden (a lambda, which wraps a function this class cannot read).
+     */
+    static boolean platform(Class<?> c) {
         ClassLoader loader = c.getClassLoader();
-        return loader == null || loader == ClassLoader.getPlatformClassLoader();
+        return (loader == null || loader == ClassLoader.getPlatformClassLoader())
+                && !Proxy.isProxyClass(c) && !c.isHidden();
+    }
+
+    /**
+     * A JDK class that holds another object, or can be consumed once: refused at startup by declared
+     * type and at scrub time by runtime class. {@code Optional} is unwrapped by the walker and is not one.
+     */
+    static boolean referenceOrSingleUse(Class<?> c) {
+        return AtomicReference.class.isAssignableFrom(c)
+                || AtomicReferenceArray.class.isAssignableFrom(c)
+                || AtomicStampedReference.class.isAssignableFrom(c)
+                || AtomicMarkableReference.class.isAssignableFrom(c)
+                || java.lang.ref.Reference.class.isAssignableFrom(c)
+                || ThreadLocal.class.isAssignableFrom(c)
+                || Future.class.isAssignableFrom(c)
+                || BaseStream.class.isAssignableFrom(c)
+                || Iterator.class.isAssignableFrom(c)
+                || Spliterator.class.isAssignableFrom(c)
+                || Enumeration.class.isAssignableFrom(c);
+    }
+
+    static boolean isOptional(Class<?> c) {
+        return c == java.util.Optional.class || c == java.util.OptionalInt.class
+                || c == java.util.OptionalLong.class || c == java.util.OptionalDouble.class;
+    }
+
+    /** A refusal with {@link #CODE} that names the class's simple name only, at {@code path}. */
+    static PrivacyRefusedException refusalAt(Class<?> type, String path) {
+        return new PrivacyRefusedException(CODE, path, simpleName(type) + " is not a record; source models must be records");
+    }
+
+    /**
+     * The one rule for "may this class be a leaf", shared by startup (on declared classes) and the
+     * walker (on runtime classes): a JDK class that is not a container, a holder, a single-use type or a
+     * record, that the reader would not write through getters, and that the inspecting reader does not
+     * write with a container, reference or bean serializer. {@code Path} is a leaf; a {@code ServiceLoader}
+     * is not.
+     */
+    static boolean leafClass(Class<?> c) {
+        if (c.isPrimitive()) {
+            return true;
+        }
+        if (!platform(c) || c.isRecord() || (c.isArray() && c != byte[].class && c != char[].class)
+                || Throwable.class.isAssignableFrom(c) || referenceOrSingleUse(c)
+                || java.util.Collection.class.isAssignableFrom(c) || java.util.Map.class.isAssignableFrom(c)) {
+            return false;
+        }
+        return !SourceTree.writtenAsStructure(c);
     }
 
     /**
@@ -231,8 +372,13 @@ public final class SourceModels {
                     throw genericRefusal(where, c);
                 }
                 if (seen.add(c)) {
+                    if (!SourceRecordWalker.readable(c)) {
+                        throw new PrivacyRefusedException(NOT_READABLE_CODE, "$", at(where) + simpleName(c)
+                                + " cannot be read: its package is not opened to the engine");
+                    }
+                    refuseJacksonAnnotations(c);
                     // Components first, so a refusal names the component; then ask the reader to
-                    // build it: the serializer modifier compares its properties.
+                    // build it.
                     for (RecordComponent component : c.getRecordComponents()) {
                         String componentWhere = simpleName(c) + "." + component.getName();
                         walk(component.getGenericType(), seen, componentWhere);
@@ -243,7 +389,12 @@ public final class SourceModels {
                     }
                     SourceTree.refuseIfReadByGetters(c);
                 }
-            } else if (c.isEnum() && objectShaped(c)) {
+            } else if (c.isEnum()) {
+                if (seen.add(c)) {
+                    refuseJacksonAnnotations(c);
+                }
+            } else if (referenceOrSingleUse(c)) {
+                // AtomicReference, Future, ThreadLocal, a Stream or an Iterator: by declared type, interfaces too.
                 throw refusal(c);
             } else if (Throwable.class.isAssignableFrom(c)
                     || (!allowedLeaf(c) && !c.isInterface() && c != Object.class)) {
@@ -252,6 +403,12 @@ public final class SourceModels {
                     && !JsonNode.class.isAssignableFrom(c)) {
                 // A JDK class read by getters (java.awt.Point) is found out by asking the reader.
                 SourceTree.refuseIfReadByGetters(c);
+                // The leaf rule the walker applies to a runtime value of this class, so a model that starts
+                // never fails every request on a leaf type. Containers and optionals are walked, not leaves.
+                if (!java.util.Collection.class.isAssignableFrom(c) && !java.util.Map.class.isAssignableFrom(c)
+                        && !isOptional(c) && !Enum.class.isAssignableFrom(c) && !leafClass(c)) {
+                    throw refusal(c);
+                }
             }
         } else if (type instanceof ParameterizedType p) {
             if (p.getRawType() instanceof Class<?> raw) {
@@ -374,10 +531,10 @@ public final class SourceModels {
                 || JsonNode.class.isAssignableFrom(c)) {
             return true;
         }
-        // A JDK type is one the platform defines, whatever its package (a TimeZone is a sun.* class).
-        ClassLoader loader = c.getClassLoader();
-        return loader == null || loader == ClassLoader.getPlatformClassLoader()
-                || c.getName().startsWith("tools.jackson.");
+        // A JDK type is one the platform defines, whatever its package (a TimeZone is a sun.* class). A name
+        // is not ownership: a user class in a tools.jackson package is refused, and a Jackson class that
+        // is not a JsonNode is not delegated.
+        return platform(c);
     }
 
     /** The simple name; an anonymous or hidden class has none, so its name without the package stands in. */

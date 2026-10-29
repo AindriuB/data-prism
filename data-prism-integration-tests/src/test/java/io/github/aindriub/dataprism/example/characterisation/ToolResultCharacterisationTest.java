@@ -14,6 +14,8 @@ import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
 import io.github.aindriub.dataprism.mcp.ToolOptions;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
+import io.github.aindriub.dataprism.security.CaseAuthorizer;
+import io.github.aindriub.dataprism.security.ClientAllowlist;
 import io.github.aindriub.dataprism.security.PurposeValidator;
 import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.SecurityPolicy;
@@ -65,9 +67,9 @@ class ToolResultCharacterisationTest {
     private final AuthorizationService authorization = new AuthorizationService(
             new SecurityPolicy(Set.of(PURPOSE), Map.of(ROLE,
                     Set.of(Capability.GET_ENTITY_CONTEXT, Capability.COMPARE_ENTITY_SOURCES))),
-            "DEFAULT", PrivacyScopeType.INVESTIGATION);
+            "DEFAULT", PrivacyScopeType.INVESTIGATION, ClientAllowlist.unrestricted());
     private final ScopeResolver scopes = new ScopeResolver(assembly.pseudonymisationVersion(),
-            Duration.ofHours(8), new PurposeValidator(Set.of(PURPOSE)));
+            Duration.ofHours(8), new PurposeValidator(Set.of(PURPOSE)), CaseAuthorizer.tokenTrusted());
 
     private static McpSyncServerExchange exchange(String callerKey) {
         AuthenticatedCaller caller =

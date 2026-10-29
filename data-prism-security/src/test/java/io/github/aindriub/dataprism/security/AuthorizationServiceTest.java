@@ -32,7 +32,7 @@ class AuthorizationServiceTest {
                 policy(Map.of(
                         "investigator", Set.of("GET_ENTITY_CONTEXT"),
                         "reviewer", Set.of("COMPARE_ENTITY_SOURCES"))),
-                "DEFAULT", PrivacyScopeType.CASE);
+                "DEFAULT", PrivacyScopeType.CASE, ClientAllowlist.unrestricted());
 
         AuthorizationDecision decision =
                 service.authorize(caller(Set.of("investigator", "reviewer")), GET_ENTITY_CONTEXT);
@@ -46,7 +46,7 @@ class AuthorizationServiceTest {
     void unmappedRoleDoesNotFail() {
         AuthorizationService service = new AuthorizationService(
                 policy(Map.of("investigator", Set.of("GET_ENTITY_CONTEXT"))),
-                "DEFAULT", PrivacyScopeType.CASE);
+                "DEFAULT", PrivacyScopeType.CASE, ClientAllowlist.unrestricted());
 
         AuthorizationDecision decision =
                 service.authorize(caller(Set.of("investigator", "unmapped-role")), GET_ENTITY_CONTEXT);
@@ -60,7 +60,7 @@ class AuthorizationServiceTest {
     void noMappedRoleDeniesWithNoCapabilities() {
         AuthorizationService service = new AuthorizationService(
                 policy(Map.of("investigator", Set.of("GET_ENTITY_CONTEXT"))),
-                "DEFAULT", PrivacyScopeType.CASE);
+                "DEFAULT", PrivacyScopeType.CASE, ClientAllowlist.unrestricted());
 
         AuthorizationDecision decision = service.authorize(caller(Set.of("stranger")), GET_ENTITY_CONTEXT);
 
@@ -74,7 +74,7 @@ class AuthorizationServiceTest {
     void lackingToolCapabilityDeniesWithToolNotPermitted() {
         AuthorizationService service = new AuthorizationService(
                 policy(Map.of("investigator", Set.of("COMPARE_ENTITY_SOURCES"))),
-                "DEFAULT", PrivacyScopeType.CASE);
+                "DEFAULT", PrivacyScopeType.CASE, ClientAllowlist.unrestricted());
 
         AuthorizationDecision decision = service.authorize(caller(Set.of("investigator")), GET_ENTITY_CONTEXT);
 
@@ -90,12 +90,48 @@ class AuthorizationServiceTest {
     void allowedDecisionCarriesProfileAndScopeType() {
         AuthorizationService service = new AuthorizationService(
                 policy(Map.of("investigator", Set.of("GET_ENTITY_CONTEXT"))),
-                "STRICT", PrivacyScopeType.CASE);
+                "STRICT", PrivacyScopeType.CASE, ClientAllowlist.unrestricted());
 
         AuthorizationDecision decision = service.authorize(caller(Set.of("investigator")), GET_ENTITY_CONTEXT);
 
         assertThat(decision.privacyProfile()).isEqualTo("STRICT");
         assertThat(decision.scopeType()).isEqualTo(PrivacyScopeType.CASE);
         assertThat(decision.denialCode()).isNull();
+    }
+
+    @Test
+    @DisplayName("a client outside the allowlist is denied CLIENT_NOT_ALLOWED even though its roles would be allowed")
+    void clientOutsideAllowlistIsDenied() {
+        AuthorizationService service = new AuthorizationService(
+                policy(Map.of("investigator", Set.of("GET_ENTITY_CONTEXT"))), "DEFAULT", PrivacyScopeType.CASE,
+                ClientAllowlist.of(Set.of("Client-1")));
+
+        AuthorizationDecision decision = service.authorize(caller(Set.of("investigator")), GET_ENTITY_CONTEXT);
+
+        assertThat(decision.allowed()).isFalse();
+        assertThat(decision.denialCode()).isEqualTo("CLIENT_NOT_ALLOWED");
+    }
+
+    @Test
+    @DisplayName("a client on the allowlist proceeds to the capability check")
+    void clientOnAllowlistProceeds() {
+        AuthorizationService service = new AuthorizationService(
+                policy(Map.of("investigator", Set.of("GET_ENTITY_CONTEXT"))), "DEFAULT", PrivacyScopeType.CASE,
+                ClientAllowlist.of(Set.of("client-1")));
+
+        assertThat(service.authorize(caller(Set.of("investigator")), GET_ENTITY_CONTEXT).allowed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("usesClientAllowlist is true for an allowlist equal by value to the one the service was built with")
+    void usesClientAllowlistIsByValue() {
+        ClientAllowlist mine = ClientAllowlist.of(Set.of("client-1"));
+        AuthorizationService service = new AuthorizationService(policy(Map.of()), "DEFAULT",
+                PrivacyScopeType.CASE, mine);
+        assertThat(service.usesClientAllowlist(mine)).isTrue();
+        assertThat(service.usesClientAllowlist(ClientAllowlist.of(Set.of("client-1")))).isTrue();
+        assertThat(service.usesClientAllowlist(ClientAllowlist.of(Set.of("client-2")))).isFalse();
+        assertThat(service.usesClientAllowlist(ClientAllowlist.unrestricted())).isFalse();
+        assertThat(service.usesClientAllowlist(null)).isFalse();
     }
 }

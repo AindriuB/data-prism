@@ -20,6 +20,8 @@ to join the instances, and what Data Prism does not do for you.
 
 ## When you need it
 
+Multi-member: trusted network only. Approvals and counters are unsealed, and `trusted-network: true` is the operator's assertion that only Data Prism members can reach the member port.
+
 `dataprism.hazelcast.topology` is `single-node` or `embedded`, never a default.
 With `single-node` each process keeps its own state. With N instances that means:
 

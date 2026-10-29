@@ -38,6 +38,7 @@ public final class AuditRecorder implements AutoCloseable {
     private final AuditSink sink;
     private final Clock clock;
     private final String instanceId;
+    private final AuditChainMode mode;
     private final AtomicLong sequence = new AtomicLong();
 
     /** Null for the constructors that write no checkpoints. */
@@ -65,7 +66,7 @@ public final class AuditRecorder implements AutoCloseable {
      * new writer starting at GENESIS instead of a false chain break.
      */
     public AuditRecorder(AuditSink sink, Clock clock, String writerId) {
-        this(sink, clock, writerId, null, false, null);
+        this(sink, clock, writerId, null, false, null, AuditChainMode.unkeyed());
     }
 
     /**
@@ -75,21 +76,25 @@ public final class AuditRecorder implements AutoCloseable {
      * not start.
      */
     public AuditRecorder(AuditSink sink, Clock clock, String writerId, AuditCheckpointSink checkpointSink) {
-        this(sink, clock, writerId, Objects.requireNonNull(checkpointSink, "checkpointSink"), true, null);
+        this(sink, clock, writerId, Objects.requireNonNull(checkpointSink, "checkpointSink"), true, null,
+                AuditChainMode.unkeyed());
     }
 
     /**
      * As above, and hands every event to {@code listeners} after {@code sink.record(event)} has returned.
      * {@code checkpointSink} may be null (no checkpoints); {@code listeners} may be null (none). The
      * hand-over is a non-blocking offer, so a listener can never delay, fail or reorder a recording.
+     * {@code mode} chooses the plain SHA-256 chain or the opt-in keyed HMAC chain; it must not be null.
+     * In keyed mode every {@code eventHash}, and every checkpoint head, is the keyed form.
      */
     public AuditRecorder(AuditSink sink, Clock clock, String writerId, AuditCheckpointSink checkpointSink,
-                         AuditEventListeners listeners) {
-        this(sink, clock, writerId, checkpointSink, checkpointSink != null, listeners);
+                         AuditEventListeners listeners, AuditChainMode mode) {
+        this(sink, clock, writerId, checkpointSink, checkpointSink != null, listeners, mode);
     }
 
     private AuditRecorder(AuditSink sink, Clock clock, String writerId, AuditCheckpointSink checkpointSink,
-                          boolean writeBoot, AuditEventListeners listeners) {
+                          boolean writeBoot, AuditEventListeners listeners, AuditChainMode mode) {
+        this.mode = Objects.requireNonNull(mode, "mode");
         this.listeners = listeners;
         this.checkpointSink = checkpointSink;
         this.sink = Objects.requireNonNull(sink, "sink");
@@ -205,7 +210,7 @@ public final class AuditRecorder implements AutoCloseable {
             sequence.decrementAndGet();
             throw e;
         }
-        String hash = AuditEventHash.compute(draft);
+        String hash = mode.hash(draft);
         AuditEvent event = new AuditEvent(id, timestamp, draft.principalId(), draft.clientId(), draft.tool(),
                 draft.entityType(), draft.subjectPseudonym(), draft.parameterFingerprint(),
                 draft.privacyProfile(), draft.scopeId(), draft.purpose(), draft.caseId(),

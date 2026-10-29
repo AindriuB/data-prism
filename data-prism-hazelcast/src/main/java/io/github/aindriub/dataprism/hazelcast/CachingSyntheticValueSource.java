@@ -6,12 +6,16 @@ import io.github.aindriub.dataprism.core.metrics.Metric;
 import io.github.aindriub.dataprism.core.model.PrivacyContext;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.spi.SyntheticValueSource;
+import io.github.aindriub.dataprism.hazelcast.seal.SealedWrites;
+import io.github.aindriub.dataprism.hazelcast.seal.Sealer;
+import io.github.aindriub.dataprism.hazelcast.seal.ServingGate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -51,6 +55,12 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
     private final SyntheticValueSource generator;
     private final PrivacyCluster cluster;
     private final PrivacyMetrics metrics;
+    private final Duration lockTimeout;
+    private final Sealer sealer;
+    /** Runs between the read and the compare-and-set of an index write; a seam for tests. */
+    Runnable beforeIndexWrite = () -> { };
+    /** Runs between the read and the compare-and-set of an identity write; a seam for tests. */
+    Runnable beforeIdentityWrite = () -> { };
 
     private final AtomicLong hits = new AtomicLong();
     private final AtomicLong misses = new AtomicLong();
@@ -63,11 +73,30 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
 
     public CachingSyntheticValueSource(SyntheticValueSource generator, PrivacyCluster cluster,
                                         PrivacyMetrics metrics) {
+        this(generator, cluster, metrics, ClusterLocks.DEFAULT_TIMEOUT);
+    }
+
+    /**
+     * @param lockTimeout how long a write waits for the lock of its key before it gives up, {@code PT100MS} to
+     *                    {@code PT30S}. A write that gives up is a cache failure like any other: the generator's
+     *                    answer is returned and nothing is stored.
+     * @throws IllegalArgumentException if the timeout is outside that range
+     */
+    public CachingSyntheticValueSource(SyntheticValueSource generator, PrivacyCluster cluster,
+                                        PrivacyMetrics metrics, java.time.Duration lockTimeout) {
+        this(generator, cluster, metrics, lockTimeout, ServingGate.open());
+    }
+
+    /** As the public constructor, with the serving gate of the member (a seam until the gate is wired). */
+    CachingSyntheticValueSource(SyntheticValueSource generator, PrivacyCluster cluster,
+                                PrivacyMetrics metrics, Duration lockTimeout, ServingGate gate) {
+        this.lockTimeout = ClusterLocks.checked(lockTimeout);
         this.generator = Objects.requireNonNull(generator, "generator");
         this.cluster = Objects.requireNonNull(cluster, "cluster");
         // Wrapped once, here, so nothing below has to guard a metrics call: none
         // of them can throw, so none of them can fail, skip or alter a lookup.
         this.metrics = FailSafeMetrics.wrap(Objects.requireNonNull(metrics, "metrics"));
+        this.sealer = IdentityMaps.sealerFor(cluster, this.metrics, Objects.requireNonNull(gate, "gate"));
     }
 
     @Override
@@ -75,15 +104,20 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
         String generated = null;
         boolean lookupOutcomeRecorded = false;
         try {
-            IMap<String, String> identities = cluster.instance().getMap(PrivacyCluster.IDENTITY_MAP);
-            String key = ScopeKeys.identity(context.scopeId(), subjectId, namespace);
+            IMap<String, String> identities = cluster.servingInstance().getMap(PrivacyCluster.IDENTITY_MAP);
+            String key = cluster.scopeKeys().identity(context.scopeId(), subjectId, namespace);
 
-            String cached = identities.get(key);
-            if (cached != null) {
+            String canonical = ScopeKeys.identityCanonical(context.scopeId(), subjectId, namespace);
+            String stored = identities.get(key);
+            // Only an authentic envelope sealed for these very parts is a hit. Anything else stored here (plaintext,
+            // a 0.7 value, a foreign envelope) is a miss: it is counted by the sealer and overwritten below.
+            Optional<String> cached = stored == null ? Optional.empty()
+                    : IdentityMaps.valueOf(sealer.open(PrivacyCluster.IDENTITY_MAP, key, stored), canonical);
+            if (cached.isPresent()) {
                 hits.incrementAndGet();
                 lookupOutcomeRecorded = true;
                 metrics.increment(Metric.IDENTITY_CACHE_HIT, namespace.name());
-                return cached;
+                return cached.get();
             }
 
             misses.incrementAndGet();
@@ -100,7 +134,7 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
                     cacheFailure.getClass().getSimpleName());
             // lookupOutcomeRecorded is set once a hit or a miss has already been
             // emitted above. When it is false, neither ran — the cluster call
-            // itself threw, including ScopeKeys.identity — so nothing above has
+            // itself threw, including the key derivation — so nothing above has
             // recorded an outcome and no computation was saved either; emit a
             // miss here instead.
             if (!lookupOutcomeRecorded) {
@@ -115,23 +149,76 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
     private void store(IMap<String, String> identities, String key, String generated,
                        String subjectId, PrivacyNamespace namespace, PrivacyContext context) {
         long ttlMillis = ttlMillis(context);
-        String existing = identities.putIfAbsent(key, generated, ttlMillis, TimeUnit.MILLISECONDS);
+        String canonical = ScopeKeys.identityCanonical(context.scopeId(), subjectId, namespace);
+        String sealed = sealer.seal(PrivacyCluster.IDENTITY_MAP, key, IdentityMaps.plaintext(canonical, generated));
 
-        if (existing != null && !existing.equals(generated)) {
-            // Not a race: two threads deriving the same key derive the same value.
-            // Something about the derivation changed while the scope was live.
-            conflicts.incrementAndGet();
-            metrics.increment(Metric.IDENTITY_COLLISION, namespace.name());
-            LOG.warn("cached identity for a live scope disagrees with the generator; "
-                    + "the key, algorithm version or vocabulary changed mid-scope. "
-                    + "Overwriting so output stays a function of the generator, not the cache.");
-            identities.set(key, generated, ttlMillis, TimeUnit.MILLISECONDS);
+        ClusterLocks.acquire(identities, key, lockTimeout);
+        try {
+            // The entry can change between the read and the compare-and-set (eviction, expiry, a foreign write): it
+            // then reports false. Retry once on a fresh read; a second miss is a cache failure, and the index is not
+            // written for an identity entry that was not.
+            boolean done = false;
+            boolean conflictCounted = false;
+            for (int attempt = 0; attempt < 2 && !done; attempt++) {
+                String existing = identities.get(key);
+                beforeIdentityWrite.run();
+                if (existing == null) {
+                    done = Boolean.TRUE.equals(identities.executeOnKey(key,
+                            SealedWrites.compareAndSet(null, sealed, ttlMillis)));
+                    continue;
+                }
+                Optional<String> current = IdentityMaps.valueOf(
+                        sealer.open(PrivacyCluster.IDENTITY_MAP, key, existing), canonical);
+                if (current.isPresent() && current.get().equals(generated)) {
+                    // A concurrent writer stored the same value: nothing to do.
+                    done = true;
+                    continue;
+                }
+                if (current.isPresent() && !conflictCounted) {
+                    conflictCounted = true;
+                    // Not a race: two threads deriving the same key derive the same value.
+                    // Something about the derivation changed while the scope was live.
+                    conflicts.incrementAndGet();
+                    metrics.increment(Metric.IDENTITY_COLLISION, namespace.name());
+                    LOG.warn("cached identity for a live scope disagrees with the generator; "
+                            + "the key, algorithm version or vocabulary changed mid-scope. "
+                            + "Overwriting so output stays a function of the generator, not the cache.");
+                }
+                // An entry that does not open was counted by the sealer; it is replaced all the same.
+                done = Boolean.TRUE.equals(identities.executeOnKey(key,
+                        SealedWrites.compareAndSet(existing, sealed, ttlMillis)));
+            }
+            if (!done) {
+                throw new IllegalStateException("the identity entry kept changing");
+            }
+        } finally {
+            ClusterLocks.release(identities, key);
         }
 
         if (cluster.reidentificationEnabled()) {
-            cluster.instance().<String, String>getMap(PrivacyCluster.REIDENTIFICATION_MAP)
-                    .set(ScopeKeys.reidentification(context.scopeId(), namespace, generated),
-                            subjectId, ttlMillis, TimeUnit.MILLISECONDS);
+            IMap<String, String> index = cluster.servingInstance().getMap(PrivacyCluster.REIDENTIFICATION_MAP);
+            String indexKey = cluster.scopeKeys().reidentification(context.scopeId(), namespace, generated);
+            String indexCanonical = ScopeKeys.reidentificationCanonical(context.scopeId(), namespace, generated);
+            String sealedSubject = sealer.seal(PrivacyCluster.REIDENTIFICATION_MAP, indexKey,
+                    IdentityMaps.plaintext(indexCanonical, subjectId));
+            ClusterLocks.acquire(index, indexKey, lockTimeout);
+            try {
+                // The entry can change between the read and the write (eviction, expiry, a foreign write): the
+                // compare-and-set then reports false. Retry once on the fresh value; a second miss is a cache
+                // failure, so the pseudonym is never issued without its index entry unnoticed.
+                boolean written = false;
+                for (int attempt = 0; attempt < 2 && !written; attempt++) {
+                    String current = index.get(indexKey);
+                    beforeIndexWrite.run();
+                    written = Boolean.TRUE.equals(index.executeOnKey(indexKey,
+                            SealedWrites.compareAndSet(current, sealedSubject, ttlMillis)));
+                }
+                if (!written) {
+                    throw new IllegalStateException("the re-identification entry kept changing");
+                }
+            } finally {
+                ClusterLocks.release(index, indexKey);
+            }
         }
     }
 

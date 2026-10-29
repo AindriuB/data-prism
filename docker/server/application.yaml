@@ -22,6 +22,10 @@ dataprism:
       roles: roles
       investigation: case_id
   security-policy:
+    # A real deployment supplies a CaseAuthorizer bean and lists its allowed clients in allowed-clients;
+    # this fixture trusts the token and allows every client.
+    case-authorisation: token-trusted
+    client-allowlist: unrestricted
     purposes:
       - investigation
     roles:
@@ -45,10 +49,47 @@ dataprism:
   metrics:
     sink: micrometer
   hazelcast:
-    # fixture-only: one server process, no cluster — task 25's explicit,
-    # required choice between "embedded" and "single-node" rather than a
-    # default either could quietly fall back to.
-    topology: single-node
+    # fixture-only: one embedded member that joins nothing. Re-identification
+    # refuses single-node (its index lives in the cluster member), and
+    # join.mode none binds 127.0.0.1 only. The cluster and name keys are
+    # optional on a solo member and, when given, checked as on a joining one;
+    # compose.yaml generates both at start and these name the variables.
+    topology: embedded
+    cluster-name: quickstart-solo
+    join:
+      mode: none
+    security:
+      cluster-key:
+        key-id: cluster-1
+        environment-variable: DATAPRISM_CLUSTER_KEY_MATERIAL
+      name-key:
+        key-id: name-1
+        environment-variable: DATAPRISM_NAME_KEY_MATERIAL
+    reidentification-enabled: true
+    # fixture-only: names a review that never happened. A real deployment
+    # points this at its own reviewed re-identification controls.
+    reidentification-controls-reference: quickstart-fixture-controls-not-reviewed
+  # Re-identification: four-eyes on (the default, stated here on purpose). The
+  # investigator requests and collects; a different principal in the approver
+  # role approves. Never an MCP tool: it is served on the operator port below.
+  reidentification:
+    enabled: true
+    four-eyes: true
+    purposes:
+      - investigation
+    roles:
+      investigator:
+        - REQUEST
+      approver:
+        - APPROVE
+  # The operator surface: its own port, audience and scope, so an MCP token
+  # cannot reach it. fixture-only values; the quickstart issuer mints tokens
+  # for them on request (see docs/quickstart.md).
+  operator:
+    enabled: true
+    port: 8081
+    required-audience: ${QUICKSTART_OPERATOR_AUDIENCE:data-prism-quickstart-operator}
+    required-scope: operator
   # --8<-- [start:customer-source]
   sources:
     customer:

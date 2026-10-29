@@ -6,6 +6,7 @@ import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.core.engine.DefaultFieldMetadataResolver;
 import io.github.aindriub.dataprism.core.limits.InMemoryScopeBudget;
 import io.github.aindriub.dataprism.core.limits.RequestLimits;
+import io.github.aindriub.dataprism.core.limits.ReadReservation;
 import io.github.aindriub.dataprism.core.limits.ScopeBudget;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.model.PrivacyScopeType;
@@ -31,6 +32,8 @@ import io.github.aindriub.dataprism.pseudonymisation.HmacValueTokenSource;
 import io.github.aindriub.dataprism.pseudonymisation.StaticSecretKeyProvider;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
+import io.github.aindriub.dataprism.security.CaseAuthorizer;
+import io.github.aindriub.dataprism.security.ClientAllowlist;
 import io.github.aindriub.dataprism.security.OversightPolicy;
 import io.github.aindriub.dataprism.security.PurposeValidator;
 import io.github.aindriub.dataprism.security.ScopeResolver;
@@ -117,10 +120,10 @@ class ClusterOperationRefusalToolTest {
     private McpSchema.CallToolResult call(DefaultContextOrchestrator orchestrator, ToolAdmission admission) {
         SecurityPolicy security = new SecurityPolicy(Set.of("demonstration"),
                 Map.of("investigator", Set.of("GET_ENTITY_CONTEXT")));
-        AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION);
+        AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION, ClientAllowlist.unrestricted());
         ScopeResolver scopes = new ScopeResolver(
                 PseudonymisationVersion.HMAC_SHA256_V1.withKey("key-1").withVocabulary("vocab-1"),
-                Duration.ofHours(8), new PurposeValidator(Set.of("demonstration")));
+                Duration.ofHours(8), new PurposeValidator(Set.of("demonstration")), CaseAuthorizer.tokenTrusted());
         GetEntityContextTool get = new GetEntityContextTool(orchestrator, authz, scopes, PrivacyMetrics.none(),
                 audit, FIXED, null,
                 ToolOptions.defaults().admission(admission, new ParameterFingerprinter(KEYS)).build());
@@ -139,6 +142,12 @@ class ClusterOperationRefusalToolTest {
         return new ScopeBudget() {
             @Override
             public boolean tryRead(String scopeId, String subjectId, int budget) {
+                throw new AssertionError("the fan-out reserves reads; it no longer calls tryRead");
+            }
+
+            @Override
+            public ReadReservation reserve(String scopeId, String subjectId,
+                    int reads, int subjectBudget, int scopeTotalBudget) {
                 throw new ClusterOperationRefusedException(new IllegalArgumentException(SENTINEL));
             }
 

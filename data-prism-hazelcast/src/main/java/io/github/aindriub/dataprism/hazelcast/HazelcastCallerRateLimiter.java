@@ -44,12 +44,13 @@ public final class HazelcastCallerRateLimiter implements CallerRateLimiter {
     public boolean tryAcquire(String principalId, int limit, Duration window, Instant now) {
         long windowMillis = Math.max(1L, window.toMillis());
         long index = Math.floorDiv(now.toEpochMilli(), windowMillis);
-        IMap<String, String> counts = cluster.instance().getMap(PrivacyCluster.CALLER_RATE_MAP);
-        ClusterLocks.acquire(counts, principalId, lockTimeout);
+        IMap<String, String> counts = cluster.servingInstance().getMap(PrivacyCluster.CALLER_RATE_MAP);
+        String key = cluster.scopeKeys().callerRate(principalId);
+        ClusterLocks.acquire(counts, key, lockTimeout);
         try {
-            return counts.executeOnKey(principalId, new AcquireWithinWindow(limit, index, windowMillis));
+            return counts.executeOnKey(key, new AcquireWithinWindow(limit, index, windowMillis));
         } finally {
-            ClusterLocks.release(counts, principalId);
+            ClusterLocks.release(counts, key);
         }
     }
 

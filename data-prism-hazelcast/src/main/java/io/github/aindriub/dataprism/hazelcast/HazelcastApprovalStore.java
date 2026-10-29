@@ -3,7 +3,6 @@ package io.github.aindriub.dataprism.hazelcast;
 import com.hazelcast.map.EntryProcessor;
 import com.hazelcast.map.ExtendedMapEntry;
 import com.hazelcast.map.IMap;
-import com.hazelcast.splitbrainprotection.SplitBrainProtectionException;
 import io.github.aindriub.dataprism.core.metrics.Metric;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
@@ -15,6 +14,8 @@ import io.github.aindriub.dataprism.oversight.ApprovalRequest;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest.Kind;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest.Status;
 import io.github.aindriub.dataprism.oversight.ApprovalStore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -67,11 +68,13 @@ import java.util.function.Supplier;
  * being held. Each creation carries a random token, kept in its entry, its id claim and its pending slot, and every
  * release, removal and takeover compares it, so a clean-up that belongs to one creation of an id never touches
  * a later creation of the same id in the same scope. An entry is usable only while the claim for its id names its
- * entry key and token; otherwise it is treated as unknown. Under a partition each side can still change its own copy once,
- * which the split-brain protection and {@link ApprovalMergePolicy} on the map narrow (see
+ * entry key and token; otherwise it is treated as unknown. Under a partition each side can still change its own
+ * copy once, which the split-brain protection and {@link ApprovalMergePolicy} on the map narrow (see
  * {@code docs/multiple-instances.md}).
  */
 public final class HazelcastApprovalStore implements ApprovalStore {
+
+    private static final Logger log = LoggerFactory.getLogger(HazelcastApprovalStore.class);
 
     /**
      * How long an entry we mark expired stays visible, so a late approver sees EXPIRED.
@@ -171,7 +174,8 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         IMap<String, String> claims = idClaims();
         IMap<String, String> pendingSets = pendingSets();
         String id = pending.approvalId();
-        String entryKey = ScopeKeys.approval(pending.scopeId(), id);
+        String claimKey = keys().claim(id);
+        String entryKey = keys().approval(pending.scopeId(), id);
         String pendingKey = pendingKey(pending.kind(), pending.requesterPrincipalId());
         long ttl = Math.max(1L, Duration.between(pending.createdAt(), pending.expiresAt()).toMillis());
         String token = UUID.randomUUID().toString();
@@ -179,10 +183,10 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         String mine = ClaimEntries.value(entryKey, token);
         String encoded = Codec.encode(pending, token);
         try (HeldLocks locks = new HeldLocks()) {
-            locks.take(claims, id);
+            locks.take(claims, claimKey);
             locks.take(pendingSets, pendingKey);
             locks.take(approvals, entryKey);
-            if (!cluster(() -> ClaimEntries.claim(claims, approvals, id, entryKey, token))) {
+            if (!cluster(() -> ClaimEntries.claim(claims, approvals, claimKey, entryKey, token))) {
                 throw new IllegalArgumentException("duplicate approval id");
             }
             boolean reserved;
@@ -190,16 +194,16 @@ public final class HazelcastApprovalStore implements ApprovalStore {
                 reserved = cluster(() -> pendingSets.executeOnKey(pendingKey,
                         new PendingSet.Reserve(id, owner, pending.createdAt(), pending.expiresAt(), cap)));
             } catch (RuntimeException failed) {
-                unclaim(claims, id, entryKey, token);
+                unclaim(claims, claimKey, entryKey, token);
                 throw failed;
             }
             if (!reserved) {
-                unclaim(claims, id, entryKey, token);
+                unclaim(claims, claimKey, entryKey, token);
                 throw new ApprovalRefusedException(Code.TOO_MANY_PENDING);
             }
             // The claim may have been taken over since this caller claimed it. Then the slot reserved above may be
             // the new owner's: leave it (an over-count is the safe side) and do not insert.
-            if (!mine.equals(cluster(() -> claims.get(id)))) {
+            if (!mine.equals(cluster(() -> claims.get(claimKey)))) {
                 throw new IllegalArgumentException("duplicate approval id");
             }
             String existing;
@@ -209,8 +213,8 @@ public final class HazelcastApprovalStore implements ApprovalStore {
                 // Only a confirmed absence is undone: if the insert may have happened, keeping the claim and the
                 // count errs towards refusing.
                 if (confirmedAbsent(approvals, entryKey)) {
-                    unreserve(pendingSets, pending, owner);
-                    unclaim(claims, id, entryKey, token);
+                    unreserve(pendingSets, pendingKey, id, owner);
+                    unclaim(claims, claimKey, entryKey, token);
                 }
                 throw failed;
             }
@@ -223,7 +227,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
             // be the new owner's, and an over-count is the safe side.
             String after;
             try {
-                after = cluster(() -> claims.get(id));
+                after = cluster(() -> claims.get(claimKey));
             } catch (RuntimeException unknown) {
                 withdraw(approvals, entryKey, token);
                 throw unknown;
@@ -236,12 +240,8 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         return pending;
     }
 
-    /**
-     * Key of a (kind, requester) entry in the pending map. A map of its own, so it can equal no approval key,
-     * and a null requester ({@code ~}) differs from any named one ({@code =} first).
-     */
-    static String pendingKey(Kind kind, String requesterPrincipalId) {
-        return kind.name() + "\0" + (requesterPrincipalId == null ? "~" : "=" + requesterPrincipalId);
+    private String pendingKey(Kind kind, String requesterPrincipalId) {
+        return keys().pending(kind, requesterPrincipalId);
     }
 
     private static boolean confirmedAbsent(IMap<String, String> approvals, String entryKey) {
@@ -289,10 +289,10 @@ public final class HazelcastApprovalStore implements ApprovalStore {
      * Best effort, and only for the slot this creation owns: a failure leaves the requester over-counted until
      * expiry. The caller holds the pending key's lock.
      */
-    private static void unreserve(IMap<String, String> pendingSets, ApprovalRequest request, String owner) {
+    private static void unreserve(IMap<String, String> pendingSets, String pendingKey, String approvalId,
+                                  String owner) {
         try {
-            pendingSets.executeOnKey(pendingKey(request.kind(), request.requesterPrincipalId()),
-                    new PendingSet.Release(request.approvalId(), owner));
+            pendingSets.executeOnKey(pendingKey, new PendingSet.Release(approvalId, owner));
         } catch (RuntimeException ignored) {
             // The id is dropped by the reserve prune once it expires, and by the sweep after that.
         }
@@ -306,10 +306,8 @@ public final class HazelcastApprovalStore implements ApprovalStore {
     private static <T> T cluster(Supplier<T> call) {
         try {
             return call.get();
-        } catch (PrivacyRefusedException | SplitBrainProtectionException refusal) {
-            throw refusal;
         } catch (RuntimeException failure) {
-            throw ClusterRefusals.refused(failure);
+            throw ClusterRefusals.mapped(failure);
         }
     }
 
@@ -320,12 +318,9 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         void take(IMap<String, String> map, String key) {
             try {
                 ClusterLocks.acquire(map, key, lockTimeout);
-            } catch (PrivacyRefusedException | SplitBrainProtectionException refusal) {
-                close();
-                throw refusal;
             } catch (RuntimeException failure) {
                 close();
-                throw ClusterRefusals.refused(failure);
+                throw ClusterRefusals.mapped(failure);
             }
             releases.push(() -> ClusterLocks.release(map, key));
         }
@@ -340,10 +335,13 @@ public final class HazelcastApprovalStore implements ApprovalStore {
 
     /**
      * Removes an approval that left {@code PENDING} from its requester's count, after the decision has committed.
-     * It takes the pending key's lock for at most the lock timeout. If it cannot, or the release fails, the slot
-     * stays counted (an over-count, which the sweep removes), the metric is incremented, and the decision stands.
+     * It takes the pending key's lock, waiting only for what is left of {@code deadlineNanos}. If it cannot, or the
+     * release fails, the slot stays counted (an over-count, which the sweep removes), the metric is incremented,
+     * and the decision stands.
+     *
+     * @return false if the release was skipped
      */
-    private void leavePending(ApprovalRequest request, String token) {
+    private boolean leavePending(ApprovalRequest request, String token, long deadlineNanos) {
         IMap<String, String> pendingSets;
         String key;
         try {
@@ -351,50 +349,66 @@ public final class HazelcastApprovalStore implements ApprovalStore {
             key = pendingKey(request.kind(), request.requesterPrincipalId());
         } catch (RuntimeException failed) {
             metrics.increment(Metric.APPROVAL_RELEASE_SKIPPED);
-            return;
+            throw ClusterRefusals.mapped(failed);
         }
-        if (!lockOrSkip(pendingSets, key)) {
-            return;
+        if (!lockOrSkip(pendingSets, key, deadlineNanos)) {
+            return false;
         }
         try {
             pendingSets.executeOnKey(key, new PendingSet.Release(request.approvalId(),
                     PendingSet.ownerOf(request.scopeId(), token)));
+            return true;
         } catch (RuntimeException failed) {
             metrics.increment(Metric.APPROVAL_RELEASE_SKIPPED);
+            throw ClusterRefusals.mapped(failed);
         } finally {
             ClusterLocks.release(pendingSets, key);
         }
     }
 
-    /** Releases the claim of a deleted entry, bounded like {@link #leavePending}. */
-    private void releaseClaim(String id, String entryKey, String token) {
+    /** Releases the claim of a deleted entry, bounded like {@link #leavePending}; false if it was skipped. */
+    private boolean releaseClaim(String approvalId, String entryKey, String token, long deadlineNanos) {
+        String id = keys().claim(approvalId);
         IMap<String, String> claims;
         try {
             claims = idClaims();
         } catch (RuntimeException failed) {
             metrics.increment(Metric.APPROVAL_RELEASE_SKIPPED);
-            return;
+            throw ClusterRefusals.mapped(failed);
         }
-        if (!lockOrSkip(claims, id)) {
-            return;
+        if (!lockOrSkip(claims, id, deadlineNanos)) {
+            return false;
         }
         try {
             ClaimEntries.release(claims, id, entryKey, token);
+            return true;
         } catch (RuntimeException failed) {
             metrics.increment(Metric.APPROVAL_RELEASE_SKIPPED);
+            throw ClusterRefusals.mapped(failed);
         } finally {
             ClusterLocks.release(claims, id);
         }
     }
 
-    /** Takes a lock for a release after a commit. A timeout or failure skips the release and is counted. */
-    private boolean lockOrSkip(IMap<String, String> map, String key) {
+    /**
+     * Takes a lock for a release after a commit, waiting only for what is left of the deadline.
+     * Every failure is counted. Only a lock timeout skips the release; any other failure (a refusal by the cluster,
+     * or a Hazelcast fault) is not a timeout and is thrown as a refusal, so the caller can report it.
+     */
+    private boolean lockOrSkip(IMap<String, String> map, String key, long deadlineNanos) {
         try {
-            ClusterLocks.acquire(map, key, lockTimeout);
+            ClusterLocks.acquireUntil(map, key, deadlineNanos, lockTimeout);
             return true;
-        } catch (RuntimeException notTaken) {
+        } catch (ClusterLockTimeoutException timedOut) {
             metrics.increment(Metric.APPROVAL_RELEASE_SKIPPED);
             return false;
+        } catch (PrivacyRefusedException refused) {
+            metrics.increment(Metric.APPROVAL_RELEASE_SKIPPED);
+            throw refused;
+        } catch (RuntimeException failed) {
+            // A cluster fault on a guard lock is not a timeout: refuse it, so the caller reports it as one.
+            metrics.increment(Metric.APPROVAL_RELEASE_SKIPPED);
+            throw ClusterRefusals.mapped(failed);
         }
     }
 
@@ -485,28 +499,53 @@ public final class HazelcastApprovalStore implements ApprovalStore {
      *
      * @throws ClusterLockTimeoutException after the last entry, if the lock of any entry timed out: that entry, its
      *                                     claim and its slot are left intact. State is over-counted, never
-     *                                     half-released. A release skipped after the entry was removed does not
-     *                                     throw; it is counted in {@link Metric#APPROVAL_RELEASE_SKIPPED}
+     *                                     half-released. An entry that cannot be read is removed and counted in
+     *                                     {@link Metric#APPROVAL_RELEASE_SKIPPED}, and its claim and slot are
+     *                                     left. A release skipped after the entry was removed is also
+     *                                     counted in {@link Metric#APPROVAL_RELEASE_SKIPPED} and makes the call
+     *                                     throw, so the caller learns the slot or claim was left behind
      */
     @Override
     public void forgetScope(String scopeId) {
-        String prefix = ScopeKeys.approvalPrefix(scopeId);
+        forgetScope(scopeId, System.nanoTime() + lockTimeout.toNanos());
+    }
+
+    /**
+     * As {@link #forgetScope(String)}, with its lock waits bounded by a deadline the caller fixed ({@link
+     * System#nanoTime()} units) so several steps can share one. A refusal or Hazelcast failure on one entry does not
+     * stop the others; the first is thrown after the last entry, ahead of a lock timeout.
+     */
+    void forgetScope(String scopeId, long deadlineNanos) {
+        String prefix = keys().approvalPrefix(scopeId);
         int skipped = 0;
-        for (String key : approvals().keySet().stream().filter(k -> k.startsWith(prefix)).toList()) {
-            if (!forgetOne(key)) {
+        RuntimeException failure = null;
+        for (String key : ScopeKeys.keysWithPrefix(approvals(), prefix)) {
+            try {
+                if (!forgetOne(key, deadlineNanos)) {
+                    skipped++;
+                }
+            } catch (ClusterLockTimeoutException held) {
                 skipped++;
+            } catch (RuntimeException failed) {
+                failure = failure != null ? failure : ClusterRefusals.mapped(failed);
             }
+        }
+        if (failure != null) {
+            throw failure;
         }
         if (skipped > 0) {
             throw new ClusterLockTimeoutException();
         }
     }
 
-    /** Returns false if the entry's lock timed out and the entry was left as it is. */
-    private boolean forgetOne(String key) {
+    /**
+     * Returns false if the entry's lock timed out and the entry was left as it is, or if the entry was removed but
+     * its pending slot or its claim could not be released within the deadline.
+     */
+    private boolean forgetOne(String key, long deadlineNanos) {
         IMap<String, String> approvals = approvals();
         try {
-            ClusterLocks.acquire(approvals, key, lockTimeout);
+            ClusterLocks.acquireUntil(approvals, key, deadlineNanos, lockTimeout);
         } catch (ClusterLockTimeoutException timedOut) {
             return false;
         }
@@ -519,12 +558,13 @@ public final class HazelcastApprovalStore implements ApprovalStore {
             try {
                 stored = Codec.decodeStored(raw);
             } catch (RuntimeException unreadable) {
-                // No token, so nothing it guards can be released by token. Remove it; its claim and slot stay.
+                // No token, so nothing it guards can be released by token. Remove it; its claim and slot stay,
+                // which is counted and reported to the caller.
                 if (!approvals.remove(key, raw) && approvals.get(key) != null) {
                     return false;
                 }
                 metrics.increment(Metric.APPROVAL_RELEASE_SKIPPED);
-                return true;
+                return false;
             }
             // A remove that reports false for an entry that is gone (a retried call, or a change after the read)
             // is not a lock timeout: the entry is gone, so its guards are released by token below.
@@ -534,15 +574,30 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         } finally {
             ClusterLocks.release(approvals, key);
         }
-        leavePending(stored.request(), stored.token());
-        releaseClaim(stored.request().approvalId(), key, stored.token());
-        return true;
+        // Both releases are tried even if the first is skipped, and a skip of either is reported to the caller.
+        RuntimeException refused = null;
+        boolean slot = false;
+        boolean claim = false;
+        try {
+            slot = leavePending(stored.request(), stored.token(), deadlineNanos);
+        } catch (RuntimeException failed) {
+            refused = failed;
+        }
+        try {
+            claim = releaseClaim(stored.request().approvalId(), key, stored.token(), deadlineNanos);
+        } catch (RuntimeException failed) {
+            refused = refused != null ? refused : failed;
+        }
+        if (refused != null) {
+            throw refused;
+        }
+        return slot && claim;
     }
 
     private ApprovalRequest decide(String approvalId, Instant now, Function<ApprovalRequest, ApprovalRequest> next) {
         IMap<String, String> approvals = approvals();
         Stored located = locate(approvalId).orElseThrow(() -> new ApprovalRefusedException(Code.UNKNOWN_APPROVAL));
-        String key = ScopeKeys.approval(located.request().scopeId(), located.request().approvalId());
+        String key = keys().approval(located.request().scopeId(), located.request().approvalId());
         ApprovalRequest request;
         String token;
         ApprovalRequest decided;
@@ -573,7 +628,14 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         }
         // The entry's lock is released before the pending key is touched, so no thread holds the two in the order
         // opposite to admit. The decision has committed: nothing below can fail the call.
-        leavePending(request, token);
+        try {
+            leavePending(request, token, System.nanoTime() + lockTimeout.toNanos());
+        } catch (RuntimeException failed) {
+            // Any failure here, a lost quorum included, is counted by leavePending or lockOrSkip. The slot stays
+            // counted until the sweep and the decision stands. Only the class is logged: a message can echo a key.
+            log.warn("approval pending-slot release failed after the decision committed; cause {}",
+                    failed.getClass().getSimpleName());
+        }
         if (decided == null) {
             throw new ApprovalRefusedException(Code.EXPIRED);
         }
@@ -624,10 +686,10 @@ public final class HazelcastApprovalStore implements ApprovalStore {
             return Optional.empty();
         }
         ApprovalRequest request = stored.request();
-        if (!entryKey.equals(ScopeKeys.approval(request.scopeId(), request.approvalId()))) {
+        if (!entryKey.equals(keys().approval(request.scopeId(), request.approvalId()))) {
             return Optional.empty();
         }
-        String claim = idClaims().get(request.approvalId());
+        String claim = idClaims().get(keys().claim(request.approvalId()));
         return ClaimEntries.value(entryKey, stored.token()).equals(claim) ? Optional.of(stored) : Optional.empty();
     }
 
@@ -672,39 +734,40 @@ public final class HazelcastApprovalStore implements ApprovalStore {
     }
 
     private List<String> keysOf(String scopeId) {
-        String prefix = ScopeKeys.approvalPrefix(scopeId);
-        return approvals().keySet().stream().filter(key -> key.startsWith(prefix)).toList();
+        String prefix = keys().approvalPrefix(scopeId);
+        return ScopeKeys.keysWithPrefix(approvals(), prefix);
     }
 
-    private List<String> locateAll(String approvalId) {
-        return approvals().keySet().stream()
-                .filter(key -> ScopeKeys.approvalId(key).equals(approvalId))
-                .toList();
-    }
-
-    /** The one usable entry for an id; an id that matches several usable keys is refused, never guessed. */
+    /**
+     * The one usable entry for an id: the entry its claim names, if that entry is there and still names this claim
+     * back. One id has one claim across every scope (the claim key has no scope token), so this is a single get of
+     * the claim and a single get of the entry it names; an id never matches several entries.
+     */
     private Optional<Stored> locate(String approvalId) {
-        IMap<String, String> approvals = approvals();
-        List<Stored> usable = locateAll(approvalId).stream()
-                .map(key -> valid(key, approvals.get(key)))
-                .flatMap(Optional::stream)
-                .toList();
-        if (usable.size() > 1) {
-            throw new ApprovalRefusedException(Code.UNKNOWN_APPROVAL);
+        String claim = idClaims().get(keys().claim(approvalId));
+        Optional<ClaimEntries.Named> named = ClaimEntries.read(claim);
+        if (named.isEmpty()) {
+            return Optional.empty();
         }
-        return usable.stream().findFirst();
+        String entryKey = named.get().entryKey();
+        return valid(entryKey, approvals().get(entryKey))
+                .filter(stored -> stored.request().approvalId().equals(approvalId));
+    }
+
+    private ScopeKeys keys() {
+        return cluster.scopeKeys();
     }
 
     private IMap<String, String> idClaims() {
-        return cluster.instance().getMap(PrivacyCluster.APPROVAL_ID_MAP);
+        return cluster.servingInstance().getMap(PrivacyCluster.APPROVAL_ID_MAP);
     }
 
     private IMap<String, String> pendingSets() {
-        return cluster.instance().getMap(PrivacyCluster.APPROVAL_PENDING_MAP);
+        return cluster.servingInstance().getMap(PrivacyCluster.APPROVAL_PENDING_MAP);
     }
 
     private IMap<String, String> approvals() {
-        return cluster.instance().getMap(PrivacyCluster.APPROVAL_MAP);
+        return cluster.servingInstance().getMap(PrivacyCluster.APPROVAL_MAP);
     }
 
     /** Length-free, NUL-separated, with backslash escaping; a null field is a lone tilde. */

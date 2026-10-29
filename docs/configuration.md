@@ -128,7 +128,7 @@ for the relevant group.
 | `dataprism.transport` | `mode` is `http` for protected deployments; `http.path` defaults to `/mcp`; `mode: stdio` is refused unconditionally by the Spring auto-configuration, so it is not a reachable value for either the standalone server or the Spring Boot starter — the fixture-development stdio path is `data-prism-integration-tests`'s hand-built entry point, which never goes through this property | No | Refuse startup for an unknown mode, a non-rooted/invalid path, `mode: stdio` (`STDIO_TRANSPORT_UNSUPPORTED`), or `mode: http`/default on a non-servlet application, which has no MCP transport bean at all (`MCP_TRANSPORT_UNAVAILABLE`) |
 | `dataprism.security.jwt` | `issuer`, `audience`, and exactly one trusted JWKS/issuer-discovery location are required for HTTP | Location is not a secret; any client secret is out of scope and forbidden here | Refuse startup for a missing issuer/audience/location, invalid HTTPS URI (except explicitly local test fixtures), or an unreachable/mismatched issuer at validation time |
 | `dataprism.security.caller-claims` | Required mappings for principal, roles, and the trusted investigation/case attribute; purpose remains server policy, not a caller-selected mapping | No | Refuse startup for blank, duplicate, or reserved mappings, or mappings that would derive scope/purpose/case from tool arguments |
-| `dataprism.security-policy` | At least one permitted purpose and one role-to-known-capability mapping are required | No | Refuse startup for an empty purpose list, an unknown capability, blank role/purpose, or a role with no capabilities |
+| `dataprism.security-policy` | At least one permitted purpose and one role-to-known-capability mapping are required. Case authorisation and the client allowlist are each an explicit decision with no default: see [`dataprism.security-policy`: case authorisation and client allowlist](#dataprismsecurity-policy-case-authorisation-and-client-allowlist) | No | Refuse startup for an empty purpose list, an unknown capability, blank role/purpose, or a role with no capabilities; and for an undecided case authorisation or client allowlist, or an inconsistent decision (ten codes, listed in that section) |
 | `dataprism.privacy` | `profile` is required; `locale` defaults to the locale-neutral vocabulary; no `dataprism.*` property loads a custom profile file; the server and starter load the bundled `privacy-profiles-default.yaml`, whose profiles `DEFAULT` and `STRICT` both set `unclassified: FAIL_REQUEST`, refusing the source whose record holds a field nobody classified (that source is withheld and marked `REFUSED`; the call is refused only when every source that answered is refused); a production scope lifetime is required; `descriptor-file` is optional and, when unset, no descriptor file is ever read and classification comes from annotations alone | No | Refuse startup for an unknown profile, an application `PrivacyPolicyResolver` bean that would replace the framework's profile-backed resolver, unsupported locale, or non-positive scope lifetime. A configured `descriptor-file` also refuses startup — never falling back to the annotation-only resolver — if the path does not exist, does not name a readable file, has no `models` section, or declares `undeclaredFields: NON_SENSITIVE` for a type; each failure names the property, never a line of the file's contents |
 | `dataprism.privacy.hmac-key` | `key-id` and one provider reference/environment-variable name are required; the selected key is pinned for each scope | **Yes, by reference** | Refuse startup if a literal key is configured, the reference is blank/unresolvable, the key is too weak, or `key-id` cannot be resolved; never fall back to a generated key |
 | `dataprism.audit` | `sink` is required in production, one of `approved-sink`, `slf4j`, `hash-chained`; `writer-id` is required for every sink, not only a hash-chained one; `file-path` is required only when `sink: hash-chained` | Sink credentials are **yes, by reference** | Refuse startup for an unknown sink, missing required sink reference, a hash-chained sink's file path missing or unusable, or missing/invalid writer identity; do not downgrade to no or `slf4j` auditing; `entity-types` is optional, empty by default (see [`dataprism.audit`](#dataprismaudit)); an entry that does not match `[A-Za-z][A-Za-z0-9_-]{0,63}` refuses with `INVALID_AUDIT_ENTITY_TYPE` |
@@ -170,6 +170,9 @@ Each key below is also described in the group table above. Defaults here are the
 | `dataprism.security.caller-claims.investigation` | unset | The trusted claim carrying the investigation or case attribute |
 | `dataprism.security-policy.purposes` | unset | The permitted purposes; at least one |
 | `dataprism.security-policy.roles` | unset | Map of role name to the capabilities it holds; at least one role |
+| `dataprism.security-policy.case-authorisation` | unset (no default) | Only `token-trusted`: trust the case claim in the token without assignment checks. Unset, supply a `CaseAuthorizer` bean |
+| `dataprism.security-policy.allowed-clients` | unset (no default) | The clients allowed to call, each matched exactly. Unset, supply a `ClientAllowlist` bean or set `client-allowlist` |
+| `dataprism.security-policy.client-allowlist` | unset (no default) | Only `unrestricted`: allow every client. Cannot be combined with `allowed-clients` |
 | `dataprism.privacy.profile` | unset | The privacy profile, `DEFAULT` or `STRICT`. Required |
 | `dataprism.privacy.locale` | `neutral` | The vocabulary locale; `neutral` selects the locale-neutral vocabulary |
 | `dataprism.privacy.scope-lifetime` | unset | The privacy scope lifetime. Required in production; positive |
@@ -192,6 +195,8 @@ Each key below is also described in the group table above. Defaults here are the
 | `dataprism.hazelcast.join.kubernetes.service-dns` | unset | The service DNS name (DNS mode) |
 | `dataprism.hazelcast.member.port` | unset | The member port; 5701 when unset |
 | `dataprism.hazelcast.member.interface` | unset | The network interface the member binds. Required for `tcp-ip` and `kubernetes` (`MISSING_MEMBER_INTERFACE`); a value that matches every address is refused (`UNBOUNDED_MEMBER_INTERFACE`). Refused with `none` |
+| `dataprism.hazelcast.trusted-network` | `false` | Your assertion that only Data Prism members can reach the member port (`dataprism.hazelcast.member.port`, 5701 by default). Required for `tcp-ip` and `kubernetes` (`MISSING_TRUSTED_NETWORK`). Approvals and counters on that port are unsealed, so anyone else who can reach it can read and forge them; a private address is not a trusted network. On Kubernetes the shipped NetworkPolicy admits every pod labelled `app: data-prism`, so there "only Data Prism members" means anyone who can create pods in the namespace: run the members in a dedicated namespace. The policy protects only where the cluster's network plugin enforces NetworkPolicy (some, such as flannel and kind's default, do not) and no pod uses `hostNetwork`. Setting it, to either value, is refused (`CLUSTER_SETTINGS_IGNORED`) with `single-node`, with `none` and beside your own `PrivacyCluster` |
+| `dataprism.hazelcast.member.trusted-ranges` | empty | IPv4 CIDR blocks you trust beyond the private ones (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`), for the member interface and the advertised addresses. A block outside the private ones must be `/24` or longer; an entry that does not parse or is wider is refused (`INVALID_TRUSTED_RANGE`, naming the entry's index). Read only where `trusted-network` is `true`; refused (`CLUSTER_SETTINGS_IGNORED`) where that property is. A member started with one outside the private blocks logs one WARN line with the count |
 | `dataprism.hazelcast.security.cluster-key.key-id` | unset | The identifier of the current cluster key. Required for `tcp-ip` and `kubernetes`, with exactly one of the two sources below; optional with `none`, but then the name key is required too. No dot |
 | `dataprism.hazelcast.security.cluster-key.environment-variable` | unset | The environment variable that holds the current cluster key, resolved by the same reviewed resolver as the privacy HMAC key. Exactly one of this and `provider-reference` |
 | `dataprism.hazelcast.security.cluster-key.provider-reference` | unset | A reference to the current cluster key in the key provider. Exactly one of this and `environment-variable` |
@@ -245,6 +250,10 @@ dataprism:
       roles: roles
       investigation: investigation_id
   security-policy:
+    # A real deployment supplies a CaseAuthorizer bean and lists its allowed clients here
+    # (allowed-clients: [client-a, client-b]); these two settings are the explicit opt-out.
+    case-authorisation: token-trusted
+    client-allowlist: unrestricted
     purposes: [investigation]
     roles:
       investigator: [GET_ENTITY_CONTEXT]
@@ -277,6 +286,59 @@ configured source and for `IdentityResolver`. The standalone server uses the
 same validation, but can only expose adapters packaged and reviewed with that
 distribution. In either mode, a missing adapter or resolver is a startup
 refusal.
+
+### `dataprism.security-policy`: case authorisation and client allowlist
+
+Two decisions have no default, and a deployment that has not made them refuses to start.
+
+- **Case authorisation.** Who may open which case. Supply a `CaseAuthorizer` bean, or set
+  `dataprism.security-policy.case-authorisation: token-trusted`, which trusts the case claim in the token
+  without assignment checks and logs one `WARN` at startup naming the setting (never a claim value). `token-trusted`
+  is the only accepted value.
+- **Client allowlist.** Which clients may call. Supply a `ClientAllowlist` bean, or list the clients in
+  `dataprism.security-policy.allowed-clients`, or set `dataprism.security-policy.client-allowlist: unrestricted`,
+  which allows every client and logs one `WARN` naming the setting. `unrestricted` is the only accepted value of
+  `client-allowlist`.
+
+None of the three properties has a default. A setting together with an application bean of the same type is
+refused rather than one silently winning. The client allowlist does not control which model endpoint a client
+sends output to, or where the data is transferred; enforcing those belongs to an API gateway or egress control
+outside Data Prism.
+
+The default `ScopeResolver` and `AuthorizationService` take the bean through Spring's ordinary injection, so Spring
+refuses the cases it refuses for any dependency: two beans of either type fail with Spring's own
+`NoUniqueBeanDefinitionException` unless one is `@Primary`. Once the context is built, Data Prism checks the outcome:
+every `ScopeResolver` and `AuthorizationService` in the context and its ancestors must hold the bean Spring injects,
+so an application resolver or service built around another authoriser or allowlist is refused while one built with
+the injected bean starts. The bean must be a singleton (a request-scoped `CaseAuthorizer` behind a scoped proxy
+qualifies, because the proxy is a singleton). The check sees beans only: an `HttpTransport` built by hand around its
+own resolver or service is not inspected.
+
+A standalone-server deployment has no Java to write in the image. It supplies a `CaseAuthorizer` the way it supplies
+any reviewed extension: an extension jar on `loader.path`, as `data-prism-quickstart-extension` does for its
+identity resolver. The jar's `@Bean CaseAuthorizer` is then the only one, and the `case-authorisation` setting stays
+unset. The published server image bakes `case-authorisation: token-trusted` and `client-allowlist: unrestricted`
+into `/app/config/application.yaml`, so with that image an extension jar or an `allowed-clients` list is refused as a
+conflict (`CASE_AUTHORISATION_CONFLICT`, `CLIENT_ALLOWLIST_CONFLICT`): override `/app/config/application.yaml`, or
+build your own image, so that only your decision is set.
+
+Data Prism checks that a decision was made, not what it decides. A bean that is itself
+`CaseAuthorizer.tokenTrusted()`, always answers `true`, or a `ClientAllowlist` that admits everyone, passes. A parent
+context that opts out explicitly while the deployer's bean lives only in a child where the auto-configuration does not
+run does not consult that bean, by the parent's own explicit setting.
+
+| Code | Condition |
+|---|---|
+| `UNSUPPORTED_CASE_AUTHORISATION` | `case-authorisation` is set to anything but `token-trusted` |
+| `CASE_AUTHORISATION_CONFLICT` | `case-authorisation: token-trusted` together with an application `CaseAuthorizer` bean |
+| `MISSING_CASE_AUTHORIZER` | No `CaseAuthorizer` bean Spring can inject and no `case-authorisation` setting, including when an application `ScopeResolver` skips the default. The message names the property and the bean type |
+| `UNSUPPORTED_CLIENT_ALLOWLIST` | `client-allowlist` is set to anything but `unrestricted` |
+| `CLIENT_ALLOWLIST_CONFLICT` | Both `allowed-clients` and `client-allowlist` set, or either together with an application `ClientAllowlist` bean |
+| `MISSING_CLIENT_ALLOWLIST` | No `ClientAllowlist` bean Spring can inject and neither setting, including when an application `AuthorizationService` skips the default. The message names both properties and the bean type |
+| `EMPTY_CLIENT_ALLOWLIST` | `allowed-clients` is set and empty |
+| `BLANK_ALLOWED_CLIENT` | An `allowed-clients` entry is blank |
+| `CASE_AUTHORIZER_BYPASSED` | A `ScopeResolver` bean does not hold the injected `CaseAuthorizer`, or that bean is not a singleton (or scoped proxy) |
+| `CLIENT_ALLOWLIST_BYPASSED` | An `AuthorizationService` bean does not hold the injected `ClientAllowlist`, or that bean is not a singleton |
 
 ### `dataprism.identity.resolver`
 
@@ -580,6 +642,19 @@ phone-home are always off.
 - A `tcp-ip` or `kubernetes` member requires `member.interface` and listens only
   there; one that matches every address is refused. Member traffic is not
   encrypted or authenticated, so isolate it on a private network.
+- A `tcp-ip` or `kubernetes` member also requires `trusted-network: true` and
+  starts only if everything it listens on and advertises is private. Every
+  address `member.interface` can match, the `hazelcast.local.localAddress` and
+  `hazelcast.local.publicAddress` system properties, and the network config's
+  public address must lie in `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` or
+  `127.0.0.0/8`, or in a `member.trusted-ranges` entry; a pattern that spans two
+  blocks without lying inside one (`172.15-16.*.*`) is refused. Either of
+  `hazelcast.socket.bind.any` and `hazelcast.socket.server.bind.any` set to
+  `true` is refused. All of these are `PUBLIC_MEMBER_INTERFACE`. Multi-member
+  is supported on a trusted network only: approvals and counters are unsealed,
+  and `trusted-network: true` is your assertion that nobody else can reach the
+  member port. It does not make a network safe. A joining member that starts
+  logs the assertion and the member port once at INFO, with no address.
 
 Every cluster that joins other members needs a cluster key and a separate name
 key, each given as a key id and a reference. They are checked at startup, before a
@@ -588,6 +663,11 @@ member starts. The message names the property and never a value. A solo member
 this applies to it as well, and it must give both. With `topology: single-node`, or
 beside your own `PrivacyCluster` bean, any `dataprism.hazelcast.security.*` key is
 refused (`CLUSTER_SETTINGS_IGNORED`) because nothing would read it.
+
+A solo member listens on loopback only. A `hazelcast.*` address property that would make a single member reachable
+elsewhere is refused: `INVALID_CLUSTER_INTERFACE` for a solo member that holds keys, and `MISSING_CLUSTER_KEY` for a
+keyless one. A keyless member's `hazelcast.local.localAddress` and `hazelcast.local.publicAddress` must each be a
+literal loopback address; `localhost` is refused.
 
 A member without keys is always solo: it listens on `127.0.0.1` only, under a
 cluster name with a random suffix, so no keyed member can join it. This holds for
@@ -620,13 +700,15 @@ The first failing check is the one reported, and the checks run in this order:
 |---|---|---|
 | 1 | `MISSING_CLUSTER_KEY` | A key id or its source is missing, both sources are set, one of the two keys is set without the other, or `next` or `previous` is set without a current key. Checked for the cluster key, the name key, `next`, then `previous` |
 | 2 | `LITERAL_SECRET_FORBIDDEN` | A `value` is set on the cluster key, the name key, `next` or `previous` |
-| 3 | `MISSING_MEMBER_INTERFACE`, `UNBOUNDED_MEMBER_INTERFACE` | `member.interface` is missing for `tcp-ip` or `kubernetes`, or matches every address |
-| 4 | `CLUSTER_KEY_UNRESOLVED`, `NAME_KEY_UNRESOLVED` | A key id contains a dot (a blank key id is step 1). Checked for the cluster key, `next`, `previous`, then the name key |
-| 5 | `CLUSTER_KEY_UNRESOLVED`, `CLUSTER_KEY_WEAK`, `NAME_KEY_UNRESOLVED`, `NAME_KEY_WEAK` | A reference does not resolve, or resolves to material shorter than 32 bytes. Each key is resolved and measured in turn: the cluster key, `next`, `previous`, then the name key |
-| 6 | `HMAC_KEY_UNRESOLVED` | The privacy HMAC key cannot be resolved again to compare the cluster keys with it |
-| 7 | `CLUSTER_KEY_SHARED`, `NAME_KEY_SHARED` | A cluster key (current, `next`, `previous`), then the name key, has the key id or the material of the privacy HMAC key |
-| 8 | `NAME_KEY_SHARED` | The name key has the material of a cluster key |
-| 9 | `DUPLICATE_CLUSTER_KEY_ID` | The `current`, `next`, `previous` and name key ids are not pairwise distinct |
+| 3 | `MISSING_MEMBER_INTERFACE`, `UNBOUNDED_MEMBER_INTERFACE`, `INVALID_CLUSTER_INTERFACE` | `member.interface` is missing for `tcp-ip` or `kubernetes`, matches every address, or is not an IPv4 literal or wildcard pattern |
+| 4 | `INVALID_TRUSTED_RANGE`, `PUBLIC_MEMBER_INTERFACE` | A `trusted-ranges` entry does not parse or is wider than a `/24` outside the private blocks; then the interface, an advertised address or a bind-any setting reaches beyond the private blocks and the ranges |
+| 5 | `MISSING_TRUSTED_NETWORK` | `trusted-network` is not `true` for `tcp-ip` or `kubernetes` |
+| 6 | `CLUSTER_KEY_UNRESOLVED`, `NAME_KEY_UNRESOLVED` | A key id contains a dot (a blank key id is step 1). Checked for the cluster key, `next`, `previous`, then the name key |
+| 7 | `CLUSTER_KEY_UNRESOLVED`, `CLUSTER_KEY_WEAK`, `NAME_KEY_UNRESOLVED`, `NAME_KEY_WEAK` | A reference does not resolve, or resolves to material shorter than 32 bytes. Each key is resolved and measured in turn: the cluster key, `next`, `previous`, then the name key |
+| 8 | `HMAC_KEY_UNRESOLVED` | The privacy HMAC key cannot be resolved again to compare the cluster keys with it |
+| 9 | `CLUSTER_KEY_SHARED`, `NAME_KEY_SHARED` | A cluster key (current, `next`, `previous`), then the name key, has the key id or the material of the privacy HMAC key |
+| 10 | `NAME_KEY_SHARED` | The name key has the material of a cluster key |
+| 11 | `DUPLICATE_CLUSTER_KEY_ID` | The `current`, `next`, `previous` and name key ids are not pairwise distinct |
 
 The full property list, every refusal code, the Compose and Kubernetes examples
 and the network isolation you must supply are on

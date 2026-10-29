@@ -14,8 +14,6 @@ import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.ContextRequest;
 import io.github.aindriub.dataprism.orchestration.ContextResponse;
-import io.github.aindriub.dataprism.orchestration.SourceOutcome;
-import io.github.aindriub.dataprism.orchestration.SourceResult;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -88,29 +86,27 @@ class ConfiguredJsonSourcesLimitsTest {
 
     private static RequestLimits with(int maxSources, int scopeReadBudget) {
         RequestLimits d = RequestLimits.DEFAULT;
-        return new RequestLimits(maxSources, d.maxRecords(), d.maxResponseBytes(), Duration.ofSeconds(3),
-                d.maxConcurrency(), scopeReadBudget);
+        return new RequestLimits(maxSources, d.maxRecords(), d.maxResponseBytes(), d.perSourceTimeout(),
+                d.maxConcurrency(), scopeReadBudget, d.requestTimeout(), d.scopeTotalReadBudget());
     }
 
     @Test
-    @DisplayName("a configured max-sources of 1 skips the second source as SKIPPED_OVER_LIMIT")
+    @DisplayName("a configured max-sources of 1 refuses a call over two sources with SOURCE_SELECTION_TOO_LARGE")
     void honoursMaxSources() {
         Limits.value = with(1, 100);
         runner.withUserConfiguration(Limits.class).run(context -> {
             assertThat(context).hasNotFailed();
-            ContextResponse response = context.getBean(ContextOrchestrator.class)
-                    .buildContext(ContextRequest.of("CUSTOMER", "CUST-1"), context(), caller());
-            assertThat(response.sources().values())
-                    .extracting(SourceResult::status)
-                    .containsExactlyInAnyOrder(SourceOutcome.Status.ANSWERED.name(),
-                            SourceOutcome.Status.SKIPPED_OVER_LIMIT.name());
+            assertThatThrownBy(() -> context.getBean(ContextOrchestrator.class)
+                    .buildContext(ContextRequest.of("CUSTOMER", "CUST-1"), context(), caller()))
+                    .isInstanceOfSatisfying(PrivacyRefusedException.class,
+                            e -> assertThat(e.code()).isEqualTo("SOURCE_SELECTION_TOO_LARGE"));
         });
     }
 
     @Test
-    @DisplayName("a configured scope-read-budget of 1 refuses the second read of a subject")
+    @DisplayName("a configured scope-read-budget of 2 source reads refuses the second two-source call")
     void honoursScopeReadBudget() {
-        Limits.value = with(8, 1);
+        Limits.value = with(8, 2);
         runner.withUserConfiguration(Limits.class).run(context -> {
             assertThat(context).hasNotFailed();
             ContextOrchestrator orchestrator = context.getBean(ContextOrchestrator.class);

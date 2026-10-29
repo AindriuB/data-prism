@@ -612,6 +612,23 @@ class ArchitectureTest {
     }
 
     private static DescribedPredicate<JavaMethodCall> methodHandleFieldAccess() {
+        return methodHandleFieldAccess(SOURCE_RECORD_WALKER);
+    }
+
+    /** Whether {@code type} is {@code outer} or declared inside it; a top-level class merely named with a $ is not. */
+    private static boolean isOrNestedIn(JavaClass type, String outer) {
+        for (JavaClass c = type; c != null; c = c.getEnclosingClass().orElse(null)) {
+            if (c.getFullName().equals(outer)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static final String SOURCE_RECORD_WALKER = "io.github.aindriub.dataprism.core.engine.SourceRecordWalker";
+
+    /** As above; {@code reader} alone may call the read-only {@code unreflectGetter} (task 288 reads record fields). */
+    static DescribedPredicate<JavaMethodCall> methodHandleFieldAccess(String reader) {
         return DescribedPredicate.describe("use MethodHandles or VarHandle field access", call -> {
             String owner = call.getTarget().getOwner().getFullName();
             String name = call.getTarget().getName();
@@ -620,7 +637,8 @@ class ArchitectureTest {
                     && (name.equals("findGetter") || name.equals("findSetter")
                     || name.equals("findStaticGetter") || name.equals("findStaticSetter")
                     || name.equals("findVarHandle") || name.equals("findStaticVarHandle")
-                    || name.equals("unreflectGetter") || name.equals("unreflectSetter")
+                    || (name.equals("unreflectGetter") && !isOrNestedIn(call.getOriginOwner(), reader))
+                    || name.equals("unreflectSetter")
                     || name.equals("unreflectVarHandle")));
         });
     }
@@ -750,6 +768,151 @@ class ArchitectureTest {
                         () -> noSealDependencyFrom("io.github.aindriub.dataprism.architecture").check(fixture))
                 .isInstanceOf(AssertionError.class)
                 .hasMessageContaining("SealDependentFixture");
+    }
+
+    /**
+     * T14, second rule: an envelope read from the re-identification map is opened in one place, {@code
+     * ScopeIdentityIndex.subjectFor}, through {@code IdentityMaps.subjectOf}. Nothing else calls that helper, and
+     * outside the seal package only the two identity classes call {@code Sealer.open} at all, so no other class can
+     * open an index entry and return a subject. The two classes of task 227 open the member-card map (the sentinel
+     * and the cards) and no other, and return no subject: they are the only other openers.
+     */
+    private static final String IDENTITY_MAPS = "io.github.aindriub.dataprism.hazelcast.IdentityMaps";
+    private static final String SEALER = "io.github.aindriub.dataprism.hazelcast.seal.Sealer";
+    private static final String INDEX = ScopeIdentityIndex.class.getName();
+    private static final String IDENTITY_CACHE = "io.github.aindriub.dataprism.hazelcast.CachingSyntheticValueSource";
+    private static final String MEMBER_CARDS = "io.github.aindriub.dataprism.hazelcast.MemberCards";
+    private static final String CLUSTER_SENTINEL = "io.github.aindriub.dataprism.hazelcast.ClusterSentinel";
+
+    private static final String SEAL_PACKAGE = "io.github.aindriub.dataprism.hazelcast.seal";
+
+    /** The seal package and its sub-packages only: a sibling such as {@code ...hazelcast.sealedstore} is outside. */
+    static boolean isSealPackage(String packageName) {
+        return packageName.equals(SEAL_PACKAGE) || packageName.startsWith(SEAL_PACKAGE + ".");
+    }
+
+    @Test
+    void theSealPackageExemptionDoesNotCoverSiblingPackages() {
+        org.assertj.core.api.Assertions.assertThat(isSealPackage(SEAL_PACKAGE)).isTrue();
+        org.assertj.core.api.Assertions.assertThat(isSealPackage(SEAL_PACKAGE + ".inner")).isTrue();
+        org.assertj.core.api.Assertions.assertThat(isSealPackage(SEAL_PACKAGE + "dstore")).isFalse();
+        org.assertj.core.api.Assertions.assertThat(isSealPackage("io.github.aindriub.dataprism.hazelcast")).isFalse();
+    }
+
+    private static ArchRule onlyTheseOpen(String ownerName, String method, String... allowedOrigins) {
+        return noClasses()
+                .that(new DescribedPredicate<JavaClass>("are not " + String.join("/", allowedOrigins)) {
+                    @Override
+                    public boolean test(JavaClass origin) {
+                        String top = origin.getName().split("\\$")[0];
+                        return !List.of(allowedOrigins).contains(top)
+                                && !isSealPackage(origin.getPackageName());
+                    }
+                })
+                .should().accessTargetWhere(new DescribedPredicate<JavaAccess<?>>(
+                        "is a call to " + ownerName + "." + method) {
+                    @Override
+                    public boolean test(JavaAccess<?> access) {
+                        return access.getTarget().getOwner().getName().equals(ownerName)
+                                && access.getTarget().getName().equals(method);
+                    }
+                })
+                .allowEmptyShould(true);
+    }
+
+    @Test
+    void onlyScopeIdentityIndexOpensTheReidentificationMap() {
+        onlyTheseOpen(IDENTITY_MAPS, "subjectOf", INDEX).check(CLASSES);
+        onlyTheseOpen(SEALER, "open", INDEX, IDENTITY_CACHE, IDENTITY_MAPS, MEMBER_CARDS, CLUSTER_SENTINEL)
+                .check(CLASSES);
+    }
+
+    @Test
+    void reidentificationOpenRuleCatchesAnotherOpener() {
+        JavaClasses fixture = new ClassFileImporter().importClasses(IndexOpenerFixture.class,
+                FakeSealerForOpen.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> onlyTheseOpen(FakeSealerForOpen.class.getName(), "open", INDEX).check(fixture))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("IndexOpenerFixture");
+    }
+
+    @Test
+    void reidentificationOpenRuleCatchesAMethodReference() {
+        JavaClasses fixture = new ClassFileImporter().importClasses(IndexOpenerReferenceFixture.class,
+                FakeSealerForOpen.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> onlyTheseOpen(FakeSealerForOpen.class.getName(), "open", INDEX).check(fixture))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("IndexOpenerReferenceFixture");
+    }
+
+    /**
+     * T14, third rule: {@code SealedWrites.computing} opens a stored value with the member's sealer and hands the
+     * plaintext to the caller's step, so it is a second way to read a sealed entry. Outside the seal package no class
+     * may call or method-reference it. The allow-list is empty: tasks 224 and 226 add their own store class here
+     * when they need it, in the same change that adds the call. Owner decision OD-225-1 (a), owner 2026-10-27.
+     */
+    private static final String SEALED_WRITES = "io.github.aindriub.dataprism.hazelcast.seal.SealedWrites";
+
+    @Test
+    void noClassOutsideTheSealPackageUsesSealedWritesComputing() {
+        onlyTheseOpen(SEALED_WRITES, "computing").check(CLASSES);
+    }
+
+    @Test
+    void computingRuleCatchesACall() {
+        JavaClasses fixture = new ClassFileImporter().importClasses(ComputingCallerFixture.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> onlyTheseOpen(SEALED_WRITES, "computing").check(fixture))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("ComputingCallerFixture");
+    }
+
+    @Test
+    void computingRuleCatchesAMethodReference() {
+        JavaClasses fixture = new ClassFileImporter().importClasses(ComputingReferenceFixture.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> onlyTheseOpen(SEALED_WRITES, "computing").check(fixture))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("ComputingReferenceFixture");
+    }
+
+    /** Reads a sealed entry through a step, as the rule above exists to stop. */
+    static final class ComputingCallerFixture {
+        Object call() {
+            return io.github.aindriub.dataprism.hazelcast.seal.SealedWrites.computing("m",
+                    current -> io.github.aindriub.dataprism.hazelcast.seal.SealedWrites.Plan.unchanged(null));
+        }
+    }
+
+    static final class ComputingReferenceFixture {
+        java.util.function.BiFunction<String, io.github.aindriub.dataprism.hazelcast.seal.SealedWrites.Step, Object>
+                reference() {
+            return io.github.aindriub.dataprism.hazelcast.seal.SealedWrites::computing;
+        }
+    }
+
+    interface Opener {
+        Object apply(String map, String key, String stored);
+    }
+
+    /** Opens through a method reference, which is an access but not a call. */
+    static final class IndexOpenerReferenceFixture {
+        Opener reference(FakeSealerForOpen sealer) {
+            return sealer::open;
+        }
+    }
+
+    static final class FakeSealerForOpen {
+        Object open(String map, String key, String stored) { return stored; }
+    }
+
+    /** A class that opens an index entry itself, as the rule above exists to stop. */
+    static final class IndexOpenerFixture {
+        Object read(FakeSealerForOpen sealer) {
+            return sealer.open("dataprism.reidentification.s1", "key", "dps1.x");
+        }
     }
 
     /**

@@ -11,7 +11,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Base64;
@@ -201,7 +200,7 @@ public final class LinkCodec {
         byte[] aad = aad(header.keyIdBytes, header.expirySeconds, header.targetBytes, header.relationCode,
                 binding.scopeId(), callerTag);
         byte[] plain = decrypt(sealKey, header.nonce, aad, raw, header.ciphertextOffset);
-        boolean authenticated = plain != null && knownKey;
+        boolean authenticated = authenticatedOnlyIfHeld(plain, knownKey);
 
         // 4. Only now the booleans, all evaluated, then combined in a fixed order.
         Instant now = clock.instant();
@@ -256,6 +255,17 @@ public final class LinkCodec {
         } catch (IllegalArgumentException malformed) {
             return null;
         }
+    }
+
+    /**
+     * Whether the AEAD verified against a key this member holds. The {@code knownKey} test is redundant on purpose:
+     * an unknown key id is already refused {@code UNKNOWN_KEY} below, and the dummy key's verification of a forged
+     * tag fails anyway. It stays as defence in depth, so that a later change to the order of the returns can never
+     * let a token that "authenticated" under the stand-in key through. No test can kill its mutant, so the
+     * {@code mutation} profile excludes this method.
+     */
+    private static boolean authenticatedOnlyIfHeld(byte[] plain, boolean knownKey) {
+        return plain != null && knownKey;
     }
 
     /** The cleartext header of a structurally valid token. */

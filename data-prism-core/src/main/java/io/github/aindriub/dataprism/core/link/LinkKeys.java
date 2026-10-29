@@ -34,7 +34,6 @@ public final class LinkKeys {
     static final String CALLER_LABEL = "dataprism/link/v1/caller";
     /** MAC purpose labels: the first item of every MAC input, so no two purposes can produce the same input. */
     static final String CATALOG_TAG_LABEL = "dataprism/link/v1/catalog-tag";
-    static final String ATTEMPT_LABEL = "dataprism/link/v1/attempt";
 
     private static final int MIN_KEY_BYTES = 32;
     private static final byte[] ZERO_SALT = new byte[32];
@@ -127,7 +126,7 @@ public final class LinkKeys {
     private Set<String> declaredHeld() {
         Set<String> ids = new TreeSet<>();
         for (String id : heldOrEmpty()) {
-            if (id != null) {
+            if (id != null && LinkSettings.validKeyId(id)) {
                 ids.add(id);
             }
         }
@@ -166,19 +165,6 @@ public final class LinkKeys {
             throw new IllegalStateException("LINK_KEY_UNRESOLVED: the link key id could not be resolved");
         }
         return new ScopeKeys(derive(master, FINGERPRINT_LABEL, scopeId));
-    }
-
-    /**
-     * The limiter's counter key: {@code HMAC(fingerprintKey, label | scope | principal)}, truncated to 16 bytes and
-     * hex-encoded. It holds neither the scope id nor the principal id.
-     */
-    public String attemptCounterKey(String scopeId, String principalId) {
-        Objects.requireNonNull(principalId, "principalId");
-        byte[] key = forScope(scopeId).key;
-        byte[] mac = LabelledHkdf.hmac(key, LabelledHkdf.lengthPrefixed(
-                ATTEMPT_LABEL.getBytes(StandardCharsets.US_ASCII),
-                scopeId.getBytes(StandardCharsets.UTF_8), principalId.getBytes(StandardCharsets.UTF_8)));
-        return HexFormat.of().formatHex(mac, 0, 16);
     }
 
     /**

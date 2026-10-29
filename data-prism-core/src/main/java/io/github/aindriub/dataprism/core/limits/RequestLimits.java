@@ -36,7 +36,12 @@ import java.util.Objects;
  * @param scopeReadBudget     reads of one subject within one scope. Generalisation
  *                            resists a single look and not a determined series of
  *                            them — a banded value narrows under repeated asking,
- *                            and nothing else in the pipeline notices
+ *                            and nothing else in the pipeline notices. Counts source
+ *                            reads: one per source called, not one per request
+ * @param requestTimeout      the overall deadline for one request's fan-out, from its
+ *                            start. Bounds the wait for a bulkhead permit as well as
+ *                            the calls; at least {@code perSourceTimeout}
+ * @param scopeTotalReadBudget source reads across every subject of one scope
  */
 public record RequestLimits(
         int maxSources,
@@ -44,7 +49,9 @@ public record RequestLimits(
         int maxResponseBytes,
         Duration perSourceTimeout,
         int maxConcurrency,
-        int scopeReadBudget) {
+        int scopeReadBudget,
+        Duration requestTimeout,
+        int scopeTotalReadBudget) {
 
     /**
      * Deliberately modest. A limit that never fires teaches nobody anything, and
@@ -52,17 +59,26 @@ public record RequestLimits(
      * ceiling was never there.
      */
     public static final RequestLimits DEFAULT = new RequestLimits(
-            8, 500, 512 * 1024, Duration.ofSeconds(3), 4, 100);
+            8, 500, 512 * 1024, Duration.ofSeconds(3), 4, 100,
+            Duration.ofSeconds(10), 50_000);
 
     public RequestLimits {
         Objects.requireNonNull(perSourceTimeout, "perSourceTimeout");
+        Objects.requireNonNull(requestTimeout, "requestTimeout");
         positive(maxSources, "maxSources");
         positive(maxRecords, "maxRecords");
         positive(maxResponseBytes, "maxResponseBytes");
         positive(maxConcurrency, "maxConcurrency");
         positive(scopeReadBudget, "scopeReadBudget");
+        positive(scopeTotalReadBudget, "scopeTotalReadBudget");
         if (perSourceTimeout.isZero() || perSourceTimeout.isNegative()) {
             throw new IllegalArgumentException("perSourceTimeout must be positive");
+        }
+        if (requestTimeout.isZero() || requestTimeout.isNegative()) {
+            throw new IllegalArgumentException("requestTimeout must be positive");
+        }
+        if (requestTimeout.compareTo(perSourceTimeout) < 0) {
+            throw new IllegalArgumentException("requestTimeout must be at least perSourceTimeout");
         }
     }
 
@@ -70,7 +86,7 @@ public record RequestLimits(
         if (value <= 0) {
             // Zero would disable the limit while looking like configuration, which
             // is the shape of an accident rather than a decision.
-            throw new IllegalArgumentException(name + " must be positive, was " + value);
+            throw new IllegalArgumentException(name + " must be positive");
         }
     }
 }

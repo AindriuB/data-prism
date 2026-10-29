@@ -47,7 +47,7 @@ Line numbers are as on de5cf9dc (the `wave/0.8-wave4` tip when this was filed; 2
 - data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/DefaultContextOrchestrator.java:387 (`SourceValues.prohibited`, outside the per-source `try`), :389-397 (the per-source `try`), :198 (`correlate`, only on sources not refused).
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/JsonTreeScrubbingEngine.java:72 and ChainableFields.java:63-66: how walk bounds are held.
 - data-prism-integration-tests/src/main/java/io/github/aindriub/dataprism/example/DataPrismAssembly.java:76 (the three-argument constructor), and `EndToEndTest` for a test that builds it.
-- docs/plan/tasks/290-refuse-jackson-annotations-on-source-models.md: the trust-model paragraph and sentence whose clauses this task narrows, and the register row it writes for this code.
+- docs/plan/tasks/retired/290-refuse-jackson-annotations-on-source-models.md: the trust-model paragraph and sentence whose clauses this task narrows, and the register row it writes for this code.
 - Fixture values use `example.invalid` and invented names only (repository rule 3).
 
 ## Acceptance

@@ -7,6 +7,8 @@ dataPrismAuditMaintenance | io.github.aindriub.dataprism.spring.boot.AuditMainte
 dataPrismAuditRecorder | io.github.aindriub.dataprism.audit.AuditRecorder
 dataPrismAuthorizationService | io.github.aindriub.dataprism.security.AuthorizationService
 dataPrismCallerRateLimiter | io.github.aindriub.dataprism.oversight.CallerRateLimiter
+dataPrismCaseAuthorizer | io.github.aindriub.dataprism.security.CaseAuthorizer
+dataPrismClientAllowlist | io.github.aindriub.dataprism.security.ClientAllowlist
 dataPrismClock | java.time.Clock
 dataPrismContextOrchestrator | io.github.aindriub.dataprism.orchestration.ContextOrchestrator
 dataPrismContractValidator | io.github.aindriub.dataprism.spring.boot.validation.DataPrismContractValidator
@@ -33,7 +35,9 @@ dataPrismScopeBudget | io.github.aindriub.dataprism.core.limits.ScopeBudget
 dataPrismScopeResolver | io.github.aindriub.dataprism.security.ScopeResolver
 dataPrismScrubber | io.github.aindriub.dataprism.core.engine.JsonTreeScrubbingEngine
 dataPrismSecretKeyProvider | io.github.aindriub.dataprism.core.spi.SecretKeyProvider
+dataPrismSecurityBypassCheck | io.github.aindriub.dataprism.spring.boot.SecurityWiring$BypassCheck
 dataPrismSecurityPolicy | io.github.aindriub.dataprism.security.SecurityPolicy
+dataPrismSecurityPolicyPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
 dataPrismSensitivePatternValidator | io.github.aindriub.dataprism.validation.LlmResponseValidator
 dataPrismSharedBudgetPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
 dataPrismSlf4jAuditSink | io.github.aindriub.dataprism.audit.AuditSink

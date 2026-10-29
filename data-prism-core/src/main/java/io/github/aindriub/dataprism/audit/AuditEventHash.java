@@ -102,11 +102,24 @@ public final class AuditEventHash {
                                   String correlationId, Set<String> sourceSystems, Set<String> rejectedArguments,
                                   String previousHash, int recordVersion, Map<String, String> fieldDispositions,
                                   String approvalId, String approverId, String externalCorrelationId) {
+        return sha256(body(eventId, timestamp, instanceId, sequence, principalId, clientId, tool, entityType,
+                subjectPseudonym, parameterFingerprint, privacyProfile, scopeId, purpose, caseId, policyDecision,
+                correlationId, sourceSystems, rejectedArguments, previousHash, recordVersion, fieldDispositions,
+                approvalId, approverId, externalCorrelationId));
+    }
+
+    private static String body(String eventId, Instant timestamp, String instanceId, long sequence,
+                                  String principalId, String clientId, String tool, String entityType,
+                                  String subjectPseudonym, String parameterFingerprint, String privacyProfile,
+                                  String scopeId, String purpose, String caseId, String policyDecision,
+                                  String correlationId, Set<String> sourceSystems, Set<String> rejectedArguments,
+                                  String previousHash, int recordVersion, Map<String, String> fieldDispositions,
+                                  String approvalId, String approverId, String externalCorrelationId) {
         if (recordVersion >= 2) {
-            return sha256(lengthPrefixedBody(eventId, timestamp, instanceId, sequence, principalId, clientId, tool,
+            return lengthPrefixedBody(eventId, timestamp, instanceId, sequence, principalId, clientId, tool,
                     entityType, subjectPseudonym, parameterFingerprint, privacyProfile, scopeId, purpose, caseId,
                     policyDecision, correlationId, sourceSystems, rejectedArguments, previousHash, recordVersion,
-                    fieldDispositions, approvalId, approverId, externalCorrelationId));
+                    fieldDispositions, approvalId, approverId, externalCorrelationId);
         }
         // Sorted so the hash does not depend on the iteration order of whatever
         // Set implementation the caller happened to pass in.
@@ -116,10 +129,10 @@ public final class AuditEventHash {
         // persists and parses: locale- and JVM-independent, and equal instants always
         // render equal, so it is stable to join rather than incidental.
         String renderedTimestamp = timestamp == null ? "null" : timestamp.toString();
-        String body = String.join("|", eventId, renderedTimestamp, instanceId, Long.toString(sequence),
+        String joined = String.join("|", eventId, renderedTimestamp, instanceId, Long.toString(sequence),
                 principalId, clientId, tool, entityType, subjectPseudonym, parameterFingerprint, privacyProfile,
                 scopeId, purpose, caseId, policyDecision, correlationId, sources, rejected, previousHash);
-        return sha256(body);
+        return joined;
     }
 
     private static String lengthPrefixedBody(String eventId, Instant timestamp, String instanceId, long sequence,
@@ -176,6 +189,21 @@ public final class AuditEventHash {
                 event.caseId(), event.policyDecision(), event.correlationId(), event.sourceSystems(),
                 event.rejectedArguments(), event.previousHash(), event.recordVersion(), event.fieldDispositions(),
                 event.approvalId(), event.approverId(), event.externalCorrelationId());
+    }
+
+    /**
+     * @return the hex-encoded HMAC-SHA256 of the same body {@link #compute(AuditEvent)} hashes, under
+     *         {@code key}. Used only when the opt-in keyed chain is on.
+     */
+    public static String compute(AuditEvent event, AuditChainKey key) {
+        java.util.Objects.requireNonNull(key, "key");
+        String body = body(event.eventId(), event.timestamp(), event.instanceId(), event.sequence(),
+                event.principalId(), event.clientId(), event.tool(), event.entityType(), event.subjectPseudonym(),
+                event.parameterFingerprint(), event.privacyProfile(), event.scopeId(), event.purpose(),
+                event.caseId(), event.policyDecision(), event.correlationId(), event.sourceSystems(),
+                event.rejectedArguments(), event.previousHash(), event.recordVersion(), event.fieldDispositions(),
+                event.approvalId(), event.approverId(), event.externalCorrelationId());
+        return key.hmacHex(body.getBytes(StandardCharsets.UTF_8));
     }
 
     private static String sha256(String value) {

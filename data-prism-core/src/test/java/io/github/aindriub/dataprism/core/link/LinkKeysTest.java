@@ -58,10 +58,13 @@ class LinkKeysTest {
 
     @Test
     void theSameIdAsThePseudonymisationKeyRefuses() {
-        MapKeys keys = new MapKeys().with("shared", material(1, 32));
-        assertThatThrownBy(() -> new LinkKeys(keys, "shared", "shared"))
+        String suppliedId = "ref-zq41";
+        MapKeys keys = new MapKeys().with(suppliedId, material(1, 32));
+        assertThatThrownBy(() -> new LinkKeys(keys, suppliedId, suppliedId))
                 .isInstanceOf(LinkConfigurationException.class)
-                .satisfies(e -> assertThat(e.getMessage()).startsWith("LINK_KEY_SHARED").doesNotContain("shared-"));
+                .satisfies(e -> assertThat(e.getMessage()).startsWith("LINK_KEY_SHARED")
+                        .doesNotContain(suppliedId).doesNotContain(SENTINEL))
+                .hasNoCause();
     }
 
     @Test
@@ -167,14 +170,15 @@ class LinkKeysTest {
 
     @Test
     void aKeyAddedLaterWithThePseudonymisationBytesIsNotHeld() {
-        MapKeys provider = new MapKeys().with("k1", material(1, 32)).with("k2", material(200, 32));
+        String sentinelId = "ref-sentinel-9";
+        MapKeys provider = new MapKeys().with("k1", material(1, 32)).with(sentinelId, material(200, 32));
         Set<String> held = new HashSet<>(Set.of("k1"));
         LinkKeys keys = new LinkKeys(provider, "k1", "pseudo-key", () -> held);
-        held.add("k2");
+        held.add(sentinelId);
         assertThat(keys.heldKeyIds()).containsExactly("k1");
-        assertThat(keys.master("k2")).isNull();
-        assertThat(keys.lookup("k2").status()).isEqualTo(LinkKeys.Status.NOT_HELD);
-        assertThat(keys.toString()).doesNotContain("k2");
+        assertThat(keys.master(sentinelId)).isNull();
+        assertThat(keys.lookup(sentinelId).status()).isEqualTo(LinkKeys.Status.NOT_HELD);
+        assertThat(keys.toString()).doesNotContain(sentinelId).doesNotContain("k1");
     }
 
     // ---- review: a null entry in the held set is absent ----
@@ -318,15 +322,27 @@ class LinkKeysTest {
     }
 
     @Test
-    void theAttemptCounterKeyHoldsNeitherScopeNorPrincipal() {
-        LinkKeys keys = new LinkKeys(new MapKeys().with("k1", material(1, 32)), "k1", "pseudo-key");
-        String counter = keys.attemptCounterKey("case-1", "alice");
-        assertThat(counter).matches("[0-9a-f]{32}").doesNotContain("case").doesNotContain("alice");
-        assertThat(counter).isEqualTo(keys.attemptCounterKey("case-1", "alice"))
-                .isNotEqualTo(keys.attemptCounterKey("case-1", "bob"))
-                .isNotEqualTo(keys.attemptCounterKey("case-2", "alice"));
-        // The boundary between scope and principal is length-prefixed, not delimited.
-        assertThat(keys.attemptCounterKey("ab", "c")).isNotEqualTo(keys.attemptCounterKey("a", "bc"));
+    void linkKeysHasNoMethodThatTakesAPrincipalId() {
+        for (java.lang.reflect.Method method : LinkKeys.class.getDeclaredMethods()) {
+            assertThat(method.getName()).as(method.toString()).doesNotContainIgnoringCase("attempt")
+                    .doesNotContainIgnoringCase("principal");
+        }
+        for (java.lang.reflect.Method method : LinkKeys.ScopeKeys.class.getDeclaredMethods()) {
+            assertThat(method.getName()).as(method.toString()).doesNotContainIgnoringCase("attempt")
+                    .doesNotContainIgnoringCase("principal");
+        }
+    }
+
+    @Test
+    void aHeldIdOutsideTheKeyIdGrammarIsAbsent() {
+        String tooLong = "k".repeat(17);
+        MapKeys provider = new MapKeys().with("k1", material(1, 32)).with("bad.id", material(2, 32))
+                .with(tooLong, material(3, 32)).with("k2", material(4, 32));
+        LinkKeys keys = new LinkKeys(provider, "k1", "pseudo-key", () -> Set.of("k1", "k2", "bad.id", tooLong));
+        assertThat(keys.heldKeyIds()).containsExactly("k1", "k2");
+        assertThat(keys.lookup("bad.id").status()).isEqualTo(LinkKeys.Status.NOT_HELD);
+        assertThat(keys.lookup(tooLong).status()).isEqualTo(LinkKeys.Status.NOT_HELD);
+        assertThat(keys.master("bad.id")).isNull();
     }
 
     @Test
@@ -347,16 +363,17 @@ class LinkKeysTest {
         // The input of the old, unlabelled counter key, offered to the fingerprint and to the catalog tag.
         byte[] counterInput = LabelledHkdf.lengthPrefixed(scope.getBytes(StandardCharsets.UTF_8),
                 principal.getBytes(StandardCharsets.UTF_8));
-        String counter = keys.attemptCounterKey(scope, principal);
         String tag = HEX.formatHex(keys.forScope(scope).catalogTag(List.of(scope, principal)));
         String fingerprint = HEX.formatHex(keys.forScope(scope).fingerprint(counterInput));
-        assertThat(counter).isNotEqualTo(tag);
-        assertThat(counter).doesNotStartWith(fingerprint).doesNotStartWith(tag);
         assertThat(tag).isNotEqualTo(fingerprint);
+        // The attempt subject's input starts with its own label, which neither of the other two MACs uses.
+        byte[] attemptInput = new AttemptSubject(scope, principal).canonical();
+        assertThat(HEX.formatHex(keys.forScope(scope).fingerprint(attemptInput))).isNotEqualTo(fingerprint);
+        assertThat(attemptInput).startsWith(LabelledHkdf.lengthPrefixed(
+                AttemptSubject.ATTEMPT_LABEL.getBytes(StandardCharsets.US_ASCII)));
         // Pre-fix, all three were HMAC(fingerprintKey, the same bytes).
         byte[] unlabelled = LinkVectors.hmac(LinkVectors.derive(material(1, 32), "dataprism/link/v1/fingerprint",
                 scope), counterInput);
-        assertThat(counter).isNotEqualTo(HEX.formatHex(unlabelled, 0, 16));
         assertThat(tag).isNotEqualTo(HEX.formatHex(unlabelled, 0, 16));
         assertThat(fingerprint).isNotEqualTo(HEX.formatHex(unlabelled, 0, 12));
     }
@@ -365,7 +382,7 @@ class LinkKeysTest {
     void theMacLabelsAreTheDocumentedOnes() {
         assertThat(LinkKeys.FINGERPRINT_LABEL).isEqualTo("dataprism/link/v1/fingerprint");
         assertThat(LinkKeys.CATALOG_TAG_LABEL).isEqualTo("dataprism/link/v1/catalog-tag");
-        assertThat(LinkKeys.ATTEMPT_LABEL).isEqualTo("dataprism/link/v1/attempt");
+        assertThat(AttemptSubject.ATTEMPT_LABEL).isEqualTo("dataprism/link/v1/attempt");
     }
 
     @Test
@@ -379,8 +396,6 @@ class LinkKeysTest {
                 .isEqualTo(LinkVectors.catalogTag(master, SCOPE, List.of("alpha", "beta")));
         assertThat(keys.forScope(SCOPE).catalogTag(List.of()))
                 .isEqualTo(LinkVectors.catalogTag(master, SCOPE, List.of()));
-        assertThat(keys.attemptCounterKey(SCOPE, "alice"))
-                .isEqualTo(LinkVectors.counterKey(master, SCOPE, "alice"));
     }
 
     // ---- known answers ----
@@ -416,7 +431,9 @@ class LinkKeysTest {
         out.setProperty("fingerprint", HEX.formatHex(
                 keys.forScope(SCOPE).fingerprint("subject-1".getBytes(StandardCharsets.UTF_8))));
         out.setProperty("catalog.tag", HEX.formatHex(keys.forScope(SCOPE).catalogTag(List.of("alpha", "beta"))));
-        out.setProperty("counter.key", keys.attemptCounterKey(SCOPE, "alice"));
+        AttemptSubject subject = new AttemptSubject(SCOPE, "alice");
+        out.setProperty("attempt.subject.canonical", HEX.formatHex(subject.canonical()));
+        out.setProperty("attempt.subject.canonical.text", subject.canonicalText());
         out.setProperty("follow.token", codec.seal(follow("subject-1".getBytes(StandardCharsets.UTF_8), "source-one"),
                 binding).orElseThrow().token());
         out.setProperty("page.token", codec.seal(page(), binding).orElseThrow().token());
@@ -451,7 +468,10 @@ class LinkKeysTest {
                 LinkVectors.fingerprint(master, SCOPE, "subject-1".getBytes(StandardCharsets.UTF_8))));
         assertThat(pinned.getProperty("catalog.tag")).isEqualTo(HEX.formatHex(
                 LinkVectors.catalogTag(master, SCOPE, List.of("alpha", "beta"))));
-        assertThat(pinned.getProperty("counter.key")).isEqualTo(LinkVectors.counterKey(master, SCOPE, "alice"));
+        assertThat(pinned.getProperty("attempt.subject.canonical"))
+                .isEqualTo(HEX.formatHex(LinkVectors.attemptSubject(SCOPE, "alice")));
+        assertThat(pinned.getProperty("attempt.subject.canonical.text"))
+                .isEqualTo(pinned.getProperty("attempt.subject.canonical"));
         assertThat(pagePlain.length).isEqualTo(8 + 8 + 1 + 6 + 5 + 1 + 2 + 11 + 16);
         assertThat(Arrays.copyOfRange(pagePlain, pagePlain.length - 16, pagePlain.length))
                 .isEqualTo(material(90, 16));

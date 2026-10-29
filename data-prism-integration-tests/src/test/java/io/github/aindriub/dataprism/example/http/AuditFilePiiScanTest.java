@@ -28,6 +28,8 @@ import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
 import io.github.aindriub.dataprism.mcp.ToolOptions;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
+import io.github.aindriub.dataprism.security.CaseAuthorizer;
+import io.github.aindriub.dataprism.security.ClientAllowlist;
 import io.github.aindriub.dataprism.security.PurposeValidator;
 import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.SecurityPolicy;
@@ -469,7 +471,9 @@ class AuditFilePiiScanTest {
             assertThat(lines.stream().map(AuditRecordFormat::parse).map(AuditEvent::policyDecision))
                     .as(behaviour.name()).contains("DENY:" + (behaviour
                             == io.github.aindriub.dataprism.core.policy.PrivacyProfile.UnclassifiedBehaviour.FAIL_REQUEST
-                            ? "UNKNOWN_FIELD" : "VALIDATION_FAILED"));
+                            // A configured JSON source's own engine refuses a pass-through leak with the raw-value
+                            // validator's code (task 288, OD-288-1 (a)); it used to reach the orchestrator's pass.
+                            ? "UNKNOWN_FIELD" : "RAW_SOURCE_VALUE"));
             List<String> leaked = new ArrayList<>();
             for (String line : lines) {
                 leaked.addAll(leaksIn(AuditRecordFormat.parse(line), List.of(UndeclaredKeyFixture.TOKEN)));
@@ -681,9 +685,9 @@ class AuditFilePiiScanTest {
             SecurityPolicy policy = new SecurityPolicy(Set.of(purpose),
                     Map.of(role, Set.of(Capability.GET_ENTITY_CONTEXT, Capability.COMPARE_ENTITY_SOURCES)));
             AuthorizationService authorizationService =
-                    new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.INVESTIGATION);
+                    new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.INVESTIGATION, ClientAllowlist.unrestricted());
             ScopeResolver scopeResolver = new ScopeResolver(assembly.pseudonymisationVersion(), Duration.ofHours(8),
-                    new PurposeValidator(Set.of(purpose)));
+                    new PurposeValidator(Set.of(purpose)), CaseAuthorizer.tokenTrusted());
             GetEntityContextTool tool = new GetEntityContextTool(assembly.orchestrator(), authorizationService,
                     scopeResolver, PrivacyMetrics.none(), toolAudit, FIXED_CLOCK, null, ToolOptions.defaults().noAdmission().build());
             CompareEntitySourcesTool compareTool = new CompareEntitySourcesTool(assembly.orchestrator(),

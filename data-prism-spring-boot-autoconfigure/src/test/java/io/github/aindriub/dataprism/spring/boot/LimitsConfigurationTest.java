@@ -60,6 +60,16 @@ class LimitsConfigurationTest {
     }
 
     @Test
+    void a_per_source_timeout_above_the_default_deadline_starts_with_the_deadline_raised_to_match() {
+        context.withPropertyValues("dataprism.limits.per-source-timeout=15s").run(result -> {
+            assertThat(result).hasNotFailed();
+            RequestLimits limits = orchestratorLimits(result.getBean(ContextOrchestrator.class));
+            assertThat(limits.perSourceTimeout()).isEqualTo(Duration.ofSeconds(15));
+            assertThat(limits.requestTimeout()).isEqualTo(Duration.ofSeconds(15));
+        });
+    }
+
+    @Test
     void per_source_timeout_is_bound() {
         context.withPropertyValues("dataprism.limits.per-source-timeout=7s").run(result -> {
             assertThat(result).hasNotFailed();
@@ -163,6 +173,9 @@ class LimitsConfigurationTest {
                 "dataprism.security.jwt.jwk-set-uri=https://issuer.example/jwks",
                 "dataprism.security.caller-claims.principal=sub", "dataprism.security.caller-claims.roles=roles",
                 "dataprism.security.caller-claims.investigation=case_id",
+                // A real deployment supplies a CaseAuthorizer bean and lists its allowed clients; this one trusts the token.
+                "dataprism.security-policy.case-authorisation=token-trusted",
+                "dataprism.security-policy.client-allowlist=unrestricted",
                 "dataprism.security-policy.purposes[0]=investigation",
                 "dataprism.security-policy.roles.investigator[0]=GET_ENTITY_CONTEXT",
                 "dataprism.privacy.profile=DEFAULT", "dataprism.privacy.scope-lifetime=8h",

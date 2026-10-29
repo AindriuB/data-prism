@@ -23,6 +23,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -156,7 +157,7 @@ class ScopeAllowlistTest {
         ObjectNode response = mapper.createObjectNode();
         response.put("padding", "x".repeat(200));
 
-        var bounded = new SensitivePatternValidator(new SensitiveDataScanner(100));
+        var bounded = new SensitivePatternValidator(new SensitiveDataScanner(100), List.of());
         ValidationResult validation = bounded.validate(response, Set.of(), Set.of(), context);
 
         assertThat(validation.valid()).isFalse();

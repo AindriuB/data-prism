@@ -467,6 +467,11 @@
               <failWhenNoMutations>false</failWhenNoMutations>
               <timestampedReports>false</timestampedReports>
               <threads>4</threads>
+              <!-- LinkCodec.authenticatedOnlyIfHeld is defence in depth behind the UNKNOWN_KEY
+                   return: no test can tell its mutants from the original. -->
+              <excludedMethods>
+                <excludedMethod>authenticatedOnlyIfHeld</excludedMethod>
+              </excludedMethods>
             </configuration>
             <executions>
               <execution>

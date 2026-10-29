@@ -62,6 +62,7 @@ class HazelcastHardeningTest {
             "com.hazelcast.core.HazelcastException", "com.hazelcast.core.OperationTimeoutException",
             "com.hazelcast.core.HazelcastInstanceNotActiveException",
             "com.hazelcast.transaction.TransactionException",
+            "com.hazelcast.internal.partition.PartitionStateVersionMismatchException",
             "com.hazelcast.splitbrainprotection.SplitBrainProtectionException",
             "com.hazelcast.nio.serialization.HazelcastSerializationException",
             "java.lang.SecurityException", "java.lang.ClassCastException", "java.lang.IllegalArgumentException",
@@ -635,17 +636,23 @@ class HazelcastHardeningTest {
         clusters.add(pair[0]);
         clusters.add(pair[1]);
         HazelcastInstance owner = pair[1].instance();
-        String key = null;
-        String subject = null;
-        for (int i = 0; i < 10_000 && key == null; i++) {
-            String candidate = ScopeKeys.budget("scope-a", "subject-" + i);
-            if (pair[0].instance().getPartitionService().getPartition(candidate).getOwner().equals(
-                    owner.getCluster().getLocalMember())) {
-                key = candidate;
-                subject = "subject-" + i;
+        String[] found = new String[2];
+        // The first member writes its sentinel and card before the second joins, so the partitions move to the
+        // second member after it joined: wait, bounded, until it owns a key.
+        assertThat(MemberCardTest.Fixture.await(30, () -> {
+            for (int i = 0; i < 10_000; i++) {
+                String candidate = pair[0].scopeKeys().budget("scope-a", "subject-" + i);
+                if (pair[0].instance().getPartitionService().getPartition(candidate).getOwner().equals(
+                        owner.getCluster().getLocalMember())) {
+                    found[0] = candidate;
+                    found[1] = "subject-" + i;
+                    return true;
+                }
             }
-        }
-        assertThat(key).isNotNull();
+            return false;
+        })).isTrue();
+        String key = found[0];
+        String subject = found[1];
         String finalSubject = subject;
         // Something other than an Integer under the key, as a hostile or confused writer could leave.
         pair[0].instance().<String, Object>getMap(PrivacyCluster.BUDGET_MAP).put(key, "not-a-count");
@@ -654,7 +661,7 @@ class HazelcastHardeningTest {
         // The outcome type proves the owner's error reply was not lost: the caller sees the owner's exception,
         // never an OperationTimeoutException.
         IMap<String, Object> counts = pair[0].instance().getMap(PrivacyCluster.BUDGET_MAP);
-        Throwable thrown = catchThrowable(() -> counts.executeOnKey(ScopeKeys.budget("scope-a", finalSubject),
+        Throwable thrown = catchThrowable(() -> counts.executeOnKey(pair[0].scopeKeys().budget("scope-a", finalSubject),
                 new ExpectsAnInteger()));
         assertThat(thrown).isNotNull();
         StringBuilder chain = new StringBuilder();

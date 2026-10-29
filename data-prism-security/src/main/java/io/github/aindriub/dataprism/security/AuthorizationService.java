@@ -19,16 +19,32 @@ public final class AuthorizationService {
     private final SecurityPolicy policy;
     private final String privacyProfile;
     private final PrivacyScopeType scopeType;
+    private final ClientAllowlist clientAllowlist;
 
-    public AuthorizationService(SecurityPolicy policy, String privacyProfile, PrivacyScopeType scopeType) {
+    public AuthorizationService(
+            SecurityPolicy policy, String privacyProfile, PrivacyScopeType scopeType, ClientAllowlist clientAllowlist) {
         this.policy = Objects.requireNonNull(policy, "policy");
         this.privacyProfile = Objects.requireNonNull(privacyProfile, "privacyProfile");
         this.scopeType = Objects.requireNonNull(scopeType, "scopeType");
+        this.clientAllowlist = Objects.requireNonNull(clientAllowlist, "clientAllowlist");
+    }
+
+    /**
+     * True only when the allowlist this service applies equals {@code allowlist} by value (see
+     * {@link ClientAllowlist}). Lets a wiring check tell a custom service built with the deployer's allowlist
+     * from one that bypasses it.
+     */
+    public boolean usesClientAllowlist(ClientAllowlist allowlist) {
+        return allowlist != null && clientAllowlist.equals(allowlist);
     }
 
     public AuthorizationDecision authorize(AuthenticatedCaller caller, ToolInvocation invocation) {
         Objects.requireNonNull(caller, "caller");
         Objects.requireNonNull(invocation, "invocation");
+
+        if (!clientAllowlist.permits(caller.clientId())) {
+            return AuthorizationDecision.denied("CLIENT_NOT_ALLOWED");
+        }
 
         Set<String> capabilities = policy.capabilitiesFor(caller.roles());
         if (capabilities.isEmpty()) {

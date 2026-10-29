@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.validation;
 
 import tools.jackson.databind.JsonNode;
+import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.core.model.PrivacyContext;
 import io.github.aindriub.dataprism.core.engine.Text;
 
@@ -9,6 +10,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Refuses a response containing something that looks sensitive and was not
@@ -34,14 +36,29 @@ public final class SensitivePatternValidator implements LlmResponseValidator {
 
     public static final String SENSITIVE_PATTERN = "SENSITIVE_PATTERN";
 
+    /** A {@link FreeTextRecogniser} recognised personal data in a string leaf. */
+    public static final String FREE_TEXT_RECOGNISED = "FREE_TEXT_RECOGNISED";
+
+    /** A {@link FreeTextRecogniser} threw or returned null, so the leaf could not be cleared. */
+    public static final String FREE_TEXT_RECOGNISER_FAILED = "FREE_TEXT_RECOGNISER_FAILED";
+
+    /** Enough to identify the problem; a response with more is refused regardless. */
+    private static final int MAX_RECOGNISER_VIOLATIONS = 64;
+
     private final SensitiveDataScanner scanner;
+    private final List<FreeTextRecogniser> recognisers;
 
     public SensitivePatternValidator() {
-        this(new SensitiveDataScanner());
+        this(new SensitiveDataScanner(), List.of());
     }
 
-    public SensitivePatternValidator(SensitiveDataScanner scanner) {
+    /**
+     * @param recognisers consulted in list order for every string leaf the shape scan visits, so
+     *                    they share its depth and size budget. They can only add refusals.
+     */
+    public SensitivePatternValidator(SensitiveDataScanner scanner, List<FreeTextRecogniser> recognisers) {
         this.scanner = Objects.requireNonNull(scanner, "scanner");
+        this.recognisers = List.copyOf(Objects.requireNonNull(recognisers, "recognisers"));
     }
 
     @Override
@@ -53,9 +70,18 @@ public final class SensitivePatternValidator implements LlmResponseValidator {
         Set<String> allowed = HashSet.newHashSet(emitted.size());
         emitted.forEach(value -> allowed.add(Text.canonical(value)));
 
-        ScanReport report = scanner.scan(response, value -> allowed.contains(Text.canonical(value)));
-
+        // The recognisers ride on the scanner's exemption hook, which it calls for every text it
+        // has charged to its budget, so they see exactly the leaves the shape scan sees and an
+        // exhausted budget stops both. The hook exempts only what the allowlist exempts.
         List<Violation> violations = new ArrayList<>();
+        ScanReport report = scanner.scan(response, value -> {
+            if (allowed.contains(Text.canonical(value))) {
+                return true;
+            }
+            recognise(value, violations);
+            return false;
+        });
+
         if (!report.complete()) {
             violations.add(new Violation("$", SCAN_INCOMPLETE, "scan-budget-exhausted", null));
         }
@@ -64,5 +90,41 @@ public final class SensitivePatternValidator implements LlmResponseValidator {
                     match.classification().name()));
         }
         return violations.isEmpty() ? ValidationResult.ok() : ValidationResult.failed(violations);
+    }
+
+    private void recognise(String value, List<Violation> violations) {
+        for (FreeTextRecogniser recogniser : recognisers) {
+            if (violations.size() >= MAX_RECOGNISER_VIOLATIONS) {
+                return;
+            }
+            String names;
+            try {
+                Set<DataClassification> recognised = recogniser.recognise(value);
+                // Read inside the guard: a null set or null element is a failure, not an NPE.
+                names = recognised == null ? null : recognised.stream()
+                        .map(Enum::name).sorted().collect(Collectors.joining(","));
+                if (recognised != null && recognised.isEmpty()) {
+                    continue;
+                }
+            } catch (StackOverflowError e) {
+                // Runaway recursion in a recogniser (e.g. regex backtracking) is its failure, not ours.
+                names = null;
+            } catch (VirtualMachineError e) {
+                throw e;
+            } catch (Throwable e) {
+                // An InterruptedException (possibly thrown sneakily) is deliberately NOT turned back into
+                // an interrupt flag here, unlike ResolverInvoker. This runs on the request thread before the
+                // audit write, and a restored interrupt makes the audit sink's FileChannel write throw
+                // ClosedByInterruptException and poisons the sink. The response is refused below regardless,
+                // so the request still fails closed.
+                // Nothing from the throwable is kept: its message may quote the value.
+                names = null;
+            }
+            if (names == null) {
+                violations.add(new Violation("$", FREE_TEXT_RECOGNISER_FAILED, "recogniser-failed"));
+            } else {
+                violations.add(new Violation("$", FREE_TEXT_RECOGNISED, "free-text:" + names));
+            }
+        }
     }
 }

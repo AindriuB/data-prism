@@ -1,6 +1,5 @@
 package io.github.aindriub.dataprism.orchestration;
 
-import com.fasterxml.jackson.annotation.JsonAnyGetter;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.InternalIdentifier;
 import io.github.aindriub.dataprism.annotations.LlmExposedModel;
@@ -12,6 +11,7 @@ import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.engine.DefaultFieldMetadataResolver;
 import io.github.aindriub.dataprism.core.spi.FieldMetadataResolver;
 import io.github.aindriub.dataprism.core.limits.InMemoryScopeBudget;
+import io.github.aindriub.dataprism.core.model.FieldMetadata;
 import io.github.aindriub.dataprism.core.model.InvestigationContext;
 import io.github.aindriub.dataprism.core.engine.JsonTreeScrubbingEngine;
 import io.github.aindriub.dataprism.core.spi.PassThroughIdentityResolver;
@@ -28,6 +28,7 @@ import io.github.aindriub.dataprism.validation.RawValueLeakValidator;
 import io.github.aindriub.dataprism.validation.SensitivePatternValidator;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -53,15 +54,44 @@ class UndeclaredKeyRefusalPathTest {
     private static final StaticSecretKeyProvider KEYS =
             StaticSecretKeyProvider.of("development-only-key-not-for-any-real-data");
 
+    /** The declared fields of the exposed tree. */
     @LlmExposedModel
-    record Open(@InternalIdentifier String id,
-                @JsonAnyGetter Map<String, String> extra) {
+    record Open(@InternalIdentifier String id) {
     }
 
     @LlmExposedModel
     record WithEmail(@InternalIdentifier String id,
-                     @InternalIdentifier String email,
-                     @JsonAnyGetter Map<String, String> extra) {
+                     @InternalIdentifier String email) {
+    }
+
+    /**
+     * Exposes an {@link ObjectNode} root with the declared fields of a record. A record source can no longer
+     * carry undeclared keys (task 288, OD-288-1 (a)); a JsonNode root can, as a configured JSON source does.
+     */
+    static final class ExposedTree implements FieldMetadataResolver {
+        private final DefaultFieldMetadataResolver delegate = new DefaultFieldMetadataResolver();
+        private final Class<?> declared;
+
+        ExposedTree(Class<?> declared) {
+            this.declared = declared;
+        }
+
+        @Override
+        public List<FieldMetadata> resolve(Class<?> type) {
+            return delegate.resolve(type == ObjectNode.class ? declared : type);
+        }
+
+        @Override
+        public boolean exposed(Class<?> type) {
+            return type == ObjectNode.class || delegate.exposed(type);
+        }
+    }
+
+    private static ObjectNode tree(Map<String, String> declared, String key, String value) {
+        ObjectNode tree = io.github.aindriub.dataprism.core.engine.SourceTree.newObject();
+        declared.forEach(tree::put);
+        tree.put(key, value);
+        return tree;
     }
 
     private static PrivacyContext context() {
@@ -71,31 +101,32 @@ class UndeclaredKeyRefusalPathTest {
 
     private static DefaultContextOrchestrator orchestrator(PrivacyProfile.UnclassifiedBehaviour behaviour,
                                                            String keyedValue, List<AuditEvent> events) {
-        return orchestrator(behaviour, Open.class, new Open("1", Map.of(KEY, keyedValue)), events);
+        return orchestrator(behaviour, Open.class, tree(Map.of("id", "1"), KEY, keyedValue), events);
     }
 
-    private static <T> DefaultContextOrchestrator orchestrator(PrivacyProfile.UnclassifiedBehaviour behaviour,
-                                                               Class<T> type, T payload,
-                                                               List<AuditEvent> events) {
-        FieldMetadataResolver resolver = new DefaultFieldMetadataResolver();
+    private static DefaultContextOrchestrator orchestrator(PrivacyProfile.UnclassifiedBehaviour behaviour,
+                                                           Class<?> declared, ObjectNode payload,
+                                                           List<AuditEvent> events) {
+        Class<ObjectNode> type = ObjectNode.class;
+        FieldMetadataResolver resolver = new ExposedTree(declared);
         var profile = new PrivacyProfile("DEFAULT", behaviour, Map.of(DataClassification.PII,
                 PrivacyProfile.ClassificationRule.of(PrivacyAction.REDACT)));
         var scrubber = new JsonTreeScrubbingEngine(resolver,
                 new ProfilePrivacyPolicyResolver(Map.of("DEFAULT", profile)),
                 (subject, namespace, ctx) -> "synthetic");
-        DataSourceAdapter<T> adapter = new DataSourceAdapter<>() {
+        DataSourceAdapter<ObjectNode> adapter = new DataSourceAdapter<>() {
             @Override
             public String sourceName() {
                 return "open-api";
             }
 
             @Override
-            public Class<T> responseType() {
+            public Class<ObjectNode> responseType() {
                 return type;
             }
 
             @Override
-            public T fetch(DataRequest request) {
+            public ObjectNode fetch(DataRequest request) {
                 return payload;
             }
         };
@@ -161,7 +192,7 @@ class UndeclaredKeyRefusalPathTest {
     @DisplayName("VALIDATION_FAILED never carries digits from a bracketed payload key after a declared name")
     void bracketedDigitKeyAfterDeclaredName() {
         var events = new ArrayList<AuditEvent>();
-        var payload = new WithEmail("1", "plain", Map.of("email[07700900123]", "someone.else@example.com"));
+        var payload = tree(Map.of("id", "1", "email", "plain"), "email[07700900123]", "someone.else@example.com");
         var refused = refusal(orchestrator(PrivacyProfile.UnclassifiedBehaviour.PASS_THROUGH_UNSAFE,
                 WithEmail.class, payload, events));
 
