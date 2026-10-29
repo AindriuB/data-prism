@@ -39,6 +39,12 @@ import io.github.aindriub.dataprism.security.SecurityPolicy;
 import io.github.aindriub.dataprism.validation.LlmResponseValidator;
 import io.github.aindriub.dataprism.validation.SensitivePatternValidator;
 import io.github.aindriub.dataprism.validation.ValidationResult;
+import io.github.aindriub.dataprism.oversight.ApprovalStore;
+import io.github.aindriub.dataprism.oversight.InMemoryApprovalStore;
+import io.github.aindriub.dataprism.oversight.InMemoryCallerRateLimiter;
+import io.github.aindriub.dataprism.oversight.InMemoryOversightState;
+import io.github.aindriub.dataprism.security.OversightPolicy;
+import io.github.aindriub.dataprism.security.ToolAdmission;
 import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.server.McpAsyncServerExchange;
 import io.modelcontextprotocol.server.McpServerFeatures;
@@ -54,6 +60,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
@@ -255,5 +262,106 @@ class TargetSourcesToolTest {
             assertThat(seen).containsOnly("refused: SOURCE_NOT_AVAILABLE at $");
             assertThat(asked.get()).isZero();
         }
+    }
+
+    // -- the selection is part of what a human approval covers ------------------------------------
+
+    private static final String APPROVAL_REQUIRED = "APPROVAL_REQUIRED approvalId=";
+
+    /** Calls with {@code approved}, has a human approve it, calls with {@code later}, and returns that result. */
+    private McpSchema.CallToolResult approveThenCall(int toolIndex, Object approved, Object later) {
+        ApprovalStore approvals = new InMemoryApprovalStore();
+        ToolAdmission admission = new ToolAdmission(new InMemoryOversightState(), approvals,
+                new InMemoryCallerRateLimiter(),
+                new OversightPolicy(Set.of(TOOLS[0], TOOLS[1]), OptionalInt.empty(), Duration.ofMinutes(1),
+                        Duration.ofHours(1)), FIXED);
+        SecurityPolicy security = new SecurityPolicy(Set.of("demonstration"),
+                Map.of("investigator", Set.of("GET_ENTITY_CONTEXT", "COMPARE_ENTITY_SOURCES")));
+        AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION,
+                ClientAllowlist.unrestricted());
+        ScopeResolver scopes = new ScopeResolver(
+                PseudonymisationVersion.HMAC_SHA256_V1.withKey("key-1").withVocabulary("vocab-1"),
+                Duration.ofHours(8), new PurposeValidator(Set.of("demonstration")), CaseAuthorizer.tokenTrusted());
+        ToolOptions options = ToolOptions.defaults()
+                .admission(admission, new ParameterFingerprinter(KEYS)).build();
+        var handler = (toolIndex == 0
+                ? new GetEntityContextTool(recording, authz, scopes, PrivacyMetrics.none(), audit, FIXED, null, options)
+                        .specification()
+                : new CompareEntitySourcesTool(recording, authz, scopes, PrivacyMetrics.none(), audit, FIXED, null,
+                        options).specification()).callHandler();
+
+        audited.clear();
+        requests.clear();
+        McpSchema.CallToolResult first = call(handler, TOOLS[toolIndex], args(approved));
+        assertThat(text(first)).startsWith(APPROVAL_REQUIRED);
+        String approvalId = audited.get(audited.size() - 1).approvalId();
+        approvals.approve(approvalId, "approver-9", FIXED.instant());
+        assertThat(requests).isEmpty();
+
+        McpSchema.CallToolResult result = call(handler, TOOLS[toolIndex], args(later));
+        if (result.isError() == Boolean.TRUE) {
+            assertThat(text(result)).startsWith(APPROVAL_REQUIRED).doesNotContain(approvalId);
+            assertThat(requests).isEmpty();
+        }
+        return result;
+    }
+
+    private void assertNeedsFreshApproval(Object approved, Object later) {
+        for (int i = 0; i < 2; i++) {
+            McpSchema.CallToolResult result = approveThenCall(i, approved, later);
+            assertThat(result.isError()).as(TOOLS[i]).isEqualTo(Boolean.TRUE);
+            assertThat(requests).as(TOOLS[i]).isEmpty();
+        }
+    }
+
+    @Test
+    @DisplayName("an approval for {A} does not cover a call for {B}")
+    void approvalForOneSourceDoesNotCoverAnother() {
+        assertNeedsFreshApproval(List.of("label-a"), List.of("label-b"));
+    }
+
+    @Test
+    @DisplayName("an approval for {A} does not cover a call with no selection")
+    void narrowApprovalDoesNotCoverUnselected() {
+        assertNeedsFreshApproval(List.of("label-a"), null);
+    }
+
+    @Test
+    @DisplayName("an approval with no selection does not cover a call for {A}, nor one listing the whole estate")
+    void unselectedApprovalDoesNotCoverASelection() {
+        assertNeedsFreshApproval(null, List.of("label-a"));
+        assertNeedsFreshApproval(null, List.of("label-a", "label-b", "label-c"));
+    }
+
+    @Test
+    @DisplayName("an approval for {A,B} covers {B,A}, and duplicates are normalised")
+    void permutationsAndDuplicatesAreTheSameCall() {
+        for (int i = 0; i < 2; i++) {
+            McpSchema.CallToolResult permuted = approveThenCall(i, List.of("label-a", "label-b"),
+                    List.of("label-b", "label-a"));
+            assertThat(permuted.isError()).as(TOOLS[i]).isNotEqualTo(Boolean.TRUE);
+            assertThat(requests).as(TOOLS[i]).hasSize(1);
+        }
+        assertThat(ToolCalls.binding("THING", "1", scope(), caller(), List.of("a", "b", "a")))
+                .isEqualTo(ToolCalls.binding("THING", "1", scope(), caller(), List.of("b", "a")));
+    }
+
+    @Test
+    @DisplayName("an approval made before targetSources existed is bound to the absent selection")
+    void legacyBindingIsTheAbsentSelection() {
+        String legacy = ToolCalls.binding("THING", "1", scope(), caller());
+        assertThat(ToolCalls.binding("THING", "1", scope(), caller(), null)).isEqualTo(legacy);
+        assertThat(ToolCalls.binding("THING", "1", scope(), caller(), List.of("a"))).isNotEqualTo(legacy);
+        assertThat(ToolCalls.binding("THING", "1", scope(), caller(), List.of("a")))
+                .isNotEqualTo(ToolCalls.binding("THING", "1", scope(), caller(), List.of("a", "b")));
+    }
+
+    private static PrivacyContext scope() {
+        return new PrivacyContext("case:case-1", PrivacyScopeType.INVESTIGATION, "DEFAULT", "demonstration",
+                Instant.parse("2030-01-01T00:00:00Z"), PseudonymisationVersion.HMAC_SHA256_V1);
+    }
+
+    private static InvestigationContext caller() {
+        return new InvestigationContext("principal-1", "client-1", "case-1", Set.of());
     }
 }

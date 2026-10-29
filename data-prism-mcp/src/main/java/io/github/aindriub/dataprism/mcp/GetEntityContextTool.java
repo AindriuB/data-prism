@@ -236,7 +236,7 @@ public final class GetEntityContextTool {
         // only from the approval store's own record.
         AdmissionDecision admitted = ToolCalls.admit(admission, fingerprinter, caller, NAME,
                 session.privacyContext(), ToolCalls.binding(entityType, subjectId, session.privacyContext(),
-                        session.investigationContext()));
+                        session.investigationContext(), targetSources));
         if (!admitted.admitted()) {
             return deny(caller, admitted.code(), admitted.approvalId(), entityType, rejectedArguments, externalId);
         }
