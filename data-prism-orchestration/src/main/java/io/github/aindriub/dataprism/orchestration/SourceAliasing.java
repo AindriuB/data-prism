@@ -41,7 +41,11 @@ public final class SourceAliasing {
      * What the caller alone decides: the real name when the caller holds the capability, otherwise the
      * alias. It knows nothing of the scope setting, so it is not the label a response carries; the
      * orchestrator labels through {@code SourceLabels}, which adds the scope condition (D-RM-10).
+     *
+     * @deprecated ignores {@code dataprism.catalog.real-names-scopes}, so it can show a real name where the
+     *             scope forbids it. Use {@code SourceLabels} for anything a client sees.
      */
+    @Deprecated(forRemoval = true)
     public String nameFor(String sourceName, InvestigationContext investigationContext,
                           PrivacyContext context) {
         if (investigationContext.has(Capability.EXPOSE_SOURCE_NAMES)) {

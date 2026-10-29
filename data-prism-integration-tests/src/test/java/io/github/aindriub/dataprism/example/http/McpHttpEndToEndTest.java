@@ -382,14 +382,17 @@ class McpHttpEndToEndTest {
     }
 
     @Test
-    @DisplayName("a caller with EXPOSE_SOURCE_NAMES sees real source names")
+    @DisplayName("a caller with EXPOSE_SOURCE_NAMES still sees aliases while no scope permits real names")
     void callerWithExposeCapabilitySeesRealSourceNames() throws Exception {
         String token = mintToken(Set.of("privileged-investigator"), CONFIGURED_PURPOSE, CASE_ID);
         McpSyncClient client = clientWithToken(token);
         try {
             String body = text(callGetEntityContext(client, "123"));
 
-            assertThat(body).contains("customer-api");
+            // Task 247: real names need the scope setting as well as the capability, and the setting is empty
+            // by default. The real-name assertion (contains "customer-api") comes back in task 254, once
+            // dataprism.catalog.real-names-scopes is bound.
+            assertThat(body).doesNotContain("customer-api");
         } finally {
             client.closeGracefully();
         }

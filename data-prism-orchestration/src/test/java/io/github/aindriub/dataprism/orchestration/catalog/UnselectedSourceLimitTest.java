@@ -98,10 +98,33 @@ class UnselectedSourceLimitTest {
         Harness within = new Harness(limit(2), RequestLimits.DEFAULT, hmac(), estate);
 
         assertThat(within.orchestrator.buildContext(ContextRequest.of("THING", "1"), context(SCOPE), caller(false))
-                .sources()).isNotEmpty();
+                .sources()).hasSize(2);
+        assertThat(within.called("source-0")).isEqualTo(1);
+        assertThat(within.called("source-1")).isEqualTo(1);
+        assertThat(within.called("source-2")).isZero();
+        assertThat(within.called("source-3")).isZero();
+        assertThat(within.budget.reservations).hasValue(1);
 
         estate.put("source-4", Set.of());
         assertRefusedUntouched(new Harness(limit(2), RequestLimits.DEFAULT, hmac(), estate));
+    }
+
+    @Test
+    @DisplayName("eight serving sources plus one of another type are answered, and the other one is not called")
+    void eightServingPlusOneOtherIsAnswered() {
+        Map<String, Set<String>> estate = new LinkedHashMap<>();
+        for (int i = 0; i < 8; i++) {
+            estate.put("source-" + i, Set.of("THING"));
+        }
+        estate.put("other-source", Set.of("OTHER_KIND"));
+        Harness h = new Harness(OrchestrationOptions.defaults(), RequestLimits.DEFAULT, hmac(), estate);
+
+        ContextResponse response = h.orchestrator.buildContext(ContextRequest.of("THING", "1"), context(SCOPE),
+                caller(false));
+
+        assertThat(response.sources()).hasSize(8);
+        assertThat(h.called("other-source")).isZero();
+        assertThat(h.calledTotal()).isEqualTo(8);
     }
 
     @Test

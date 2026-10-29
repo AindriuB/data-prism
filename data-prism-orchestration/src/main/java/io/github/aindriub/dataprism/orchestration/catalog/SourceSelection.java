@@ -73,15 +73,21 @@ public final class SourceSelection {
 
     /**
      * @param limit the most permitted sources serving the entity type that an unselected call may ask
-     * @return the real names of the permitted sources, every one of which is asked
+     * @return the real names of the permitted sources that serve the entity type (or declare none), exactly the
+     *         set that was counted, every one of which is asked
      * @throws Refusal {@code SOURCE_SELECTION_REQUIRED} when the count is above the limit
      */
     public static Set<String> unselected(SourceLabels labels, String entityType, int limit) {
         Map<String, SourceCatalog.Entry> permitted = labels.permittedEntries();
-        long serving = permitted.values().stream().filter(e -> SourceLabels.serves(e, entityType)).count();
-        if (serving > limit) {
+        Set<String> serving = new LinkedHashSet<>();
+        permitted.forEach((name, entry) -> {
+            if (SourceLabels.serves(entry, entityType)) {
+                serving.add(name);
+            }
+        });
+        if (serving.size() > limit) {
             throw new Refusal(REQUIRED, null);
         }
-        return new LinkedHashSet<>(permitted.keySet());
+        return serving;
     }
 }
