@@ -62,6 +62,7 @@ class HazelcastHardeningTest {
             "com.hazelcast.core.HazelcastException", "com.hazelcast.core.OperationTimeoutException",
             "com.hazelcast.core.HazelcastInstanceNotActiveException",
             "com.hazelcast.transaction.TransactionException",
+            "com.hazelcast.internal.partition.PartitionStateVersionMismatchException",
             "com.hazelcast.splitbrainprotection.SplitBrainProtectionException",
             "com.hazelcast.nio.serialization.HazelcastSerializationException",
             "java.lang.SecurityException", "java.lang.ClassCastException", "java.lang.IllegalArgumentException",
