@@ -18,26 +18,24 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static io.github.aindriub.dataprism.hazelcast.TestMembers.NOW;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Many threads on two members race for one decision. Whatever the mechanism, exactly one wins each time. These
- * tests are the proof that a conditional operation, not a lock someone might lose, is what makes it so.
+ * tests prove exactly-once under the entry lock and the re-read made under it; they do not prove it survives the
+ * loss of the lock (lease expiry, split brain), which is a separate test.
  */
 class ApprovalRaceTest {
 
     private static final int THREADS = 16;
     private static final int ROUNDS = 50;
 
-    /**
-     * How long a racing call waits for the entry lock. These tests are about who wins, not how fast: the default
-     * bound (2 s) is shorter than the 5 s Hazelcast takes to complete a write that lost its backup acknowledgement
-     * to a join-time migration, so with it a stalled holder makes a waiter refuse and fail the test (seen on CI,
-     * Java 25). The wait is still bounded; the refusal itself is covered by {@code ClusterLockTimeoutTest}.
-     */
+    /** A backstop for runner pauses: the race starts once the partitions have settled, so it should not be needed. */
     private static final Duration RACE_LOCK_TIMEOUT = Duration.ofSeconds(15);
 
     private PrivacyCluster[] members;
@@ -49,6 +47,10 @@ class ApprovalRaceTest {
         members = TestMembers.pair(TestMembers.uniqueName("race"), OptionalInt.empty());
         stores = new HazelcastApprovalStore[]{new HazelcastApprovalStore(members[0], RACE_LOCK_TIMEOUT),
                 new HazelcastApprovalStore(members[1], RACE_LOCK_TIMEOUT)};
+        // The second member joins after the first has written its card, so partitions are still moving when the pair
+        // returns; a race measured meanwhile would include the migration.
+        assertThat(MemberCardTest.Fixture.await(30, () -> members[0].instance().getPartitionService().isClusterSafe()))
+                .as("the partitions settled").isTrue();
         pool = Executors.newFixedThreadPool(THREADS);
     }
 
@@ -61,6 +63,10 @@ class ApprovalRaceTest {
     }
 
     private <T> List<T> race(java.util.function.IntFunction<T> call) throws Exception {
+        return collect(startRace(call));
+    }
+
+    private <T> List<Future<T>> startRace(java.util.function.IntFunction<T> call) {
         CountDownLatch gate = new CountDownLatch(1);
         List<Future<T>> futures = new ArrayList<>();
         for (int t = 0; t < THREADS; t++) {
@@ -71,6 +77,10 @@ class ApprovalRaceTest {
             }));
         }
         gate.countDown();
+        return futures;
+    }
+
+    private static <T> List<T> collect(List<Future<T>> futures) throws Exception {
         List<T> results = new ArrayList<>();
         for (Future<T> f : futures) {
             results.add(f.get(60, TimeUnit.SECONDS));
@@ -92,10 +102,10 @@ class ApprovalRaceTest {
     }
 
     /**
-     * A holder that stalls for longer than the default lock bound (a lost backup acknowledgement completes only after
-     * Hazelcast's 5 s backup timeout, and a loaded runner can pause as long) must not turn a race into refusals: the
-     * race stores wait longer than that, and exactly one caller still consumes. The stall is made by holding the
-     * entry's lock, so nothing here depends on real timing luck.
+     * A holder that keeps the entry lock past the default lock bound (a lost backup acknowledgement completes only
+     * after Hazelcast's 5 s backup timeout, and a loaded runner can pause as long) must not turn a race into
+     * refusals: the race stores wait longer than that, and exactly one caller still consumes. The holder lets go
+     * only when the test says so, so nothing here depends on timing luck.
      */
     @Test
     void exactlyOneCallConsumesAnApprovalWhileTheHolderStallsPastTheDefaultLockBound() throws Exception {
@@ -104,13 +114,13 @@ class ApprovalRaceTest {
         stores[1].approve(id, "bob", NOW);
         var held = members[0].instance().getMap(PrivacyCluster.APPROVAL_MAP);
         String key = TestMembers.SCOPE_KEYS.approval("scope-1", id);
-        long stallMillis = ClusterLocks.DEFAULT_TIMEOUT.toMillis() + 1000;
         CountDownLatch locked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
         Thread holder = new Thread(() -> {
             held.lock(key);
             locked.countDown();
             try {
-                Thread.sleep(stallMillis);
+                release.await();
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
             } finally {
@@ -118,16 +128,20 @@ class ApprovalRaceTest {
             }
         });
         holder.start();
-        assertThat(locked.await(10, TimeUnit.SECONDS)).isTrue();
         try {
-            long started = System.nanoTime();
-            List<Optional<ApprovalRequest>> results = race(thread ->
+            assertThat(locked.await(10, TimeUnit.SECONDS)).isTrue();
+            List<Future<Optional<ApprovalRequest>>> running = startRace(thread ->
                     stores[thread % 2].consumeApproved(Kind.TOOL_CALL, "alice", "scope-1", "search", "fp-" + id, NOW));
-            assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started))
-                    .as("the callers really waited out the stall").isGreaterThan(ClusterLocks.DEFAULT_TIMEOUT.toMillis());
+            // Every caller is still waiting after the default bound has passed: none was refused, none consumed.
+            assertThatThrownBy(() -> running.get(0).get(ClusterLocks.DEFAULT_TIMEOUT.toMillis() + 1000,
+                    TimeUnit.MILLISECONDS)).isInstanceOf(TimeoutException.class);
+            assertThat(running).as("no caller finished while the lock was held").noneMatch(Future::isDone);
+            release.countDown();
+            List<Optional<ApprovalRequest>> results = collect(running);
             assertThat(results).filteredOn(Optional::isPresent).hasSize(1);
             assertThat(stores[0].find(id)).get().extracting(ApprovalRequest::status).isEqualTo(Status.CONSUMED);
         } finally {
+            release.countDown();
             holder.join();
         }
     }
