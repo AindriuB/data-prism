@@ -69,7 +69,7 @@ The review of PR #191 (branch `task/228-signed-leased-pause-document`, head 9387
 **Revised 2026-10-29 after external review of PR #194 (P1, repeated pauses overtaking missing state): owner chose (e).** The review found that the first version of amendment 3 still loses pauses. A and B hold pauses at seq 5, and storage is rolled back to seq 3. A behind member C then issues three pauses (seq 4, 5, 6) that lack A's and B's pauses. Seq 6 outranks them, corroboration passes, and A's and B's pauses are lifted. The root cause is that acceptance replaces the held document by order, and a resume is a bare removal. The owner's decisions of 2026-10-29:
 1. Option (e): pause state becomes an observed-remove set with explicit tombstones. It replaces the sequence-ordered model of pause content. Sequence and refresh stay, for order and freshness only. Lineage option (d) was rejected.
 2. No automatic tombstone GC in 0.8. The ack-gated GC is follow-up brief 295.
-3. Operating cap: 16,384 elements plus tombstones, with 16 slots reserved for `pause all`. `1 << 20` stays as the decode guard.
+3. Operating cap: 16,384 elements plus tombstones, with 16 slots reserved for `pause all`. `1 << 20` stays as the decode guard. *(Meaning changed 2026-10-29: 16,384 total entries is preserved, enforced as 8,192 elements, with the last 16 element slots reserved for `pause all`; tombstones ≤ elements, so the total cannot pass 16,384. See amendment 4. Coordinator decision 2026-10-29 after external review of PR #194 (round 3), owner may override.)*
 4. A pause always mints a fresh element. Pauses are never deduped.
 5. ~~The resume response gains one additive field reporting whether the target is still paused and how many ids were cleared (amendment 9).~~ **(5, revised 2026-10-29, owner)** The resume response gains one additive field, `stillPaused`, and nothing else. There is no cleared count, and no change to the core `OversightState` interface (amendment 9).
 6. `pause.conflict` is redefined (amendment 7). No new metric.
@@ -119,8 +119,9 @@ Amendments 3 and 4 below replace the first versions, which are kept, marked supe
 - Decode rejects (as UNREADABLE, counted as tamper):
   - an unknown format tag;
   - a duplicate id with a different target;
-  - a count above `1 << 20` (`MAX_ENTRIES`, kept as the decode guard).
-  A tombstone whose id names no element in the same document is kept, not dropped: it blocks a later replay of that element.
+  - a count above `1 << 20` (`MAX_ENTRIES`, kept as the decode guard);
+  - *(added 2026-10-29, round 3)* more than 8,192 elements, or more than 8,192 tombstones (the operating bound of amendment 4). Anything above either is tamper.
+  A tombstone whose id names no element in the same document is kept, not dropped: it blocks a later replay of that element. For that reason decode does not reject a document with more tombstones than elements, or with tombstones for ids it does not hold; it bounds each set separately instead (coordinator decision 2026-10-29 after external review of PR #194 (round 3), owner may override).
 
 **Merge on acceptance.**
 - Accepting any authentic document sets `held = held ⊔ doc`: the union of the element sets and the union of the tombstone sets. Acceptance never replaces held content, whatever the order.
@@ -133,8 +134,8 @@ Amendments 3 and 4 below replace the first versions, which are kept, marked supe
 
 **Every write is lock → read → compute from base.** Under the oversight lock, re-read and judge the stored value, form `base = held ⊔ stored` (or `held` alone when stored is ABSENT), and compute:
 - pause: add one fresh element for the target. Always, even if the target is already live; never deduped.
-- resume: tombstone exactly the ids live for the target in base. If there are none, write nothing (no cleared count is reported; amendment 9).
-- endScope: tombstone the ended scope's live ids in base (kind `SCOPE`, that name). Elements of other kinds with the same name are untouched.
+- resume: tombstone exactly the ids live for the target in base. If there are none, write nothing (no cleared count is reported; amendment 9). *(Revised 2026-10-29, round 3: standard OR-set remove semantics. The resume fixes its observed set `O` at decision time: the ids live for the target in the first base it reads under the lock. It tombstones only ids in `O`; on a CAS retry see amendment 4. Coordinator decision 2026-10-29 after external review of PR #194 (round 3), owner may override.)*
+- endScope: tombstone the ended scope's live ids in base (kind `SCOPE`, that name). Elements of other kinds with the same name are untouched. *(Revised 2026-10-29, round 3: the same observed-set rule as resume. `O` is the ended scope's live ids in the first base read under the lock.)*
 - `sequence = max(held.sequence, stored.sequence) + 1`, `refresh = 0`.
 - No peer-derived term appears in any sequence. That covers pause, resume, endScope, `pushHeld`, restore (amendment 8) and `reconcileAfterMerge`. `PauseDocument.java` ~:692 at 93877409 (`top = Math.max(top, peers.highestReportedSequence())`) is removed, as is the `peers.highestReportedSequence() + 1` term at :485.
 - A pause over an ABSENT document is `putIfAbsent(held ⊔ change)` at `held.sequence + 1`, or Doc(1){change} when `held == null`. This reconciles OD-215-16. Do not write `all = true` into the document.
@@ -153,25 +154,33 @@ Amendments 3 and 4 below replace the first versions, which are kept, marked supe
 - `commit` refuses, and does not write, any `next` that fails one of these:
   - `next.elements ⊇ stored.elements` and `next.tombstones ⊇ stored.tombstones`, against the stored authentic document;
   - `next.elements ⊆ base.elements ∪ {the one fresh element of a pause}`;
-  - `next.tombstones ⊆ base.tombstones ∪ T`. For a resume or endScope, `T` is the ids live for its target in base. For every other write, `T` is empty: only a resume or an endScope adds a tombstone;
+  - `next.tombstones ⊆ base.tombstones ∪ T`. For a resume or endScope, `T` is `O ∩ live(base)`: its observed set (amendment 3) intersected with the ids still live for its target in the current base. *(Revised 2026-10-29, round 3; previously all ids live for the target in base.)* For every other write, `T` is empty: only a resume or an endScope adds a tombstone;
   - the order is above the stored document's, or `next` is a `refresh + 1` successor with identical sets.
   Each refusal is an Outcome the tests can see.
-- Cap (owner decision 3). Let `n = |elements| + |tombstones|` of `next`.
-  - A non-`all` pause is refused with `CLUSTER_OPERATION_REFUSED` when `n` would exceed 16,368 (16,384 minus the 16 reserved slots).
-  - `pause all` is accepted from the reserve up to `n = 16,384`, and refused above it.
-  - A resume or endScope is not refused by the operating cap. It adds at most one tombstone per live element, so `|tombstones| <= |elements|` holds by construction (decode keeps unknown-id tombstones, so it is not enforced on read). A cap on resume would leave the cluster unable to lift a pause.
-  - An encode that would exceed the decode guard is refused, never truncated.
-  - Residual, recorded: without GC (295), every pause and resume uses slots for good. A cluster that reaches the cap can only `pause all` until 295 ships, or until a full restart wipes the state.
+- Cap (owner decision 3, as re-enforced 2026-10-29 in round 3). *(Revised: the first version counted `n = |elements| + |tombstones|` against 16,368 and 16,384. Resuming 16,368 live elements then added 16,368 tombstones, passed the cap and blocked `pause all` despite the reserve. Coordinator decision 2026-10-29 after external review of PR #194 (round 3), owner may override.)* The cap counts elements only. Let `e = |elements|` of `next`.
+  - At most 8,192 elements in total.
+  - A non-`all` pause is refused with `CLUSTER_OPERATION_REFUSED` when `e` would exceed 8,176 (8,192 minus the 16 reserved slots).
+  - `pause all` may use the last 16 element slots: accepted up to `e = 8,192`, refused above it.
+  - Tombstones are not counted. A tombstone only ever names a live element id (amendment 3), so `|tombstones| <= |elements|` holds by construction, total entries can never exceed 16,384 (decision 3's bound is kept), and the `pause all` reserve holds whatever resumes have accumulated.
+  - A resume or endScope is not refused by the operating cap. It adds tombstones only for existing elements. A cap on resume would leave the cluster unable to lift a pause.
+  - An encode that would exceed the decode bounds (amendment 3: 8,192 elements, 8,192 tombstones, `1 << 20`) is refused, never truncated.
+  - Residual, recorded: without GC (295), every pause uses an element slot for good. A cluster that reaches the cap can only `pause all` until 295 ships, or until a full restart wipes the state.
+  - Residual, recorded (round 3): two sides of a split that each add elements toward the cap can merge to a union above 8,192 elements. Such a union is not encoded (the encode refusal above), so no repair or merge write is made for it, and it is counted. The implementer reports in the Outcome what each member's reads answer in that state; it must be paused or refused, never lifted.
 - A lost race (the `replace` fails) re-reads and recomputes from the new base, up to the existing bound (`MAX_ATTEMPTS`), then fails closed.
+  - *(Added 2026-10-29, round 3; coordinator decision 2026-10-29 after external review of PR #194 (round 3), owner may override.)* A resume or endScope keeps the observed set `O` it fixed on its first read (amendment 3). On every retry it recomputes base and writes tombstones for exactly `O ∩ live(new base)`, the ids of `O` still live in the new base. It never adds an id first seen on a retry, so a pause that lands concurrently stays active. If the intersection is empty (everything in `O` was already tombstoned elsewhere), it writes nothing and returns success. `stillPaused` (amendment 9) is still read afterwards.
 - `pushHeld` becomes: under the lock, read; if stored lacks any element or tombstone of held, write `held ⊔ stored` at `max + 1`; otherwise write nothing. It never writes over a stored document that already covers held.
 - The CONFLICT status and its branches go (`Status.CONFLICT`, the `case CONFLICT -> pushHeld()` arm, and the equal-order union in `judge`), along with `Pauses.union` and `Pauses.covers`.
 - Tests:
   - [ ] a rival writes a higher document with an extra pause between read and commit (`beforeCommit`); the final document holds both, at a higher order;
   - [ ] `pushHeld` never writes over a stored document that is a superset of held;
+  - [ ] *(round 3)* a pause of X lands via `beforeCommit` between the resume of X's first read and its commit, forcing a retry: after the retry, X stays paused (the new element has no tombstone), every id in the resume's original `O` is tombstoned, and the operator response's `stillPaused` is true;
+  - [ ] *(round 3)* the same shape for endScope: a pause of the ended scope landing mid-retry stays active;
+  - [ ] *(round 3)* a resume whose `O` was wholly tombstoned elsewhere before its retry writes nothing and returns success;
+  - [ ] *(round 3)* a mutant that recomputes `O` on retry fails the first of these;
   - [ ] each guard clause has a test that a mutant without it fails (the Outcome shows it).
 
 ### 5. Ending a scope (owner decision (a): `endScope` removes the scope from the document; touched up in the revision)
-- *(Revision)* The removal is a tombstone write (amendment 3): it tombstones the scope's live ids in base, under the resume and endScope preconditions (`held != null`, `unverifiedCount() == 0`, no peer card above top, fresh and serving). It is the LAST step of `ScopeIdentityIndex.endScope`, run only after every data sweep and the approval forget have succeeded.
+- *(Revision)* The removal is a tombstone write (amendment 3): it tombstones the scope's live ids in base (its observed set `O`, kept across CAS retries as in amendment 4; round 3), under the resume and endScope preconditions (`held != null`, `unverifiedCount() == 0`, no peer card above top, fresh and serving). It is the LAST step of `ScopeIdentityIndex.endScope`, run only after every data sweep and the approval forget have succeeded.
 - Any failure, skipped lock, failed precondition or stale document keeps the pause. When a precondition fails, the call throws its code from amendment 3 after the sweeps, and the data is still erased.
 - An ABSENT document is a no-op success. No write if the scope has no live id in base.
 - UNREADABLE or GATED: throw.
@@ -241,7 +250,9 @@ Amendments 3 and 4 below replace the first versions, which are kept, marked supe
 - [ ] Two writers race on the CAS, a pause each: both elements survive.
 - [ ] A replay of an old document holding an element that is now tombstoned: the element stays lifted on every warm member.
 - [ ] A cold member given a replay within the cold-start gate shows the replay's state until the next repair tick (by any warm member), then shows the union.
-- [ ] Cap: at 16,368 entries a non-`all` pause is refused with `CLUSTER_OPERATION_REFUSED`; `pause all` is then accepted from the reserve; a resume at the cap is accepted; an encode over the decode guard is refused.
+- [ ] ~~Cap: at 16,368 entries a non-`all` pause is refused with `CLUSTER_OPERATION_REFUSED`; `pause all` is then accepted from the reserve; a resume at the cap is accepted; an encode over the decode guard is refused.~~ *(Superseded 2026-10-29, round 3, by the elements-only cap of amendment 4.)*
+- [ ] Cap (round 3): 8,176 non-`all` pauses succeed; all 8,176 are resumed (8,176 tombstones); `pause all` then succeeds; the 8,177th non-`all` pause is refused with `CLUSTER_OPERATION_REFUSED`; a resume at the cap is accepted; `pause all` is refused past 8,192 elements; an encode over the decode bounds is refused.
+- [ ] Decode (round 3): a document with 8,193 elements, or with 8,193 tombstones, is rejected as UNREADABLE and counted as tamper; one with 8,192 of each opens.
 - [ ] endScope tombstones only the ended scope, including over a replay at a cold index, and refuses when `held == null` or a member is unverified (amendment 5).
 - [ ] First start: the uptime and seq-0 card-replay tests of amendment 1.
 - [ ] Property tests over random sequences of documents (seeded JUnit loops; no new dependency): merge is commutative, associative and idempotent; no merge removes a live element without its tombstone.
@@ -255,6 +266,8 @@ Amendments 3 and 4 below replace the first versions, which are kept, marked supe
   - a resume tombstones ids outside base or outside its target;
   - a pause dedupes against a live element;
   - the cap truncates instead of refusing;
+  - the cap counts tombstones (round 3);
+  - a resume or endScope recomputes `O` on a CAS retry instead of keeping its first observed set (round 3);
   - the memo ignores the bytes (keys on sequence alone);
   - endScope removes elements by name, or across kinds, instead of tombstoning the scope's ids;
   - the peer-derived sequence bump is restored;

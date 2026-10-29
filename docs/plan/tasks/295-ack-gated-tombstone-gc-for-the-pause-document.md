@@ -1,6 +1,6 @@
 # 295 — Ack-gated tombstone GC for the pause document
 
-Filed 2026-10-29 as the follow-up the owner named when choosing option (e) for 228 (228, "Amendments 2026-10-29", revision note, decision 2). In 0.8, after 228, the pause document is an observed-remove set that only grows. Every pause adds an element and every resume adds tombstones. Nothing is ever removed, and a cluster that reaches 228's operating cap (16,384 elements plus tombstones) can then only `pause all`. This task removes element-and-tombstone pairs once every verified member provably holds the tombstone.
+Filed 2026-10-29 as the follow-up the owner named when choosing option (e) for 228 (228, "Amendments 2026-10-29", revision note, decision 2). In 0.8, after 228, the pause document is an observed-remove set that only grows. Every pause adds an element and every resume adds tombstones. Nothing is ever removed, and a cluster that reaches 228's operating cap (8,192 elements, the last 16 reserved for `pause all`; tombstones are not counted, so total entries stay within 16,384; revised 2026-10-29 by coordinator decision after external review of PR #194 (round 3), owner may override) can then only `pause all`. This task removes element-and-tombstone pairs once every verified member provably holds the tombstone.
 
 **Repo:** `.`
 **Release:** 0.8.0
