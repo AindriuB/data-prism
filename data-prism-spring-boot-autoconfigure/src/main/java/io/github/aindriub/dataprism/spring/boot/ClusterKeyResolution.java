@@ -61,7 +61,7 @@ final class ClusterKeyResolution {
         List<Resolved> clusterKeys = new ArrayList<>();
         Resolved nameKey = null;
         byte[] hmac = null;
-        List<AuditChainKeyResolution.Entry> auditKeys = List.of();
+        List<AuditChainKeyResolution.Fingerprint> auditKeys = List.of();
         usableId("CLUSTER_KEY", CLUSTER_KEY, cluster.getKeyId());
         usableId("CLUSTER_KEY", CLUSTER_KEY + ".next", cluster.getNext().getKeyId());
         usableId("CLUSTER_KEY", CLUSTER_KEY + ".previous", cluster.getPrevious().getKeyId());
@@ -79,7 +79,7 @@ final class ClusterKeyResolution {
                 shared(key, hmac, properties.getPrivacy().getHmacKey().getKeyId());
             }
             shared(nameKey, hmac, properties.getPrivacy().getHmacKey().getKeyId());
-            auditKeys = AuditChainKeyResolution.materials(properties, resolver);
+            auditKeys = AuditChainKeyResolution.fingerprints(properties, resolver);
             for (Resolved key : clusterKeys) {
                 sharedWithAudit(key, auditKeys);
             }
@@ -109,7 +109,6 @@ final class ClusterKeyResolution {
             if (hmac != null) {
                 Arrays.fill(hmac, (byte) 0);
             }
-            auditKeys.forEach(AuditChainKeyResolution.Entry::wipe);
         }
     }
 
@@ -207,9 +206,9 @@ final class ClusterKeyResolution {
     }
 
     /** The audit chain key (current and retired), by key id and by material, when the chain is keyed. */
-    private static void sharedWithAudit(Resolved key, List<AuditChainKeyResolution.Entry> auditKeys) {
-        for (AuditChainKeyResolution.Entry audit : auditKeys) {
-            if (key.ref.keyId().equals(audit.keyId()) || MessageDigest.isEqual(key.material, audit.material())) {
+    private static void sharedWithAudit(Resolved key, List<AuditChainKeyResolution.Fingerprint> auditKeys) {
+        for (AuditChainKeyResolution.Fingerprint audit : auditKeys) {
+            if (key.ref.keyId().equals(audit.keyId()) || AuditChainKeyResolution.matches(audit, key.material)) {
                 throw new DataPrismConfigurationException(key.ref.area() + "_SHARED",
                         key.ref.property() + " must differ from dataprism.audit.hmac-key and"
                                 + " dataprism.audit.retired-hmac-keys");

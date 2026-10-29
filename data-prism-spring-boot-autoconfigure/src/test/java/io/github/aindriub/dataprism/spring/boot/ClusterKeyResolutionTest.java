@@ -252,4 +252,28 @@ class ClusterKeyResolutionTest {
                 () -> ClusterKeyResolution.resolve(keyedAudit(), () -> auditResolver(Map.of("AUDIT_REF", new byte[0]))));
         assertThat(refused.getMessage()).startsWith("AUDIT_HMAC_KEY_TOO_SHORT:").doesNotContain("AUDIT_REF");
     }
+
+    @Test
+    void theAuditKeysAreResolvedOnceAndTheRecorderRetentionAndClusterChecksSeeTheFirstMaterial() {
+        DataPrismProperties p = keyedAudit();
+        Map<String, Integer> calls = new HashMap<>();
+        HmacKeyReferenceResolver changing = (id, reference) -> {
+            int n = calls.merge(reference, 1, Integer::sum);
+            return switch (reference) {
+                case "AUDIT_REF" -> bytes(n == 1 ? 'a' : 'z');
+                case "RETIRED_REF" -> bytes(n == 1 ? 'r' : 'y');
+                case "HMAC_REF" -> bytes('h');
+                case "CLUSTER_REF" -> bytes('a');
+                default -> bytes('n');
+            };
+        };
+        AuditChainKeyResolution.Keys recorder = AuditChainKeyResolution.resolve(p, changing);
+        AuditChainKeyResolution.Keys retention = AuditChainKeyResolution.resolve(p, changing);
+        assertThat(retention).isSameAs(recorder);
+        // the cluster key equals the audit key's FIRST material; a second resolution would have returned 'z'
+        DataPrismConfigurationException refused = catchThrowableOfType(DataPrismConfigurationException.class,
+                () -> ClusterKeyResolution.resolve(p, () -> changing));
+        assertThat(refused.getMessage()).startsWith("CLUSTER_KEY_SHARED:");
+        assertThat(calls).containsEntry("AUDIT_REF", 1).containsEntry("RETIRED_REF", 1);
+    }
 }

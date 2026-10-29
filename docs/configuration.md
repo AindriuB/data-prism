@@ -435,7 +435,8 @@ Refusal codes, each at startup:
 
 The hash chain is plain SHA-256 by default. An operator can switch it to HMAC-SHA256 under a key of their own.
 This is opt-in and off by default. The keyed chain resists a writer who does not have the key: such a writer
-cannot recompute the hashes, so an edit to the file is detected. It does not resist anyone who holds the key,
+cannot recompute the hashes, so a changed or inserted record is detected. Deleting the last records, or a whole
+segment, still verifies; catching that needs the checkpoint file (`--checkpoints`). It does not resist anyone who holds the key,
 the operator and the process that writes the file included. It is not tamper-proof, immutable, or evidence against
 the operator. Nothing written to the audit file records whether it is keyed; the verifier is told by its caller.
 
@@ -450,7 +451,7 @@ the operator. Nothing written to the audit file records whether it is keyed; the
 
 There is no property that takes key material: a key is only ever a reference, and the material must be at least
 32 bytes. The audit key must be a different key from the pseudonymisation key (`dataprism.privacy.hmac-key`) and
-from the cluster and name keys. The recorder signs with the current key only. Retention verifies expiring segments
+from the cluster and name keys. The recorder signs with the current key only, and it is the built-in one: an application `AuditRecorder` bean with `hmac-key` set is refused. Retention verifies expiring segments
 with the current key and every retired key, and does not delete a segment written under any other key (or none),
 so keep a retired key configured until every segment written under it has been purged; otherwise the purge stops
 and `auditIntegrity` health reports DOWN with `AUDIT_RETENTION_CHAIN_UNVERIFIED`. Rotation is a procedure, not code.
@@ -458,6 +459,7 @@ and `auditIntegrity` health reports DOWN with `AUDIT_RETENTION_CHAIN_UNVERIFIED`
 Refusal codes, each at startup, none of which repeats a reference or any key byte:
 
 - `AUDIT_HMAC_REQUIRES_HASH_CHAINED` -- `hmac-key` or `retired-hmac-keys` is set with a `sink` other than `hash-chained`.
+- `AUDIT_RECORDER_REPLACED_WITH_HMAC_KEY` -- `hmac-key` is set and the application supplies its own `AuditRecorder` bean, so the built-in recorder backs off and the key would sign nothing. The message names the property and the bean type only. An application recorder with no key starts as before.
 - `AUDIT_RETIRED_KEYS_REQUIRE_HMAC_KEY` -- `retired-hmac-keys` is set without `hmac-key`.
 - `MISSING_AUDIT_HMAC_KEY_REFERENCE` -- `key-id` is missing, or not exactly one of `environment-variable` and `provider-reference` is set, for `hmac-key` or a retired key.
 - `DUPLICATE_AUDIT_KEY_ID` -- a retired key has the same id as the current key.
@@ -744,7 +746,7 @@ The first failing check is the one reported, and the checks run in this order:
 | 7 | `CLUSTER_KEY_UNRESOLVED`, `CLUSTER_KEY_WEAK`, `NAME_KEY_UNRESOLVED`, `NAME_KEY_WEAK` | A reference does not resolve, or resolves to material shorter than 32 bytes. Each key is resolved and measured in turn: the cluster key, `next`, `previous`, then the name key |
 | 8 | `HMAC_KEY_UNRESOLVED` | The privacy HMAC key cannot be resolved again to compare the cluster keys with it |
 | 9 | `CLUSTER_KEY_SHARED`, `NAME_KEY_SHARED` | A cluster key (current, `next`, `previous`), then the name key, has the key id or the material of the privacy HMAC key |
-| 10 | `AUDIT_HMAC_KEY_UNRESOLVED`, `CLUSTER_KEY_SHARED`, `NAME_KEY_SHARED` | Only with `dataprism.audit.hmac-key` set. An audit key (current or retired) does not resolve; then a cluster key (current, `next`, `previous`), then the name key, has the key id or the material of an audit key (current or retired) |
+| 10 | `AUDIT_HMAC_KEY_UNRESOLVED`, `AUDIT_HMAC_KEY_TOO_SHORT`, `CLUSTER_KEY_SHARED`, `NAME_KEY_SHARED` | Only with `dataprism.audit.hmac-key` set. An audit key (current or retired) does not resolve or is shorter than 32 bytes; then a cluster key (current, `next`, `previous`), then the name key, has the key id or the material of an audit key (current or retired) |
 | 11 | `NAME_KEY_SHARED` | The name key has the material of a cluster key |
 | 12 | `DUPLICATE_CLUSTER_KEY_ID` | The `current`, `next`, `previous` and name key ids are not pairwise distinct |
 

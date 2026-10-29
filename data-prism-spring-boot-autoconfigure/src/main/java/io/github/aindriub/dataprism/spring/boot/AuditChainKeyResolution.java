@@ -47,11 +47,60 @@ final class AuditChainKeyResolution {
                 || notBlank(key.getProviderReference());
     }
 
+    /** A resolved key's id and the SHA-256 of its material: enough to compare against, with nothing to leak. */
+    record Fingerprint(String property, String keyId, byte[] sha256) {
+    }
+
+    /** What one resolution produced: the keys (null when unkeyed) and a fingerprint of each. */
+    record Resolved(Keys keys, List<Fingerprint> fingerprints) {
+    }
+
+    /**
+     * The audit keys are resolved once per {@link AuditProperties}: the recorder, retention and the cluster key
+     * check all see the material the first resolution returned, even if a resolver would answer differently the
+     * next time. Held weakly by the properties object.
+     */
+    private static final Map<AuditProperties, Resolved> RESOLVED =
+            java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
+
     /** @return the keys, or {@code null} when the chain is unkeyed */
     static Keys resolve(DataPrismProperties properties, HmacKeyReferenceResolver resolver) {
-        if (!keyed(properties)) {
-            return null;
+        return obtain(properties, resolver).keys();
+    }
+
+    /** The fingerprints of the current key and then the retired ones, empty when unkeyed. */
+    static List<Fingerprint> fingerprints(DataPrismProperties properties, HmacKeyReferenceResolver resolver) {
+        return obtain(properties, resolver).fingerprints();
+    }
+
+    static boolean matches(Fingerprint fingerprint, byte[] material) {
+        return MessageDigest.isEqual(fingerprint.sha256(), sha256(material));
+    }
+
+    private static byte[] sha256(byte[] material) {
+        try {
+            return MessageDigest.getInstance("SHA-256").digest(material);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 unavailable", e);
         }
+    }
+
+    private static Resolved obtain(DataPrismProperties properties, HmacKeyReferenceResolver resolver) {
+        if (!keyed(properties)) {
+            return new Resolved(null, List.of());
+        }
+        synchronized (RESOLVED) {
+            Resolved known = RESOLVED.get(properties.getAudit());
+            if (known != null) {
+                return known;
+            }
+            Resolved fresh = resolveFresh(properties, resolver);
+            RESOLVED.put(properties.getAudit(), fresh);
+            return fresh;
+        }
+    }
+
+    private static Resolved resolveFresh(DataPrismProperties properties, HmacKeyReferenceResolver resolver) {
         if (resolver == null) {
             throw new DataPrismConfigurationException("MISSING_KEY_PROVIDER",
                     "provide an HmacKeyReferenceResolver bean for the configured reference");
@@ -61,6 +110,7 @@ final class AuditChainKeyResolution {
             refuseReuse(properties, resolver, entries);
             AuditChainKey current = null;
             List<AuditChainKey> retired = new ArrayList<>();
+            List<Fingerprint> fingerprints = new ArrayList<>();
             for (Entry entry : entries) {
                 AuditChainKey key = new AuditChainKey(entry.keyId(), entry.material());
                 if (current == null) {
@@ -68,19 +118,12 @@ final class AuditChainKeyResolution {
                 } else {
                     retired.add(key);
                 }
+                fingerprints.add(new Fingerprint(entry.property(), entry.keyId(), sha256(entry.material())));
             }
-            return new Keys(current, List.copyOf(retired));
+            return new Resolved(new Keys(current, List.copyOf(retired)), List.copyOf(fingerprints));
         } finally {
             entries.forEach(Entry::wipe);
         }
-    }
-
-    /**
-     * The resolved material of the current key and then the retired ones, empty when unkeyed. The caller wipes
-     * each entry. Used by the cluster key check, which must compare against them.
-     */
-    static List<Entry> materials(DataPrismProperties properties, HmacKeyReferenceResolver resolver) {
-        return keyed(properties) ? entries(properties, resolver) : List.of();
     }
 
     private static List<Entry> entries(DataPrismProperties properties, HmacKeyReferenceResolver resolver) {

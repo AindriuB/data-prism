@@ -38,6 +38,42 @@ class AuditWiring {
     }
 
     /**
+     * Refuses {@code dataprism.audit.hmac-key} together with an application {@link AuditRecorder}: the framework's
+     * recorder would back off, and the key would silently sign nothing. Runs before any singleton exists. The
+     * message names the property and the bean type, never a reference or key material.
+     */
+    @Bean
+    static org.springframework.beans.factory.config.BeanFactoryPostProcessor dataPrismAuditRecorderKeyPreflight(
+            org.springframework.core.env.Environment environment) {
+        return factory -> {
+            AuditProperties.HmacKey key = org.springframework.boot.context.properties.bind.Binder.get(environment)
+                    .bind("dataprism.audit.hmac-key", AuditProperties.HmacKey.class)
+                    .orElseGet(AuditProperties.HmacKey::new);
+            if (blank(key.getKeyId()) && blank(key.getEnvironmentVariable()) && blank(key.getProviderReference())) {
+                return;
+            }
+            for (String name : factory.getBeanNamesForType(AuditRecorder.class, true, false)) {
+                if (!isOwnRecorder(factory, name)) {
+                    throw new DataPrismConfigurationException("AUDIT_RECORDER_REPLACED_WITH_HMAC_KEY",
+                            "dataprism.audit.hmac-key is set but an application AuditRecorder bean replaces the"
+                                    + " built-in recorder, so the key would sign nothing; remove the key or the bean");
+                }
+            }
+        };
+    }
+
+    private static boolean blank(String v) {
+        return v == null || v.isBlank();
+    }
+
+    private static boolean isOwnRecorder(ConfigurableListableBeanFactory factory, String name) {
+        return name.equals("dataPrismAuditRecorder")
+                && factory.getBeanDefinition(name) instanceof org.springframework.beans.factory.annotation.AnnotatedBeanDefinition annotated
+                && annotated.getFactoryMethodMetadata() != null
+                && AuditWiring.class.getName().equals(annotated.getFactoryMethodMetadata().getDeclaringClassName());
+    }
+
+    /**
      * Delivers each logged audit event to the application's {@link AuditEventListener} beans (in {@code
      * @Order}), after the configured sink accepted it, on one daemon thread behind a bounded queue.
      * Unconditional and not replaceable: an application adds listeners, it cannot swap the dispatcher

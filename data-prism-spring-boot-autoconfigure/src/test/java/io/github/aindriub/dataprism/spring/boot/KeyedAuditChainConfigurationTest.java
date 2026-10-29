@@ -205,6 +205,28 @@ class KeyedAuditChainConfigurationTest {
     }
 
     @Test
+    void an_application_recorder_with_the_key_set_is_refused(@TempDir Path dir) {
+        assertRefusedWith(keyed(dir).withBean("appRecorder", AuditRecorder.class, () -> new AuditRecorder(
+                new SegmentedFileAuditSink(dir.resolve("other")), Clock.systemUTC(), "app")),
+                "AUDIT_RECORDER_REPLACED_WITH_HMAC_KEY", "AUDIT_KEY_REF");
+    }
+
+    @Test
+    void an_application_recorder_without_the_key_starts(@TempDir Path dir) {
+        file(dir).withBean("appRecorder", AuditRecorder.class, () -> new AuditRecorder(
+                new SegmentedFileAuditSink(dir.resolve("other")), Clock.systemUTC(), "app"))
+                .run(context -> assertThat(context).hasNotFailed());
+    }
+
+    @Test
+    void the_key_with_no_replacement_starts_keyed(@TempDir Path dir) {
+        keyed(dir).run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context.getBeansOfType(AuditRecorder.class)).containsOnlyKeys("dataPrismAuditRecorder");
+        });
+    }
+
+    @Test
     void retired_keys_need_a_current_key(@TempDir Path dir) {
         assertRefusedWith(file(dir).withPropertyValues(
                 "dataprism.audit.retired-hmac-keys.audit-0.environment-variable=RETIRED_REF"),
