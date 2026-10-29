@@ -1,12 +1,16 @@
 package io.github.aindriub.dataprism.orchestration;
 
 import io.github.aindriub.dataprism.core.limits.RequestLimits;
+import io.github.aindriub.dataprism.core.metrics.Metric;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.spi.DataRequest;
 import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,6 +21,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 /**
  * The two places the clock can move between a thread's check and its act: the waiter pausing across the deadline
@@ -235,17 +240,44 @@ class SourceFanOutDeadlineRacesTest {
         assertThat(breaker.admit("s").holdsTrial()).as("a success closed the breaker").isFalse();
     }
 
+    /** Counts what the fan-out reports to the metrics. */
+    private static final class Reported implements PrivacyMetrics {
+        final List<String> errors = Collections.synchronizedList(new ArrayList<>());
+        final List<String> latencies = Collections.synchronizedList(new ArrayList<>());
+
+        @Override
+        public void increment(Metric metric) {
+        }
+
+        @Override
+        public void increment(Metric metric, String sourceName) {
+            if (metric == Metric.SOURCE_ERRORS) {
+                errors.add(sourceName);
+            }
+        }
+
+        @Override
+        public void record(Metric metric, String sourceName, Duration duration) {
+            if (metric == Metric.SOURCE_LATENCY) {
+                latencies.add(sourceName);
+            }
+        }
+    }
+
     /** One source, a 3 s call timeout and a 10 s deadline, a breaker trial, the waiter held after the call starts. */
     private record Fixture(SourceFanOutDeadlineTest.MutableClock clock, SourceCircuitBreaker breaker,
-                           SourceFanOut fanOut, SourceFanOutDeadlineTest.Blocking source, RequestLimits limits) {
+                           SourceFanOut fanOut, SourceFanOutDeadlineTest.Blocking source, RequestLimits limits,
+                           Reported reported) {
         static Fixture create() {
             var clock = new SourceFanOutDeadlineTest.MutableClock();
             var breaker = new SourceCircuitBreaker(1, Duration.ofSeconds(5), clock);
             breaker.record(failed("s"));
             clock.advance(Duration.ofSeconds(6));
             var limits = TestLimits.defaults().perSourceTimeout(Duration.ofSeconds(3)).maxConcurrency(1).build();
-            return new Fixture(clock, breaker, new SourceFanOut(breaker, clock, SourceFanOutOptions.defaults()),
-                    new SourceFanOutDeadlineTest.Blocking("s"), limits);
+            var reported = new Reported();
+            return new Fixture(clock, breaker,
+                    new SourceFanOut(breaker, clock, SourceFanOutOptions.defaults().withMetrics(reported)),
+                    new SourceFanOutDeadlineTest.Blocking("s"), limits, reported);
         }
 
         CompletableFuture<SourceFanOut.Execution> start() {
@@ -367,9 +399,11 @@ class SourceFanOutDeadlineRacesTest {
         assertThat(breaker.admit(second.sourceName()).holdsTrial()).as("a cut call: the trial was handed back").isTrue();
     }
 
-    @Test
-    @DisplayName("an expiry interrupt that lands between starting and calling means the source is never called")
-    void anInterruptBetweenStartAndCallStopsTheCall() throws Exception {
+    /**
+     * The call is STARTED and held before it reaches the adapter; the clock moves; the waiter cancels it. It must be
+     * settled exactly like a call that never started.
+     */
+    private void interruptedBeforeTheCall(Duration clockMove) throws Exception {
         var f = Fixture.create();
         var reached = new CountDownLatch(1);
         var go = new CountDownLatch(1);
@@ -381,14 +415,79 @@ class SourceFanOutDeadlineRacesTest {
         var running = f.start();
         assertThat(reached.await(WAIT_SECONDS, TimeUnit.SECONDS)).as("the call is started, not yet calling").isTrue();
 
-        f.clock().advance(Duration.ofSeconds(10));
+        f.clock().advance(clockMove);
         var execution = running.get(WAIT_SECONDS, TimeUnit.SECONDS);
         go.countDown();
         await(ended);
 
         assertThat(f.source().calls.get()).as("the adapter was never called").isZero();
+        assertThat(execution.notStarted()).as("its read goes back, once").isEqualTo(1);
+        assertThat(execution.results()).singleElement().satisfies(r -> {
+            assertThat(r.outcome().status()).isEqualTo(SourceOutcome.Status.TIMED_OUT);
+            assertThat(r.record()).isNull();
+        });
+        assertThat(f.breaker().admit("s").holdsTrial())
+                .as("no breaker outcome was recorded and the trial is available again").isTrue();
+        assertThat(f.reported().errors).as("no source error").isEmpty();
+        assertThat(f.reported().latencies).as("no latency: the source was not called").isEmpty();
+    }
+
+    @Test
+    @DisplayName("an expiry interrupt that lands between starting and calling means the source is never called, and it counts as never started")
+    void anInterruptBetweenStartAndCallStopsTheCall() throws Exception {
+        interruptedBeforeTheCall(Duration.ofSeconds(10));
+    }
+
+    @Test
+    @DisplayName("the same when the call's own timeout has also passed: still no breaker failure and no read kept")
+    void anInterruptBetweenStartAndCallPastTheOwnTimeoutIsNotAFailure() throws Exception {
+        // 4 s after it began, past its own 3 s limit but short of the 10 s deadline: the per-source cut.
+        interruptedBeforeTheCall(Duration.ofSeconds(4));
+    }
+
+    @Test
+    @DisplayName("a call interrupted before it reaches the adapter, and found by the waiter already finished, is still never called")
+    void aCallThatSkipsItselfIsSettledAsNeverCalled() throws Exception {
+        var f = Fixture.create();
+        // The call is interrupted on its own thread, as a cancellation landing in the gap would.
+        f.fanOut().callAfterStartObserver(name -> Thread.currentThread().interrupt());
+
+        var execution = f.start().get(WAIT_SECONDS, TimeUnit.SECONDS);
+
+        assertThat(f.source().calls.get()).as("the adapter was never called").isZero();
+        assertThat(execution.notStarted()).isEqualTo(1);
         assertThat(execution.results()).singleElement()
                 .satisfies(r -> assertThat(r.outcome().status()).isEqualTo(SourceOutcome.Status.TIMED_OUT));
+        assertThat(f.breaker().admit("s").holdsTrial()).as("no breaker outcome, trial free").isTrue();
+        assertThat(f.reported().errors).isEmpty();
+    }
+
+    @Test
+    @DisplayName("an execution that fails while a call is started but not yet calling counts that call as never called")
+    void anAbortCountsAStartedButUncalledSourceAsNotStarted() throws Exception {
+        var f = Fixture.create();
+        var reached = new CountDownLatch(1);
+        var go = new CountDownLatch(1);
+        f.fanOut().callAfterStartObserver(name -> {
+            reached.countDown();
+            await(go);
+        });
+        f.fanOut().tickObserver(now -> {
+            if (reached.getCount() == 0) {
+                throw new IllegalStateException("tick failed");
+            }
+        });
+
+        var running = f.start();
+        assertThat(reached.await(WAIT_SECONDS, TimeUnit.SECONDS)).isTrue();
+        var failure = catchThrowable(() -> running.get(WAIT_SECONDS, TimeUnit.SECONDS));
+        go.countDown();
+
+        assertThat(failure).hasRootCauseInstanceOf(IllegalStateException.class);
+        assertThat(failure.getCause()).isInstanceOfSatisfying(SourceFanOut.ExecutionFailure.class,
+                e -> assertThat(e.notStarted()).as("its read goes back").isEqualTo(1));
+        assertThat(f.source().calls.get()).isZero();
+        assertThat(f.breaker().admit("s").holdsTrial()).as("the trial is free again").isTrue();
     }
 
     /** Holds a call's thread between getting its permit and starting, until the test lets it go. */

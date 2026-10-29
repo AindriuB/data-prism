@@ -73,6 +73,11 @@ public final class SourceFanOut {
     /** Real time allowed for interrupted calls to unwind before the request returns anyway. */
     private static final Duration CANCEL_GRACE = Duration.ofMillis(500);
 
+    /** The gate in front of the adapter: undecided, the adapter is being called, or it never will be. */
+    private static final int UNDECIDED = 0;
+    private static final int INVOKING = 1;
+    private static final int SKIPPED = 2;
+
     private static final int NEW = 0;
     private static final int STARTED = 1;
     private static final int CANCELLED = 2;
@@ -181,7 +186,7 @@ public final class SourceFanOut {
      */
     private void countLeftovers(List<Call> calls) {
         for (Call call : calls) {
-            if (call.state.get() == STARTED && call.finishedAt == null) {
+            if (call.state.get() == STARTED && call.finishedAt == null && call.gate.get() == INVOKING) {
                 synchronized (call) {
                     // Once: a second pass (an abort after the first) must not count the same call again.
                     if (!call.threadEnded && !call.leftover) {
@@ -352,6 +357,12 @@ public final class SourceFanOut {
         final DataRequest request;
         /** NEW until a permit is held; then STARTED, or CANCELLED by the waiter first. Decided once. */
         final AtomicInteger state = new AtomicInteger(NEW);
+        /**
+         * Decides, once, whether the adapter is called: the call's thread moves it to INVOKING right before the
+         * call, and whoever cancels a STARTED call that has not got there moves it to SKIPPED. Whichever comes
+         * first wins, so a call is either settled as never called or really invoked, never both.
+         */
+        final AtomicInteger gate = new AtomicInteger(UNDECIDED);
         final CountDownLatch ended = new CountDownLatch(1);
         volatile Instant startedAt;
         volatile Instant finishedAt;
@@ -558,6 +569,9 @@ public final class SourceFanOut {
                     try {
                         if (Thread.currentThread().isInterrupted()) {
                             // Cancelled between starting and calling: do not begin remote work.
+                            call.gate.compareAndSet(UNDECIDED, SKIPPED);
+                        }
+                        if (!call.gate.compareAndSet(UNDECIDED, INVOKING)) {
                             throw new InterruptedException();
                         }
                         call.record = call.adapter.fetch(call.request);
@@ -650,6 +664,15 @@ public final class SourceFanOut {
             resolved.put(call, completed(call, deadline, limits));
             return;
         }
+        // A call that is STARTED but has not yet reached the adapter is settled as never called, and the gate
+        // keeps its thread from calling the adapter after all.
+        if (call.gate.get() == SKIPPED || call.gate.compareAndSet(UNDECIDED, SKIPPED)) {
+            call.thread.interrupt();
+            resolved.put(call, cut == Cut.INTERRUPTED
+                    ? cancelledBeforeTheCall(call, SourceOutcome.Status.FAILED, "interrupted")
+                    : cancelledBeforeTheCall(call, SourceOutcome.Status.TIMED_OUT, "cancelled before the call began"));
+            return;
+        }
         Instant from = call.startedAt == null ? now : call.startedAt;
         Duration took = Duration.between(from, now);
         // Interrupt the virtual thread so a slow source stops occupying its bulkhead permit.
@@ -683,6 +706,13 @@ public final class SourceFanOut {
                 : failedBeforeStart(call, started);
     }
 
+    /** Started, then cancelled before the adapter was called: settled exactly like a call that never started. */
+    private Resolution cancelledBeforeTheCall(Call call, SourceOutcome.Status status, String detail) {
+        Instant from = call.startedAt == null ? Instant.now(clock) : call.startedAt;
+        return new Resolution(new Fetched(new SourceOutcome(call.adapter.sourceName(), status,
+                Duration.between(from, Instant.now(clock)), detail), null), false, false, false, true);
+    }
+
     private Resolution neverCalled(Call call, SourceOutcome.Status status, String detail, Instant started) {
         return new Resolution(new Fetched(new SourceOutcome(call.adapter.sourceName(), status,
                 Duration.between(started, Instant.now(clock)), detail), null), false, false, false, true);
@@ -702,6 +732,9 @@ public final class SourceFanOut {
      * everywhere else is expired here. A waiter that was slow to notice changes neither.
      */
     private Resolution completed(Call call, Instant deadline, RequestLimits limits) {
+        if (call.gate.get() == SKIPPED) {
+            return cancelledBeforeTheCall(call, SourceOutcome.Status.TIMED_OUT, "cancelled before the call began");
+        }
         String name = call.adapter.sourceName();
         Duration took = Duration.between(call.startedAt, call.finishedAt);
         if (!call.finishedAt.isBefore(call.startedAt.plus(limits.perSourceTimeout()))) {
@@ -737,6 +770,9 @@ public final class SourceFanOut {
         } else {
             for (Call call : calls) {
                 if (call.state.compareAndSet(NEW, CANCELLED) || call.state.get() == CANCELLED) {
+                    notStarted++;
+                } else if (call.gate.get() == SKIPPED || call.gate.compareAndSet(UNDECIDED, SKIPPED)) {
+                    // Started, but the adapter will not be called: its read goes back too.
                     notStarted++;
                 }
                 call.thread.interrupt();

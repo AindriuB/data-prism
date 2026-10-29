@@ -458,4 +458,45 @@ class PerSourceBudgetChargeTest {
         assertThat(issued(budget, "S")).isZero();
         assertThat(breaker.admit("s").holdsTrial()).as("the trial is free again").isTrue();
     }
+
+    @Test
+    @DisplayName("a source cancelled after it started but before it was called costs no read and leaves its half-open trial free")
+    void aSourceCancelledBeforeTheCallIsNotCharged() throws Exception {
+        var clock = new SourceFanOutDeadlineTest.MutableClock();
+        var breaker = breakerOpenPastCooldown(clock);
+        var fanOut = new SourceFanOut(breaker, clock, SourceFanOutOptions.defaults());
+        var reached = new CountDownLatch(1);
+        var go = new CountDownLatch(1);
+        fanOut.callAfterStartObserver(name -> {
+            reached.countDown();
+            boolean interrupted = false;
+            while (go.getCount() > 0) {
+                try {
+                    go.await();
+                } catch (InterruptedException e) {
+                    interrupted = true;
+                }
+            }
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        var budget = new CountingBudget();
+        var sources = List.of(new Source("s", false));
+        var orchestrator = orchestrator(sources, budget, TestLimits.defaults().build(), fanOut);
+        var request = TestAsync.run(() -> assertThatThrownBy(() ->
+                orchestrator.buildContext(ContextRequest.of("THING", "1"), context("S"), caller()))
+                .satisfies(t -> assertThat(refusalCode(t)).isEqualTo("NO_SOURCE_DATA")));
+        assertThat(reached.await(10, TimeUnit.SECONDS)).isTrue();
+
+        clock.advance(Duration.ofSeconds(10));
+        request.get(30, TimeUnit.SECONDS);
+        go.countDown();
+
+        assertThat(sources.get(0).calls.get()).isZero();
+        assertThat(budget.reserved).containsExactly(1);
+        assertThat(budget.reads("S", "1")).as("the read of a source never called went back").isZero();
+        assertThat(issued(budget, "S")).isZero();
+        assertThat(breaker.admit("s").holdsTrial()).as("the trial is free again").isTrue();
+    }
 }
