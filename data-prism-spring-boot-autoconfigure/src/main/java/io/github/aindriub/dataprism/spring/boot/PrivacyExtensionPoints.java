@@ -75,6 +75,7 @@ public final class PrivacyExtensionPoints {
             entry("dataPrismJsonAuditProjection", Classification.PRIVACY_CRITICAL, Guard.COMPETING_BEAN_REFUSAL),
             entry("dataPrismJsonAuditProjectionPreflight", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismAuditCheckpointSink", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismAuditRecorderKeyPreflight", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismAuditRetention", Classification.REPLACEABLE, Guard.NONE),
             // Internal scheduler, not an extension point; the enum has no "internal" value, and it is not privacy-critical.
             entry("auditIntegrityHealthIndicator", Classification.REPLACEABLE, Guard.NONE),
