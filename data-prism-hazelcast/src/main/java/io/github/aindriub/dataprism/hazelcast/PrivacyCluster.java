@@ -16,6 +16,10 @@ import com.hazelcast.config.MaxSizePolicy;
 import com.hazelcast.config.RestEndpointGroup;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.instance.impl.HazelcastInstanceImpl;
+import com.hazelcast.instance.impl.HazelcastInstanceProxy;
+import com.hazelcast.internal.server.tcp.ServerSocketRegistry;
+import com.hazelcast.internal.server.tcp.TcpServer;
 import com.hazelcast.spi.properties.ClusterProperty;
 import com.hazelcast.spi.properties.HazelcastProperties;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
@@ -584,8 +588,45 @@ public final class PrivacyCluster implements AutoCloseable {
         if (!ClusterMembership.reachableOnlyFromThisHost(config)) {
             return false;
         }
-        InetAddress address = instance.getCluster().getLocalMember().getSocketAddress().getAddress();
-        return address != null && address.isLoopbackAddress();
+        return boundToLoopbackOnly(listeningAddresses(instance));
+    }
+
+    /** Whether there is at least one listening address and every one is loopback. Nothing known is not loopback. */
+    private static boolean boundToLoopbackOnly(Set<InetAddress> listening) {
+        return !listening.isEmpty() && listening.stream().allMatch(InetAddress::isLoopbackAddress);
+    }
+
+    /**
+     * The addresses the member's server sockets are really bound to: the local address of each open server socket
+     * channel Hazelcast holds. {@code getLocalMember().getSocketAddress()} is the address advertised to others,
+     * which can differ from the listening one both ways (a wildcard bind advertising 127.0.0.1, a private-interface
+     * bind advertising a translated address), so it is never used to judge where the member listens. Empty when
+     * they cannot be determined (not Hazelcast's own instance, a server of another kind, a closed socket), which
+     * every caller treats as a refusal.
+     */
+    static Set<InetAddress> listeningAddresses(HazelcastInstance instance) {
+        try {
+            // A decorated instance is resolved to the member of the same name that this JVM's factory holds.
+            boolean hazelcasts = instance instanceof HazelcastInstanceProxy || instance instanceof HazelcastInstanceImpl;
+            HazelcastInstance real = hazelcasts ? instance : Hazelcast.getHazelcastInstanceByName(instance.getName());
+            HazelcastInstanceImpl impl = real instanceof HazelcastInstanceProxy proxy ? proxy.getOriginal()
+                    : real instanceof HazelcastInstanceImpl direct ? direct : null;
+            if (impl == null || !(impl.node.getServer() instanceof TcpServer server)) {
+                return Set.of();
+            }
+            Set<InetAddress> bound = new HashSet<>();
+            for (ServerSocketRegistry.Pair pair : server.getRegistry()) {
+                var channel = pair.getChannel();
+                InetAddress address = channel == null || !channel.isOpen() ? null : channel.socket().getInetAddress();
+                if (address == null) {
+                    return Set.of();
+                }
+                bound.add(address);
+            }
+            return Set.copyOf(bound);
+        } catch (RuntimeException unknown) {
+            return Set.of();
+        }
     }
 
     /** Whether the config names any way of finding other members. */
@@ -877,8 +918,10 @@ public final class PrivacyCluster implements AutoCloseable {
         if (named.isEmpty() || !named.stream().allMatch(ClusterMembership::validInterface)) {
             return;
         }
-        InetAddress bound = started.getCluster().getLocalMember().getSocketAddress().getAddress();
-        if (bound == null || named.stream().noneMatch(pattern -> matchesInterface(pattern, bound))) {
+        Set<InetAddress> bound = listeningAddresses(started);
+        // A wildcard socket listens on every interface, so no named interface describes it.
+        if (bound.isEmpty() || bound.stream().anyMatch(a -> a.isAnyLocalAddress()
+                || named.stream().noneMatch(pattern -> matchesInterface(pattern, a)))) {
             throw new PrivacyClusterRefusal(Code.INVALID_CLUSTER_INTERFACE,
                     "the member is bound to an address outside member.interface; it is stopped");
         }
