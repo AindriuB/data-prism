@@ -23,6 +23,8 @@ class CrossValidatorKeyRedactionTest {
 
     private static final String RAW_VALUE = "Patrick Murphy";
     private static final Set<String> PROHIBITED = Set.of(RAW_VALUE);
+    /** Only the parent is declared, so the orchestrator's redaction stops at the flagged key. */
+    private static final Set<String> DECLARED = Set.of("/case");
 
     private final ObjectMapper mapper = JsonMapper.builder().build();
     private final PrivacyContext context = new PrivacyContext("CASE-1", PrivacyScopeType.CASE,
@@ -32,32 +34,34 @@ class CrossValidatorKeyRedactionTest {
     @Test
     @DisplayName("RawValueLeakValidator redacts a key only the pattern scan flags")
     void rawValueValidatorRedactsAPatternShapedKey() throws Exception {
-        JsonNode response = mapper.readTree("{\"ann@example.invalid\":{\"note\":\"" + RAW_VALUE + "\"}}");
+        JsonNode response = mapper.readTree("{\"case\":{\"ann@example.invalid\":{\"note\":\"" + RAW_VALUE + "\"}}}");
 
         ValidationResult result = new RawValueLeakValidator().validate(response, PROHIBITED, Set.of(), context);
 
         assertThat(result.violations()).singleElement().satisfies(v -> {
             assertThat(v.code()).isEqualTo("RAW_SOURCE_VALUE");
-            assertThat(v.path()).isEqualTo("$.<undeclared>.note");
+            assertThat(v.path()).isEqualTo("$.case.<undeclared>.note");
         });
         // The orchestrator's own redaction, still in place, gives the same refusal path.
-        assertThat(RefusalPaths.redact(result.violations().get(0).path(), Set.of()))
-                .isEqualTo(RefusalPaths.redact("$.ann@example.invalid.note", Set.of()));
+        assertThat(RefusalPaths.redact(result.violations().get(0).path(), DECLARED))
+                .isEqualTo(RefusalPaths.redact("$.case.ann@example.invalid.note", DECLARED))
+                .isEqualTo("$.case.<undeclared>");
     }
 
     @Test
     @DisplayName("SensitivePatternValidator redacts a key only the raw-value check flags")
     void patternValidatorRedactsARawValueKey() throws Exception {
-        JsonNode response = mapper.readTree("{\"" + RAW_VALUE + "\":{\"mail\":\"ann@example.invalid\"}}");
+        JsonNode response = mapper.readTree("{\"case\":{\"" + RAW_VALUE + "\":{\"mail\":\"ann@example.invalid\"}}}");
 
         ValidationResult result = new SensitivePatternValidator().validate(response, PROHIBITED, Set.of(), context);
 
         assertThat(result.violations()).singleElement().satisfies(v -> {
             assertThat(v.code()).isEqualTo("SENSITIVE_PATTERN");
-            assertThat(v.path()).isEqualTo("$.<undeclared>.mail");
+            assertThat(v.path()).isEqualTo("$.case.<undeclared>.mail");
         });
-        assertThat(RefusalPaths.redact(result.violations().get(0).path(), Set.of()))
-                .isEqualTo(RefusalPaths.redact("$.Patrick Murphy.mail", Set.of()));
+        assertThat(RefusalPaths.redact(result.violations().get(0).path(), DECLARED))
+                .isEqualTo(RefusalPaths.redact("$.case.Patrick Murphy.mail", DECLARED))
+                .isEqualTo("$.case.<undeclared>");
     }
 
     @Test

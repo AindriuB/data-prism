@@ -88,7 +88,7 @@ class ConfiguredJsonSourcesPatternValidatorTest {
                     context(), caller()))
                     .isInstanceOfSatisfying(PrivacyRefusedException.class, e -> {
                         assertThat(e.code()).isEqualTo("VALIDATION_FAILED");
-                        assertThat(e.getMessage()).contains("first SENSITIVE_PATTERN");
+                        assertThat(e.getMessage()).contains(", first SENSITIVE_PATTERN by ");
                     });
         });
     }

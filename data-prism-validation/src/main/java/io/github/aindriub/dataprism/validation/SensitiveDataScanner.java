@@ -81,7 +81,7 @@ public final class SensitiveDataScanner {
      *                   flags them, such as a name another validator has found to be a raw value.
      *                   It only redacts; it adds no match.
      */
-    public ScanReport scan(JsonNode response, Predicate<String> exempt, Predicate<String> redactName) {
+    ScanReport scan(JsonNode response, Predicate<String> exempt, Predicate<String> redactName) {
         Objects.requireNonNull(exempt, "exempt");
         Objects.requireNonNull(redactName, "redactName");
         Walk walk = new Walk(exempt, redactName);
@@ -93,7 +93,7 @@ public final class SensitiveDataScanner {
      * Whether any detector matches this property name, ignoring the budget and any allowlist.
      * Read-only: lets another validator redact the names this scanner would flag.
      */
-    public boolean flagsPropertyName(String name) {
+    boolean flagsPropertyName(String name) {
         if (name == null || name.isBlank()) {
             return false;
         }
