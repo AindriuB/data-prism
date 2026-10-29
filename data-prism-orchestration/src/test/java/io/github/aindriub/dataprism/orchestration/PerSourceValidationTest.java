@@ -85,7 +85,7 @@ class PerSourceValidationTest {
                 new AuditRecorder(sink::add, CLOCK, "test-1"), new PassThroughIdentityResolver(),
                 new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), SourceFanOutOptions.defaults()),
                 new InMemoryScopeBudget(), RequestLimits.DEFAULT, new NamespaceCorrelationService(resolver),
-                new SourceAliasing(new HmacValueTokenSource(KEYS)), metrics);
+                new SourceAliasing(new HmacValueTokenSource(KEYS)), metrics, OrchestrationOptions.defaults());
     }
 
     private static PrivacyContext context() {

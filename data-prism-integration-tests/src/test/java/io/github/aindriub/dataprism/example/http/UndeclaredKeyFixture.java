@@ -32,6 +32,7 @@ import io.github.aindriub.dataprism.core.spi.SyntheticValueSource;
 import io.github.aindriub.dataprism.core.spi.ValueTokenSource;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.DefaultContextOrchestrator;
+import io.github.aindriub.dataprism.orchestration.OrchestrationOptions;
 import io.github.aindriub.dataprism.orchestration.NamespaceCorrelationService;
 import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
 import io.github.aindriub.dataprism.orchestration.SourceAliasing;
@@ -235,7 +236,7 @@ public final class UndeclaredKeyFixture {
                     new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(),
                             SourceFanOutOptions.defaults()),
                     new InMemoryScopeBudget(), RequestLimits.DEFAULT, new NamespaceCorrelationService(resolver),
-                    new SourceAliasing(tokens), PrivacyMetrics.none());
+                    new SourceAliasing(tokens), PrivacyMetrics.none(), OrchestrationOptions.defaults());
             this.pseudonymisationVersion = PseudonymisationVersion.HMAC_SHA256_V1.withVocabulary(vocabulary.id());
         }
 

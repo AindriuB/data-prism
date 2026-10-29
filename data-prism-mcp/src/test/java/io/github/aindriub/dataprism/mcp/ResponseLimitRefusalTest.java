@@ -67,7 +67,7 @@ class ResponseLimitRefusalTest {
                 new PassThroughIdentityResolver(),
                 new SourceFanOut(SourceCircuitBreaker.disabled(), CLOCK, SourceFanOutOptions.defaults()),
                 new InMemoryScopeBudget(), limits(records, bytes),
-                (raw, context) -> findings, new SourceAliasing(new HmacValueTokenSource(KEYS)), PrivacyMetrics.none());
+                (raw, context) -> findings, new SourceAliasing(new HmacValueTokenSource(KEYS)), PrivacyMetrics.none(), OrchestrationOptions.defaults());
         var policy = new SecurityPolicy(Set.of("test"), Map.of("operator", Set.of("GET_ENTITY_CONTEXT", "COMPARE_ENTITY_SOURCES")));
         var caller = new AuthenticatedCaller("principal-1", "client-1", Set.of("operator"), "test", "case-1", null);
         if (comparison) {

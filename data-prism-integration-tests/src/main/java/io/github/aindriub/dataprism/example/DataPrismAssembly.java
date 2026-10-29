@@ -32,6 +32,7 @@ import io.github.aindriub.dataprism.orchestration.SourceFanOut;
 import io.github.aindriub.dataprism.orchestration.SourceFanOutOptions;
 import io.github.aindriub.dataprism.validation.SensitivePatternValidator;
 import io.github.aindriub.dataprism.orchestration.DefaultContextOrchestrator;
+import io.github.aindriub.dataprism.orchestration.OrchestrationOptions;
 import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
 import io.github.aindriub.dataprism.orchestration.SourceAliasing;
 import io.github.aindriub.dataprism.pseudonymisation.HmacSyntheticGenerator;
@@ -124,7 +125,7 @@ public final class DataPrismAssembly {
                 new AuditRecorder(sink, clock, "example-1"), new PassThroughIdentityResolver(),
                 new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), SourceFanOutOptions.defaults().withMdc(mdc)),
                 new InMemoryScopeBudget(), RequestLimits.DEFAULT, new NamespaceCorrelationService(resolver),
-                new SourceAliasing(tokens), PrivacyMetrics.none());
+                new SourceAliasing(tokens), PrivacyMetrics.none(), OrchestrationOptions.defaults());
 
         this.pseudonymisationVersion =
                 PseudonymisationVersion.HMAC_SHA256_V1.withVocabulary(vocabulary.id());

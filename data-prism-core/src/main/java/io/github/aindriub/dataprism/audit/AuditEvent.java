@@ -67,6 +67,15 @@ public record AuditEvent(
         String approverId,
         String externalCorrelationId) {
 
+    /**
+     * The reserved disposition key that records the effective source-label setting of a call, with
+     * the value {@code REAL} or {@code ALIAS} and no other (catalog OD-C2 (a)). The only key whose
+     * value grammar differs from the rest; a field path cannot be spelled this way.
+     */
+    public static final String NAMES_KEY = "names";
+
+    private static final java.util.Set<String> NAMES_VALUES = java.util.Set.of("REAL", "ALIAS");
+
     /** The record version written by this code. */
     public static final int CURRENT_VERSION = 3;
 
@@ -82,7 +91,12 @@ public record AuditEvent(
         rejectedArguments = Set.copyOf(rejectedArguments);
         fieldDispositions = java.util.Collections.unmodifiableMap(new TreeMap<>(fieldDispositions));
         fieldDispositions.forEach((path, action) -> {
-            if (!isValidAction(action)) {
+            if (NAMES_KEY.equals(path)) {
+                if (!NAMES_VALUES.contains(action)) {
+                    throw new IllegalArgumentException(
+                            "the '" + NAMES_KEY + "' disposition must be REAL or ALIAS");
+                }
+            } else if (!isValidAction(action)) {
                 throw new IllegalArgumentException(
                         "field disposition for '" + path + "' is not a PrivacyAction name, REFUSED or REFUSED:<code>");
             }

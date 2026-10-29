@@ -102,7 +102,7 @@ class ExternalCorrelationPropagationTest {
                 new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), SourceFanOutOptions.defaults()),
                 new InMemoryScopeBudget(),
                 TestLimits.defaults().scopeReadBudget(1_000).build(), new NamespaceCorrelationService(resolver),
-                new SourceAliasing(new HmacValueTokenSource(KEYS)), PrivacyMetrics.none());
+                new SourceAliasing(new HmacValueTokenSource(KEYS)), PrivacyMetrics.none(), OrchestrationOptions.defaults());
     }
 
     private static PrivacyContext context() {

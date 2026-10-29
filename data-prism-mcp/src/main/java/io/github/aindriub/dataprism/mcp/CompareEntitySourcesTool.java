@@ -163,7 +163,15 @@ public final class CompareEntitySourcesTool {
                                         "description", "The kind of entity, e.g. CUSTOMER"),
                                 "subjectId", Map.of(
                                         "type", "string",
-                                        "description", "The correlation identifier for the subject"))))
+                                        "description", "The correlation identifier for the subject"),
+                                "targetSources", Map.of(
+                                        "type", "array",
+                                        "description", "Source labels as returned by list_sources. When "
+                                                + "absent, every permitted source is asked, and the call is "
+                                                + "refused if there are too many.",
+                                        "items", Map.of("type", "string", "minLength", 1, "maxLength", 64),
+                                        "minItems", 1,
+                                        "uniqueItems", true))))
                 .build();
 
         return McpServerFeatures.SyncToolSpecification.builder()
@@ -192,6 +200,13 @@ public final class CompareEntitySourcesTool {
 
         if (entityType == null || subjectId == null) {
             return error("entityType and subjectId are both required");
+        }
+
+        List<String> targetSources = targetSources(arguments);
+        if (targetSources != null && targetSources.isEmpty()) {
+            // Mirrors the schema (minItems 1, unique, 1 to 64 characters), which a client may not have
+            // enforced. The label is never echoed or recorded.
+            return error("targetSources is not valid");
         }
 
         AuthenticatedCaller caller = callerFrom(exchange);
@@ -233,10 +248,11 @@ public final class CompareEntitySourcesTool {
 
         ContextResponse response = null;
         try {
+            ContextRequest contextRequest = new ContextRequest(entityType, subjectId, rejectedArguments, NAME,
+                    true, admitted.approvalId(), admitted.approverPrincipalId(), inbound.id(),
+                    entityTypes.audited(entityType));
             response = orchestrator.buildContext(
-                    new ContextRequest(entityType, subjectId, rejectedArguments, NAME, true,
-                            admitted.approvalId(), admitted.approverPrincipalId(), inbound.id(),
-                            entityTypes.audited(entityType)),
+                    targetSources == null ? contextRequest : contextRequest.withTargetSources(targetSources),
                     session.privacyContext(), session.investigationContext());
             ComparisonResponse comparison = new ComparisonResponse(
                     response.entityType(), response.subject(), identity(response), findings(response));
@@ -413,6 +429,28 @@ public final class CompareEntitySourcesTool {
         }
         String s = String.valueOf(value);
         return s.isBlank() ? null : s;
+    }
+
+    /**
+     * The labels the caller chose: {@code null} when it sent none, an empty list when what it sent breaks
+     * the schema (not an array of distinct strings of 1 to 64 characters, or empty). Never logged.
+     */
+    private static List<String> targetSources(Map<String, Object> arguments) {
+        Object value = arguments == null ? null : arguments.get("targetSources");
+        if (value == null) {
+            return null;
+        }
+        if (!(value instanceof java.util.Collection<?> items) || items.isEmpty()) {
+            return List.of();
+        }
+        java.util.LinkedHashSet<String> labels = new java.util.LinkedHashSet<>();
+        for (Object item : items) {
+            if (!(item instanceof String label) || label.isEmpty() || label.length() > 64
+                    || !labels.add(label)) {
+                return List.of();
+            }
+        }
+        return List.copyOf(labels);
     }
 
     private static McpSchema.CallToolResult error(String message) {

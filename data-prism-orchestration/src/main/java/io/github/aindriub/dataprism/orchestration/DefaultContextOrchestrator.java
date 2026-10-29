@@ -5,6 +5,7 @@ import tools.jackson.databind.node.JsonNodeFactory;
 import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.audit.AuditEntry;
+import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.core.spi.DataRequest;
 import io.github.aindriub.dataprism.core.model.ConsistencyFinding;
@@ -37,6 +38,10 @@ import io.github.aindriub.dataprism.validation.ValidationResult;
 import io.github.aindriub.dataprism.validation.Violation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import io.github.aindriub.dataprism.orchestration.catalog.SourceCatalog;
+import io.github.aindriub.dataprism.orchestration.catalog.SourceLabels;
+import io.github.aindriub.dataprism.orchestration.catalog.SourceSelection;
 
 import java.time.Clock;
 import java.util.ArrayList;
@@ -88,6 +93,8 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
     private final EntityCorrelationService correlation;
     private final SourceAliasing aliasing;
     private final PrivacyMetrics metrics;
+    private final OrchestrationOptions options;
+    private final SourceCatalog catalog;
 
     /**
      * The standard pipeline: the supplied comparison check, plus the pattern
@@ -105,7 +112,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                 synthetics, fingerprinter, audit, new PassThroughIdentityResolver(),
                 new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), SourceFanOutOptions.defaults()),
                 new InMemoryScopeBudget(), RequestLimits.DEFAULT,
-                new NamespaceCorrelationService(resolver), aliasing, PrivacyMetrics.none());
+                new NamespaceCorrelationService(resolver), aliasing, PrivacyMetrics.none(), OrchestrationOptions.defaults());
     }
 
     /**
@@ -114,6 +121,9 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
      * <p>The shorter constructor above assumes every source shares a key and
      * that failures need no breaker, which is true of a single stub and of
      * very little else. A real deployment uses this one.
+     *
+     * @param options the catalog, visibility, real-names and selection settings; every later optional
+     *                collaborator is added there, so this signature does not move again
      */
     public DefaultContextOrchestrator(List<DataSourceAdapter<?>> adapters, ScrubbingEngine scrubber,
                                       FieldMetadataResolver resolver,
@@ -123,7 +133,8 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                                       IdentityResolver identities, SourceFanOut fanOut,
                                       ScopeBudget budget, RequestLimits limits,
                                       EntityCorrelationService correlation,
-                                      SourceAliasing aliasing, PrivacyMetrics metrics) {
+                                      SourceAliasing aliasing, PrivacyMetrics metrics,
+                                      OrchestrationOptions options) {
         this.adapters = List.copyOf(adapters);
         this.scrubber = Objects.requireNonNull(scrubber, "scrubber");
         this.resolver = Objects.requireNonNull(resolver, "resolver");
@@ -138,6 +149,8 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         this.aliasing = Objects.requireNonNull(aliasing, "aliasing");
         this.correlation = Objects.requireNonNull(correlation, "correlation");
         this.metrics = Objects.requireNonNull(metrics, "metrics");
+        this.options = Objects.requireNonNull(options, "options");
+        this.catalog = options.catalog().orElseGet(() -> SourceCatalog.build(this.adapters, Map.of()));
         if (this.validators.isEmpty()) {
             throw new IllegalArgumentException("at least one response validator is required");
         }
@@ -170,13 +183,38 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         Map<String, ObjectNode> trees = Map.of();
         boolean[] allSourcesRefused = {false};
         Map<String, String> dispositions = new LinkedHashMap<>();
+        // The effective label setting, on every event of this call, a denial included (OD-C2 (a)).
+        dispositions.put(AuditEvent.NAMES_KEY,
+                SourceLabels.effectiveKind(options.realNames(), investigationContext, context).name());
+        boolean[] selectionRefused = {false};
         // Every declared pointer any source reported: what a validator's path is
         // checked against before it is allowed into a refusal.
         Set<String> declared = new LinkedHashSet<>();
 
         ContextResponse response;
         try {
-            FetchOutcome fetched = fetchAndScrub(request, context, investigationContext,
+            SourceLabels labels;
+            try {
+                labels = SourceLabels.forRequest(catalog, options.visibility(), aliasing, options.realNames(),
+                        investigationContext, context);
+            } catch (SourceLabels.Collision collision) {
+                // Both real names go to the audit trail; the client learns only the code.
+                selectionRefused[0] = true;
+                collision.sources().forEach(name -> sources.add(
+                        new SourceOutcome(name, SourceOutcome.Status.REFUSED, java.time.Duration.ZERO, null)));
+                throw collision;
+            }
+            List<DataSourceAdapter<?>> selected;
+            try {
+                selected = select(request, labels);
+            } catch (SourceSelection.Refusal refusal) {
+                selectionRefused[0] = true;
+                if (refusal.auditReason() != null) {
+                    dispositions.put("catalog", "REFUSED:" + refusal.auditReason());
+                }
+                throw refusal;
+            }
+            FetchOutcome fetched = fetchAndScrub(request, context, labels, selected,
                     sources, prohibited, dispositions);
             trees = fetched.trees();
             raw = fetched.raw();
@@ -221,7 +259,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
             ArrayNode assembled = JsonNodeFactory.instance.arrayNode();
             trees.entrySet().stream()
                     .sorted(Map.Entry.comparingByKey(java.util.Comparator.comparing(
-                            (String name) -> aliasing.nameFor(name, investigationContext, context))))
+                            labels::labelOf)))
                     .forEach(entry -> assembled.add(entry.getValue()));
             List<Violation> violations = new ArrayList<>();
             for (LlmResponseValidator validator : validators) {
@@ -238,7 +276,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                                 + " by " + violations.get(0).detectionMethod() + "; response withheld");
             }
             response = ContextResponse.of(request.entityType(), subjectToken, sources,
-                    findings, trees, fieldsByNamespace(raw), aliasing, investigationContext, context, correlationId);
+                    findings, trees, fieldsByNamespace(raw), labels, correlationId);
             if (ResponseSize.records(response) > limits.maxRecords()) {
                 throw new PrivacyRefusedException("TOO_MANY_RECORDS", "$",
                         "response exceeds configured record limit " + limits.maxRecords());
@@ -251,7 +289,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
             if (failure instanceof PrivacyRefusedException) {
                 metrics.increment(Metric.PRIVACY_FAILCLOSED);
             }
-            if (failure instanceof PrivacyRefusedException && !allSourcesRefused[0]) {
+            if (failure instanceof PrivacyRefusedException && !allSourcesRefused[0] && !selectionRefused[0]) {
                 // Refusal paths are built from payload keys, so none is ever recorded.
                 // Not when every source was refused: each already has its own key and code.
                 dispositions.put("merged:<refused>", "REFUSED");
@@ -364,12 +402,12 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
      * and there is nothing left to compare.
      */
     private FetchOutcome fetchAndScrub(ContextRequest request, PrivacyContext context,
-                                       InvestigationContext investigationContext,
+                                       SourceLabels labels, List<DataSourceAdapter<?>> selected,
                                        List<SourceOutcome> sources, Set<String> prohibited,
                                        Map<String, String> dispositions) {
         List<PrivacyRefusedException> scrubRefusals = new ArrayList<>();
         List<Scrubbed> scrubbed = new ArrayList<>();
-        for (SourceFanOut.Fetched fetched : fetchAll(request, context)) {
+        for (SourceFanOut.Fetched fetched : fetchAll(request, context, selected)) {
             Object record = fetched.record();
             if (record == null) {
                 sources.add(fetched.outcome());
@@ -415,7 +453,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                 continue;
             }
             raw.add(new EntityCorrelationService.SourceRecord(
-                    aliasing.nameFor(sourceName, investigationContext, context), s.record()));
+                    labels.labelOf(sourceName), s.record()));
             emitted.addAll(s.result().emitted());
             // Real source name, never the alias: the audit trail is operator-facing.
             s.result().dispositions().forEach((pointer, action) ->
@@ -438,8 +476,9 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
      * answer looks correct, so there is nothing later in the pipeline that could
      * notice.
      */
-    private List<SourceFanOut.Fetched> fetchAll(ContextRequest request, PrivacyContext context) {
-        SourceFanOut.Plan plan = fanOut.plan(adapters, requestsPerSource(request), limits);
+    private List<SourceFanOut.Fetched> fetchAll(ContextRequest request, PrivacyContext context,
+                                                List<DataSourceAdapter<?>> selected) {
+        SourceFanOut.Plan plan = fanOut.plan(selected, requestsPerSource(request, selected), limits);
         ReadReservation reservation = null;
         if (!plan.callable().isEmpty()) {
             try {
@@ -498,6 +537,19 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
     }
 
     /**
+     * Which adapters this call asks, decided before the budget is touched: the ones the caller chose
+     * by label, or, with no choice, every permitted source, if there are few enough of them. A source
+     * the catalog does not hold is never asked.
+     */
+    private List<DataSourceAdapter<?>> select(ContextRequest request, SourceLabels labels) {
+        java.util.Set<String> names = request.targetSources().isPresent()
+                ? SourceSelection.targeted(labels, request.targetSources().get(), request.entityType(),
+                        limits.maxSources())
+                : SourceSelection.unselected(labels, request.entityType(), options.unselectedSourceLimit());
+        return adapters.stream().filter(adapter -> names.contains(adapter.sourceName())).toList();
+    }
+
+    /**
      * What to ask each source for.
      *
      * <p>The identity resolver decides, because a source keyed by its own
@@ -506,8 +558,9 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
      * that only some systems know from producing a row of misleading
      * no-data outcomes.
      */
-    private Map<String, DataRequest> requestsPerSource(ContextRequest request) {
-        List<String> names = adapters.stream().map(DataSourceAdapter::sourceName).toList();
+    private Map<String, DataRequest> requestsPerSource(ContextRequest request,
+                                                       List<DataSourceAdapter<?>> selected) {
+        List<String> names = selected.stream().map(DataSourceAdapter::sourceName).toList();
         Map<String, DataRequest> requests = new LinkedHashMap<>();
         for (IdentityResolver.SourceRef ref : identities.expand(
                 new IdentityResolver.CanonicalId(request.subjectId()), names)) {
