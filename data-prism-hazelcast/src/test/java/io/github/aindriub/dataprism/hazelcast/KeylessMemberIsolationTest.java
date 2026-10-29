@@ -305,7 +305,7 @@ class KeylessMemberIsolationTest {
     }
 
     @Test
-    void aKeylessMemberBoundToLoopbackIsNotRefusedForAdvertisingAnotherAddress() {
+    void aKeylessMemberWithAPublicAddressIsRefusedByTheConfigRuleWhileItsListenerIsStillSeenAsLoopback() {
         Config config = keylessConfig(TestMembers.uniqueName("boundnat"), FreePorts.consecutive(1));
         config.getNetworkConfig().setPublicAddress("10.9.9.9");
         HazelcastInstance real = Hazelcast.newHazelcastInstance(PrivacyCluster.configure(config));
@@ -336,6 +336,13 @@ class KeylessMemberIsolationTest {
         assertThat(elsewhere.getMessage()).doesNotContain("127.0.0.1").doesNotContain("10.8");
     }
 
+    /** A configuration that was not hardened, so a pattern that hardening would refuse reaches the launch check. */
+    private static Config rawInterfaces(String pattern) {
+        Config config = new Config();
+        config.getNetworkConfig().getInterfaces().setEnabled(true).addInterface(pattern);
+        return config;
+    }
+
     private static Config interfaceOnly(String pattern) {
         return PrivacyCluster.configure(ClusterMembership
                 .tcpIp(TestMembers.uniqueName("boundpattern"), List.of("10.9.9.1:5701")).withPort(5701)
@@ -356,6 +363,42 @@ class KeylessMemberIsolationTest {
                 .isEqualTo("127.0.0.1");
         Throwable refused = catchThrowable(() -> PrivacyCluster.refuseUnlessBoundWithinMembership(
                 real, config, false));
+        assertThat(refused).isInstanceOf(PrivacyClusterRefusal.class);
+        assertThat(((PrivacyClusterRefusal) refused).code()).isEqualTo(Code.INVALID_CLUSTER_INTERFACE);
+    }
+
+    @Test
+    void aWildcardSocketIsRefusedForAKeyedMemberEvenWhenAnInterfacePatternMatchesEveryAddress() {
+        int port = FreePorts.consecutive(1);
+        Config config = ClusterMembership.tcpIp(TestMembers.uniqueName("keyedany"), List.of("127.0.0.1:" + port))
+                .withPort(port).withInterface("127.0.0.1").toConfig();
+        config.setProperty("hazelcast.socket.bind.any", "true");
+        config.setProperty("hazelcast.socket.server.bind.any", "true");
+        HazelcastInstance real = Hazelcast.newHazelcastInstance(config);
+        assertThat(PrivacyCluster.listeningAddresses(real)).isNotEmpty().allMatch(InetAddress::isAnyLocalAddress);
+        Throwable refused = catchThrowable(() -> PrivacyCluster.refuseUnlessBoundWithinMembership(
+                real, rawInterfaces("*.*.*.*"), false));
+        assertThat(refused).isInstanceOf(PrivacyClusterRefusal.class);
+        assertThat(((PrivacyClusterRefusal) refused).code()).isEqualTo(Code.INVALID_CLUSTER_INTERFACE);
+    }
+
+    @Test
+    void anIpv4WildcardIsNotWithinAnyInterfaceNotEvenOneThatMatchesIt() throws Exception {
+        InetAddress any = InetAddress.getByAddress(new byte[4]);
+        InetAddress loopback = InetAddress.getByAddress(new byte[] {127, 0, 0, 1});
+        assertThat(any.isAnyLocalAddress()).isTrue();
+        assertThat(PrivacyCluster.listeningWithin(Set.of(loopback), List.of("*.*.*.*"))).isTrue();
+        assertThat(PrivacyCluster.listeningWithin(Set.of(any), List.of("*.*.*.*"))).isFalse();
+        assertThat(PrivacyCluster.listeningWithin(Set.of(any, loopback), List.of("127.0.0.1"))).isFalse();
+        assertThat(PrivacyCluster.listeningWithin(Set.of(), List.of("*.*.*.*"))).isFalse();
+    }
+
+    @Test
+    void aKeyedInstanceWhoseListeningAddressCannotBeDeterminedIsRefused() {
+        HazelcastInstance real = soloInstance();
+        real.shutdown();
+        Throwable refused = catchThrowable(() -> PrivacyCluster.refuseUnlessBoundWithinMembership(
+                real, rawInterfaces("*.*.*.*"), false));
         assertThat(refused).isInstanceOf(PrivacyClusterRefusal.class);
         assertThat(((PrivacyClusterRefusal) refused).code()).isEqualTo(Code.INVALID_CLUSTER_INTERFACE);
     }

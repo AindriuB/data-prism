@@ -581,8 +581,8 @@ public final class PrivacyCluster implements AutoCloseable {
     /**
      * Whether the instance can be reached only from this host. All must hold: it listens on no more than the
      * interfaces named ({@code bind.any} false, for the general and the server socket setting), those interfaces
-     * are enabled and loopback entries only, no public address is advertised, and its member's own address is a
-     * loopback address. The advertised address alone says nothing about the listening socket.
+     * are enabled and loopback entries only, no public address is advertised, and every address the member listens
+     * on is loopback. The advertised address says nothing about the listening socket and is not consulted.
      */
     private static boolean boundToLoopback(HazelcastInstance instance, Config config) {
         if (!ClusterMembership.reachableOnlyFromThisHost(config)) {
@@ -624,7 +624,7 @@ public final class PrivacyCluster implements AutoCloseable {
                 bound.add(address);
             }
             return Set.copyOf(bound);
-        } catch (RuntimeException unknown) {
+        } catch (RuntimeException | LinkageError unknown) {
             return Set.of();
         }
     }
@@ -881,9 +881,12 @@ public final class PrivacyCluster implements AutoCloseable {
             // The address the member really bound, not the one it was asked for, before anything is served.
             refuseUnlessBoundWithinMembership(started, hardened, isolate);
             ClusterMembership.refuseUnsealedState(started);
-        } catch (RuntimeException refused) {
-            // Started here, so stopped here: a member that refuses serves nothing.
-            started.shutdown();
+        } catch (RuntimeException | Error refused) {
+            // Started here, so stopped here: a member that refuses serves nothing, and a check that failed in any
+            // way short of the JVM itself failing leaves no member running.
+            if (!(refused instanceof VirtualMachineError)) {
+                started.shutdown();
+            }
             throw refused;
         }
         PrivacyCluster cluster = new PrivacyCluster(started, reidentificationEnabled, approvalSweepInterval, keys,
@@ -918,13 +921,19 @@ public final class PrivacyCluster implements AutoCloseable {
         if (named.isEmpty() || !named.stream().allMatch(ClusterMembership::validInterface)) {
             return;
         }
-        Set<InetAddress> bound = listeningAddresses(started);
-        // A wildcard socket listens on every interface, so no named interface describes it.
-        if (bound.isEmpty() || bound.stream().anyMatch(a -> a.isAnyLocalAddress()
-                || named.stream().noneMatch(pattern -> matchesInterface(pattern, a)))) {
+        if (!listeningWithin(listeningAddresses(started), named)) {
             throw new PrivacyClusterRefusal(Code.INVALID_CLUSTER_INTERFACE,
                     "the member is bound to an address outside member.interface; it is stopped");
         }
+    }
+
+    /**
+     * Whether there is at least one listening address and every one matches a named interface. A wildcard socket
+     * listens on every interface, so no named interface describes it, even a pattern that matches 0.0.0.0.
+     */
+    static boolean listeningWithin(Set<InetAddress> listening, List<String> named) {
+        return !listening.isEmpty() && listening.stream().noneMatch(a -> a.isAnyLocalAddress()
+                || named.stream().noneMatch(pattern -> matchesInterface(pattern, a)));
     }
 
     /** Whether the IPv4 address matches an interface pattern: each octet a number, a range or a wildcard. */
