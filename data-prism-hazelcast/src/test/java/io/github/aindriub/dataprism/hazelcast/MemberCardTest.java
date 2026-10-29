@@ -973,6 +973,129 @@ class MemberCardTest {
         assertThat(PrivacyCluster.liveWrapperCount(instance)).as("only the serving wrapper is live").isEqualTo(1);
     }
 
+    // ---- a slow first write at start-up ------------------------------------------------------------------
+
+    /** The write bound of the slow-start tests: far below how long the fault holds the key. */
+    private static final Duration SHORT_WRITE_BOUND = Duration.ofMillis(300);
+    /** How long the fault holds the key: well over the write bound, well under the start-up bound. */
+    private static final long FAULT_MILLIS = 1500;
+
+    private PrivacyCluster.Environment shortWriteEnvironment() {
+        return new PrivacyCluster.Environment(fixture.clock, new Fixture.Metrics(), new RecordingLogger().logger(),
+                Duration.ofHours(1), SHORT_WRITE_BOUND);
+    }
+
+    /** One member that holds no wrapper yet. */
+    private HazelcastInstance loneInstance(String prefix, String backupTimeoutMillis) {
+        int port = FreePorts.consecutive(1);
+        Config config = PrivacyCluster.configure(ClusterMembership.tcpIp(TestMembers.uniqueName(prefix),
+                List.of("127.0.0.1:" + port)).withPort(port).withInterface("127.0.0.1").toConfig());
+        if (backupTimeoutMillis != null) {
+            config.setProperty("hazelcast.operation.backup.timeout.millis", backupTimeoutMillis);
+        }
+        return Hazelcast.newHazelcastInstance(config);
+    }
+
+    /**
+     * Holds {@code key} from another thread (a lock is owned by a thread, so the thread that starts the wrapper
+     * would pass through its own lock), as a member that is mid-migration or holding a lock would, so that a write
+     * to it does not finish; lets go {@link #FAULT_MILLIS} later, from the same thread, when {@code release}.
+     */
+    private static java.util.concurrent.ScheduledExecutorService holdKey(HazelcastInstance instance, String key,
+                                                                          boolean release) {
+        IMap<String, Object> cards = instance.getMap(PrivacyCluster.MEMBER_CARD_MAP);
+        var holder = java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
+        try {
+            holder.submit(() -> cards.lock(key)).get(30, TimeUnit.SECONDS);
+        } catch (Exception failed) {
+            throw new IllegalStateException(failed);
+        }
+        if (release) {
+            holder.schedule(() -> cards.unlock(key), FAULT_MILLIS, TimeUnit.MILLISECONDS);
+        }
+        return holder;
+    }
+
+    /**
+     * A write that Hazelcast has not completed within the write bound (a lost backup acknowledgement during the
+     * join-time migration completes only when Hazelcast's own backup timeout, 5 s by default, has gone by) must not
+     * make a member refuse to start: the first card write is given Hazelcast's own bound on top.
+     */
+    @Test
+    @Timeout(240)
+    void aFirstCardWriteThatOutlastsTheWriteBoundButFinishesStillStartsTheMember() {
+        HazelcastInstance instance = loneInstance("slowcard", null);
+        String cardKey = new KeyedNames(TestMembers.KEYS).mapKey(PrivacyCluster.MEMBER_CARD_MAP,
+                instance.getCluster().getLocalMember().getUuid().toString());
+        var releaser = holdKey(instance, cardKey, true);
+        try {
+            PrivacyCluster member = PrivacyCluster.using(instance, false, Duration.ofMinutes(1), TestMembers.KEYS,
+                    Fixture.settings(UnverifiedMemberAction.REFUSE), shortWriteEnvironment());
+
+            assertThat(member.securityStatus().serving()).as("serving once its card is published and verified")
+                    .isTrue();
+            assertThat(member.memberCards().orElseThrow().verifiedMembers())
+                    .containsExactly(instance.getCluster().getLocalMember().getUuid());
+            member.close();
+        } finally {
+            releaser.shutdownNow();
+        }
+    }
+
+    /** The same slow write, for the sentinel a first member writes before its card. */
+    @Test
+    @Timeout(240)
+    void aSentinelWriteThatOutlastsTheWriteBoundButFinishesStillStartsTheMember() {
+        HazelcastInstance instance = loneInstance("slowsentinel", null);
+        var releaser = holdKey(instance, ClusterSentinel.KEY, true);
+        try {
+            PrivacyCluster member = PrivacyCluster.using(instance, false, Duration.ofMinutes(1), TestMembers.KEYS,
+                    Fixture.settings(UnverifiedMemberAction.REFUSE), shortWriteEnvironment());
+
+            assertThat(member.securityStatus().serving()).isTrue();
+            member.close();
+        } finally {
+            releaser.shutdownNow();
+        }
+    }
+
+    /** The start-up bound is longer, not unbounded: a write that never finishes still refuses the member. */
+    @Test
+    @Timeout(240)
+    void aFirstCardWriteThatNeverFinishesStillRefusesTheMemberAndItDoesNotServe() {
+        HazelcastInstance instance = loneInstance("stuckcard", "500");
+        String cardKey = new KeyedNames(TestMembers.KEYS).mapKey(PrivacyCluster.MEMBER_CARD_MAP,
+                instance.getCluster().getLocalMember().getUuid().toString());
+        var releaser = holdKey(instance, cardKey, false);
+        try {
+            assertThatThrownBy(() -> PrivacyCluster.using(instance, false, Duration.ofMinutes(1), TestMembers.KEYS,
+                    Fixture.settings(UnverifiedMemberAction.REFUSE), shortWriteEnvironment()))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessage("a member card write did not finish in time");
+            assertThat(PrivacyCluster.liveWrapperCount(instance)).isZero();
+        } finally {
+            releaser.shutdownNow();
+        }
+    }
+
+    /** The start-up bound is the write bound, plus Hazelcast's backup timeout from the member's own settings. */
+    @Test
+    void theStartUpWriteBoundIsTheWriteBoundPlusHazelcastsBackupTimeoutPlusASweep() {
+        HazelcastInstance defaults = loneInstance("bounddefault", null);
+        HazelcastInstance tuned = loneInstance("boundtuned", "1500");
+        var environment = shortWriteEnvironment();
+        PrivacyCluster first = PrivacyCluster.using(defaults, false, Duration.ofMinutes(1), TestMembers.KEYS,
+                Fixture.settings(UnverifiedMemberAction.REFUSE), environment);
+        PrivacyCluster second = PrivacyCluster.using(tuned, false, Duration.ofMinutes(1), TestMembers.KEYS,
+                Fixture.settings(UnverifiedMemberAction.REFUSE), environment);
+
+        Duration sweep = ClusterSentinel.BACKUP_SWEEP_ALLOWANCE;
+        assertThat(first.memberCards().orElseThrow().startupWriteBound()).isEqualTo(SHORT_WRITE_BOUND.plusMillis(5000).plus(sweep));
+        assertThat(second.memberCards().orElseThrow().startupWriteBound()).isEqualTo(SHORT_WRITE_BOUND.plusMillis(1500).plus(sweep));
+        first.close();
+        second.close();
+    }
+
     @Test
     void aWrapperThatHasNotStartedIsNotServing() {
         PrivacyCluster[] wrappers = twoWrappers();

@@ -1,6 +1,9 @@
 package io.github.aindriub.dataprism.hazelcast;
 
+import com.hazelcast.config.Config;
 import com.hazelcast.map.IMap;
+import com.hazelcast.spi.properties.ClusterProperty;
+import com.hazelcast.spi.properties.HazelcastProperties;
 import io.github.aindriub.dataprism.hazelcast.seal.ClusterKeys;
 import io.github.aindriub.dataprism.hazelcast.seal.Opened;
 import io.github.aindriub.dataprism.hazelcast.seal.SealedWrites;
@@ -68,11 +71,37 @@ final class ClusterSentinel {
         return inFlight.get();
     }
 
+    /**
+     * What is added to Hazelcast's backup timeout for the invocation monitor that enforces it, which runs on a
+     * period of its own: a write that lost its backup acknowledgement was seen to finish 0.5 s to 0.6 s after it.
+     */
+    static final Duration BACKUP_SWEEP_ALLOWANCE = Duration.ofSeconds(2);
+
     ClusterSentinel(PrivacyCluster cluster, ClusterKeys keys, Sealer sealer, Duration writeTimeout) {
         this.cluster = Objects.requireNonNull(cluster, "cluster");
         this.keys = Objects.requireNonNull(keys, "keys");
         this.sealer = Objects.requireNonNull(sealer, "sealer");
         this.writeTimeout = Objects.requireNonNull(writeTimeout, "writeTimeout");
+    }
+
+    /**
+     * How long the first write of a member may take as it starts. A write that races the partition migration a
+     * join sets off can lose the acknowledgement of its synchronous backup; Hazelcast then completes it only when
+     * its own backup timeout has gone by (5 s unless the member sets it), which is as long as the ordinary bound.
+     * Refusing to start on such a write would refuse a healthy member for nothing a retry could mend, because the
+     * write has been made and a second one is not started while it is outstanding. The bound is the ordinary one,
+     * then Hazelcast's own, then the sweep that enforces it. It is still a bound: a write that does not finish
+     * even then is refused.
+     */
+    Duration startupBound() {
+        Config config;
+        try {
+            config = cluster.instance().getConfig();
+        } catch (RuntimeException unreadable) {
+            config = new Config();
+        }
+        long backupMillis = new HazelcastProperties(config).getMillis(ClusterProperty.OPERATION_BACKUP_TIMEOUT_MILLIS);
+        return writeTimeout.plusMillis(Math.max(0, backupMillis)).plus(BACKUP_SWEEP_ALLOWANCE);
     }
 
     /** Any value can be stored under a card key by a member without the key, so values are read as objects. */
@@ -119,6 +148,11 @@ final class ClusterSentinel {
      * sentinel that another member wrote in the meantime is the one judged.
      */
     Outcome ensure() {
+        return ensure(writeTimeout);
+    }
+
+    /** As {@link #ensure()}, waiting at most {@code bound} for the write. */
+    Outcome ensure(Duration bound) {
         IMap<String, Object> cards = map();
         Object stored = cards.get(KEY);
         if (stored == null) {
@@ -139,7 +173,7 @@ final class ClusterSentinel {
             }
             writes.incrementAndGet();
             write.whenComplete((done, failure) -> inFlight.set(false));
-            if (Boolean.TRUE.equals(bounded(write, writeTimeout))) {
+            if (Boolean.TRUE.equals(bounded(write, bound))) {
                 return Outcome.CURRENT;
             }
             stored = cards.get(KEY);
