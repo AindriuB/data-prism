@@ -29,6 +29,9 @@ A tombstone and the element it covers are pruned together, once every verified m
 - Each tombstone carries a grow-only `acks` set of member uuids. Merge unions the acks of the same tombstone id. The commit guard requires each stored tombstone's acks to be a subset of `next`'s, except for a pruned pair (below).
 - A member that holds tombstone T, and is not in acks(T), adds its own uuid on its next write. A lease refresh counts as a write.
 - A tick on a member whose ack is missing from some held tombstone makes one ack write, at most once per lease. It is `held ⊔ stored` plus its acks, at `max + 1`, over the exact stored bytes, and only over a CURRENT or BEHIND authentic document. Without this, a member that never refreshes would stall GC forever. Stalling fails safe, but the cap would then be reached.
+- *(coordinator decision 2026-10-30 after external review of PR #194 (round 4), owner may override.)* An ack write is an ordinary write, under every 228 write rule (the commit guard, the CAS over exact stored bytes, the preconditions). It is made only when all of these hold: this member is fresh (its lease has not lapsed), `unverifiedCount() == 0`, and `peers.highestReportedSequence() <= held.sequence`. Otherwise the tick makes no ack write.
+- *(coordinator decision 2026-10-30 after external review of PR #194 (round 4), owner may override.)* A lapsed member makes no ack write. It first recovers under 228 amendment 2 (lapsed-lease recovery), which is the only path that may renew freshness after a lapse; it may ack on a later tick once fresh.
+- *(coordinator decision 2026-10-30 after external review of PR #194 (round 4), owner may override.)* An ack write never renews this member's freshness by itself. Freshness comes only from accepting a document of higher order from storage, or from 228 amendment 2's recovery.
 - A member adds only its own uuid, never another's.
 
 **Prune.** A member prunes element e and its tombstone T together, in its own held view and in its next write, only when all of these hold at that moment:
@@ -46,12 +49,17 @@ A tombstone and the element it covers are pruned together, once every verified m
 ## Acceptance
 - [ ] Property tests, as seeded JUnit loops over random member sets, write orders, acks and prunes (no new dependency):
   - merge, acks included, is commutative, associative and idempotent;
-  - no merge or prune lifts a target that some member's view holds live;
+  - *(coordinator decision 2026-10-30 after external review of PR #194 (round 4), owner may override.)* no merge removes or lifts an element unless that element's tombstone is in the merged state; equivalently, after a merge a target is paused iff the merged state holds some element for it without a tombstone. *(Replaces "no merge or prune lifts a target that some member's view holds live", which contradicted a valid resume.)*
+  - no prune lifts a target: a target paused before a prune is paused after it;
   - a prune never removes an element without its tombstone, or a tombstone without its element.
 - [ ] Three verified members, one resume: every member acks, and after `pause-lease + clock-skew-tolerance` on each member's nano clock the pair is gone from the stored document and from every held view. The target stays lifted.
 - [ ] No prune while any verified member's ack is missing, while `unverifiedCount() > 0`, or before the held-for time on this member's clock, each shown with the stored document still holding the pair.
 - [ ] A member that never refreshes still acks through the ack write, and that write happens at most once per lease.
 - [ ] A member adds only its own uuid. A mutant that adds another member's uuid fails a test.
+- [ ] *(coordinator decision 2026-10-30 after external review of PR #194 (round 4), owner may override.)* The reviewer's shape: a member's lease lapses while it holds seq 2, and a peer card reports seq 5, whose stored document holds pause P that the member lacks. On the tick: no ack write is made, the member's freshness is not renewed, and its reads refuse with the OD-215-10 code. After it recovers (by accepting the seq 5 document, or under 228 amendment 2 once its conditions hold), P is present in its held view and its target reads paused.
+- [ ] *(coordinator decision 2026-10-30 after external review of PR #194 (round 4), owner may override.)* A fresh member with a missing ack makes no ack write while `peers.highestReportedSequence() > held.sequence`; the stored bytes are unchanged.
+- [ ] *(coordinator decision 2026-10-30 after external review of PR #194 (round 4), owner may override.)* A fresh member with a missing ack makes no ack write while `unverifiedCount() > 0`; the stored bytes are unchanged.
+- [ ] *(coordinator decision 2026-10-30 after external review of PR #194 (round 4), owner may override.)* A valid resume across a merge: A holds element e live; B holds e and tombstone(e). After A merges B's document, A's held view holds tombstone(e) and A's target for e reads lifted (unless another live element pauses it).
 - [ ] The residual: a pruned pair, then a replay into a warm member that lacks T, shows the target paused again on that member. `pause.conflict` increments, one WARN is logged, and an operator resume clears it. A cold start rejects the same replay.
 - [ ] The unverified-member residual: a member unverified at prune time that holds e without T, once verified, makes the target paused again everywhere, and one operator resume clears it.
 - [ ] The cap: a cluster driven through more than 16,384 pause and resume pairs, with acks flowing, never refuses a non-`all` pause.
@@ -61,6 +69,7 @@ A tombstone and the element it covers are pruned together, once every verified m
   - prune ignores the held-for time, or uses the wall clock;
   - prune drops e without T, or T without e;
   - acks are replaced instead of unioned.
+  - *(coordinator decision 2026-10-30 after external review of PR #194 (round 4), owner may override.)* an ack write is allowed while this member's lease has lapsed, or an ack write renews freshness.
 - [ ] Every 228 test still passes.
 - [ ] `./mvnw -B -pl data-prism-hazelcast -am verify` and `./mvnw -B verify` exit 0. Report the counts.
 
