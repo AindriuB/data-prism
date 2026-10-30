@@ -1,9 +1,13 @@
 package io.github.aindriub.dataprism.hazelcast.boundary;
 
+import com.hazelcast.config.EvictionPolicy;
+import com.hazelcast.config.MapConfig;
+import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.map.IMap;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.hazelcast.PrivacyCluster;
 import io.github.aindriub.dataprism.hazelcast.seal.ClusterKeys;
+import io.github.aindriub.dataprism.hazelcast.seal.KeyedNames;
 import io.github.aindriub.dataprism.hazelcast.seal.Opened;
 import io.github.aindriub.dataprism.hazelcast.seal.Sealer;
 
@@ -23,6 +27,9 @@ public final class OversightMapsBoundary implements AreaBoundary {
 
     /** The canonical string of the document's keyed name; recomputed here, not read from the code under test. */
     private static final String DOCUMENT_CANONICAL = "pause-document";
+
+    /** The 0.7 oversight map, which keeps the fence entry. */
+    private static final String FENCE_MAP = "dataprism.oversight";
 
     /** The test keys: fixed bytes, never real key material. The ids and bytes are those of the shared test keys. */
     private static ClusterKeys testKeys() {
@@ -50,10 +57,38 @@ public final class OversightMapsBoundary implements AreaBoundary {
             assertThat(envelope).as("%s envelope must not contain a scope or tool name", map).doesNotContain(name);
         }
         Opened opened = Sealer.builder(testKeys(), PrivacyMetrics.none()).build().open(map, key, envelope);
+        if (namesAreTheTestNames(in)) {
+            // The cluster under test derived its names from the shared test name key, so it holds the shared test
+            // keys, and its document must open under them. A document that does not is a failure, never a skip.
+            assertThat(opened.outcome()).as("%s envelope must open under the test key", map)
+                    .isEqualTo(Opened.Outcome.AUTHENTIC);
+        }
         if (opened.outcome() == Opened.Outcome.AUTHENTIC) {
             // The names are in the plaintext, which only a key holder can read.
             String plaintext = new String(opened.plaintext(), StandardCharsets.UTF_8);
             assertThat(plaintext).contains(in.scopeId()).contains(in.tool());
+        }
+    }
+
+    /** Whether the keyed names under test are those of the shared test name key (a solo member's are random). */
+    private static boolean namesAreTheTestNames(Inputs in) {
+        KeyedNames test = new KeyedNames(testKeys());
+        return test.mapKey(PrivacyCluster.OVERSIGHT_MAP, DOCUMENT_CANONICAL)
+                .equals(in.names().mapKey(PrivacyCluster.OVERSIGHT_MAP, DOCUMENT_CANONICAL));
+    }
+
+    /**
+     * Both oversight maps, the sealed one and the 0.7 map that holds the fence, are configured never to evict and
+     * never to expire: losing the document or the fence reopens a paused path. Reads the effective config of the
+     * member, so it fails if an eviction policy or a time to live is set, explicitly or by a default.
+     */
+    public static void checkMapConfigs(HazelcastInstance instance) {
+        for (String name : new String[]{PrivacyCluster.OVERSIGHT_MAP, FENCE_MAP}) {
+            MapConfig config = instance.getConfig().findMapConfig(name);
+            assertThat(config.getEvictionConfig().getEvictionPolicy()).as("%s eviction", name)
+                    .isEqualTo(EvictionPolicy.NONE);
+            assertThat(config.getTimeToLiveSeconds()).as("%s time to live", name).isZero();
+            assertThat(config.getMaxIdleSeconds()).as("%s max idle", name).isZero();
         }
     }
 

@@ -21,9 +21,11 @@ import java.util.Set;
  * <p>Fails closed: every method goes to the cluster and lets its exception escape. A caller that cannot learn
  * whether it is paused must treat itself as paused, and cannot do that if this class invents an answer.
  *
- * <p>A pause is accepted whether or not this member is serving, and re-creates a document that is absent. A resume
- * is refused while the member is not serving ({@code CLUSTER_OPERATION_REFUSED}) or the document is not fresh
- * ({@code OVERSIGHT_UNAVAILABLE}). The document is reached through {@code instance()}, so the serving gate does not
+ * <p>A pause is accepted whether or not this member is serving, and re-creates a document that is absent. It always
+ * adds a new element, so pausing a paused target twice is two pauses, and a resume lifts only the pauses it saw: a
+ * pause that lands while the resume is built stays in force. A resume is refused while the member is not serving or a
+ * member is unverified ({@code CLUSTER_OPERATION_REFUSED}), and while the document is not fresh or a peer reports a
+ * higher sequence ({@code OVERSIGHT_UNAVAILABLE}). The document is reached through {@code instance()}, so the serving gate does not
  * stop it. A scope pause written by a 0.7 member after construction is still found, by its raw key, and keeps that
  * scope paused. Every write waits for the key's lock at most the lock timeout and then fails with
  * {@code CLUSTER_LOCK_TIMEOUT}.
@@ -105,36 +107,36 @@ public final class HazelcastOversightState implements OversightState, AutoClosea
 
     @Override
     public void pauseAll() {
-        document.update(pauses -> pauses.withAll(true), false);
+        document.pause(PauseDocument.Target.ALL);
     }
 
     @Override
     public void resumeAll() {
-        document.update(pauses -> pauses.withAll(false), true);
+        document.resume(PauseDocument.Target.ALL);
     }
 
     @Override
     public void pauseTool(String tool) {
         Objects.requireNonNull(tool, "tool");
-        document.update(pauses -> pauses.withTool(tool, true), false);
+        document.pause(PauseDocument.Target.tool(tool));
     }
 
     @Override
     public void resumeTool(String tool) {
         Objects.requireNonNull(tool, "tool");
-        document.update(pauses -> pauses.withTool(tool, false), true);
+        document.resume(PauseDocument.Target.tool(tool));
     }
 
     @Override
     public void pauseScope(String scopeId) {
         Objects.requireNonNull(scopeId, "scopeId");
-        document.update(pauses -> pauses.withScope(scopeId, true), false);
+        document.pause(PauseDocument.Target.scope(scopeId));
     }
 
     @Override
     public void resumeScope(String scopeId) {
         Objects.requireNonNull(scopeId, "scopeId");
-        document.update(pauses -> pauses.withScope(scopeId, false), true);
+        document.resume(PauseDocument.Target.scope(scopeId));
     }
 
     @Override

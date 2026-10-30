@@ -38,6 +38,9 @@ public final class ScopeIdentityIndex {
     private final HazelcastApprovalStore approvals;
     private final Duration lockTimeout;
     private final Sealer sealer;
+    private final Object pauseLock = new Object();
+    /** The index's own, never-started view of the pause document, made on first use. */
+    private PauseDocument pauseDocument;
     /** Resolves a map by name; a seam for tests. */
     Function<String, IMap<String, ?>> maps;
 
@@ -96,20 +99,25 @@ public final class ScopeIdentityIndex {
     }
 
     /**
-     * Ends a scope: every identity, reverse entry and read count for it goes.
+     * Ends a scope: every identity, reverse entry and read count for it goes, and then its pause.
      *
      * <p>Keys lead with the scope so this is a prefix match. It is also the reason
      * an investigation ending is a real event rather than a matter of waiting for
      * a TTL: the mapping stops existing when someone says it should.
      *
-     * <p>Every delete waits for its key's lock at most the lock timeout, in the identity, reverse, budget and
-     * oversight maps as in the approval map. A key whose lock times out is left in place and the others are still
-     * removed; the call throws after the last one. The whole call shares one deadline of the lock timeout for its
-     * four maps. A refusal in one map does not stop the others or the approvals: all of them run, then the first
-     * refusal (else the timeout) is thrown.
+     * <p>Every delete waits for its key's lock at most the lock timeout, in the identity, reverse and budget maps as
+     * in the approval map. A key whose lock times out is left in place and the others are still removed; the call
+     * throws after the last one. The whole call shares one deadline of the lock timeout. A refusal in one map does
+     * not stop the others or the approvals: all of them run, then the first refusal (else the timeout) is thrown.
+     *
+     * <p>The scope's pause is the last step, run only after every sweep and the approval forget have succeeded: its
+     * live pauses in the pause document are tombstoned (and no other target's), under the same checks as a resume. A
+     * failed sweep, a skipped lock or a failed check keeps the pause. When a check fails the data is still erased,
+     * and the call throws the check's own refusal after the sweeps. An absent pause document is nothing to end.
      *
      * @throws ClusterLockTimeoutException if the lock of an entry of the
-     *         scope timed out; that entry is left in place (for an approval, with its id claim and its pending slot)
+     *         scope timed out; that entry is left in place (for an approval, with its id claim and its pending slot);
+     *         also if too little of the shared deadline is left for the pause step
      */
     public void endScope(String scopeId) {
         String prefix = cluster.scopeKeys().scopePrefix(scopeId);
@@ -118,8 +126,7 @@ public final class ScopeIdentityIndex {
         int skipped = 0;
         RuntimeException failure = null;
         for (String map : new String[]{PrivacyCluster.IDENTITY_MAP,
-                PrivacyCluster.REIDENTIFICATION_MAP, PrivacyCluster.BUDGET_MAP,
-                PrivacyCluster.OVERSIGHT_MAP}) {
+                PrivacyCluster.REIDENTIFICATION_MAP, PrivacyCluster.BUDGET_MAP}) {
             try {
                 IMap<String, ?> entries = maps.apply(map);
                 ClusterLocks.Sweep sweep = ClusterLocks.deleteAll(entries,
@@ -145,6 +152,23 @@ public final class ScopeIdentityIndex {
         }
         if (skipped > 0) {
             throw new ClusterLockTimeoutException();
+        }
+        // The pause is the last step: data erased, approvals forgotten, and only then is the scope let go. It gets
+        // what is left of the shared deadline, and is skipped (a lock timeout) under the floor.
+        long remaining = deadline - System.nanoTime();
+        if (remaining < ClusterLocks.MIN_TIMEOUT.toNanos()) {
+            throw new ClusterLockTimeoutException();
+        }
+        pauseDocument().endScope(scopeId, deadline);
+    }
+
+    private PauseDocument pauseDocument() {
+        synchronized (pauseLock) {
+            if (pauseDocument == null) {
+                pauseDocument = new PauseDocument(cluster, metrics, lockTimeout,
+                        PauseDocument.Environment.system(cluster.securitySettings().pauseLease()));
+            }
+            return pauseDocument;
         }
     }
 }
