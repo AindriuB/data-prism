@@ -722,4 +722,42 @@ class AuditRetentionBoundaryTest {
         assertThat(lab.names()).contains("audit-2026-03-01.log", "audit-" + nextDay + ".log");
         assertThat(lab.anchors()).isEmpty();
     }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void aRewrittenAndRechainedPartlyDeletedDayContradictingItsShutdownIsNotFinished(boolean keyed)
+            throws IOException {
+        Lab lab = new Lab(tempDir.resolve("seg"), keyed, 10);
+        AuditRecorder w = lab.closingWriter("w");
+        AuditEvent e1 = lab.record(w, at("2026-03-01", 1));
+        w.close();
+        AuditEvent e2 = lab.record(w, at("2026-03-01", 2));
+        lab.record(w, at("2026-03-01", 3));
+        lab.record(w, at("2026-03-02", 1));
+        lab.record(lab.writer("other"), "2026-09-09T01:00:00Z");
+        lab.close();
+        AuditRetention first = lab.retention();
+        first.deleter = segment -> {
+            if (segment.getFileName().toString().equals("audit-2026-03-01.0001.log")) {
+                throw new IOException("injected");
+            }
+            Files.delete(segment);
+        };
+        Outcome failed = lab.purge(first);
+        assertThat(failed.thrown()).hasMessageContaining("AUDIT_RETENTION_DELETE_FAILED");
+        assertThat(lab.names()).contains("audit-2026-03-01.log", "audit-2026-03-01.0001.log")
+                .doesNotContain("audit-2026-03-01.0002.log");
+        assertThat(lab.anchors()).extracting(AuditCheckpoint::sequence).containsExactly(3L, 4L);
+        String forged1 = rehash(lab, AuditRecordFormat.serialize(e1).replace("ALLOW", "DENY"));
+        String newHash1 = AuditRecordFormat.parse(forged1).eventHash();
+        String forged2 = rehash(lab, AuditRecordFormat.serialize(e2).replace(e1.eventHash(), newHash1));
+        lab.write("audit-2026-03-01.log", forged1 + "\n");
+        lab.write("audit-2026-03-01.0001.log", forged2 + "\n");
+
+        Outcome second = lab.purge(lab.retention());
+
+        second.refused("SHUTDOWN checkpoint at sequence 1");
+        assertThat(lab.names()).contains("audit-2026-03-01.log", "audit-2026-03-01.0001.log");
+        assertThat(lab.anchors()).hasSize(2);
+    }
 }
