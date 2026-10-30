@@ -5,6 +5,7 @@ customerAdapter | io.github.aindriub.dataprism.core.spi.DataSourceAdapter<io.git
 dataPrismAuditEventListeners | io.github.aindriub.dataprism.audit.AuditEventListeners
 dataPrismAuditMaintenance | io.github.aindriub.dataprism.spring.boot.AuditMaintenance
 dataPrismAuditRecorder | io.github.aindriub.dataprism.audit.AuditRecorder
+dataPrismAuditRecorderKeyPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
 dataPrismAuthorizationService | io.github.aindriub.dataprism.security.AuthorizationService
 dataPrismCaseAuthorizer | io.github.aindriub.dataprism.security.CaseAuthorizer
 dataPrismClientAllowlist | io.github.aindriub.dataprism.security.ClientAllowlist

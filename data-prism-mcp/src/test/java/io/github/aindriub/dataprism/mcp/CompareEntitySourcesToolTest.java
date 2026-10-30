@@ -33,6 +33,7 @@ import io.github.aindriub.dataprism.orchestration.ContextRequest;
 import io.github.aindriub.dataprism.orchestration.ContextResponse;
 import io.github.aindriub.dataprism.orchestration.SourceResult;
 import io.github.aindriub.dataprism.orchestration.DefaultContextOrchestrator;
+import io.github.aindriub.dataprism.orchestration.OrchestrationOptions;
 import io.github.aindriub.dataprism.orchestration.NamespaceCorrelationService;
 import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
 import io.github.aindriub.dataprism.orchestration.SourceAliasing;
@@ -279,7 +280,7 @@ class CompareEntitySourcesToolTest {
                 new InMemoryScopeBudget(), RequestLimits.DEFAULT,
                 new NamespaceCorrelationService(resolver),
                 new SourceAliasing(new HmacValueTokenSource(KEYS)),
-                PrivacyMetrics.none());
+                PrivacyMetrics.none(), OrchestrationOptions.defaults());
         CompareEntitySourcesTool tool = new CompareEntitySourcesTool(orchestrator,
                 authorizationService(policyGranting("investigator", Set.of("COMPARE_ENTITY_SOURCES"))),
                 scopeResolver(), metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
@@ -305,8 +306,8 @@ class CompareEntitySourcesToolTest {
     }
 
     @Test
-    @DisplayName("the input schema declares exactly entityType and subjectId, and no other property")
-    void schemaDeclaresExactlyTwoProperties() {
+    @DisplayName("the input schema declares exactly entityType, subjectId and targetSources, and no other property")
+    void schemaDeclaresExactlyTheThreeProperties() {
         CompareEntitySourcesTool tool = new CompareEntitySourcesTool(new RecordingOrchestrator(),
                 authorizationService(policyGranting("investigator", Set.of("COMPARE_ENTITY_SOURCES"))),
                 scopeResolver(), metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
@@ -316,7 +317,7 @@ class CompareEntitySourcesToolTest {
         assertThat(schema.get("required")).isEqualTo(List.of("entityType", "subjectId"));
         @SuppressWarnings("unchecked")
         Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
-        assertThat(properties.keySet()).containsExactlyInAnyOrder("entityType", "subjectId");
+        assertThat(properties.keySet()).containsExactlyInAnyOrder("entityType", "subjectId", "targetSources");
         assertThat(properties.keySet()).doesNotContain(
                 "scopeId", "purpose", "caseId", "sourceName", "host", "profile", "classification");
     }
@@ -521,7 +522,7 @@ class CompareEntitySourcesToolTest {
                 new InMemoryScopeBudget(), RequestLimits.DEFAULT,
                 new NamespaceCorrelationService(resolver),
                 new SourceAliasing(new HmacValueTokenSource(KEYS)),
-                PrivacyMetrics.none());
+                PrivacyMetrics.none(), OrchestrationOptions.defaults());
         CompareEntitySourcesTool tool = new CompareEntitySourcesTool(orchestrator,
                 authorizationService(policyGranting("investigator", Set.of("COMPARE_ENTITY_SOURCES"))),
                 scopeResolver(), metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
@@ -580,7 +581,7 @@ class CompareEntitySourcesToolTest {
                 new InMemoryScopeBudget(), RequestLimits.DEFAULT,
                 new NamespaceCorrelationService(resolver),
                 new SourceAliasing(new HmacValueTokenSource(KEYS)),
-                PrivacyMetrics.none());
+                PrivacyMetrics.none(), OrchestrationOptions.defaults());
         CompareEntitySourcesTool tool = new CompareEntitySourcesTool(orchestrator,
                 authorizationService(policyGranting("investigator", Set.of("COMPARE_ENTITY_SOURCES"))),
                 scopeResolver(), metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());

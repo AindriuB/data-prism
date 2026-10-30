@@ -5,6 +5,7 @@ dataPrismApprovalStore | io.github.aindriub.dataprism.oversight.ApprovalStore
 dataPrismAuditEventListeners | io.github.aindriub.dataprism.audit.AuditEventListeners
 dataPrismAuditMaintenance | io.github.aindriub.dataprism.spring.boot.AuditMaintenance
 dataPrismAuditRecorder | io.github.aindriub.dataprism.audit.AuditRecorder
+dataPrismAuditRecorderKeyPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
 dataPrismAuthorizationService | io.github.aindriub.dataprism.security.AuthorizationService
 dataPrismCallerRateLimiter | io.github.aindriub.dataprism.oversight.CallerRateLimiter
 dataPrismCaseAuthorizer | io.github.aindriub.dataprism.security.CaseAuthorizer

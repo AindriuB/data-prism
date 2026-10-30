@@ -620,10 +620,10 @@ secret (OD-215-3 (a)).
 | `MISSING_CLUSTER_KEY` | A joining member without a `cluster-key.key-id` or a `name-key.key-id`, or either without exactly one of environment variable and provider reference; on `join.mode: none`, only one of the cluster key and the name key supplied, or `next` or `previous` without `current` |
 | `CLUSTER_KEY_UNRESOLVED` | A cluster key (`current`, `next` or `previous`) whose reference does not resolve, or whose id contains `.` |
 | `CLUSTER_KEY_WEAK` | A cluster key below the strength rule used for `dataprism.privacy.hmac-key` |
-| `CLUSTER_KEY_SHARED` | A cluster key that is the same key as the privacy HMAC key, the audit key or a link key (OD-9). As built (task 222) it fires on the same key id or the same material, and compares only the privacy HMAC key until tasks 211 (audit key) and 254 and 255 (link keys) extend `ClusterKeyResolution` |
+| `CLUSTER_KEY_SHARED` | A cluster key that is the same key as the privacy HMAC key, the audit key or a link key (OD-9). As built (tasks 222 and 211) it fires on the same key id or the same material, and compares the privacy HMAC key and the audit key (current and retired); the link keys are compared once tasks 254 and 255 extend `ClusterKeyResolution` |
 | `NAME_KEY_UNRESOLVED` | The name key's reference does not resolve, or its id contains `.` |
 | `NAME_KEY_WEAK` | The name key is below the strength rule |
-| `NAME_KEY_SHARED` | The name key is the same key as another purpose key (the privacy HMAC key, the audit key or a link key) or as any cluster key. As built (task 222) it fires on the same key id or the same material, and compares only the privacy HMAC key and the cluster keys until tasks 211, 254 and 255 extend `ClusterKeyResolution` |
+| `NAME_KEY_SHARED` | The name key is the same key as another purpose key (the privacy HMAC key, the audit key or a link key) or as any cluster key. As built (tasks 222 and 211) it fires on the same key id or the same material, and compares the privacy HMAC key, the audit key (current and retired) and the cluster keys; the link keys are compared once tasks 254 and 255 extend `ClusterKeyResolution` |
 | `DUPLICATE_CLUSTER_KEY_ID` | The ids of `current`, `next` and `previous` are not pairwise distinct, or the name key's id equals the id of any of them (task 222) |
 | `MISSING_ISOLATION_ATTESTATION` | `security.isolation.attestation` absent on a joining member |
 | `INVALID_ISOLATION_ATTESTATION` | An unknown attestation value |

@@ -115,7 +115,7 @@ class DefaultContextOrchestratorTest {
                 new InMemoryScopeBudget(), RequestLimits.DEFAULT,
                 new NamespaceCorrelationService(resolver),
                 new SourceAliasing(new HmacValueTokenSource(KEYS)),
-                metrics);
+                metrics, OrchestrationOptions.defaults());
     }
 
     private static DataSourceAdapter<NamedThing> answeringNamed(String name, NamedThing thing) {
@@ -161,7 +161,7 @@ class DefaultContextOrchestratorTest {
                 new InMemoryScopeBudget(), RequestLimits.DEFAULT,
                 new NamespaceCorrelationService(resolver),
                 new SourceAliasing(new HmacValueTokenSource(KEYS)),
-                PrivacyMetrics.none());
+                PrivacyMetrics.none(), OrchestrationOptions.defaults());
     }
 
     private static final class RecordingMetrics implements PrivacyMetrics {
@@ -298,7 +298,7 @@ class DefaultContextOrchestratorTest {
                 new InMemoryScopeBudget(), RequestLimits.DEFAULT,
                 new NamespaceCorrelationService(resolver),
                 new SourceAliasing(new HmacValueTokenSource(KEYS)),
-                metrics);
+                metrics, OrchestrationOptions.defaults());
     }
 
     @Test
@@ -314,7 +314,7 @@ class DefaultContextOrchestratorTest {
         assertThat(events.get(0).policyDecision()).isEqualTo("ALLOW");
         assertThat(events.get(0).fieldDispositions()).containsExactlyInAnyOrderEntriesOf(Map.of(
                 "alpha:/name", "SYNTHESIZE", "alpha:/items/*", "REMOVE",
-                "beta:/name", "SYNTHESIZE", "beta:/items/*", "REMOVE"));
+                "beta:/name", "SYNTHESIZE", "beta:/items/*", "REMOVE", "names", "ALIAS"));
         assertThat(response.correlationId()).isNotEmpty()
                 .isEqualTo(events.get(0).correlationId());
     }

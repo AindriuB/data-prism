@@ -418,6 +418,7 @@ Refusal code, at startup:
 | `dataprism.audit.checkpoint.interval` | `PT5M` | How often a `PERIODIC` checkpoint is written, the first soon after boot (within ten seconds). A `SHUTDOWN` checkpoint is written when the context closes. |
 | `dataprism.audit.retention` | `P6M` | With `directory`: segments dated before today minus this period are deleted, after a `RETENTION_ANCHOR` is recorded for each writer's last record in them. Run once at startup, then every 24 hours. |
 | `dataprism.audit.retention-override` | `false` | Must be `true` to accept a `retention` shorter than six months. Inert with a value of six months or more. |
+| `dataprism.audit.segment-max-size` | unset | With `directory`: a day's segment is closed and the next one opened (`audit-YYYY-MM-DD.0001.log`, then `.0002.log`) before a write that would take it past this size. A Spring `DataSize` such as `64MB`; at least `1MB`. A record larger than the cap is written whole into a fresh segment, never split. The hash chain is unaffected. Unset means one segment per day. |
 
 Refusal codes, each at startup:
 
@@ -427,6 +428,44 @@ Refusal codes, each at startup:
 - `INVALID_AUDIT_CHECKPOINT_INTERVAL` -- `checkpoint.interval` is zero or negative.
 - `AUDIT_CHECKPOINT_SAME_AS_AUDIT_FILE` -- the checkpoint path is the audit `file-path`, or is the audit `directory` or any path inside it. Paths are compared normalised, with symbolic links resolved where they exist.
 - `AUDIT_CHECKPOINT_FILE_UNUSABLE` -- the checkpoint path cannot be opened. The path is logged server-side only, never in the message.
+- `AUDIT_SEGMENT_SIZE_REQUIRES_DIRECTORY` -- `segment-max-size` is set without `directory`.
+- `INVALID_AUDIT_SEGMENT_SIZE` -- `segment-max-size` is under 1MB.
+
+#### Keyed audit chain
+
+The hash chain is plain SHA-256 by default. An operator can switch it to HMAC-SHA256 under a key of their own.
+This is opt-in and off by default. The keyed chain resists a writer who does not have the key: such a writer
+cannot recompute the hashes, so a changed or inserted record is detected in the hashed fields. Deleting a writer's most recent records
+(including whole trailing segments) still verifies; catching that needs the checkpoint file (`--checkpoints`). It does not resist anyone who holds the key,
+the operator and the process that writes the file included. It is not tamper-proof, immutable, or evidence against
+the operator. Nothing written to the audit file records whether it is keyed; the verifier is told by its caller.
+
+| Property | Default | Meaning |
+|---|---|---|
+| `dataprism.audit.hmac-key.key-id` | unset | The audit key's id. Unset means the chain is unkeyed. Required when the group is set. |
+| `dataprism.audit.hmac-key.environment-variable` | unset | Name of the environment variable holding the key. A name only. Exactly one of this and `provider-reference`. |
+| `dataprism.audit.hmac-key.provider-reference` | unset | Reference resolved by the application's `HmacKeyReferenceResolver`. Exactly one of this and `environment-variable`. |
+| `dataprism.audit.retired-hmac-keys` | none | A map from a retired key's id to its reference, set below as `retired-hmac-keys.<key-id>.environment-variable` or `.provider-reference`. Verification only; the recorder never signs with one. |
+| `dataprism.audit.retired-hmac-keys.<key-id>.environment-variable` | none | A verification-only key of an earlier chain, by its key id. Exactly one of this and `provider-reference`. |
+| `dataprism.audit.retired-hmac-keys.<key-id>.provider-reference` | none | As above, resolved by the `HmacKeyReferenceResolver`. |
+
+There is no property that takes key material: a key is only ever a reference, and the material must be at least
+32 bytes. The audit key must be a different key from the pseudonymisation key (`dataprism.privacy.hmac-key`) and
+from the cluster and name keys. The recorder signs with the current key only, and it is the built-in one: an application `AuditRecorder` bean with `hmac-key` set is refused. Retention verifies expiring segments
+with the current key and every retired key, and does not delete a segment written under any other key (or none),
+so keep a retired key configured until every segment written under it has been purged; otherwise the purge stops
+and `auditIntegrity` health reports DOWN with `AUDIT_RETENTION_CHAIN_UNVERIFIED`. Rotation is a procedure, not code.
+
+Refusal codes, each at startup, none of which repeats a reference or any key byte:
+
+- `AUDIT_HMAC_REQUIRES_HASH_CHAINED` -- `hmac-key` or `retired-hmac-keys` is set with a `sink` other than `hash-chained`.
+- `AUDIT_RECORDER_REPLACED_WITH_HMAC_KEY` -- `hmac-key` is set and the application supplies its own `AuditRecorder` bean, so the built-in recorder backs off and the key would sign nothing. The message names the property and the bean type only. An application recorder with no key starts as before.
+- `AUDIT_RETIRED_KEYS_REQUIRE_HMAC_KEY` -- `retired-hmac-keys` is set without `hmac-key`.
+- `MISSING_AUDIT_HMAC_KEY_REFERENCE` -- `key-id` is missing, or not exactly one of `environment-variable` and `provider-reference` is set, for `hmac-key` or a retired key.
+- `DUPLICATE_AUDIT_KEY_ID` -- a retired key has the same id as the current key.
+- `AUDIT_HMAC_KEY_UNRESOLVED` -- a reference resolves to nothing, or the resolver fails.
+- `AUDIT_HMAC_KEY_TOO_SHORT` -- the key material is shorter than 32 bytes.
+- `AUDIT_KEY_REUSES_PSEUDONYMISATION_KEY` -- an audit key (current or retired) has the same reference string or the same material as `dataprism.privacy.hmac-key`. Material is compared in constant time.
 
 The six-month default follows EU AI Act Art. 19, which sets a floor of six
 months for automatically generated logs "unless provided otherwise in
@@ -707,8 +746,9 @@ The first failing check is the one reported, and the checks run in this order:
 | 7 | `CLUSTER_KEY_UNRESOLVED`, `CLUSTER_KEY_WEAK`, `NAME_KEY_UNRESOLVED`, `NAME_KEY_WEAK` | A reference does not resolve, or resolves to material shorter than 32 bytes. Each key is resolved and measured in turn: the cluster key, `next`, `previous`, then the name key |
 | 8 | `HMAC_KEY_UNRESOLVED` | The privacy HMAC key cannot be resolved again to compare the cluster keys with it |
 | 9 | `CLUSTER_KEY_SHARED`, `NAME_KEY_SHARED` | A cluster key (current, `next`, `previous`), then the name key, has the key id or the material of the privacy HMAC key |
-| 10 | `NAME_KEY_SHARED` | The name key has the material of a cluster key |
-| 11 | `DUPLICATE_CLUSTER_KEY_ID` | The `current`, `next`, `previous` and name key ids are not pairwise distinct |
+| 10 | `AUDIT_HMAC_KEY_UNRESOLVED`, `AUDIT_HMAC_KEY_TOO_SHORT`, `CLUSTER_KEY_SHARED`, `NAME_KEY_SHARED` | Only with `dataprism.audit.hmac-key` set. An audit key (current or retired) does not resolve or is shorter than 32 bytes; then a cluster key (current, `next`, `previous`), then the name key, has the key id or the material of an audit key (current or retired) |
+| 11 | `NAME_KEY_SHARED` | The name key has the material of a cluster key |
+| 12 | `DUPLICATE_CLUSTER_KEY_ID` | The `current`, `next`, `previous` and name key ids are not pairwise distinct |
 
 The full property list, every refusal code, the Compose and Kubernetes examples
 and the network isolation you must supply are on

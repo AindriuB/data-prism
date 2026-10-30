@@ -84,6 +84,8 @@ public final class DataPrismPropertiesValidator {
         validateCorrelation();
         validateAuditOutput();
         validateAuditEntityTypes();
+        validateAuditHmacKeys();
+        validateAuditSegmentSize();
         validateSources(fixture);
         validateOversight();
     }
@@ -162,6 +164,65 @@ public final class DataPrismPropertiesValidator {
         } catch (IllegalArgumentException e) {
             refuse("INVALID_AUDIT_ENTITY_TYPE", "every dataprism.audit.entity-types entry must match "
                     + io.github.aindriub.dataprism.audit.AuditedEntityTypes.REGISTERED_NAME.pattern());
+        }
+    }
+
+    /**
+     * The keyed audit chain's shape, before anything is resolved. Every message names a property and never a
+     * reference or a key id's value. Resolution, strength and reuse are checked where the key is resolved
+     * ({@code AuditChainKeyResolution}).
+     */
+    private void validateAuditHmacKeys() {
+        AuditProperties.HmacKey key = audit.getHmacKey();
+        boolean keyed = !blank(key.getKeyId()) || !blank(key.getEnvironmentVariable())
+                || !blank(key.getProviderReference());
+        boolean retired = !audit.getRetiredHmacKeys().isEmpty();
+        if (!keyed && !retired) {
+            return;
+        }
+        if (!"hash-chained".equals(audit.getSink())) {
+            refuse("AUDIT_HMAC_REQUIRES_HASH_CHAINED",
+                    "dataprism.audit.hmac-key and dataprism.audit.retired-hmac-keys require dataprism.audit.sink=hash-chained");
+        }
+        if (!keyed) {
+            refuse("AUDIT_RETIRED_KEYS_REQUIRE_HMAC_KEY",
+                    "dataprism.audit.retired-hmac-keys needs dataprism.audit.hmac-key");
+        }
+        if (blank(key.getKeyId())) {
+            refuse("MISSING_AUDIT_HMAC_KEY_REFERENCE", "dataprism.audit.hmac-key.key-id is required");
+        }
+        if (blank(key.getEnvironmentVariable()) == blank(key.getProviderReference())) {
+            refuse("MISSING_AUDIT_HMAC_KEY_REFERENCE",
+                    "configure exactly one of dataprism.audit.hmac-key.environment-variable and provider-reference");
+        }
+        for (Map.Entry<String, AuditProperties.RetiredKey> entry : audit.getRetiredHmacKeys().entrySet()) {
+            AuditProperties.RetiredKey old = entry.getValue();
+            if (blank(entry.getKey())) {
+                refuse("MISSING_AUDIT_HMAC_KEY_REFERENCE", "a dataprism.audit.retired-hmac-keys key id must not be blank");
+            }
+            if (old == null || blank(old.getEnvironmentVariable()) == blank(old.getProviderReference())) {
+                refuse("MISSING_AUDIT_HMAC_KEY_REFERENCE", "configure exactly one of environment-variable and"
+                        + " provider-reference for every dataprism.audit.retired-hmac-keys entry");
+            }
+            if (entry.getKey().equals(key.getKeyId())) {
+                refuse("DUPLICATE_AUDIT_KEY_ID",
+                        "a dataprism.audit.retired-hmac-keys key id must differ from dataprism.audit.hmac-key.key-id");
+            }
+        }
+    }
+
+    private static final long MIN_SEGMENT_BYTES = 1024L * 1024L;
+
+    private void validateAuditSegmentSize() {
+        if (audit.getSegmentMaxSize() == null) {
+            return;
+        }
+        if (blank(audit.getDirectory())) {
+            refuse("AUDIT_SEGMENT_SIZE_REQUIRES_DIRECTORY",
+                    "dataprism.audit.segment-max-size requires dataprism.audit.directory");
+        }
+        if (audit.getSegmentMaxSize().toBytes() < MIN_SEGMENT_BYTES) {
+            refuse("INVALID_AUDIT_SEGMENT_SIZE", "dataprism.audit.segment-max-size must be at least 1MB");
         }
     }
 
