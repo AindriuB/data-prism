@@ -35,7 +35,10 @@ class ApprovalRaceTest {
     private static final int THREADS = 16;
     private static final int ROUNDS = 50;
 
-    /** A backstop for runner pauses: the race starts once the partitions have settled, so it should not be needed. */
+    /**
+     * Required, not a backstop: {@code exactlyOneCallConsumesAnApprovalWhileTheHolderStallsPastTheDefaultLockBound}
+     * holds the lock past {@code ClusterLocks.DEFAULT_TIMEOUT} + 1 s, and the waiter must still get it.
+     */
     private static final Duration RACE_LOCK_TIMEOUT = Duration.ofSeconds(15);
 
     private PrivacyCluster[] members;
@@ -47,10 +50,6 @@ class ApprovalRaceTest {
         members = TestMembers.pair(TestMembers.uniqueName("race"), OptionalInt.empty());
         stores = new HazelcastApprovalStore[]{new HazelcastApprovalStore(members[0], RACE_LOCK_TIMEOUT),
                 new HazelcastApprovalStore(members[1], RACE_LOCK_TIMEOUT)};
-        // The second member joins after the first has written its card, so partitions are still moving when the pair
-        // returns; a race measured meanwhile would include the migration.
-        assertThat(MemberCardTest.Fixture.await(30, () -> members[0].instance().getPartitionService().isClusterSafe()))
-                .as("the partitions settled").isTrue();
         pool = Executors.newFixedThreadPool(THREADS);
     }
 

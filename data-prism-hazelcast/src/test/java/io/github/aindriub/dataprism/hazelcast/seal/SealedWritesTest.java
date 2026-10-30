@@ -8,12 +8,12 @@ import com.hazelcast.core.HazelcastInstanceAware;
 import com.hazelcast.map.EntryProcessor;
 import com.hazelcast.map.IMap;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
+import io.github.aindriub.dataprism.hazelcast.FreePorts;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -51,13 +51,16 @@ class SealedWritesTest {
         RUNS.set(0);
         entered = new CountDownLatch(1);
         release = new CountDownLatch(1);
-        int first = freePort();
-        int second = freePort();
+        int first = FreePorts.consecutive(2);
+        int second = first + 1;
         String name = "sealed-writes-" + System.nanoTime();
         List<String> both = List.of("127.0.0.1:" + first, "127.0.0.1:" + second);
         caller = Hazelcast.newHazelcastInstance(config(name, first, both));
         owner = Hazelcast.newHazelcastInstance(config(name, second, both));
         assertThat(await(20, () -> caller.getCluster().getMembers().size() == 2)).isTrue();
+        assertThat(await(30, () -> caller.getPartitionService().isClusterSafe()
+                && owner.getPartitionService().isClusterSafe()))
+                .as("the members did not settle: partitions are still migrating").isTrue();
         callerSealer = register(caller);
         register(owner);
         key = keyOwnedBy(owner);
@@ -311,12 +314,6 @@ class SealedWritesTest {
             }
         }
         throw new IllegalStateException("no key owned by the member");
-    }
-
-    private static int freePort() throws IOException {
-        try (ServerSocket socket = new ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress())) {
-            return socket.getLocalPort();
-        }
     }
 
     private static Config config(String clusterName, int port, List<String> peers) {

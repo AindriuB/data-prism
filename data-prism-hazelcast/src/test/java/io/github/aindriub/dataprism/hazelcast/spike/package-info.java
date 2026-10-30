@@ -13,8 +13,8 @@
  * <tr><th>Q</th><th>Observed answer</th><th>Test</th><th>Relied on by</th></tr>
  * <tr><td>1</td><td>A connection from an address outside {@code network/interfaces} is accepted: the joiner,
  * arriving from this host's non-loopback address, joined a member whose {@code interfaces} lists only 127.0.0.1.
- * Confirms the design's "no inbound allowlist". The test is skipped on a host with no non-loopback IPv4
- * address.</td><td>{@code Q01InboundAllowlistSpikeTest.aMemberOutsideTheInterfacesIsAccepted}</td><td>221</td></tr>
+ * Confirms the design's "no inbound allowlist". The test is skipped on a host with no self-reachable non-loopback
+ * IPv4 address.</td><td>{@code Q01InboundAllowlistSpikeTest.aMemberOutsideTheInterfacesIsAccepted}</td><td>221</td></tr>
  * <tr><td>2</td><td>Every {@code com.hazelcast.system*} log line starts with
  * {@code [address]:port [cluster name] [version] message}, for example
  * {@code [127.0.0.1]:5701 [orders-cluster] [5.7.0] message}. The prefix is part of the message text. A few early
