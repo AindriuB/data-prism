@@ -636,6 +636,11 @@ public final class AuditRetention {
                 } else if (t.shutdown != null) {
                     t.startSequence = Math.max(t.lSequence, t.shutdown.sequence());
                     t.chainHead = t.lSequence >= t.shutdown.sequence() ? t.lHash : null;
+                    // The checkpoint must agree with the day's own records whatever follows them: a next record
+                    // found in another expired day must not stand in for this check.
+                    if (t.lSequence >= t.shutdown.sequence()) {
+                        checkShutdownAgainstDay(live, t);
+                    }
                 }
             }
             boolean boundaryDone = false;
@@ -692,33 +697,36 @@ public final class AuditRetention {
             return t.state == State.INIT || t.state == State.AWAIT_SHUTDOWN_RECORD;
         }
 
+        /**
+         * A writer whose last hashed record in the day is at or above its {@code SHUTDOWN}: the checkpoint's
+         * hash must be that record's (same sequence), or the first hashed record above the checkpoint must chain
+         * from it. Refuses the day otherwise. On the partial path the record above may already be deleted.
+         */
+        private void checkShutdownAgainstDay(List<Task> live, Task t) {
+            Shutdown s = t.shutdown;
+            if (t.lSequence == s.sequence()) {
+                if (!t.lHash.equals(s.headHash())) {
+                    refuse(live, t, shutdownMessage(t, paths.get(t.lSegment)), t.dayStart);
+                }
+                return;
+            }
+            AuditChainVerifier.HashedRecord above = probed.getOrDefault(t.instanceId, Map.of())
+                    .get(s.sequence() + 1);
+            if (above == null) {
+                if (!partial) {
+                    refuse(live, t, shutdownMessage(t, paths.get(t.lSegment)), t.dayStart);
+                }
+            } else if (!above.previousHash().equals(s.headHash())) {
+                refuse(live, t, shutdownMessage(t, paths.get(segmentAt(starts, above.byteOffset()))), t.dayStart);
+            }
+        }
+
         /** Between the expiring and the retained segments: the shutdown stop for writers with no next record. */
         private void atBoundary(List<Task> live) {
             for (Task t : new ArrayList<>(live)) {
-                if (t.state != State.INIT || t.shutdown == null || t.lSequence < t.shutdown.sequence()) {
-                    continue;
+                if (t.state == State.INIT && t.shutdown != null && t.lSequence >= t.shutdown.sequence()) {
+                    t.state = State.WATCH;
                 }
-                Shutdown s = t.shutdown;
-                if (t.lSequence == s.sequence()) {
-                    if (!t.lHash.equals(s.headHash())) {
-                        refuse(live, t, shutdownMessage(t, paths.get(t.lSegment)), t.dayStart);
-                        continue;
-                    }
-                } else {
-                    AuditChainVerifier.HashedRecord above = probed.getOrDefault(t.instanceId, Map.of())
-                            .get(s.sequence() + 1);
-                    if (above == null) {
-                        if (!partial) {
-                            refuse(live, t, shutdownMessage(t, paths.get(t.lSegment)), t.dayStart);
-                            continue;
-                        }
-                    } else if (!above.previousHash().equals(s.headHash())) {
-                        refuse(live, t, shutdownMessage(t, paths.get(segmentAt(starts, above.byteOffset()))),
-                                t.dayStart);
-                        continue;
-                    }
-                }
-                t.state = State.WATCH;
             }
         }
 

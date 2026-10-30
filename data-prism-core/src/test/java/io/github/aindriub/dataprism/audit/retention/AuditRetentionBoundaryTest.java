@@ -3,6 +3,7 @@ package io.github.aindriub.dataprism.audit.retention;
 import io.github.aindriub.dataprism.audit.AuditChainKey;
 import io.github.aindriub.dataprism.audit.AuditCheckpoint;
 import io.github.aindriub.dataprism.audit.AuditEvent;
+import io.github.aindriub.dataprism.audit.AuditEventHash;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.audit.format.AuditRecordFormat;
 import io.github.aindriub.dataprism.audit.sink.SegmentedFileAuditSink;
@@ -671,6 +672,54 @@ class AuditRetentionBoundaryTest {
 
         outcome.refused("SHUTDOWN checkpoint at sequence 6");
         assertThat(lab.names()).contains("audit-2026-03-09.log");
+        assertThat(lab.anchors()).isEmpty();
+    }
+
+    // -- a rewritten, re-chained day whose next record is in another expired day ----------------------
+
+    private static String rehash(Lab lab, String line) {
+        AuditEvent e = AuditRecordFormat.parse(line);
+        String hash = lab.keyed ? AuditEventHash.compute(e, lab.key) : AuditEventHash.compute(e);
+        return line.replace(e.eventHash(), hash);
+    }
+
+    /**
+     * w closes with SHUTDOWN at 1 on 03-01 and writes record 2 on {@code nextDay}. An attacker then rewrites
+     * record 1 and recomputes the chain, so the joined expiring days verify; only the checkpoint disagrees.
+     */
+    private Lab rewrittenLab(boolean keyed, String nextDay) throws IOException {
+        Lab lab = new Lab(tempDir.resolve("seg"), keyed);
+        AuditRecorder w = lab.closingWriter("w");
+        AuditEvent e1 = lab.record(w, at("2026-03-01", 1));
+        w.close();
+        lab.record(lab.writer("mid"), at("2026-03-02", 2));
+        AuditEvent e2 = lab.record(w, at(nextDay, 3));
+        lab.record(lab.writer("other"), "2026-09-09T01:00:00Z");
+        lab.close();
+        String forged1 = rehash(lab, AuditRecordFormat.serialize(e1).replace("ALLOW", "DENY"));
+        String newHash1 = AuditRecordFormat.parse(forged1).eventHash();
+        String forged2 = rehash(lab, AuditRecordFormat.serialize(e2).replace(e1.eventHash(), newHash1));
+        lab.write("audit-2026-03-01.log", forged1 + "\n");
+        String nextFile = "audit-" + nextDay + ".log";
+        String rest = lab.read(nextFile).replace(AuditRecordFormat.serialize(e2), forged2);
+        lab.write(nextFile, rest);
+        assertThat(AuditChainVerifier.verifySegments(
+                List.of(lab.file("audit-2026-03-01.log"), lab.file(nextFile)), new ArrayList<>(), lab.keys, false)
+                .hasBreak()).isFalse();
+        return lab;
+    }
+
+    @ParameterizedTest
+    @CsvSource({"false,2026-03-02", "true,2026-03-02", "false,2026-03-03", "true,2026-03-03"})
+    void aRewrittenAndRechainedDayContradictingItsShutdownIsKeptWhateverExpiredDayHoldsTheNextRecord(
+            boolean keyed, String nextDay) throws IOException {
+        Lab lab = rewrittenLab(keyed, nextDay);
+
+        Outcome outcome = lab.purge(lab.retention());
+
+        outcome.refused("SHUTDOWN checkpoint at sequence 1");
+        assertThat(outcome.thrown().getMessage()).contains("records in audit-2026-03-01.log;");
+        assertThat(lab.names()).contains("audit-2026-03-01.log", "audit-" + nextDay + ".log");
         assertThat(lab.anchors()).isEmpty();
     }
 }
