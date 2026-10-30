@@ -72,6 +72,7 @@ class PauseDocumentTest {
         volatile long highest;
         volatile int unverified;
         volatile boolean oldest = true;
+        volatile boolean alone;
 
         StubPeers(long highest) {
             this.highest = highest;
@@ -90,6 +91,11 @@ class PauseDocumentTest {
         @Override
         public boolean isOldest() {
             return oldest;
+        }
+
+        @Override
+        public boolean isAlone() {
+            return alone;
         }
     }
 
@@ -563,6 +569,11 @@ class PauseDocumentTest {
             public boolean isOldest() {
                 return true;
             }
+
+            @Override
+            public boolean isAlone() {
+                return false;
+            }
         });
         nanos.advance(LEASE.multipliedBy(2));
 
@@ -570,6 +581,51 @@ class PauseDocumentTest {
 
         assertThat(looks.get()).as("the write was considered under the lock").isGreaterThanOrEqualTo(3);
         assertThat(map(cluster).containsKey(key(cluster))).isFalse();
+    }
+
+    @Test
+    void aLoneMemberServesAtOnceAfterStartWithoutWaitingForALease() {
+        solo();
+        var state = instance();
+
+        assertThat(state.allPaused()).isFalse();
+        assertThat(state.snapshot().pausedTools()).isEmpty();
+        assertThat(stored(cluster).sequence()).isEqualTo(1);
+        assertThat(state.securityStatus().pauseFresh()).isTrue();
+    }
+
+    @Test
+    void aSecondMemberJoiningBeforeTheFirstDocumentIsWrittenMeansNoExemption() {
+        solo();
+        Nanos nanos = new Nanos();
+        AtomicInteger looks = new AtomicInteger();
+        var document = bare(cluster, nanos, new Fixture.TestClock(), new PauseDocument.Peers() {
+            @Override
+            public long highestReportedSequence() {
+                return 0;
+            }
+
+            @Override
+            public int unverifiedCount() {
+                return 0;
+            }
+
+            @Override
+            public boolean isOldest() {
+                return true;
+            }
+
+            @Override
+            public boolean isAlone() {
+                // Alone for the pre-check and under the lock; a member has joined by the check before the write.
+                return looks.incrementAndGet() <= 2;
+            }
+        });
+
+        document.tick();
+
+        assertThat(looks.get()).isGreaterThanOrEqualTo(3);
+        assertThat(map(cluster).containsKey(key(cluster))).as("the exemption was withdrawn").isFalse();
     }
 
     @Test
@@ -628,14 +684,17 @@ class PauseDocumentTest {
             PrivacyCluster member = fixture.keyed(name, first + i, all, TestMembers.KEYS, settings,
                     new Fixture.Metrics(), new RecordingLogger(), false);
             members.add(member);
-            Nanos nanos = new Nanos();
-            clocks.add(nanos);
-            started.add(instance(member, nanos, fixture.clock));
         }
         for (PrivacyCluster member : members) {
             assertThat(Fixture.awaitMembers(member, 3)).isTrue();
         }
         assertThat(TestMembers.settled(30, members.toArray(new PrivacyCluster[0]))).isTrue();
+        // The states start once the cluster has formed: a member alone at its start is exempt from the wait.
+        for (PrivacyCluster member : members) {
+            Nanos nanos = new Nanos();
+            clocks.add(nanos);
+            started.add(instance(member, nanos, fixture.clock));
+        }
         for (PrivacyCluster member : members) {
             member.memberCards().orElseThrow().tick();
         }
@@ -684,16 +743,16 @@ class PauseDocumentTest {
         ClusterSecuritySettings settings = Fixture.settings(UnverifiedMemberAction.REFUSE);
         PrivacyCluster a = fixture.keyed(name, first, all, TestMembers.KEYS, settings, new Fixture.Metrics(),
                 new RecordingLogger(), false);
-        Nanos nanosA = new Nanos();
-        var stateA = instance(a, nanosA, fixture.clock);
         PrivacyCluster b = fixture.keyed(name, first + 1, all, TestMembers.KEYS, settings, new Fixture.Metrics(),
                 new RecordingLogger(), false);
-        Nanos nanosB = new Nanos();
-        var stateB = instance(b, nanosB, fixture.clock);
         com.hazelcast.core.HazelcastInstance outsider = Fixture.plain(name, first + 2, all);
         try {
             assertThat(Fixture.awaitMembers(a, 3)).isTrue();
             assertThat(Fixture.awaitMembers(b, 3)).isTrue();
+            Nanos nanosA = new Nanos();
+            var stateA = instance(a, nanosA, fixture.clock);
+            Nanos nanosB = new Nanos();
+            var stateB = instance(b, nanosB, fixture.clock);
             a.memberCards().orElseThrow().tick();
             b.memberCards().orElseThrow().tick();
             assertThat(a.memberCards().orElseThrow().unverifiedCount()).isEqualTo(1);
@@ -732,7 +791,7 @@ class PauseDocumentTest {
         var b = instance();
         assertThat(b.toolPaused("kept")).isTrue();
         long sequence = a.document().acceptedSequence();
-        assertThat(sequence).isEqualTo(2);
+        assertThat(sequence).as("Doc(1) of the lone start, then two pauses").isEqualTo(3);
         return new Held(a, b, sequence);
     }
 
@@ -1134,8 +1193,8 @@ class PauseDocumentTest {
         assertThat(member.toolPaused("search")).isTrue();
 
         map(cluster).delete(key(cluster));
-        var cold = instance();
-        assertThatThrownBy(() -> cold.resumeTool("search")).isInstanceOf(IllegalStateException.class)
+        var cold = bare(cluster, new Nanos(), new Fixture.TestClock(), new StubPeers(0));
+        assertThatThrownBy(() -> cold.resume(Target.tool("search"))).isInstanceOf(IllegalStateException.class)
                 .isNotInstanceOf(ClusterOperationRefusedException.class);
         assertThat(map(cluster).containsKey(key(cluster))).as("a refused resume writes nothing").isFalse();
     }

@@ -783,6 +783,7 @@ class ArchitectureTest {
     private static final String IDENTITY_CACHE = "io.github.aindriub.dataprism.hazelcast.CachingSyntheticValueSource";
     private static final String MEMBER_CARDS = "io.github.aindriub.dataprism.hazelcast.MemberCards";
     private static final String CLUSTER_SENTINEL = "io.github.aindriub.dataprism.hazelcast.ClusterSentinel";
+    private static final String PAUSE_DOCUMENT = "io.github.aindriub.dataprism.hazelcast.PauseDocument";
 
     private static final String SEAL_PACKAGE = "io.github.aindriub.dataprism.hazelcast.seal";
 
@@ -823,8 +824,8 @@ class ArchitectureTest {
     @Test
     void onlyScopeIdentityIndexOpensTheReidentificationMap() {
         onlyTheseOpen(IDENTITY_MAPS, "subjectOf", INDEX).check(CLASSES);
-        onlyTheseOpen(SEALER, "open", INDEX, IDENTITY_CACHE, IDENTITY_MAPS, MEMBER_CARDS, CLUSTER_SENTINEL)
-                .check(CLASSES);
+        onlyTheseOpen(SEALER, "open", INDEX, IDENTITY_CACHE, IDENTITY_MAPS, MEMBER_CARDS, CLUSTER_SENTINEL,
+                PAUSE_DOCUMENT).check(CLASSES);
     }
 
     @Test

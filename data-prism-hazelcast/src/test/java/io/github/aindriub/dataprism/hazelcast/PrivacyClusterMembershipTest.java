@@ -406,6 +406,8 @@ class PrivacyClusterMembershipTest {
         SETTINGS.put(PrivacyCluster.REIDENTIFICATION_MAP, new Expected(EvictionPolicy.LRU, PUT_IF_ABSENT, false));
         SETTINGS.put(PrivacyCluster.BUDGET_MAP, new Expected(EvictionPolicy.LRU, PUT_IF_ABSENT, false));
         SETTINGS.put(PrivacyCluster.OVERSIGHT_MAP, new Expected(EvictionPolicy.NONE, PUT_IF_ABSENT, false));
+        // The 0.7 oversight map, which keeps the fence entry: never evicted, no time to live (task 228).
+        SETTINGS.put(PrivacyCluster.OVERSIGHT_FENCE_MAP, new Expected(EvictionPolicy.NONE, PUT_IF_ABSENT, false));
         SETTINGS.put(PrivacyCluster.CALLER_RATE_MAP, new Expected(EvictionPolicy.NONE, PUT_IF_ABSENT, false));
         SETTINGS.put(PrivacyCluster.APPROVAL_MAP,
                 new Expected(EvictionPolicy.LRU, ApprovalMergePolicy.class.getName(), true));

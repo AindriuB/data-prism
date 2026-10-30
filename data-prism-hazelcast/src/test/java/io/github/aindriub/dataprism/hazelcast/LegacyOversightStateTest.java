@@ -52,6 +52,9 @@ class LegacyOversightStateTest {
     @Test
     void aLegacyPauseWrittenAfterConstructionPausesThatScopeOnly() {
         var state = new HazelcastOversightState(members[0]);
+        // The pair formed before this state started, so no first document is written at once (task 228): a pause of
+        // something else creates the document, and the scope under test is still not paused.
+        state.pauseTool("seed");
         assertThat(state.scopePaused("CASE-A")).isFalse();
 
         members[1].instance().getMap(PrivacyCluster.OVERSIGHT_MAP).put("CASE-A\0paused", Boolean.TRUE);

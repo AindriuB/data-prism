@@ -334,6 +334,11 @@ class PauseSplitBrainTest {
             public boolean isOldest() {
                 throw new IllegalStateException("the cards look is old");
             }
+
+            @Override
+            public boolean isAlone() {
+                throw new IllegalStateException("the cards look is old");
+            }
         };
 
         cPausesXThreeTimes(shape);

@@ -389,6 +389,9 @@ final class PauseDocument {
 
         /** Whether this member is alone or the oldest member of the cluster. */
         boolean isOldest();
+
+        /** Whether this member is the only one in Hazelcast's member list. */
+        boolean isAlone();
     }
 
     private static final class Memo {
@@ -403,7 +406,7 @@ final class PauseDocument {
         }
     }
 
-    private record Action(Doc base, Doc next, boolean recovery) {
+    private record Action(Doc base, Doc next, boolean recovery, boolean lone) {
     }
 
     private enum Op { PAUSE, RESUME, END_SCOPE }
@@ -487,6 +490,15 @@ final class PauseDocument {
             @Override
             public int unverifiedCount() {
                 return cluster.memberCards().map(MemberCards::unverifiedCount).orElse(0);
+            }
+
+            @Override
+            public boolean isAlone() {
+                try {
+                    return instances.get().getCluster().getMembers().size() == 1;
+                } catch (RuntimeException unknown) {
+                    return false;
+                }
             }
 
             @Override
@@ -976,6 +988,9 @@ final class PauseDocument {
                 if (action == null) {
                     return;
                 }
+                if (action.lone() && !peers.isAlone()) {
+                    return;
+                }
                 Outcome outcome = commit(stored, look.stored(), action.base(), action.next(), null, Set.of());
                 if (outcome == Outcome.WRITTEN && action.recovery()) {
                     warnRecovery();
@@ -1004,6 +1019,7 @@ final class PauseDocument {
         long highest = peers.highestReportedSequence();
         int unverified = peers.unverifiedCount();
         boolean oldest = look.status() == Status.ABSENT && peers.isOldest();
+        boolean alone = look.status() == Status.ABSENT && peers.isAlone();
         boolean serving = look.sameBytes() && look.status() == Status.CURRENT && cluster.securityStatus().serving();
         synchronized (monitor) {
             long now = nanos.getAsLong();
@@ -1018,36 +1034,44 @@ final class PauseDocument {
                         if (now - receivedAt >= lease.toNanos() || highest > held.sequence()) {
                             return null;
                         }
-                        return new Action(held, successor(held), false);
+                        return new Action(held, successor(held), false, false);
                     }
                     if (highest > 0) {
                         quietSince = now;
                         return null;
                     }
-                    if (!oldest || unverified != 0 || now - quietSince < lease.toNanos()) {
+                    if (!oldest || unverified != 0) {
                         return null;
                     }
-                    return new Action(null, Doc.empty(1, 0, wall.millis(), issuer()), false);
+                    // A member alone in Hazelcast's member list is exempt from the wait for one lease of uptime.
+                    // Membership cannot be forged by writing to a map, and a lone member has no peer that holds a
+                    // pause a replayed seq-0 card could hide. The exemption is judged now and again just before the
+                    // write; any other member present means the wait applies.
+                    boolean waited = now - quietSince >= lease.toNanos();
+                    if (!waited && !alone) {
+                        return null;
+                    }
+                    return new Action(null, Doc.empty(1, 0, wall.millis(), issuer()), false, !waited);
                 }
                 case BEHIND -> {
                     if (now - receivedAt >= lease.toNanos() || highest > held.sequence()) {
                         return null;
                     }
-                    return new Action(held, unionWrite(look), false);
+                    return new Action(held, unionWrite(look), false, false);
                 }
                 default -> {
                     if (look.lacks()) {
-                        return new Action(held, unionWrite(look), false);
+                        return new Action(held, unionWrite(look), false, false);
                     }
                     long age = now - receivedAt;
                     if (age >= lease.toNanos()) {
                         if (serving && unverified == 0 && highest <= held.sequence()) {
-                            return new Action(held, successor(held), true);
+                            return new Action(held, successor(held), true, false);
                         }
                         return null;
                     }
                     if (freshLocked() && age >= lease.dividedBy(2).toNanos()) {
-                        return new Action(held, successor(held), false);
+                        return new Action(held, successor(held), false, false);
                     }
                     return null;
                 }
