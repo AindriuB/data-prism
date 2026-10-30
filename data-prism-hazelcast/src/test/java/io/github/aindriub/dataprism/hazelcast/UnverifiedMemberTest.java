@@ -455,12 +455,44 @@ class UnverifiedMemberTest {
         assertThat(Fixture.cardMap(a).get(key)).as("the card was refreshed while closed").isNotEqualTo(before);
         assertThat(a.memberCards().orElseThrow().verifiedMembers()).contains(Fixture.uuidOf(a));
 
-        // The pause-document map is read through the closed gate, and a pause (the safe direction) is written.
+        // The pause-document map is read through the closed gate: with no document yet the read refuses as
+        // OVERSIGHT_UNAVAILABLE (not as the gate's code), and a pause (the safe direction) is written.
         var state = new HazelcastOversightState(a);
-        assertThat(state.allPaused()).isFalse();
+        assertThatThrownBy(state::allPaused).isInstanceOf(IllegalStateException.class)
+                .isNotInstanceOf(ClusterOperationRefusedException.class);
         assertThat(a.instance().getMap(PrivacyCluster.OVERSIGHT_MAP).isEmpty()).isTrue();
         state.pauseAll();
         assertThat(state.allPaused()).isTrue();
+        assertThat(a.instance().getMap(PrivacyCluster.OVERSIGHT_MAP).size()).isEqualTo(1);
+    }
+
+    /** OD-215-16 (a): the gate never blocks a pause, and a resume waits for it to reopen. */
+    @Test
+    void whileTheGateIsClosedAPauseIsWrittenAndSeenByTheOtherMemberAndAResumeIsRefusedUntilItReopens() {
+        clusterWithAnOutsider(UnverifiedMemberAction.REFUSE);
+        look();
+        fixture.clock.advance(GRACE);
+        look();
+        assertThat(a.securityStatus().serving()).isFalse();
+        var stateA = new HazelcastOversightState(a);
+        var stateB = new HazelcastOversightState(b);
+
+        stateA.pauseTool("search");
+
+        assertThat(stateB.toolPaused("search")).as("seen by every instance").isTrue();
+        assertThatThrownBy(() -> stateA.resumeTool("search")).isInstanceOf(ClusterOperationRefusedException.class)
+                .satisfies(refusal -> assertThat(((PrivacyRefusedException) refusal).code()).isEqualTo(CODE));
+        assertThatThrownBy(() -> stateB.resumeTool("search")).isInstanceOf(ClusterOperationRefusedException.class);
+        assertThat(stateB.toolPaused("search")).as("the refused resume changed nothing").isTrue();
+
+        outsiderLeaves();
+        look();
+        assertThat(a.securityStatus().serving()).isTrue();
+
+        stateA.resumeTool("search");
+        assertThat(stateB.toolPaused("search")).isFalse();
+        stateA.close();
+        stateB.close();
     }
 
     // ---- what is said about it -------------------------------------------------------------------------------

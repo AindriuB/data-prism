@@ -129,7 +129,25 @@ final class OversightOperatorController {
             }
             throw new OperatorException(HttpStatus.SERVICE_UNAVAILABLE, code);
         }
-        return Map.of("status", "RESUMED", "target", target.type().name());
+        return Map.of("status", "RESUMED", "target", target.type().name(), "stillPaused", stillPaused(target));
+    }
+
+    /**
+     * Whether the resumed target is still paused, read from a snapshot taken after the resume. A global pause still
+     * refuses calls to a tool or scope, so it keeps those targets paused. Fails closed: a snapshot that cannot be
+     * read reports paused, since a lift cannot be confirmed. The resume has already applied and been audited.
+     */
+    private boolean stillPaused(Target target) {
+        try {
+            OversightSnapshot snapshot = state.snapshot();
+            return switch (target.type()) {
+                case ALL -> snapshot.allPaused();
+                case TOOL -> snapshot.pausedTools().contains(target.name()) || snapshot.allPaused();
+                case SCOPE -> snapshot.pausedScopes().contains(target.name()) || snapshot.allPaused();
+            };
+        } catch (RuntimeException unreadable) {
+            return true;
+        }
     }
 
     @GetMapping("/operator/state")
