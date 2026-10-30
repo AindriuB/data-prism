@@ -15,6 +15,7 @@ import io.github.aindriub.dataprism.core.spi.ValueTokenSource;
 import io.github.aindriub.dataprism.core.policy.PrivacyPolicyResolver;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.DefaultContextOrchestrator;
+import io.github.aindriub.dataprism.orchestration.OrchestrationOptions;
 import io.github.aindriub.dataprism.core.correlation.CorrelationMdc;
 import io.github.aindriub.dataprism.orchestration.NamespaceCorrelationService;
 import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
@@ -181,6 +182,6 @@ public class ConfiguredJsonSourcesAutoConfiguration {
                 new ParameterFingerprinter(keys), audit, identities,
                 new SourceFanOut(SourceCircuitBreaker.disabled(), clock, new SourceFanOutOptions(metrics,
                         correlationMdc.getIfAvailable(CorrelationMdc::off))), budget, requestLimits(limits, environment),
-                new NamespaceCorrelationService(metadata), new SourceAliasing(tokens), metrics);
+                new NamespaceCorrelationService(metadata), new SourceAliasing(tokens), metrics, OrchestrationOptions.defaults());
     }
 }

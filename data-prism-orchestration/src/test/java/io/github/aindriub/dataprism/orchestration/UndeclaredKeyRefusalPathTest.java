@@ -140,7 +140,7 @@ class UndeclaredKeyRefusalPathTest {
                 new InMemoryScopeBudget(), RequestLimits.DEFAULT,
                 new NamespaceCorrelationService(resolver),
                 new SourceAliasing(new HmacValueTokenSource(KEYS)),
-                PrivacyMetrics.none());
+                PrivacyMetrics.none(), OrchestrationOptions.defaults());
     }
 
     private static AuditedRefusalException refusal(DefaultContextOrchestrator orchestrator) {
