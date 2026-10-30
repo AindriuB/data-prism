@@ -645,6 +645,51 @@ class PauseDocumentTest {
         threeMembersStartAndTick("first-start-restart-b");
     }
 
+    @Test
+    void aCardLessMemberPresentMeansNoFirstStartUntilItLeaves() {
+        String name = TestMembers.uniqueName("first-start-outsider");
+        int first = FreePorts.consecutive(3);
+        List<String> all = List.of("127.0.0.1:" + first, "127.0.0.1:" + (first + 1), "127.0.0.1:" + (first + 2));
+        ClusterSecuritySettings settings = Fixture.settings(UnverifiedMemberAction.REFUSE);
+        PrivacyCluster a = fixture.keyed(name, first, all, TestMembers.KEYS, settings, new Fixture.Metrics(),
+                new RecordingLogger(), false);
+        Nanos nanosA = new Nanos();
+        var stateA = instance(a, nanosA, fixture.clock);
+        PrivacyCluster b = fixture.keyed(name, first + 1, all, TestMembers.KEYS, settings, new Fixture.Metrics(),
+                new RecordingLogger(), false);
+        Nanos nanosB = new Nanos();
+        var stateB = instance(b, nanosB, fixture.clock);
+        com.hazelcast.core.HazelcastInstance outsider = Fixture.plain(name, first + 2, all);
+        try {
+            assertThat(Fixture.awaitMembers(a, 3)).isTrue();
+            assertThat(Fixture.awaitMembers(b, 3)).isTrue();
+            a.memberCards().orElseThrow().tick();
+            b.memberCards().orElseThrow().tick();
+            assertThat(a.memberCards().orElseThrow().unverifiedCount()).isEqualTo(1);
+
+            nanosA.advance(settings.pauseLease().multipliedBy(2));
+            nanosB.advance(settings.pauseLease().multipliedBy(2));
+            stateA.document().tick();
+            stateB.document().tick();
+            assertThat(a.instance().getMap(PrivacyCluster.OVERSIGHT_MAP).isEmpty()).as("no first document").isTrue();
+            assertThatThrownBy(stateA::allPaused).isInstanceOf(IllegalStateException.class);
+
+            outsider.shutdown();
+            assertThat(Fixture.awaitMembers(a, 2)).isTrue();
+            assertThat(Fixture.awaitMembers(b, 2)).isTrue();
+            a.memberCards().orElseThrow().tick();
+            b.memberCards().orElseThrow().tick();
+            stateA.document().tick();
+            stateB.document().tick();
+
+            assertThat(stateA.allPaused()).isFalse();
+            assertThat(stateB.allPaused()).isFalse();
+            assertThat(stored(a).sequence()).isEqualTo(1);
+        } finally {
+            outsider.shutdown();
+        }
+    }
+
     /** A pause at sequence 2 held by A and B; the document is then deleted, and C (the oldest) restarts with no memory. */
     private record Held(HazelcastOversightState a, HazelcastOversightState b, long sequence) {
     }

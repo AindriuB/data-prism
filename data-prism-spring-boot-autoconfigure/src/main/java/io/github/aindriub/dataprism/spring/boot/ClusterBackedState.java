@@ -170,8 +170,10 @@ class ClusterBackedState {
     }
 
     @Bean @ConditionalOnMissingBean
-    OversightState dataPrismClusterOversightState(PrivacyCluster cluster) {
-        return new HazelcastOversightState(cluster);
+    OversightState dataPrismClusterOversightState(PrivacyCluster cluster, DataPrismProperties properties,
+            ObjectProvider<PrivacyMetrics> metrics) {
+        return new HazelcastOversightState(cluster, properties.getHazelcast().getLockTimeout(),
+                metrics.getIfAvailable(PrivacyMetrics::none));
     }
 
     @Bean @ConditionalOnMissingBean
