@@ -542,6 +542,36 @@ class PauseDocumentTest {
     }
 
     @Test
+    void aCardAboveZeroThatAppearsBetweenTheFirstLookAndTheWriteStopsTheFirstStart() {
+        solo();
+        Nanos nanos = new Nanos();
+        AtomicInteger looks = new AtomicInteger();
+        var document = bare(cluster, nanos, new Fixture.TestClock(), new PauseDocument.Peers() {
+            @Override
+            public long highestReportedSequence() {
+                // The cards are read for the sample, for the pre-check and again under the lock.
+                return looks.incrementAndGet() <= 2 ? 0 : 5;
+            }
+
+            @Override
+            public int unverifiedCount() {
+                return 0;
+            }
+
+            @Override
+            public boolean isOldest() {
+                return true;
+            }
+        });
+        nanos.advance(LEASE.multipliedBy(2));
+
+        document.tick();
+
+        assertThat(looks.get()).as("the write was considered under the lock").isGreaterThanOrEqualTo(3);
+        assertThat(map(cluster).containsKey(key(cluster))).isFalse();
+    }
+
+    @Test
     void aMemberThatIsNotTheOldestAnUnverifiedMemberOrACardLessMemberMeansNoFirstStart() {
         solo();
         Nanos nanos = new Nanos();
