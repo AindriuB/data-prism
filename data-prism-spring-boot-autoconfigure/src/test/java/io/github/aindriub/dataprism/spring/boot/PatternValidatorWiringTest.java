@@ -81,7 +81,7 @@ class PatternValidatorWiringTest {
                     privacyContext(), new InvestigationContext("investigator-1", "client-1", "CASE-1", Set.of())))
                     .isInstanceOfSatisfying(PrivacyRefusedException.class, e -> {
                         assertThat(e.code()).isEqualTo("VALIDATION_FAILED");
-                        assertThat(e.getMessage()).contains("SENSITIVE_PATTERN");
+                        assertThat(e.getMessage()).contains(", first SENSITIVE_PATTERN by ");
                     });
         });
     }
