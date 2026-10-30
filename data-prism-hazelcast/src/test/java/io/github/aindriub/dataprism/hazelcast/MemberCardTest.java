@@ -146,7 +146,7 @@ class MemberCardTest {
         /** Looks at the cluster only when a test says so: the schedule is an hour. */
         PrivacyCluster.Environment environment(Metrics metrics, RecordingLogger log) {
             return new PrivacyCluster.Environment(clock, metrics, log.logger(), Duration.ofHours(1),
-                    Duration.ofSeconds(1));
+                    PrivacyCluster.DEFAULT_CARD_WRITE_TIMEOUT);
         }
 
         PrivacyCluster keyed(String clusterName, int port, List<String> peers, ClusterKeys keys,
@@ -243,6 +243,7 @@ class MemberCardTest {
                 false);
         assertThat(Fixture.awaitMembers(a, 2)).as("A sees B").isTrue();
         assertThat(Fixture.awaitMembers(b, 2)).as("B sees A").isTrue();
+        assertThat(TestMembers.settled(30, a, b)).as("the members did not settle").isTrue();
         return new Pair(a, b, metricsA, metricsB, logA);
     }
 
@@ -702,6 +703,7 @@ class MemberCardTest {
         PrivacyCluster first = PrivacyCluster.using(instance, false, Duration.ofMinutes(1), TestMembers.KEYS,
                 settings, environment);
         Sealer registered = registeredSealer(first);
+        var blockedEnvironment = shortWriteEnvironment();
         HazelcastInstance outsider = Fixture.plain(config.getClusterName(), port + 1, everyone);
         // The outsider holds this member's card key, so the next wrapper's first card write waits and then fails.
         String cardKey = first.memberCards().orElseThrow().keyForTest(instance.getCluster().getLocalMember().getUuid());
@@ -711,7 +713,7 @@ class MemberCardTest {
         CompletableFuture<Object> second = CompletableFuture.supplyAsync(() -> {
             try {
                 return PrivacyCluster.using(instance, false, Duration.ofMinutes(1), TestMembers.KEYS, settings,
-                        environment);
+                        blockedEnvironment);
             } catch (RuntimeException failed) {
                 return failed;
             }
@@ -955,6 +957,7 @@ class MemberCardTest {
         PrivacyCluster serving = PrivacyCluster.using(instance, false, Duration.ofMinutes(1), TestMembers.KEYS,
                 settings, environment);
         Sealer registered = registeredSealer(serving);
+        var blockedEnvironment = shortWriteEnvironment();
         HazelcastInstance outsider = Fixture.plain(config.getClusterName(), port + 1, everyone);
         String cardKey = serving.memberCards().orElseThrow()
                 .keyForTest(instance.getCluster().getLocalMember().getUuid());
@@ -963,7 +966,7 @@ class MemberCardTest {
         CompletableFuture<Object> second = CompletableFuture.supplyAsync(() -> {
             try {
                 return PrivacyCluster.using(instance, false, Duration.ofMinutes(1), TestMembers.KEYS, settings,
-                        environment);
+                        blockedEnvironment);
             } catch (RuntimeException failed) {
                 return failed;
             }

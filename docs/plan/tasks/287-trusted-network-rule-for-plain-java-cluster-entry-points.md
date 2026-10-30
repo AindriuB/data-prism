@@ -5,7 +5,7 @@ Filed 2026-10-23 for owner decision (b), as the second half of 284. 284 refuses 
 **Repo:** `.`
 **Release:** 0.8.0
 **Base branch:** the 0.8 integration branch, at a commit that contains 227, 228 and 284.
-**Depends on:** 225 (owns `CachingSyntheticValueSource`, `ScopeIdentityIndex` and their tests in wave 5), 227 (owns `PrivacyCluster.java`, `ClusterMembership.java`, `PrivacyClusterRefusal.java` and `KeylessMemberIsolationTest.java`, and switches five store files, in wave 6), 228 (owns `HazelcastOversightTest.java` in wave 7), 284 (creates `TrustedNetwork.evaluate`, the one copy of the rule, and registers the codes; this task calls it), 294 (owns `TestMembers.java`, `FreePorts.java`, `MemberCardTest.java`, `ApprovalRaceTest.java` and `seal/SealedWritesTest.java` in wave 7; added 2026-10-29)
+**Depends on:** 225 (owns `CachingSyntheticValueSource`, `ScopeIdentityIndex` and their tests in wave 5), 227 (owns `PrivacyCluster.java`, `ClusterMembership.java`, `PrivacyClusterRefusal.java` and `KeylessMemberIsolationTest.java`, and switches five store files, in wave 6), 228 (owns `HazelcastOversightTest.java` in wave 7), 284 (creates `TrustedNetwork.evaluate`, the one copy of the rule, and registers the codes; this task calls it), 294 (owns `TestMembers.java`, `FreePorts.java`, `MemberCardTest.java`, `ApprovalRaceTest.java`, `seal/SealedWritesTest.java` and `ApprovalStoreContractTest.java` (its settle wait) in wave 7; added 2026-10-29)
 **Wave:** 8 (moved from 7 on 2026-10-23, after 228)
 **Owns:**
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/ClusterSecuritySettings.java *(the trusted-network declaration only)*
