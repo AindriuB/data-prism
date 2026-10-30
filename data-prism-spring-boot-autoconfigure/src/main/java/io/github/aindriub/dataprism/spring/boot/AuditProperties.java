@@ -21,6 +21,11 @@ public class AuditProperties {
     private java.time.Period retention = java.time.Period.ofMonths(6);
     /** Must be true to accept a retention shorter than six months. Inert with six months or more. */
     private boolean retentionOverride;
+    /** With hash-chained and directory: a day's segment is closed and the next opened before a write would take it past this size. At least 1MB; unset means one segment per day. */
+    private org.springframework.util.unit.DataSize segmentMaxSize;
+    private final HmacKey hmacKey = new HmacKey();
+    /** Verification-only keys of earlier chains, keyed by key id. Retention verifies expiring segments with them; the recorder never signs with one. */
+    private Map<String, RetiredKey> retiredHmacKeys = new LinkedHashMap<>();
     private final Checkpoint checkpoint = new Checkpoint();
     private final Output output = new Output();
     private final Listeners listeners = new Listeners();
@@ -38,6 +43,87 @@ public class AuditProperties {
 
     public void setEntityTypes(List<String> v) {
         entityTypes = v == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(v);
+    }
+
+    public org.springframework.util.unit.DataSize getSegmentMaxSize() {
+        return segmentMaxSize;
+    }
+
+    public void setSegmentMaxSize(org.springframework.util.unit.DataSize v) {
+        segmentMaxSize = v;
+    }
+
+    public HmacKey getHmacKey() {
+        return hmacKey;
+    }
+
+    public Map<String, RetiredKey> getRetiredHmacKeys() {
+        return retiredHmacKeys;
+    }
+
+    public void setRetiredHmacKeys(Map<String, RetiredKey> v) {
+        retiredHmacKeys = v == null ? new LinkedHashMap<>() : new LinkedHashMap<>(v);
+    }
+
+    /**
+     * The opt-in keyed audit chain. Unset (the default) means the plain SHA-256 chain. There is no inline key
+     * value: a key is only ever a reference. Set exactly one of environment-variable and provider-reference.
+     */
+    public static class HmacKey {
+        /** Identifier of the audit chain key. Required when the group is set. */
+        private String keyId;
+        /** Name of the environment variable holding the key. A name only, never the key itself. Exactly one of this and provider-reference. */
+        private String environmentVariable;
+        /** Reference to a key provider. A reference only, never a literal key. Exactly one of this and environment-variable. */
+        private String providerReference;
+
+        public String getKeyId() {
+            return keyId;
+        }
+
+        public void setKeyId(String v) {
+            keyId = v;
+        }
+
+        public String getEnvironmentVariable() {
+            return environmentVariable;
+        }
+
+        public void setEnvironmentVariable(String v) {
+            environmentVariable = v;
+        }
+
+        public String getProviderReference() {
+            return providerReference;
+        }
+
+        public void setProviderReference(String v) {
+            providerReference = v;
+        }
+    }
+
+    /** A verification-only audit key; its id is the map key. Set exactly one of the two references. */
+    public static class RetiredKey {
+        /** Name of the environment variable holding the retired key. Exactly one of this and provider-reference. */
+        private String environmentVariable;
+        /** Reference to a key provider for the retired key. Exactly one of this and environment-variable. */
+        private String providerReference;
+
+        public String getEnvironmentVariable() {
+            return environmentVariable;
+        }
+
+        public void setEnvironmentVariable(String v) {
+            environmentVariable = v;
+        }
+
+        public String getProviderReference() {
+            return providerReference;
+        }
+
+        public void setProviderReference(String v) {
+            providerReference = v;
+        }
     }
 
     public Output getOutput() {

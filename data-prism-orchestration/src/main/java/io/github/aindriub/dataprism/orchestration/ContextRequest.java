@@ -5,6 +5,7 @@ import io.github.aindriub.dataprism.core.model.ConsistencyFinding;
 
 import io.github.aindriub.dataprism.core.correlation.ExternalCorrelationId;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -48,12 +49,15 @@ import java.util.Set;
  *                                 {@link #of} and {@link #comparison} factories, which take none,
  *                                 audit {@link AuditedEntityTypes#UNREGISTERED}. {@code entityType} itself
  *                                 stays raw: adapters and the response echo use it.
+ * @param targetSources            the source labels the caller chose, exactly as sent, or empty when it
+ *                                 chose none. Untrusted client strings: resolved against this request's
+ *                                 labels and never audited or logged. Present means at least one.
  */
 public record ContextRequest(String entityType, String subjectId, Set<String> rejectedArguments,
                              String toolName, boolean includeAgreementFindings,
                              String approvalId, String approverId,
                              Optional<ExternalCorrelationId> externalCorrelationId,
-                             String auditedEntityType) {
+                             String auditedEntityType, Optional<List<String>> targetSources) {
 
     /** The tool every {@link #of} and {@link #comparison} factory audits a request under. */
     public static final String DEFAULT_TOOL_NAME = "get_entity_context";
@@ -74,12 +78,32 @@ public record ContextRequest(String entityType, String subjectId, Set<String> re
         approvalId = approvalId == null ? "" : approvalId;
         approverId = approverId == null ? "" : approverId;
         externalCorrelationId = externalCorrelationId == null ? Optional.empty() : externalCorrelationId;
+        targetSources = targetSources == null ? Optional.empty() : targetSources.map(List::copyOf);
+        if (targetSources.isPresent() && targetSources.get().isEmpty()) {
+            throw new IllegalArgumentException("targetSources, when present, must not be empty");
+        }
+    }
+
+    /** A request that names no sources. */
+    public ContextRequest(String entityType, String subjectId, Set<String> rejectedArguments,
+                          String toolName, boolean includeAgreementFindings,
+                          String approvalId, String approverId,
+                          Optional<ExternalCorrelationId> externalCorrelationId,
+                          String auditedEntityType) {
+        this(entityType, subjectId, rejectedArguments, toolName, includeAgreementFindings, approvalId,
+                approverId, externalCorrelationId, auditedEntityType, Optional.empty());
+    }
+
+    /** The same request, asking only the sources with these labels. */
+    public ContextRequest withTargetSources(List<String> labels) {
+        return new ContextRequest(entityType, subjectId, rejectedArguments, toolName, includeAgreementFindings,
+                approvalId, approverId, externalCorrelationId, auditedEntityType, Optional.of(labels));
     }
 
     /** No reserved argument was rejected — the ordinary case. */
     public static ContextRequest of(String entityType, String subjectId) {
         return new ContextRequest(entityType, subjectId, Set.of(), DEFAULT_TOOL_NAME, false, "", "",
-                Optional.empty(), AuditedEntityTypes.UNREGISTERED);
+                Optional.empty(), AuditedEntityTypes.UNREGISTERED, Optional.empty());
     }
 
     /**
@@ -90,6 +114,6 @@ public record ContextRequest(String entityType, String subjectId, Set<String> re
     public static ContextRequest comparison(String entityType, String subjectId,
                                             Set<String> rejectedArguments, String toolName) {
         return new ContextRequest(entityType, subjectId, rejectedArguments, toolName, true, "", "",
-                Optional.empty(), AuditedEntityTypes.UNREGISTERED);
+                Optional.empty(), AuditedEntityTypes.UNREGISTERED, Optional.empty());
     }
 }
