@@ -73,21 +73,49 @@ public final class SensitiveDataScanner {
      *               the value that produced it.
      */
     public ScanReport scan(JsonNode response, Predicate<String> exempt) {
+        return scan(response, exempt, name -> false);
+    }
+
+    /**
+     * @param redactName property names to keep out of reported paths even though no detector
+     *                   flags them, such as a name another validator has found to be a raw value.
+     *                   It only redacts; it adds no match.
+     */
+    ScanReport scan(JsonNode response, Predicate<String> exempt, Predicate<String> redactName) {
         Objects.requireNonNull(exempt, "exempt");
-        Walk walk = new Walk(exempt);
+        Objects.requireNonNull(redactName, "redactName");
+        Walk walk = new Walk(exempt, redactName);
         walk.node(response, "$", 0);
         return walk.complete ? ScanReport.complete(walk.matches) : ScanReport.truncated(walk.matches);
+    }
+
+    /**
+     * Whether any detector matches this property name, ignoring the budget and any allowlist.
+     * Read-only: lets another validator redact the names this scanner would flag.
+     */
+    boolean flagsPropertyName(String name) {
+        if (name == null || name.isBlank()) {
+            return false;
+        }
+        for (Detector detector : Detector.values()) {
+            if (detector.detect(name) != null) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private final class Walk {
 
         private final Predicate<String> exempt;
+        private final Predicate<String> redactName;
         private final List<SensitiveMatch> matches = new ArrayList<>();
         private int remaining = characterBudget;
         private boolean complete = true;
 
-        private Walk(Predicate<String> exempt) {
+        private Walk(Predicate<String> exempt, Predicate<String> redactName) {
             this.exempt = exempt;
+            this.redactName = redactName;
         }
 
         private void node(JsonNode node, String path, int depth) {
@@ -103,7 +131,8 @@ public final class SensitiveDataScanner {
                     // A property name is payload data, so it is scanned like a value. When it
                     // is flagged, it and everything under it is reported under a redacted
                     // segment: the name must never reach a path.
-                    boolean flagged = scalar(entry.getKey(), path + "." + KEY_SEGMENT);
+                    boolean flagged = scalar(entry.getKey(), path + "." + KEY_SEGMENT)
+                            | (!entry.getKey().isBlank() && redactName.test(entry.getKey()));
                     node(entry.getValue(), path + "." + (flagged ? KEY_SEGMENT : entry.getKey()), depth + 1);
                     if (!complete || matches.size() >= MAX_MATCHES) {
                         return;
