@@ -443,22 +443,43 @@ public final class OperatorHarness implements AutoCloseable {
     // Ports below the OS ephemeral range (no outgoing connection or port-0 bind takes one), probed on
     // loopback and wildcard, then claimed with a FileLock that every test JVM on this machine honours
     // and that is held until this JVM exits. A port is therefore never handed out twice, in this build
-    // or in a concurrent one. At most three attempts, each on a failed probe or claim only.
+    // or in a concurrent one. The port is drawn only among ports this JVM has not claimed (a second channel
+    // on a file it holds would drop our own lock), and that never costs an attempt. At most three attempts,
+    // each on a failed probe or a lock held by another JVM only.
     private static final Path PORT_CLAIMS = Path.of(System.getProperty("java.io.tmpdir"), "dataprism-test-ports");
     private static final List<FileChannel> CLAIMED = new ArrayList<>();
     private static final java.util.Set<Integer> CLAIMED_PORTS = new java.util.HashSet<>();
     private static final Random PORT_CHOICE = new Random();
+
+    /**
+     * The first of {@code count} consecutive ports inside {@code [low, low + range)} that this JVM has not claimed. A
+     * random start, then a scan that wraps once round the range, so a run that overlaps this JVM's own claims is
+     * skipped and never costs an attempt. Opens no socket. Throws when no unclaimed run is left.
+     */
+    static int pick(java.util.Set<Integer> claimed, int low, int range, int count, Random random) {
+        int bases = range - count + 1;
+        if (bases > 0) {
+            int start = random.nextInt(bases);
+            for (int i = 0; i < bases; i++) {
+                int base = low + (start + i) % bases;
+                boolean free = true;
+                for (int port = base; port < base + count && free; port++) {
+                    free = !claimed.contains(port);
+                }
+                if (free) {
+                    return base;
+                }
+            }
+        }
+        throw new IllegalStateException("no unclaimed run of " + count + " ports left in this JVM");
+    }
 
     /** A port the caller may bind on 127.0.0.1 and nothing else in any concurrent build will be given. */
     public static synchronized int freePort() throws Exception {
         Files.createDirectories(PORT_CLAIMS);
         IOException last = null;
         for (int attempt = 0; attempt < 3; attempt++) {
-            int port = 20000 + PORT_CHOICE.nextInt(12000);
-            if (CLAIMED_PORTS.contains(port)) {
-                // Never open a second channel on a file this JVM holds: closing it would drop our own lock.
-                continue;
-            }
+            int port = pick(CLAIMED_PORTS, 20000, 12000, 1, PORT_CHOICE);
             // One after the other: Linux refuses a wildcard bind while a loopback one is open. A foreign
             // loopback listener fails the first probe; a foreign wildcard one (which on macOS the
             // loopback probe cannot see) fails the second.
