@@ -44,6 +44,13 @@ final class ToolCalls {
      */
     private static final Set<String> APPROVAL_ARGUMENTS = Set.of("approvalId", "approverId");
 
+    /**
+     * The longest {@code targetSources} entry, in code points as JSON Schema counts them. A
+     * source label is capped at 128 in the 0.8 schemas (64 from 0.9), and a legacy REAL-mode
+     * name is not capped at all, so the parser must not be narrower than the schema.
+     */
+    static final int MAX_TARGET_LABEL_CODE_POINTS = 128;
+
     private ToolCalls() {
     }
 

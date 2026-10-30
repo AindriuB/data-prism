@@ -184,7 +184,7 @@ class TargetSourcesToolTest {
     private static final String[] TOOLS = {GetEntityContextTool.NAME, CompareEntitySourcesTool.NAME};
 
     @Test
-    @DisplayName("both schemas declare targetSources: array, minItems 1, uniqueItems, items 1 to 64, no maxItems")
+    @DisplayName("both schemas declare targetSources: array, minItems 1, uniqueItems, items 1 to 128, no maxItems")
     @SuppressWarnings("unchecked")
     void schema() {
         for (McpServerFeatures.SyncToolSpecification spec : specs(recording)) {
@@ -194,7 +194,7 @@ class TargetSourcesToolTest {
             assertThat(target).containsEntry("type", "array").containsEntry("minItems", 1)
                     .containsEntry("uniqueItems", true).doesNotContainKey("maxItems");
             assertThat((Map<String, Object>) target.get("items"))
-                    .containsEntry("type", "string").containsEntry("minLength", 1).containsEntry("maxLength", 64);
+                    .containsEntry("type", "string").containsEntry("minLength", 1).containsEntry("maxLength", 128);
             assertThat((List<String>) schema.get("required")).containsExactly("entityType", "subjectId");
         }
     }
@@ -220,7 +220,7 @@ class TargetSourcesToolTest {
     void invalidArgumentsAreRejected() {
         var handlers = handlers(recording);
         List<Object> invalid = List.of(List.of(), "alpha", 7, List.of("a", "a"), List.of(""),
-                List.of("x".repeat(65)), List.of(1), java.util.Arrays.asList("a", null));
+                List.of("x".repeat(129)), List.of(1), java.util.Arrays.asList("a", null));
         for (int i = 0; i < 2; i++) {
             for (Object bad : invalid) {
                 McpSchema.CallToolResult result = call(handlers.get(i), TOOLS[i], args(bad));
@@ -229,7 +229,49 @@ class TargetSourcesToolTest {
             }
         }
         assertThat(requests).isEmpty();
-        assertThat(call(handlers.get(0), TOOLS[0], args(List.of("x".repeat(64)))).isError()).isNotEqualTo(true);
+        assertThat(call(handlers.get(0), TOOLS[0], args(List.of("x".repeat(128)))).isError()).isNotEqualTo(true);
+    }
+
+    @Test
+    @DisplayName("a label of 65 and one of exactly 128 characters are accepted and reach the orchestrator; 129 is not")
+    void longLegacyLabelsAreAccepted() {
+        var handlers = handlers(recording);
+        for (int i = 0; i < 2; i++) {
+            for (int length : new int[] {65, 128}) {
+                requests.clear();
+                String label = "a".repeat(length);
+                assertThat(call(handlers.get(i), TOOLS[i], args(List.of(label))).isError())
+                        .as("%s %d", TOOLS[i], length).isNotEqualTo(true);
+                assertThat(requests).as("%s %d", TOOLS[i], length).singleElement()
+                        .satisfies(r -> assertThat(r.targetSources()).contains(List.of(label)));
+            }
+            requests.clear();
+            McpSchema.CallToolResult tooLong = call(handlers.get(i), TOOLS[i], args(List.of("a".repeat(129))));
+            assertThat(tooLong.isError()).as(TOOLS[i]).isEqualTo(true);
+            assertThat(text(tooLong)).isEqualTo("targetSources is not valid");
+            assertThat(requests).isEmpty();
+        }
+    }
+
+    @Test
+    @DisplayName("the limit counts code points as the schema does: 128 astral characters are accepted, 129 are not")
+    void limitCountsCodePoints() {
+        var handlers = handlers(recording);
+        String astral = "\uD83D\uDE00";
+        assertThat(astral.length()).isEqualTo(2);
+        for (int i = 0; i < 2; i++) {
+            requests.clear();
+            String within = astral.repeat(128);
+            assertThat(call(handlers.get(i), TOOLS[i], args(List.of(within))).isError())
+                    .as(TOOLS[i]).isNotEqualTo(true);
+            assertThat(requests).singleElement()
+                    .satisfies(r -> assertThat(r.targetSources()).contains(List.of(within)));
+
+            requests.clear();
+            assertThat(call(handlers.get(i), TOOLS[i], args(List.of(astral.repeat(129)))).isError())
+                    .as(TOOLS[i]).isEqualTo(true);
+            assertThat(requests).isEmpty();
+        }
     }
 
     @Test

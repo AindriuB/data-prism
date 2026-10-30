@@ -169,7 +169,7 @@ public final class GetEntityContextTool {
                                         "description", "Source labels as returned by list_sources. When "
                                                 + "absent, every permitted source is asked, and the call is "
                                                 + "refused if there are too many.",
-                                        "items", Map.of("type", "string", "minLength", 1, "maxLength", 64),
+                                        "items", Map.of("type", "string", "minLength", 1, "maxLength", ToolCalls.MAX_TARGET_LABEL_CODE_POINTS),
                                         "minItems", 1,
                                         "uniqueItems", true))))
                 .build();
@@ -204,7 +204,7 @@ public final class GetEntityContextTool {
 
         List<String> targetSources = targetSources(arguments);
         if (targetSources != null && targetSources.isEmpty()) {
-            // Mirrors the schema (minItems 1, unique, 1 to 64 characters), which a client may not have
+            // Mirrors the schema (minItems 1, unique, 1 to 128 code points), which a client may not have
             // enforced. The label is never echoed or recorded.
             return error("targetSources is not valid");
         }
@@ -368,7 +368,7 @@ public final class GetEntityContextTool {
 
     /**
      * The labels the caller chose: {@code null} when it sent none, an empty list when what it sent breaks
-     * the schema (not an array of distinct strings of 1 to 64 characters, or empty). Never logged.
+     * the schema (not an array of distinct strings of 1 to 128 code points, or empty). Never logged.
      */
     private static List<String> targetSources(Map<String, Object> arguments) {
         Object value = arguments == null ? null : arguments.get("targetSources");
@@ -380,7 +380,7 @@ public final class GetEntityContextTool {
         }
         java.util.LinkedHashSet<String> labels = new java.util.LinkedHashSet<>();
         for (Object item : items) {
-            if (!(item instanceof String label) || label.isEmpty() || label.length() > 64
+            if (!(item instanceof String label) || label.isEmpty() || label.codePointCount(0, label.length()) > ToolCalls.MAX_TARGET_LABEL_CODE_POINTS
                     || !labels.add(label)) {
                 return List.of();
             }
