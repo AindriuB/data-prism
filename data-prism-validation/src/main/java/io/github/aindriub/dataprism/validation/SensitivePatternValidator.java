@@ -73,6 +73,10 @@ public final class SensitivePatternValidator implements LlmResponseValidator {
         // The recognisers ride on the scanner's exemption hook, which it calls for every text it
         // has charged to its budget, so they see exactly the leaves the shape scan sees and an
         // exhausted budget stops both. The hook exempts only what the allowlist exempts.
+        // A name the raw-value check would flag is redacted from this validator's paths too.
+        Set<String> rawValues = HashSet.newHashSet(prohibited.size());
+        prohibited.forEach(value -> rawValues.add(Text.canonical(value)));
+
         List<Violation> violations = new ArrayList<>();
         ScanReport report = scanner.scan(response, value -> {
             if (allowed.contains(Text.canonical(value))) {
@@ -80,7 +84,7 @@ public final class SensitivePatternValidator implements LlmResponseValidator {
             }
             recognise(value, violations);
             return false;
-        });
+        }, name -> rawValues.contains(Text.canonical(name)));
 
         if (!report.complete()) {
             violations.add(new Violation("$", SCAN_INCOMPLETE, "scan-budget-exhausted", null));
