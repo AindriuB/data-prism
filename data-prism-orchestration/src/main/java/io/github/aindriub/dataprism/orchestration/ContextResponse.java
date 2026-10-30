@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.core.model.ConsistencyFinding;
-import io.github.aindriub.dataprism.core.model.InvestigationContext;
+import io.github.aindriub.dataprism.orchestration.catalog.SourceLabels;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -79,13 +79,11 @@ public record ContextResponse(
     static ContextResponse of(String entityType, String subject, List<SourceOutcome> outcomes,
                               List<ConsistencyFinding> findings, Map<String, ObjectNode> trees,
                               Map<PrivacyNamespace, List<String>> fieldsByNamespace,
-                              SourceAliasing aliasing, InvestigationContext investigationContext,
-                              io.github.aindriub.dataprism.core.model.PrivacyContext context,
-                              String correlationId) {
+                              SourceLabels labels, String correlationId) {
         Map<String, SourceResult> results = new LinkedHashMap<>();
         outcomes.forEach(outcome -> {
             ObjectNode tree = outcome.answered() ? trees.get(outcome.sourceName()) : null;
-            results.put(aliasing.nameFor(outcome.sourceName(), investigationContext, context),
+            results.put(labels.labelOf(outcome.sourceName()),
                     tree == null ? SourceResult.of(outcome.status()) : SourceResult.answered(tree));
         });
         return new ContextResponse(entityType, subject, results, findings, fieldsByNamespace, correlationId);

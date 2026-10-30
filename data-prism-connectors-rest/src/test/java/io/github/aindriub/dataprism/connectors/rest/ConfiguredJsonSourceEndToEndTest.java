@@ -32,6 +32,7 @@ import io.github.aindriub.dataprism.core.policy.ProfilePrivacyPolicyResolver;
 import io.github.aindriub.dataprism.orchestration.ContextRequest;
 import io.github.aindriub.dataprism.orchestration.ContextResponse;
 import io.github.aindriub.dataprism.orchestration.DefaultContextOrchestrator;
+import io.github.aindriub.dataprism.orchestration.OrchestrationOptions;
 import io.github.aindriub.dataprism.orchestration.NamespaceCorrelationService;
 import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
 import io.github.aindriub.dataprism.orchestration.SourceAliasing;
@@ -164,7 +165,7 @@ class ConfiguredJsonSourceEndToEndTest {
                 new PassThroughIdentityResolver(),
                 new SourceFanOut(SourceCircuitBreaker.disabled(), CLOCK, SourceFanOutOptions.defaults()),
                 new InMemoryScopeBudget(), RequestLimits.DEFAULT,
-                new NamespaceCorrelationService(javaFirstResolver), new SourceAliasing(tokens), PrivacyMetrics.none());
+                new NamespaceCorrelationService(javaFirstResolver), new SourceAliasing(tokens), PrivacyMetrics.none(), OrchestrationOptions.defaults());
     }
 
     private static PrivacyPolicyResolver defaultProfilePolicy() {

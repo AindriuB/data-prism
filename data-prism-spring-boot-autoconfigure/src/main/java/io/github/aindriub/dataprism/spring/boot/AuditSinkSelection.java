@@ -209,7 +209,8 @@ class AuditSinkSelection {
                 ? properties.getAudit().getFilePath() : directory);
         try {
             return directory == null || directory.isBlank() ? new FileAuditSink(path)
-                    : new SegmentedFileAuditSink(path);
+                    : properties.getAudit().getSegmentMaxSize() == null ? new SegmentedFileAuditSink(path)
+                    : new SegmentedFileAuditSink(path, properties.getAudit().getSegmentMaxSize().toBytes());
         } catch (FileAuditSink.OpenFailedException e) {
             // Logging the caught exception object here is the same sanctioned
             // exception docs/conventions.md records for GetEntityContextTool and
