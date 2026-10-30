@@ -99,7 +99,7 @@ class DenyDecisionCodeTest {
                 new InMemoryScopeBudget(), limits,
                 new NamespaceCorrelationService(resolver),
                 new SourceAliasing(new HmacValueTokenSource(KEYS)),
-                PrivacyMetrics.none());
+                PrivacyMetrics.none(), OrchestrationOptions.defaults());
     }
 
     private static final LlmResponseValidator PASS = (response, prohibited, emitted, ctx) -> ValidationResult.ok();

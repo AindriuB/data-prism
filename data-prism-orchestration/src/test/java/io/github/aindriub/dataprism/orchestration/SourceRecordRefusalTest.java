@@ -32,6 +32,7 @@ import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 import io.github.aindriub.dataprism.core.spi.DataRequest;
 import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.spi.PassThroughIdentityResolver;
+import io.github.aindriub.dataprism.orchestration.catalog.RealNamesPolicy;
 import io.github.aindriub.dataprism.pseudonymisation.HmacValueTokenSource;
 import io.github.aindriub.dataprism.pseudonymisation.StaticSecretKeyProvider;
 import io.github.aindriub.dataprism.validation.RawValueLeakValidator;
@@ -200,7 +201,8 @@ class SourceRecordRefusalTest {
                 new InMemoryScopeBudget(), RequestLimits.DEFAULT,
                 new NamespaceCorrelationService(resolver),
                 new SourceAliasing(new HmacValueTokenSource(KEYS)),
-                PrivacyMetrics.none());
+                PrivacyMetrics.none(),
+                OrchestrationOptions.defaults().withRealNames(new RealNamesPolicy(List.of("SCOPE-1"))));
     }
 
     private static Run run(Object aRecord) {

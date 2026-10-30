@@ -6,6 +6,7 @@ dataPrismAuditCheckpointSink | io.github.aindriub.dataprism.audit.checkpoint.Fil
 dataPrismAuditEventListeners | io.github.aindriub.dataprism.audit.AuditEventListeners
 dataPrismAuditMaintenance | io.github.aindriub.dataprism.spring.boot.AuditMaintenance
 dataPrismAuditRecorder | io.github.aindriub.dataprism.audit.AuditRecorder
+dataPrismAuditRecorderKeyPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
 dataPrismAuditRetention | io.github.aindriub.dataprism.audit.retention.AuditRetention
 dataPrismAuthorizationService | io.github.aindriub.dataprism.security.AuthorizationService
 dataPrismCallerRateLimiter | io.github.aindriub.dataprism.oversight.CallerRateLimiter
