@@ -44,6 +44,13 @@ final class ToolCalls {
      */
     private static final Set<String> APPROVAL_ARGUMENTS = Set.of("approvalId", "approverId");
 
+    /**
+     * The longest {@code targetSources} entry, in code points as JSON Schema counts them. A
+     * source label is capped at 128 in the 0.8 schemas (64 from 0.9), and a legacy REAL-mode
+     * name is not capped at all, so the parser must not be narrower than the schema.
+     */
+    static final int MAX_TARGET_LABEL_CODE_POINTS = 128;
+
     private ToolCalls() {
     }
 
@@ -130,6 +137,38 @@ final class ToolCalls {
      */
     static String binding(String entityType, String subjectId, PrivacyContext context,
                           InvestigationContext investigation) {
+        return binding(entityType, subjectId, context, investigation, null);
+    }
+
+    /**
+     * As above, and the source selection (task 247). {@code targetSources} is {@code null} when the caller
+     * chose none: nothing is added, which is byte-for-byte the binding an approval granted before
+     * {@code targetSources} existed was made over, so such an approval still covers exactly an unselected
+     * call and nothing wider. An explicit selection adds a marked section holding the labels as sent,
+     * sorted and de-duplicated, so a permutation or a repeated label is the same call and any other set is
+     * not. The section is never equal to the absent case, whatever it lists.
+     *
+     * <p>The labels, not the sources they resolve to: a label means one source only within one scope and
+     * one label kind, and the scope, the client and the capabilities that decide the kind are all bound
+     * already, so the same labels cannot reach a different set under the same approval. The binding is
+     * only ever fingerprinted with the scope's key and compared server-side; no label or real name is
+     * returned to a client or written to the approval record.
+     */
+    static String binding(String entityType, String subjectId, PrivacyContext context,
+                          InvestigationContext investigation, List<String> targetSources) {
+        StringBuilder out = new StringBuilder(legacyBinding(entityType, subjectId, context, investigation));
+        if (targetSources != null) {
+            List<String> labels = new ArrayList<>(new java.util.TreeSet<>(targetSources));
+            out.append("targetSources:").append(labels.size()).append('#');
+            for (String label : labels) {
+                append(out, label);
+            }
+        }
+        return out.toString();
+    }
+
+    private static String legacyBinding(String entityType, String subjectId, PrivacyContext context,
+                                        InvestigationContext investigation) {
         StringBuilder out = new StringBuilder();
         for (String part : new String[] {entityType, subjectId, context.purpose(),
                 context.redactionProfile(), investigation.clientId()}) {

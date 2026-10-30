@@ -14,6 +14,7 @@ import io.github.aindriub.dataprism.core.spi.SyntheticValueSource;
 import io.github.aindriub.dataprism.core.spi.ValueTokenSource;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.DefaultContextOrchestrator;
+import io.github.aindriub.dataprism.orchestration.OrchestrationOptions;
 import io.github.aindriub.dataprism.orchestration.NamespaceCorrelationService;
 import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
 import io.github.aindriub.dataprism.orchestration.SourceAliasing;
@@ -69,6 +70,6 @@ class OrchestrationWiring {
                 fingerprinter, audit, identities,
                 new SourceFanOut(SourceCircuitBreaker.disabled(), clock,
                         new SourceFanOutOptions(metrics, correlationMdc)), budget, limits,
-                new NamespaceCorrelationService(metadata), new SourceAliasing(tokens), metrics);
+                new NamespaceCorrelationService(metadata), new SourceAliasing(tokens), metrics, OrchestrationOptions.defaults());
     }
 }

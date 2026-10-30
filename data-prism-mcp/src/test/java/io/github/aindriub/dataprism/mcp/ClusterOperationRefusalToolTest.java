@@ -19,6 +19,7 @@ import io.github.aindriub.dataprism.core.spi.FieldMetadataResolver;
 import io.github.aindriub.dataprism.core.spi.PassThroughIdentityResolver;
 import io.github.aindriub.dataprism.core.spi.ScrubbingEngine;
 import io.github.aindriub.dataprism.orchestration.DefaultContextOrchestrator;
+import io.github.aindriub.dataprism.orchestration.OrchestrationOptions;
 import io.github.aindriub.dataprism.orchestration.NamespaceCorrelationService;
 import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
 import io.github.aindriub.dataprism.orchestration.SourceAliasing;
@@ -114,7 +115,7 @@ class ClusterOperationRefusalToolTest {
                 new PassThroughIdentityResolver(),
                 new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), SourceFanOutOptions.defaults()),
                 budget, RequestLimits.DEFAULT, new NamespaceCorrelationService(resolver),
-                new SourceAliasing(new HmacValueTokenSource(KEYS)), PrivacyMetrics.none());
+                new SourceAliasing(new HmacValueTokenSource(KEYS)), PrivacyMetrics.none(), OrchestrationOptions.defaults());
     }
 
     private McpSchema.CallToolResult call(DefaultContextOrchestrator orchestrator, ToolAdmission admission) {

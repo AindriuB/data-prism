@@ -161,7 +161,7 @@ class PerSourceBudgetChargeTest {
                 new PassThroughIdentityResolver(), fanOut, budget, limits,
                 new NamespaceCorrelationService(resolver),
                 new SourceAliasing(new HmacValueTokenSource(KEYS)),
-                PrivacyMetrics.none());
+                PrivacyMetrics.none(), OrchestrationOptions.defaults());
     }
 
     private static SourceFanOut plainFanOut() {
