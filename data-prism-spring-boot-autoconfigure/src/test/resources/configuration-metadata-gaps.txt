@@ -6,6 +6,8 @@ outside-binding|dataprism.sources.*.timeout|map value sub-key the processor does
 outside-binding|dataprism.sources.*.service-credential-reference|map value sub-key the processor does not expand, as above
 outside-binding|dataprism.sources.*.mtls.key-reference|map value sub-key the processor does not expand, as above
 outside-binding|dataprism.sources.*.mtls.trust-reference|map value sub-key the processor does not expand, as above
+outside-binding|dataprism.audit.retired-hmac-keys.*.environment-variable|map value sub-key the processor does not expand, as above
+outside-binding|dataprism.audit.retired-hmac-keys.*.provider-reference|map value sub-key the processor does not expand, as above
 outside-binding|dataprism.json-sources.config-location|read by ConfiguredJsonSources in the connectors module, not by DataPrismProperties
 #
 # not-a-property: a backticked dataprism.* name in the docs that is not a configuration key.

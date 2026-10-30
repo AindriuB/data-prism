@@ -24,10 +24,10 @@ import java.util.Objects;
  * meaningless outside that scope. An operator maps aliases back through the audit
  * trail, which always carries the real name regardless of this decision.
  *
- * <p>Real names are returned only when the caller asking — not the scope, the
- * caller — holds {@link Capability#EXPOSE_SOURCE_NAMES}. That is a capability
- * check, made fresh for every call, rather than a deployment-wide switch: two
- * callers in the same scope may see two different answers.
+ * <p>Real names are returned only when the scope permits them
+ * ({@code dataprism.catalog.real-names-scopes}) and the caller asking holds
+ * {@link Capability#EXPOSE_SOURCE_NAMES}. Both are checked fresh for every call by
+ * {@code SourceLabels}, so two callers in the same scope may see two different answers.
  */
 public final class SourceAliasing {
 
@@ -37,11 +37,25 @@ public final class SourceAliasing {
         this.tokens = Objects.requireNonNull(tokens, "tokens");
     }
 
+    /**
+     * What the caller alone decides: the real name when the caller holds the capability, otherwise the
+     * alias. It knows nothing of the scope setting, so it is not the label a response carries; the
+     * orchestrator labels through {@code SourceLabels}, which adds the scope condition (D-RM-10).
+     *
+     * @deprecated ignores {@code dataprism.catalog.real-names-scopes}, so it can show a real name where the
+     *             scope forbids it. Use {@code SourceLabels} for anything a client sees.
+     */
+    @Deprecated(since = "0.8.0", forRemoval = true)
     public String nameFor(String sourceName, InvestigationContext investigationContext,
                           PrivacyContext context) {
         if (investigationContext.has(Capability.EXPOSE_SOURCE_NAMES)) {
             return sourceName;
         }
+        return aliasFor(sourceName, context);
+    }
+
+    /** The scope-local alias, whoever asks. */
+    public String aliasFor(String sourceName, PrivacyContext context) {
         // ORGANISATION_IDENTITY because that is what a source system is: a named
         // party whose identity is being substituted, keyed on the value so the
         // same system reads the same way throughout the scope.
