@@ -165,7 +165,8 @@ public final class ScopeIdentityIndex {
     private PauseDocument pauseDocument() {
         synchronized (pauseLock) {
             if (pauseDocument == null) {
-                pauseDocument = new PauseDocument(cluster, metrics, lockTimeout,
+                // Ending a scope needs a serving member, so the document is reached through the gated accessor.
+                pauseDocument = new PauseDocument(cluster, cluster::servingInstance, metrics, lockTimeout,
                         PauseDocument.Environment.system(cluster.securitySettings().pauseLease()));
             }
             return pauseDocument;

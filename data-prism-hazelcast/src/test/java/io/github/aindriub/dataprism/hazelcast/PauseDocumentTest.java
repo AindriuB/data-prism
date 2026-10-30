@@ -145,7 +145,8 @@ class PauseDocumentTest {
 
     /** A bare, unstarted document on {@code on}, so a test drives its peers and ticks itself. */
     private PauseDocument bare(PrivacyCluster on, Nanos nanos, Fixture.TestClock wall, PauseDocument.Peers peers) {
-        PauseDocument document = new PauseDocument(on, metrics, TIMEOUT, new PauseDocument.Environment(nanos, wall, null));
+        PauseDocument document = new PauseDocument(on, on::instance, metrics, TIMEOUT,
+                new PauseDocument.Environment(nanos, wall, null));
         document.peers = peers;
         documents.add(document);
         return document;

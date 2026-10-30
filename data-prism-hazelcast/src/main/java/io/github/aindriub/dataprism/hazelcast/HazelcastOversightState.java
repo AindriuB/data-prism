@@ -65,7 +65,8 @@ public final class HazelcastOversightState implements OversightState, AutoClosea
     HazelcastOversightState(PrivacyCluster cluster, Duration lockTimeout, PrivacyMetrics metrics,
                             PauseDocument.Environment environment) {
         this.cluster = Objects.requireNonNull(cluster, "cluster");
-        this.document = new PauseDocument(cluster, metrics, ClusterLocks.checked(lockTimeout), environment);
+        this.document = new PauseDocument(cluster, cluster::instance, metrics, ClusterLocks.checked(lockTimeout),
+                environment);
         refuseLegacyEntries();
         cluster.memberCards().ifPresent(cards -> cards.reportPauseSequence(document::acceptedSequence));
         document.registerGauges();

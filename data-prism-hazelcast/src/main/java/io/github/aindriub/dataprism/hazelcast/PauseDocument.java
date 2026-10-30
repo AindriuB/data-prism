@@ -38,6 +38,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.LongSupplier;
+import java.util.function.Supplier;
 
 /**
  * The pause state of the cluster as one sealed, sequenced, leased document (docs/plan/design/cluster-security.md
@@ -408,6 +409,13 @@ final class PauseDocument {
     private enum Op { PAUSE, RESUME, END_SCOPE }
 
     private final PrivacyCluster cluster;
+    /**
+     * How the document reaches the Hazelcast instance: the caller decides. The pause state of a member that is not
+     * serving must stay readable and writable, so {@code HazelcastOversightState} passes the ungated accessor;
+     * ending a scope needs a serving member and passes the gated one. This class never names either, so it is not
+     * one of the few that may call {@code PrivacyCluster.instance()}.
+     */
+    private final Supplier<HazelcastInstance> instances;
     private final Sealer sealer;
     private final String key;
     private final PrivacyMetrics metrics;
@@ -454,8 +462,10 @@ final class PauseDocument {
     volatile Function<byte[], Doc> decoder = Doc::decode;
     volatile Logger log = LoggerFactory.getLogger(PauseDocument.class);
 
-    PauseDocument(PrivacyCluster cluster, PrivacyMetrics metrics, Duration lockTimeout, Environment environment) {
+    PauseDocument(PrivacyCluster cluster, Supplier<HazelcastInstance> instances, PrivacyMetrics metrics,
+                  Duration lockTimeout, Environment environment) {
         this.cluster = Objects.requireNonNull(cluster, "cluster");
+        this.instances = Objects.requireNonNull(instances, "instances");
         this.metrics = FailSafeMetrics.wrap(Objects.requireNonNull(metrics, "metrics"));
         this.lockTimeout = ClusterLocks.checked(lockTimeout);
         this.nanos = environment.nanos();
@@ -482,10 +492,10 @@ final class PauseDocument {
             @Override
             public boolean isOldest() {
                 try {
-                    var members = cluster.instance().getCluster().getMembers();
-                    Iterator<Member> oldest = members.iterator();
+                    var hazelcast = instances.get().getCluster();
+                    Iterator<Member> oldest = hazelcast.getMembers().iterator();
                     return !oldest.hasNext()
-                            || oldest.next().getUuid().equals(cluster.instance().getCluster().getLocalMember().getUuid());
+                            || oldest.next().getUuid().equals(hazelcast.getLocalMember().getUuid());
                 } catch (RuntimeException unknown) {
                     return false;
                 }
@@ -575,7 +585,7 @@ final class PauseDocument {
     }
 
     private IMap<String, Object> map() {
-        return cluster.instance().getMap(PrivacyCluster.OVERSIGHT_MAP);
+        return instances.get().getMap(PrivacyCluster.OVERSIGHT_MAP);
     }
 
     private Look look() {
@@ -924,7 +934,7 @@ final class PauseDocument {
             return;
         }
         try {
-            cluster.instance().<String, Object>getMap(PrivacyCluster.OVERSIGHT_FENCE_MAP)
+            instances.get().<String, Object>getMap(PrivacyCluster.OVERSIGHT_FENCE_MAP)
                     .tryPut(FENCE_KEY, Boolean.TRUE, lockTimeout.toMillis(), TimeUnit.MILLISECONDS);
         } catch (RuntimeException ignored) {
             // See above.
@@ -933,7 +943,7 @@ final class PauseDocument {
 
     private String issuer() {
         try {
-            return cluster.instance().getCluster().getLocalMember().getUuid().toString();
+            return instances.get().getCluster().getLocalMember().getUuid().toString();
         } catch (RuntimeException unknown) {
             return "unknown";
         }
@@ -1170,7 +1180,7 @@ final class PauseDocument {
             });
         }
         attempt(this::tick);
-        HazelcastInstance instance = cluster.instance();
+        HazelcastInstance instance = instances.get();
         lifecycleListener = instance.getLifecycleService().addLifecycleListener(event -> {
             if (event.getState() == LifecycleEvent.LifecycleState.MERGING) {
                 beginMerge();
@@ -1187,7 +1197,7 @@ final class PauseDocument {
     private void tickWhileRunning() {
         boolean running;
         try {
-            running = cluster.instance().getLifecycleService().isRunning();
+            running = instances.get().getLifecycleService().isRunning();
         } catch (RuntimeException gone) {
             running = false;
         }
@@ -1228,7 +1238,7 @@ final class PauseDocument {
         }
         if (listener != null) {
             try {
-                cluster.instance().getLifecycleService().removeLifecycleListener(listener);
+                instances.get().getLifecycleService().removeLifecycleListener(listener);
             } catch (RuntimeException gone) {
                 // The instance may already be shut down.
             }
