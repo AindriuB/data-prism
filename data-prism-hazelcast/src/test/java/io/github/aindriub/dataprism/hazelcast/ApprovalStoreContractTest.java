@@ -329,6 +329,7 @@ class ApprovalStoreContractTest {
         cluster = PrivacyCluster.using(Hazelcast.newHazelcastInstance(member(name, port, port)), false, TestMembers.KEYS);
         second = PrivacyCluster.using(Hazelcast.newHazelcastInstance(member(name, port + 1, port)), false, TestMembers.KEYS);
         assertThat(cluster.instance().getCluster().getMembers()).hasSize(2);
+        assertThat(TestMembers.settled(30, cluster, second)).as("the members did not settle").isTrue();
         ApprovalStore viaA = new HazelcastApprovalStore(cluster);
         ApprovalStore viaB = new HazelcastApprovalStore(second);
 

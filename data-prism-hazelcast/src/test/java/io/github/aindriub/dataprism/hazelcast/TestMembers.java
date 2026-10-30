@@ -53,7 +53,36 @@ final class TestMembers {
         List<String> both = List.of("127.0.0.1:" + first, "127.0.0.1:" + (first + 1));
         PrivacyCluster a = member(clusterName, first, both, quorum);
         PrivacyCluster b = member(clusterName, first + 1, both, quorum);
+        if (!settled(30, a, b)) {
+            a.close();
+            b.close();
+            throw new IllegalStateException("the pair did not settle within 30 s");
+        }
         return new PrivacyCluster[]{a, b};
+    }
+
+    /**
+     * Waits until every member lists all of {@code members} and reports its partitions safe, for at most
+     * {@code seconds}. The second member joins after the first has written, so partitions are still migrating when a
+     * start-up returns; a lock taken meanwhile can wait past the default cluster-lock bound. A precondition of a
+     * fixture, never a retried assertion.
+     */
+    static boolean settled(int seconds, PrivacyCluster... members) {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(seconds);
+        while (true) {
+            boolean all = true;
+            for (PrivacyCluster member : members) {
+                all &= member.instance().getCluster().getMembers().size() == members.length
+                        && member.instance().getPartitionService().isClusterSafe();
+            }
+            if (all) {
+                return true;
+            }
+            if (System.nanoTime() > deadline) {
+                return false;
+            }
+            java.util.concurrent.locks.LockSupport.parkNanos(java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(20));
+        }
     }
 
     /** The keys of the approval entries whose request carries this id, whatever their scope. */
