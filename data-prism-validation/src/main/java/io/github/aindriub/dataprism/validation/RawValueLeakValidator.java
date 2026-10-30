@@ -34,6 +34,9 @@ public final class RawValueLeakValidator implements LlmResponseValidator {
 
     private static final String KEY_SEGMENT = "<undeclared>";
 
+    /** Only asked which names it flags, so a name the pattern scan would flag is redacted here too. */
+    private final SensitiveDataScanner nameScanner = new SensitiveDataScanner();
+
     /**
      * The emitted set is ignored here. A value the engine generated is not a raw
      * source value, so it cannot be in {@code prohibited} in the first place; an
@@ -51,7 +54,7 @@ public final class RawValueLeakValidator implements LlmResponseValidator {
         return violations.isEmpty() ? ValidationResult.ok() : ValidationResult.failed(violations);
     }
 
-    private static void walk(JsonNode node, String path, Set<String> prohibited, List<Violation> out) {
+    private void walk(JsonNode node, String path, Set<String> prohibited, List<Violation> out) {
         if (node == null || node.isNull()) {
             return;
         }
@@ -64,7 +67,8 @@ public final class RawValueLeakValidator implements LlmResponseValidator {
                 if (leaked) {
                     out.add(new Violation(path + "." + KEY_SEGMENT, "RAW_SOURCE_VALUE", "exact-match"));
                 }
-                walk(e.getValue(), path + "." + (leaked ? KEY_SEGMENT : key), prohibited, out);
+                boolean redact = leaked || nameScanner.flagsPropertyName(key);
+                walk(e.getValue(), path + "." + (redact ? KEY_SEGMENT : key), prohibited, out);
             }
             return;
         }
