@@ -1313,6 +1313,30 @@ class PauseDocumentTest {
     }
 
     @Test
+    void aResumeLiftsOnlyThePausesOfItsOwnTarget_notOtherToolsOtherKindsOrTheGlobalPause() {
+        solo();
+        var state = instance();
+        state.pauseTool("search");
+        state.pauseTool("lookup");
+        state.pauseScope("search");
+        state.pauseAll();
+
+        state.resumeTool("search");
+
+        assertThat(state.toolPaused("search")).isFalse();
+        assertThat(state.toolPaused("lookup")).isTrue();
+        assertThat(state.scopePaused("search")).as("a scope of the same name is another target").isTrue();
+        assertThat(state.allPaused()).isTrue();
+        assertThat(state.document().accepted().tombstones()).hasSize(1);
+
+        state.resumeAll();
+        assertThat(state.allPaused()).isFalse();
+        assertThat(state.toolPaused("lookup")).isTrue();
+        assertThat(state.scopePaused("search")).isTrue();
+        assertThat(state.document().accepted().tombstones()).hasSize(2);
+    }
+
+    @Test
     void aConcurrentPauseOfTheSameTargetBetweenAResumesReadAndCommitStaysInForceAndASecondResumeClearsIt() {
         solo();
         var state = instance();
