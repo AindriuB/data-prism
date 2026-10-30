@@ -116,7 +116,31 @@ public final class AuditChainVerifier {
      * key every hash is recomputed under ({@code null} for the unkeyed chain).
      */
     private record Replay(Map<String, List<AuditCheckpoint>> anchors, List<AuditCheckpoint> checkpoints,
-                          Period minimumRetention, boolean lenientStart, AuditChainKey key) {
+                          Period minimumRetention, boolean lenientStart, AuditChainKey key, Instrument instr,
+                          long[] fragmentOffset) {
+    }
+
+    /**
+     * What a replay records beyond the report, for {@link #verifySegmentsHashed}: where each segment starts in
+     * the concatenation, and which (writer, sequence) pairs to keep a hashed record for.
+     */
+    private record Instrument(long[] starts, Map<String, java.util.Set<Long>> probes) {
+
+        int segmentAt(long offset) {
+            int lo = 0;
+            int hi = starts.length - 1;
+            int found = 0;
+            while (lo <= hi) {
+                int mid = (lo + hi) >>> 1;
+                if (starts[mid] <= offset) {
+                    found = mid;
+                    lo = mid + 1;
+                } else {
+                    hi = mid - 1;
+                }
+            }
+            return found;
+        }
     }
 
     /** Reads and verifies {@code path} in one pass. */
@@ -151,6 +175,148 @@ public final class AuditChainVerifier {
             throws IOException {
         byte[] content = join(segments, starts);
         return verifyWithKeys(content, List.of(), DEFAULT_MINIMUM_RETENTION, true, keys, allowUnkeyedWriters);
+    }
+
+    /** One record the replay recomputed and matched: its position in the chain and in the concatenation. */
+    public record HashedRecord(long sequence, String previousHash, String eventHash, long byteOffset) {
+    }
+
+    /** A writer's first and last hashed record within one segment. */
+    public record WriterSpan(HashedRecord first, HashedRecord last) {
+    }
+
+    /**
+     * What one segment holds that was hashed: each writer's {@link WriterSpan}, and the latest UTC date among
+     * its hashed records' timestamps (empty if it holds none).
+     */
+    public record SegmentHashes(Map<String, WriterSpan> writers, Optional<java.time.LocalDate> latestRecordDate) {
+    }
+
+    /**
+     * A writer the report shows broken: its last hashed record before the break (empty if none) and whether the
+     * break is a link failure ({@code previousHash} does not match, or the chain does not start where it must)
+     * rather than a content failure ({@code eventHash} does not recompute).
+     */
+    public record BrokenWriter(String instanceId, Optional<HashedRecord> lastHashedBeforeBreak,
+                               boolean linkFailure) {
+    }
+
+    /**
+     * The result of {@link #verifySegmentsHashed}: the ordinary report plus, from the very replay the report
+     * gives for each writer, which records were hashed. Size is bounded by segments times writers (and the
+     * requested probes). {@code firstUnhashedCompleteOffset} is the lowest byte offset of a line, or the
+     * unterminated tail, that parses as a record once exactly one trailing carriage return is removed but was
+     * not hashed: a record after a writer's break, a duplicate sequence's second copy, a line ending in a
+     * carriage return, or the tail. A line that does not parse is a crash fragment and is not counted.
+     */
+    public record HashedVerification(VerificationReport report, List<SegmentHashes> segments,
+                                     Map<String, BrokenWriter> brokenWriters,
+                                     java.util.OptionalLong firstUnhashedCompleteOffset,
+                                     Map<String, Map<Long, HashedRecord>> probed) {
+    }
+
+    /**
+     * As {@link #verifySegments(List, List, List, boolean)}, additionally reporting which records were hashed.
+     * The report held is identical to that method's. {@code probes} names (writer, sequence) pairs whose hashed
+     * record, if any, is returned in {@link HashedVerification#probed()}.
+     */
+    public static HashedVerification verifySegmentsHashed(List<Path> segments, List<Long> starts,
+                                                          List<AuditChainKey> keys, boolean allowUnkeyedWriters,
+                                                          Map<String, java.util.Set<Long>> probes)
+            throws IOException {
+        java.util.Objects.requireNonNull(starts, "starts");
+        byte[] content = join(segments, starts);
+        long[] startArray = starts.stream().mapToLong(Long::longValue).toArray();
+        Detailed d = verifyWithKeys(content, List.of(), DEFAULT_MINIMUM_RETENTION, true, keys, allowUnkeyedWriters,
+                new Instrument(startArray, probes));
+        List<Map<String, WriterSpan>> perSegment = new ArrayList<>();
+        List<java.time.LocalDate> dates = new ArrayList<>();
+        for (int i = 0; i < segments.size(); i++) {
+            perSegment.add(new LinkedHashMap<>());
+            dates.add(null);
+        }
+        long unhashed = d.fragmentOffset();
+        Map<String, BrokenWriter> broken = new LinkedHashMap<>();
+        Map<String, Map<Long, HashedRecord>> probed = new LinkedHashMap<>();
+        for (WriterResult w : d.report().writers()) {
+            Picked pick = d.picked().get(w.instanceId());
+            WriterState st = pick.state();
+            long writerUnhashed = pick.forger() ? st.firstOffset : st.unhashedComplete;
+            if (writerUnhashed >= 0 && (unhashed < 0 || writerUnhashed < unhashed)) {
+                unhashed = writerUnhashed;
+            }
+            if (!pick.forger()) {
+                for (Map.Entry<Integer, Span> e : st.spans.entrySet()) {
+                    perSegment.get(e.getKey()).put(w.instanceId(), new WriterSpan(e.getValue().first,
+                            e.getValue().last));
+                    java.time.LocalDate old = dates.get(e.getKey());
+                    if (old == null || e.getValue().latest.isAfter(old)) {
+                        dates.set(e.getKey(), e.getValue().latest);
+                    }
+                }
+                if (!st.probed.isEmpty()) {
+                    probed.put(w.instanceId(), Map.copyOf(st.probed));
+                }
+            }
+            if (w.broken()) {
+                broken.put(w.instanceId(), new BrokenWriter(w.instanceId(),
+                        pick.forger() ? Optional.empty() : Optional.ofNullable(st.lastHashed),
+                        !pick.forger() && st.linkBreak));
+            }
+        }
+        List<SegmentHashes> result = new ArrayList<>();
+        for (int i = 0; i < segments.size(); i++) {
+            result.add(new SegmentHashes(Map.copyOf(perSegment.get(i)), Optional.ofNullable(dates.get(i))));
+        }
+        return new HashedVerification(d.report(), result, Map.copyOf(broken),
+                unhashed < 0 ? java.util.OptionalLong.empty() : java.util.OptionalLong.of(unhashed), probed);
+    }
+
+    /** Reads one segment's bytes; retention passes a counting reader in tests. */
+    @FunctionalInterface
+    public interface SegmentReader {
+        byte[] read(Path segment) throws IOException;
+    }
+
+    /** A newline-terminated line of a segment that parses as a record, for the boundary scan. */
+    public record BoundaryRecord(String instanceId, long sequence, String previousHash, String eventHash,
+                                 boolean endsInCarriageReturn, long byteOffset) {
+    }
+
+    /**
+     * Every newline-terminated line of {@code segment}, in order, that parses as a record of one of {@code
+     * instanceIds} once exactly one trailing carriage return is removed. A line that ends in one is flagged, so
+     * the caller cannot step over a carriage-return copy. The unterminated tail is not returned: it may be a
+     * write in flight. Nothing here is hashed; the caller decides what a record is worth.
+     */
+    public static List<BoundaryRecord> boundaryRecords(Path segment, SegmentReader reader,
+                                                       java.util.Set<String> instanceIds) throws IOException {
+        byte[] bytes = reader.read(segment);
+        List<BoundaryRecord> found = new ArrayList<>();
+        int start = 0;
+        for (int i = 0; i < bytes.length; i++) {
+            if (bytes[i] != '\n') {
+                continue;
+            }
+            String line = new String(bytes, start, i - start, StandardCharsets.UTF_8);
+            boolean cr = !line.isEmpty() && line.charAt(line.length() - 1) == '\r';
+            if (cr) {
+                line = line.substring(0, line.length() - 1);
+            }
+            if (!line.isEmpty()) {
+                try {
+                    AuditEvent event = AuditRecordFormat.parse(line);
+                    if (instanceIds.contains(event.instanceId())) {
+                        found.add(new BoundaryRecord(event.instanceId(), event.sequence(), event.previousHash(),
+                                event.eventHash(), cr, start));
+                    }
+                } catch (RuntimeException e) {
+                    // not a record: a crash fragment or a line the full verifier reports
+                }
+            }
+            start = i + 1;
+        }
+        return found;
     }
 
     /**
@@ -300,27 +466,50 @@ public final class AuditChainVerifier {
 
     private static VerificationReport verify(byte[] content, List<AuditCheckpoint> checkpoints,
                                              Period minimumRetention, boolean lenientStart) {
-        return replay(content, checkpoints, minimumRetention, lenientStart, null).report();
+        return replay(content, checkpoints, minimumRetention, lenientStart, null, null).report();
     }
 
     /** One replay's report together with the per-writer state it was built from. */
-    private record Replayed(VerificationReport report, Map<String, WriterState> states) {
+    private record Replayed(VerificationReport report, Map<String, WriterState> states, long fragmentOffset) {
+    }
+
+    /**
+     * A reported verification and, per writer, the replay's state that the report's verdict for that writer
+     * came from (its hashed records). A writer the report breaks without any replay having verified it (the
+     * forger branch) maps to its state with {@code forger} set: its hashed set is empty.
+     */
+    private record Detailed(VerificationReport report, Map<String, Picked> picked, long fragmentOffset) {
+    }
+
+    private record Picked(WriterState state, boolean forger) {
     }
 
     private static VerificationReport verifyWithKeys(byte[] content, List<AuditCheckpoint> checkpoints,
                                                      Period minimumRetention, boolean lenientStart,
                                                      List<AuditChainKey> keys, boolean allowUnkeyedWriters) {
+        return verifyWithKeys(content, checkpoints, minimumRetention, lenientStart, keys, allowUnkeyedWriters,
+                null).report();
+    }
+
+    private static Detailed verifyWithKeys(byte[] content, List<AuditCheckpoint> checkpoints,
+                                           Period minimumRetention, boolean lenientStart,
+                                           List<AuditChainKey> keys, boolean allowUnkeyedWriters,
+                                           Instrument instr) {
         java.util.Objects.requireNonNull(keys, "keys");
         if (keys.isEmpty()) {
-            VerificationReport plain = verify(content, checkpoints, minimumRetention, lenientStart);
+            Replayed plainReplay = replay(content, checkpoints, minimumRetention, lenientStart, null, instr);
+            VerificationReport plain = plainReplay.report();
+            Map<String, Picked> pickedPlain = new LinkedHashMap<>();
+            plainReplay.states().forEach((id, st) -> pickedPlain.put(id, new Picked(st, false)));
             if (!allowUnkeyedWriters) {
-                return plain;
+                return new Detailed(plain, pickedPlain, plainReplay.fragmentOffset());
             }
             // No key was given and unkeyed writers are allowed: every intact writer was verified unkeyed.
             // A broken writer verified nothing, so it is not marked as allowed.
             List<WriterResult> marked = plain.writers().stream()
                     .map(w -> w.broken() ? w : w.withKey(Optional.empty(), true)).toList();
-            return new VerificationReport(marked, plain.anomalies(), plain.tail(), plain.checkpointFindings());
+            return new Detailed(new VerificationReport(marked, plain.anomalies(), plain.tail(),
+                    plain.checkpointFindings()), pickedPlain, plainReplay.fragmentOffset());
         }
         java.util.Set<String> ids = new java.util.HashSet<>();
         for (AuditChainKey key : keys) {
@@ -330,19 +519,22 @@ public final class AuditChainVerifier {
         }
         List<Replayed> keyed = new ArrayList<>();
         for (AuditChainKey key : keys) {
-            keyed.add(replay(content, checkpoints, minimumRetention, lenientStart, key));
+            keyed.add(replay(content, checkpoints, minimumRetention, lenientStart, key, instr));
         }
-        Replayed unkeyed = replay(content, checkpoints, minimumRetention, lenientStart, null);
+        Replayed unkeyed = replay(content, checkpoints, minimumRetention, lenientStart, null, instr);
         Replayed base = keyed.get(0);
         List<WriterResult> results = new ArrayList<>();
+        Map<String, Picked> picked = new LinkedHashMap<>();
         for (int i = 0; i < base.report().writers().size(); i++) {
             WriterResult first = base.report().writers().get(i);
             String instance = first.instanceId();
             WriterResult chosen = null;
+            Picked pick = null;
             for (int k = 0; k < keys.size() && chosen == null; k++) {
                 WriterResult candidate = keyed.get(k).report().writers().get(i);
                 if (!candidate.broken() && keyed.get(k).states().get(instance).recomputed > 0) {
                     chosen = candidate.withKey(Optional.of(keys.get(k).id()), false);
+                    pick = new Picked(keyed.get(k).states().get(instance), false);
                 }
             }
             if (chosen == null) {
@@ -352,6 +544,7 @@ public final class AuditChainVerifier {
                     WriterResult candidate = keyed.get(k).report().writers().get(i);
                     if (!candidate.broken() && keyed.get(k).states().get(instance).recomputed == 0) {
                         chosen = candidate;
+                        pick = new Picked(keyed.get(k).states().get(instance), false);
                     }
                 }
             }
@@ -379,9 +572,12 @@ public final class AuditChainVerifier {
                     // A replay that recomputed nothing verified nothing under its key, so it gets no label.
                     chosen = keyed.get(best).report().writers().get(i)
                             .withKey(most > 0 ? Optional.of(keys.get(best).id()) : Optional.empty(), false);
+                    pick = new Picked(keyed.get(best).states().get(instance), false);
                 } else if (!plain.broken() && allowUnkeyedWriters) {
                     chosen = plain.withKey(Optional.empty(), true);
+                    pick = new Picked(unkeyed.states().get(instance), false);
                 } else if (!plain.broken()) {
+                    pick = new Picked(base.states().get(instance), true);
                     chosen = first.withBreak(new Break(first.firstSequence(), instance,
                             base.states().get(instance).firstOffset,
                             "this writer's chain verifies only as an unkeyed chain, but a key was required and "
@@ -390,12 +586,15 @@ public final class AuditChainVerifier {
                 } else {
                     // Name the break from the replay under which this writer verified furthest.
                     Break furthest = first.firstBreak().orElseThrow();
+                    Replayed furthestReplay = base;
                     for (Replayed r : keyed) {
                         Break candidate = r.report().writers().get(i).firstBreak().orElseThrow();
                         if (candidate.byteOffset() > furthest.byteOffset()) {
                             furthest = candidate;
+                            furthestReplay = r;
                         }
                     }
+                    pick = new Picked(furthestReplay.states().get(instance), false);
                     chosen = first.withBreak(new Break(furthest.sequence(), instance, furthest.byteOffset(),
                             "this writer's chain verifies under none of the supplied keys and is not a valid "
                                     + "unkeyed chain either (checked against key ids " + String.join(", ", ids)
@@ -403,13 +602,16 @@ public final class AuditChainVerifier {
                 }
             }
             results.add(chosen);
+            picked.put(instance, pick);
         }
         VerificationReport b = base.report();
-        return new VerificationReport(results, b.anomalies(), b.tail(), b.checkpointFindings());
+        return new Detailed(new VerificationReport(results, b.anomalies(), b.tail(), b.checkpointFindings()),
+                picked, base.fragmentOffset());
     }
 
     private static Replayed replay(byte[] content, List<AuditCheckpoint> checkpoints,
-                                   Period minimumRetention, boolean lenientStart, AuditChainKey key) {
+                                   Period minimumRetention, boolean lenientStart, AuditChainKey key,
+                                   Instrument instr) {
         Map<String, WriterState> writers = new LinkedHashMap<>();
         Map<String, List<AuditCheckpoint>> retentionAnchors = new LinkedHashMap<>();
         for (AuditCheckpoint cp : checkpoints) {
@@ -417,7 +619,8 @@ public final class AuditChainVerifier {
                 retentionAnchors.computeIfAbsent(cp.instanceId(), k -> new ArrayList<>()).add(cp);
             }
         }
-        Replay replay = new Replay(retentionAnchors, checkpoints, minimumRetention, lenientStart, key);
+        Replay replay = new Replay(retentionAnchors, checkpoints, minimumRetention, lenientStart, key, instr,
+                new long[] {-1});
         List<StructuralAnomaly> anomalies = new ArrayList<>();
         TailAnomaly tail = null;
 
@@ -444,6 +647,7 @@ public final class AuditChainVerifier {
                             + "finished record; it is not parsed and not compared against any expected hash. "
                             + "This is reported as \"possibly in flight\", never as a chain break.",
                     start);
+            noteFragment(replay, new String(content, start, content.length - start, StandardCharsets.UTF_8), start);
         }
 
         List<CheckpointFinding> findings = applyCheckpoints(writers, checkpoints, minimumRetention);
@@ -458,7 +662,8 @@ public final class AuditChainVerifier {
         for (WriterState state : writers.values()) {
             results.add(state.toResult());
         }
-        return new Replayed(new VerificationReport(results, anomalies, Optional.ofNullable(tail), findings), writers);
+        return new Replayed(new VerificationReport(results, anomalies, Optional.ofNullable(tail), findings), writers,
+                replay.fragmentOffset()[0]);
     }
 
     /**
@@ -589,6 +794,7 @@ public final class AuditChainVerifier {
                             + "does not enforce -- this is not tampering with an existing record. The records "
                             + "immediately before and after this line were verified independently.",
                     offset, -1));
+            noteFragment(replay, line, offset);
             return;
         }
         AuditEvent event;
@@ -605,6 +811,7 @@ public final class AuditChainVerifier {
         if (firstOffset != null) {
             anomalies.add(duplicateSequence(event, firstOffset, offset));
             writer.recordCount++;
+            writer.noteUnhashed(offset);
             return;
         }
         if (writer.highestVersion > event.recordVersion()) {
@@ -624,6 +831,7 @@ public final class AuditChainVerifier {
         if (writer.broken) {
             writer.afterBreakCount++;
             writer.headHash = event.eventHash();
+            writer.noteUnhashed(offset);
             return;
         }
 
@@ -670,6 +878,7 @@ public final class AuditChainVerifier {
                             nonGenesisStartMessage(event, offset, precedingAnomalyOffset));
                     writer.lastHash = event.eventHash();
                     writer.headHash = event.eventHash();
+                    writer.noteUnhashed(offset);
                     return;
                 }
                 writer.broken = true;
@@ -681,6 +890,8 @@ public final class AuditChainVerifier {
                                 + "writer's earlier records, up to and including its true first record, were "
                                 + "deleted before this point");
                 writer.headHash = event.eventHash();
+                writer.linkBreak = true;
+                writer.noteUnhashed(offset);
                 return;
             }
         }
@@ -691,6 +902,8 @@ public final class AuditChainVerifier {
                     "its previousHash does not match the eventHash of the record that should precede it in this "
                             + "writer's chain -- the record it should chain from is missing or was altered");
             writer.headHash = event.eventHash();
+            writer.linkBreak = true;
+            writer.noteUnhashed(offset);
             return;
         }
 
@@ -703,11 +916,34 @@ public final class AuditChainVerifier {
                     "its eventHash does not match AuditEventHash recomputed from its own stored fields -- its "
                             + "content was altered after it was written");
             writer.headHash = event.eventHash();
+            writer.noteUnhashed(offset);
             return;
         }
 
         writer.lastHash = event.eventHash();
         writer.headHash = event.eventHash();
+        if (replay.instr() != null) {
+            writer.noteHashed(event, offset, replay.instr());
+        }
+    }
+
+    /**
+     * Notes a line the replay skipped without hashing: if it parses once exactly one trailing carriage
+     * return is removed, it is a complete record that was never hashed, and its offset is kept (the lowest).
+     * A line that does not parse is a crash fragment and is not noted.
+     */
+    private static void noteFragment(Replay replay, String line, long offset) {
+        String body = !line.isEmpty() && line.charAt(line.length() - 1) == '\r'
+                ? line.substring(0, line.length() - 1) : line;
+        try {
+            AuditRecordFormat.parse(body);
+        } catch (RuntimeException e) {
+            return;
+        }
+        long[] lowest = replay.fragmentOffset();
+        if (lowest[0] < 0 || offset < lowest[0]) {
+            lowest[0] = offset;
+        }
     }
 
     private static String anchorRejectionMessage(AuditEvent event, AuditCheckpoint anchor, Period minimumRetention,
@@ -825,6 +1061,19 @@ public final class AuditChainVerifier {
                 + "a verified chain -- investigate this writer's true first record directly.";
     }
 
+    /** A writer's hashed records within one segment: the first, the last and the latest record date. */
+    private static final class Span {
+        private final HashedRecord first;
+        private HashedRecord last;
+        private java.time.LocalDate latest;
+
+        Span(HashedRecord first, HashedRecord last, java.time.LocalDate latest) {
+            this.first = first;
+            this.last = last;
+            this.latest = latest;
+        }
+    }
+
     private static final class WriterState {
         private final String instanceId;
         private final Map<Long, Long> seenSequences = new LinkedHashMap<>();
@@ -846,9 +1095,37 @@ public final class AuditChainVerifier {
         private String anchorRejection;
         private long firstOffset;
         private int highestVersion;
+        /** True when the reported first break is a link failure (or a bad start), not a content failure. */
+        private boolean linkBreak;
+        /** The lowest offset of a complete record of this writer that was parsed but not hashed, or -1. */
+        private long unhashedComplete = -1;
+        private HashedRecord lastHashed;
+        /** Per segment index, this writer's first and last hashed record there and its latest record date. */
+        private final java.util.TreeMap<Integer, Span> spans = new java.util.TreeMap<>();
+        private final Map<Long, HashedRecord> probed = new LinkedHashMap<>();
 
         WriterState(String instanceId) {
             this.instanceId = instanceId;
+        }
+
+        void noteUnhashed(long offset) {
+            if (unhashedComplete < 0 || offset < unhashedComplete) {
+                unhashedComplete = offset;
+            }
+        }
+
+        void noteHashed(AuditEvent event, long offset, Instrument instr) {
+            HashedRecord record = new HashedRecord(event.sequence(), event.previousHash(), event.eventHash(), offset);
+            lastHashed = record;
+            java.time.LocalDate date = event.timestamp().atZone(java.time.ZoneOffset.UTC).toLocalDate();
+            Span span = spans.computeIfAbsent(instr.segmentAt(offset), k -> new Span(record, record, date));
+            span.last = record;
+            if (date.isAfter(span.latest)) {
+                span.latest = date;
+            }
+            if (instr.probes().getOrDefault(instanceId, java.util.Set.of()).contains(event.sequence())) {
+                probed.put(event.sequence(), record);
+            }
         }
 
         WriterResult toResult() {

@@ -85,6 +85,15 @@ public final class FileAuditCheckpointSink implements AuditCheckpointSink, Close
 
     @Override
     public synchronized java.util.List<AuditCheckpoint> retentionAnchors() {
+        return readKind(AuditCheckpoint.Kind.RETENTION_ANCHOR);
+    }
+
+    @Override
+    public synchronized java.util.List<AuditCheckpoint> shutdownCheckpoints() {
+        return readKind(AuditCheckpoint.Kind.SHUTDOWN);
+    }
+
+    private java.util.List<AuditCheckpoint> readKind(AuditCheckpoint.Kind kind) {
         java.util.List<AuditCheckpoint> anchors = new java.util.ArrayList<>();
         try {
             for (String line : Files.readString(path, StandardCharsets.UTF_8).split("\n")) {
@@ -93,7 +102,7 @@ public final class FileAuditCheckpointSink implements AuditCheckpointSink, Close
                     continue;
                 }
                 AuditCheckpoint cp = AuditCheckpoint.fromJsonLine(line);
-                if (cp.kind() == AuditCheckpoint.Kind.RETENTION_ANCHOR) {
+                if (cp.kind() == kind) {
                     anchors.add(cp);
                 }
             }

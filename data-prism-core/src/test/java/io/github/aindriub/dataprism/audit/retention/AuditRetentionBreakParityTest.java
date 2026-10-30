@@ -86,7 +86,8 @@ class AuditRetentionBreakParityTest {
 
         purgeExpectingRefusal(dir);
 
-        assertThat(names(dir)).containsExactly(seg("2026-03-02"), seg("2026-03-03"));
+        // Task 292 rule 6: the writer's next record (03-03) does not link to 03-01's last, so 03-01 stays too.
+        assertThat(names(dir)).containsExactly(seg("2026-03-01"), seg("2026-03-02"), seg("2026-03-03"));
     }
 
     @Test
