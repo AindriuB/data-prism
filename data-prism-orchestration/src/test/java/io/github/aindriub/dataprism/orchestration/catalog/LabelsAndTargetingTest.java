@@ -352,6 +352,28 @@ class LabelsAndTargetingTest {
     }
 
     @Test
+    @DisplayName("a legacy source name over 64 characters is selectable by its real label when the estate "
+            + "is too large to ask unselected")
+    void longLegacyNameIsSelectable() {
+        RequestLimits two = new RequestLimits(2, 500, 512 * 1024, Duration.ofSeconds(3), 4, 100,
+                Duration.ofSeconds(10), 50_000);
+        String longName = "legacy-".concat("n".repeat(60));
+        assertThat(longName.length()).isEqualTo(67);
+        Harness h = new Harness(realNamesIn(SCOPE), two, hmac(), sources("alpha", "beta", longName));
+
+        assertThatThrownBy(() -> h.orchestrator.buildContext(
+                ContextRequest.of("THING", "1"), context(SCOPE), caller(true)))
+                .isInstanceOf(AuditedRefusalException.class);
+
+        ContextResponse response = h.orchestrator.buildContext(
+                ContextRequest.of("THING", "1").withTargetSources(List.of(longName)), context(SCOPE), caller(true));
+
+        assertThat(response.sources().keySet()).containsExactly(longName);
+        assertThat(h.called(longName)).isEqualTo(1);
+        assertThat(h.calledTotal()).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("an unknown, wrong-kind, unpermitted or non-serving label refuses the whole call identically, "
             + "calls nothing, charges nothing, and the audit says which kind without the label")
     void fourRefusalsAreIdentical() {
