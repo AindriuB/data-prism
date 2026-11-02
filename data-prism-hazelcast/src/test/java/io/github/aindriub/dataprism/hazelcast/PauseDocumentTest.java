@@ -285,13 +285,24 @@ class PauseDocumentTest {
         insideGate.advance(LEASE.plus(SKEW));
         Nanos nanos = new Nanos();
         var restarted = instance(nanos, insideGate);
+        // The holder's card reports its higher sequence, as a live holder's would.
+        restarted.document().peers = new StubPeers(first.document().acceptedSequence());
         assertThat(restarted.allPaused()).as("the residual: a replayed pre-pause document lifts the pause").isFalse();
 
-        // The window is exactly the configured lease from receipt: one nanosecond short is still open, the lease is not.
-        nanos.advance(LEASE.minusNanos(1));
+        // The ticker runs all along but a card above the document stops every refresh, so the window is exactly the
+        // configured lease from receipt: one nanosecond short is still open, the lease is not.
+        nanos.advance(LEASE.dividedBy(2));
+        restarted.document().tick();
+        nanos.advance(LEASE.dividedBy(2).minusNanos(1));
+        restarted.document().tick();
         assertThat(restarted.allPaused()).isFalse();
         nanos.advance(Duration.ofNanos(1));
+        restarted.document().tick();
         assertThatThrownBy(restarted::allPaused).isInstanceOf(IllegalStateException.class);
+        nanos.advance(LEASE.multipliedBy(3));
+        restarted.document().tick();
+        assertThatThrownBy(restarted::allPaused).as("never fresh again while a card is higher")
+                .isInstanceOf(IllegalStateException.class);
 
         // One millisecond past the cold-start gate, a restarted instance does not accept the replayed document.
         Fixture.TestClock pastGate = new Fixture.TestClock();
@@ -458,7 +469,7 @@ class PauseDocumentTest {
     }
 
     @Test
-    void aMemberThatAcceptedTheLatestDocumentWithinTheLeaseRewritesADeletedOneButNotAfterTheLease() {
+    void aMemberThatAcceptedTheLatestDocumentWithinTheLeaseRewritesADeletedOneAndAfterTheLeaseOnlyAsAUnionThatDoesNotRenewIt() {
         solo();
         Nanos nanos = new Nanos();
         var member = instance(nanos, new Fixture.TestClock());
@@ -471,11 +482,13 @@ class PauseDocumentTest {
         assertThat(member.scopePaused("CASE-A")).isTrue();
         assertThat(instance().scopePaused("CASE-A")).isTrue();
 
-        // Not from a document accepted more than a lease ago.
+        // A document accepted more than a lease ago is put back as a union all the same, but that does not renew it.
         map(cluster).delete(key(cluster));
         nanos.advance(LEASE);
         member.document().tick();
-        assertThat(map(cluster).containsKey(key(cluster))).as("accepted a lease ago").isFalse();
+        assertThat(map(cluster).containsKey(key(cluster))).as("accepted a lease ago").isTrue();
+        assertThat(stored(cluster).live(Target.scope("CASE-A"))).hasSize(1);
+        assertThat(member.document().fresh()).as("its own freshness is not renewed").isFalse();
     }
 
     @Test
@@ -595,7 +608,7 @@ class PauseDocumentTest {
     }
 
     @Test
-    void aSecondMemberJoiningBeforeTheFirstDocumentIsWrittenMeansNoExemption() {
+    void theExemptionIsJudgedAgainUnderTheLockSoAMemberPresentByThenMeansTheWaitApplies() {
         solo();
         Nanos nanos = new Nanos();
         AtomicInteger looks = new AtomicInteger();
@@ -617,14 +630,14 @@ class PauseDocumentTest {
 
             @Override
             public boolean isAlone() {
-                // Alone for the pre-check and under the lock; a member has joined by the check before the write.
-                return looks.incrementAndGet() <= 2;
+                // Alone for the pre-check; another member is in the list when the decision is made under the lock.
+                return looks.incrementAndGet() <= 1;
             }
         });
 
         document.tick();
 
-        assertThat(looks.get()).isGreaterThanOrEqualTo(3);
+        assertThat(looks.get()).isGreaterThanOrEqualTo(2);
         assertThat(map(cluster).containsKey(key(cluster))).as("the exemption was withdrawn").isFalse();
     }
 
@@ -943,15 +956,18 @@ class PauseDocumentTest {
         member.document().tick();
         assertThat(member.document().acceptedOrder()).as("a member is unverified").containsExactly(order);
 
+        assertThat(member.document().fresh()).as("no recovery with a card higher or a member unverified").isFalse();
+
         member.document().peers = new StubPeers(order[0]);
         map(cluster).put(key(cluster), replay);
         member.document().tick();
-        assertThat(member.document().acceptedOrder()).as("the stored value is a replay (behind)").containsExactly(order);
-        assertThat(stored(cluster).sequence()).isLessThan(order[0]);
+        assertThat(stored(cluster).sequence()).as("a replay is repaired by a union write").isGreaterThan(order[0]);
+        assertThat(member.document().fresh()).as("the union write is not a recovery").isFalse();
 
         map(cluster).delete(key(cluster));
         member.document().tick();
-        assertThat(map(cluster).containsKey(key(cluster))).as("absent").isFalse();
+        assertThat(map(cluster).containsKey(key(cluster))).as("absent: put back, not a recovery").isTrue();
+        assertThat(member.document().fresh()).isFalse();
 
         // A restarted member that holds nothing never recovers a lapsed lease: the gate and the lease still apply.
         plant(cluster, member.document().accepted());
@@ -967,7 +983,7 @@ class PauseDocumentTest {
     }
 
     @Test
-    void aLapsedLeaseOverAnAbsentDocumentIsRecoveredOnlyByAnOperatorPauseWhichKeepsTheHeldPauses() {
+    void aLapsedLeaseOverAnAbsentDocumentIsPutBackWithoutRenewalAndAnOperatorPauseKeepsTheHeldPauses() {
         solo();
         Nanos nanos = new Nanos();
         var member = instance(nanos, new Fixture.TestClock());
@@ -976,7 +992,8 @@ class PauseDocumentTest {
         nanos.advance(LEASE);
 
         member.document().tick();
-        assertThat(map(cluster).containsKey(key(cluster))).isFalse();
+        assertThat(map(cluster).containsKey(key(cluster))).isTrue();
+        assertThat(member.document().fresh()).isFalse();
 
         member.pauseTool("added");
 
@@ -1714,6 +1731,165 @@ class PauseDocumentTest {
         member.document().tick();
         assertThat(metrics.count(Metric.CLUSTER_PAUSE_CONFLICT)).as("the same bytes seen on a tick").isEqualTo(2);
         assertThat(member.snapshot().pausedTools()).containsExactlyInAnyOrder("a", "b", "c", "extra");
+    }
+
+    // ---- a pause must not stay lifted on a cold member (review of c94c290d) ---------------------------------
+
+    @Test
+    void aColdMembersRefreshIsSkippedWhileAPeerCardReportsHigher_andItLapsesWithinOneLease() {
+        solo();
+        Nanos nanos = new Nanos();
+        var peers = new StubPeers(0);
+        var c = bare(cluster, nanos, new Fixture.TestClock(), peers);
+        plant(cluster, doc(5, 0, Map.of(id(1), Target.tool("seed")), Set.of()));
+        assertThat(c.current().tools()).containsExactly("seed");
+        long[] order = c.acceptedOrder();
+
+        peers.highest = 9;
+        nanos.advance(LEASE.dividedBy(2));
+        c.tick();
+        assertThat(c.acceptedOrder()).as("no refresh while a card is higher").containsExactly(order);
+        peers.highest = 0;
+        peers.unverified = 1;
+        c.tick();
+        assertThat(c.acceptedOrder()).as("no refresh while a member is unverified").containsExactly(order);
+        nanos.advance(LEASE.dividedBy(2));
+        c.tick();
+        assertThatThrownBy(c::current).isInstanceOf(IllegalStateException.class);
+
+        peers.unverified = 0;
+        nanos.advance(LEASE.dividedBy(2));
+        // Once corroborated the refresh is allowed again (recovery over the unchanged document).
+        c.tick();
+        assertThat(c.current().tools()).containsExactly("seed");
+    }
+
+    @Test
+    void aPrePauseReplayOnAColdMemberIsRepairedByTheLapsedHolderAndPStaysPaused() {
+        solo();
+        Nanos nanosA = new Nanos();
+        Nanos nanosC = new Nanos();
+        var wall = new Fixture.TestClock();
+        var a = bare(cluster, nanosA, wall, new StubPeers(0));
+        a.pause(Target.tool("seed"));
+        String prePause = (String) map(cluster).get(key(cluster));
+        a.pause(Target.tool("p"));
+        long aSeq = a.acceptedSequence();
+        // Garbage stops A's repair; A's lease lapses.
+        map(cluster).put(key(cluster), "garbage");
+        a.tick();
+        assertThat(map(cluster).get(key(cluster))).as("never over unreadable").isEqualTo("garbage");
+        nanosA.advance(LEASE);
+        wall.advance(LEASE);
+        // The pre-pause document is replayed inside the gate; C restarts cold. A's card reports A's sequence.
+        map(cluster).put(key(cluster), prePause);
+        var c = bare(cluster, nanosC, wall, new StubPeers(aSeq));
+        assertThat(c.current().tools()).as("the residual, for now").doesNotContain("p");
+
+        a.tick();
+
+        assertThat(stored(cluster).live(Target.tool("p"))).as("the cluster document regains p").hasSize(1);
+        assertThat(c.current().tools()).as("C holds p, merged").contains("seed", "p");
+        assertThatThrownBy(a::current).as("the union write did not renew A").isInstanceOf(IllegalStateException.class);
+        assertThat(a.fresh()).isFalse();
+        // A recovers through amendment 2 on the next tick: the document is current and the cards corroborate.
+        a.tick();
+        assertThat(a.current().tools()).containsExactlyInAnyOrder("seed", "p");
+        for (int i = 0; i < 8; i++) {
+            nanosC.advance(LEASE.dividedBy(2));
+            nanosA.advance(LEASE.dividedBy(2));
+            c.tick();
+            a.tick();
+            assertThat(c.current().tools()).as("p never lifted on C").contains("p");
+            assertThat(a.current().tools()).contains("p");
+        }
+    }
+
+    @Test
+    void anOperatorPauseFromAColdMemberAfterTheHoldersLapsedDoesNotLoseTheirPauses() {
+        solo();
+        Nanos nanosA = new Nanos();
+        Nanos nanosC = new Nanos();
+        var wall = new Fixture.TestClock();
+        var a = bare(cluster, nanosA, wall, new StubPeers(0));
+        a.pause(Target.tool("seed"));
+        a.pause(Target.tool("p"));
+        long aSeq = a.acceptedSequence();
+        map(cluster).delete(key(cluster));
+        // A's restore does not run for a lease (its lock is held, say); A lapses.
+        nanosA.advance(LEASE);
+        var c = bare(cluster, nanosC, wall, new StubPeers(aSeq));
+        assertThatThrownBy(c::current).isInstanceOf(IllegalStateException.class);
+        c.pause(Target.tool("x"));
+        assertThat(c.current().tools()).containsExactly("x");
+
+        a.tick();
+
+        assertThat(stored(cluster).live(Target.tool("p"))).hasSize(1);
+        assertThat(c.current().tools()).as("C holds p, merged").containsExactlyInAnyOrder("seed", "p", "x");
+        assertThat(a.fresh()).as("not renewed by its own union write").isFalse();
+        a.tick();
+        assertThat(a.current().tools()).containsExactlyInAnyOrder("seed", "p", "x");
+        for (int i = 0; i < 8; i++) {
+            nanosC.advance(LEASE.dividedBy(2));
+            nanosA.advance(LEASE.dividedBy(2));
+            c.tick();
+            a.tick();
+            assertThat(c.current().tools()).contains("p");
+        }
+    }
+
+    @Test
+    void aLapsedHoldersUnionWriteNeverGoesOverAnUnreadableDocument() {
+        solo();
+        Nanos nanos = new Nanos();
+        var wall = new Fixture.TestClock();
+        var a = bare(cluster, nanos, wall, new StubPeers(0));
+        a.pause(Target.tool("p"));
+        nanos.advance(LEASE);
+        for (Object forged : List.of("garbage", Boolean.TRUE)) {
+            map(cluster).put(key(cluster), forged);
+            a.tick();
+            assertThat(map(cluster).get(key(cluster))).isEqualTo(forged);
+        }
+    }
+
+    @Test
+    void aResumeWhoseCardsLapseWhileItWaitsForTheLockIsRefusedAsNotServing() {
+        int port = FreePorts.consecutive(1);
+        cluster = fixture.keyed(TestMembers.uniqueName("serving-recheck"), port, List.of("127.0.0.1:" + port),
+                TestMembers.KEYS, Fixture.settings(UnverifiedMemberAction.REFUSE), new Fixture.Metrics(),
+                new RecordingLogger(), false);
+        var state = instance(new Nanos(), fixture.clock);
+        state.pauseTool("search");
+        // The cards are read after the read under the lock; they lapse just then.
+        state.document().peers = new PauseDocument.Peers() {
+            @Override
+            public long highestReportedSequence() {
+                return 0;
+            }
+
+            @Override
+            public int unverifiedCount() {
+                fixture.clock.advance(cluster.securitySettings().pauseLease().multipliedBy(2));
+                return 0;
+            }
+
+            @Override
+            public boolean isOldest() {
+                return true;
+            }
+
+            @Override
+            public boolean isAlone() {
+                return false;
+            }
+        };
+        assertThat(cluster.securityStatus().serving()).isTrue();
+
+        assertThatThrownBy(() -> state.resumeTool("search")).isInstanceOf(ClusterOperationRefusedException.class);
+        assertThat(cluster.securityStatus().serving()).isFalse();
+        assertThat(stored(cluster).live(Target.tool("search"))).as("nothing was lifted").hasSize(1);
     }
 
     // ---- properties of the merge --------------------------------------------------------------------------

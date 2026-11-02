@@ -406,7 +406,7 @@ final class PauseDocument {
         }
     }
 
-    private record Action(Doc base, Doc next, boolean recovery, boolean lone) {
+    private record Action(Doc base, Doc next, boolean recovery, boolean renews) {
     }
 
     private enum Op { PAUSE, RESUME, END_SCOPE }
@@ -782,6 +782,8 @@ final class PauseDocument {
                 }
                 int unverified = op == Op.PAUSE ? 0 : peers.unverifiedCount();
                 long highest = op == Op.PAUSE ? 0 : peers.highestReportedSequence();
+                // Judged after the read, under the lock: the cards may have lapsed while the lock was awaited.
+                boolean serving = op == Op.PAUSE || cluster.securityStatus().serving();
                 Doc base;
                 Doc next;
                 Id fresh = null;
@@ -806,6 +808,10 @@ final class PauseDocument {
                     } else {
                         if (look.status() == Status.UNREADABLE || look.status() == Status.GATED || held == null) {
                             throw unavailable();
+                        }
+                        if (!serving) {
+                            throw new ClusterOperationRefusedException(new IllegalStateException(
+                                    "the member is not serving"));
                         }
                         if (unverified > 0) {
                             throw ClusterRefusals.refused(new IllegalStateException("a member is unverified"));
@@ -864,6 +870,15 @@ final class PauseDocument {
      * @param tombstones the tombstones the change may add beyond the base (a resume's observed ids still live)
      */
     Outcome commit(Object storedRaw, Doc storedDoc, Doc base, Doc next, Id fresh, Set<Id> tombstones) {
+        return commit(storedRaw, storedDoc, base, next, fresh, tombstones, true);
+    }
+
+    /**
+     * As above. A write that does not {@code renew} raises the held order and merges, but leaves the lease where it
+     * was: the holder is fresh again only through recovery or by accepting a higher-order document.
+     */
+    private Outcome commit(Object storedRaw, Doc storedDoc, Doc base, Doc next, Id fresh, Set<Id> tombstones,
+                           boolean renew) {
         Outcome refused = guard(storedDoc, base, next, fresh, tombstones);
         if (refused != null) {
             return refused;
@@ -876,7 +891,7 @@ final class PauseDocument {
         if (!written && !sealed.equals(map.get(key))) {
             return Outcome.LOST_RACE;
         }
-        acceptWritten(next, sealed);
+        acceptWritten(next, sealed, renew);
         assertFence();
         return Outcome.WRITTEN;
     }
@@ -911,7 +926,7 @@ final class PauseDocument {
         return null;
     }
 
-    private void acceptWritten(Doc next, String sealed) {
+    private void acceptWritten(Doc next, String sealed, boolean renew) {
         long now = nanos.getAsLong();
         synchronized (monitor) {
             Memo written = new Memo(next);
@@ -924,7 +939,9 @@ final class PauseDocument {
                 if (next.compareOrder(held) >= 0) {
                     held = merged.withHeader(next.sequence(), next.refresh(), next.issuedAtMillis(), next.issuer());
                     heldSealed = sealed;
-                    receivedAt = now;
+                    if (renew) {
+                        receivedAt = now;
+                    }
                 } else {
                     held = merged;
                 }
@@ -988,10 +1005,8 @@ final class PauseDocument {
                 if (action == null) {
                     return;
                 }
-                if (action.lone() && !peers.isAlone()) {
-                    return;
-                }
-                Outcome outcome = commit(stored, look.stored(), action.base(), action.next(), null, Set.of());
+                Outcome outcome = commit(stored, look.stored(), action.base(), action.next(), null, Set.of(),
+                        action.renews());
                 if (outcome == Outcome.WRITTEN && action.recovery()) {
                     warnRecovery();
                 }
@@ -1029,12 +1044,17 @@ final class PauseDocument {
                 }
                 case ABSENT -> {
                     if (held != null) {
+                        if (now - receivedAt >= lease.toNanos()) {
+                            // A lapsed holder still puts back what it holds: the union only adds, so it cannot
+                            // lift a pause. It does not renew its own lease; recovery or a higher document does.
+                            return new Action(held, unionWrite(look), false, false);
+                        }
                         // OD-15 (i): only from a document accepted within the last lease, and only if no verified
                         // member reports a higher sequence.
-                        if (now - receivedAt >= lease.toNanos() || highest > held.sequence()) {
+                        if (highest > held.sequence()) {
                             return null;
                         }
-                        return new Action(held, successor(held), false, false);
+                        return new Action(held, successor(held), false, true);
                     }
                     if (highest > 0) {
                         quietSince = now;
@@ -1045,33 +1065,41 @@ final class PauseDocument {
                     }
                     // A member alone in Hazelcast's member list is exempt from the wait for one lease of uptime.
                     // Membership cannot be forged by writing to a map, and a lone member has no peer that holds a
-                    // pause a replayed seq-0 card could hide. The exemption is judged now and again just before the
-                    // write; any other member present means the wait applies.
+                    // pause a replayed seq-0 card could hide. Membership is read under the lock, in this decision.
+                    // A member that joins after it and before the putIfAbsent is harmless: a member holding pauses
+                    // arrives only through a merge, and putIfAbsent plus reconcileAfterMerge repair a Doc(1) that
+                    // meets a document holding more.
                     boolean waited = now - quietSince >= lease.toNanos();
                     if (!waited && !alone) {
                         return null;
                     }
-                    return new Action(null, Doc.empty(1, 0, wall.millis(), issuer()), false, !waited);
+                    return new Action(null, Doc.empty(1, 0, wall.millis(), issuer()), false, true);
                 }
                 case BEHIND -> {
-                    if (now - receivedAt >= lease.toNanos() || highest > held.sequence()) {
-                        return null;
-                    }
-                    return new Action(held, unionWrite(look), false, false);
-                }
-                default -> {
-                    if (look.lacks()) {
+                    if (now - receivedAt >= lease.toNanos()) {
+                        // Lapsed: put back the union over the exact stored bytes, without renewing the lease.
                         return new Action(held, unionWrite(look), false, false);
                     }
+                    if (highest > held.sequence()) {
+                        return null;
+                    }
+                    return new Action(held, unionWrite(look), false, true);
+                }
+                default -> {
                     long age = now - receivedAt;
+                    if (look.lacks()) {
+                        return new Action(held, unionWrite(look), false, age < lease.toNanos());
+                    }
                     if (age >= lease.toNanos()) {
                         if (serving && unverified == 0 && highest <= held.sequence()) {
-                            return new Action(held, successor(held), true, false);
+                            return new Action(held, successor(held), true, true);
                         }
                         return null;
                     }
-                    if (freshLocked() && age >= lease.dividedBy(2).toNanos()) {
-                        return new Action(held, successor(held), false, false);
+                    // A refresh says the cluster is current; it needs the same corroboration as recovery.
+                    if (freshLocked() && age >= lease.dividedBy(2).toNanos() && unverified == 0
+                            && highest <= held.sequence()) {
+                        return new Action(held, successor(held), false, true);
                     }
                     return null;
                 }

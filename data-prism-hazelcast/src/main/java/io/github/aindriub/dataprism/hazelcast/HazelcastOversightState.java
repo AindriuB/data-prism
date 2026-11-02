@@ -25,8 +25,8 @@ import java.util.Set;
  * adds a new element, so pausing a paused target twice is two pauses, and a resume lifts only the pauses it saw: a
  * pause that lands while the resume is built stays in force. A resume is refused while the member is not serving or a
  * member is unverified ({@code CLUSTER_OPERATION_REFUSED}), and while the document is not fresh or a peer reports a
- * higher sequence ({@code OVERSIGHT_UNAVAILABLE}). The document is reached through {@code instance()}, so the serving gate does not
- * stop it. A scope pause written by a 0.7 member after construction is still found, by its raw key, and keeps that
+ * higher sequence ({@code OVERSIGHT_UNAVAILABLE}). The document is reached through {@code instance()}, so the
+ * serving gate does not stop it. A scope pause written by a 0.7 member after construction is still found, by its raw key, and keeps that
  * scope paused. Every write waits for the key's lock at most the lock timeout and then fails with
  * {@code CLUSTER_LOCK_TIMEOUT}.
  *
