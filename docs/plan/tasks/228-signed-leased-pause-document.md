@@ -150,9 +150,7 @@ Under the oversight lock: re-read and judge the stored value, form base, and com
 - `fresh()` is true at t iff the gate passed at some renewal point within the last L before t, by the injected nano clock. Not fresh, ABSENT or unauthentic: every `OversightState` read answers paused or refuses with `OVERSIGHT_UNAVAILABLE` (OD-215-10).
 - `alert`, the unverified grace period and `MemberCards.status().serving()` are not inputs to the gate (F3).
 - The cold-start wall-clock gate is unchanged: the wall clock is used only to gate the first acceptance after a cold start. A document whose `issuedAt` is older than L plus `clockSkewTolerance` is not accepted by a member with `held == null` (GATED). After first acceptance a skewed wall clock has no effect on freshness.
-- Peer state is unknown, and the gate fails closed, in two cases. Neither applies to a lone member (no other member in Hazelcast's member list):
-  - **No look yet.** Until this member has completed at least one cards look since it started (this process life), clauses 2 and 3 both fail whenever any other member is in the member list. An empty `peerDigests()` or an `unverifiedCount()` of 0 before the first completed look is not evidence *(197-10: coordinator decision 2026-11-02 after external review of PR #197 round 2, owner may override)*.
-  - **Stale look.** If another member is in the member list and this member's latest completed cards look is older than one lease, `peerDigests()` is unknown and clause 2 fails *(planner reading, fail closed; owner may override)*. One lease is therefore the maximum accepted look age A of F1.
+- **Peer state unknown.** While any other member is in Hazelcast's member list, peer state is unknown if this member has not completed a cards look since it started (this process life), or if its latest completed cards look is older than one lease. While peer state is unknown, clause 2 (Covered) and clause 3 (cold-start unverified) both fail: an empty `peerDigests()`, or an `unverifiedCount()` of 0, read with no look or from a stale look is not evidence. The two conditions are one rule and are treated alike. The rule does not apply to a lone member (no other member in the member list). One lease is therefore the maximum accepted look age A of F1 *(197-10: coordinator decision 2026-11-02 after external review of PR #197 round 2, owner may override; the stale look failing clause 3 as well as clause 2 is a coordinator decision 2026-11-02 after external review of PR #197 round 2, owner may override)*.
 - Look age is measured on the injected monotonic nano clock, through `Peers.lastLookNanos()` (R7), never on the wall clock. A wall-clock jump forward or back changes neither coverage nor freshness *(197-13: coordinator decision 2026-11-02 after external review of PR #197 round 2, owner may override)*.
 
 ### R7. Card v2 (`MemberCards`)
@@ -169,8 +167,8 @@ Under the oversight lock: re-read and judge the stored value, form base, and com
 - Hooks *(197-14: coordinator decision 2026-11-02 after external review of PR #197 round 2, owner may override)*. Names may differ; these are all of them:
   - `Peers.peerDigests()`: the last-seen map for every listed member other than this one. A member whose card this member has never accepted, or whose latest accepted card is a no-document card, is absent from it (R6 clause 2).
   - `Peers.unverifiedCount()`: as in 227 (R6 clause 3, R8, R13).
-  - `Peers.lookCompleted()`: true once this member has completed at least one cards look since it started (R6, no look yet).
-  - `Peers.lastLookNanos()`: the injected nano-clock time at which the latest cards look completed, recorded by `MemberCards` on the nano clock and not on its wall clock (R6, stale look and look age).
+  - `Peers.lookCompleted()`: true once this member has completed at least one cards look since it started (R6, peer state unknown).
+  - `Peers.lastLookNanos()`: the injected nano-clock time at which the latest cards look completed, recorded by `MemberCards` on the nano clock and not on its wall clock (R6, peer state unknown and look age).
   - `Peers.lookMarkers()`: per verified member, this one included, the marker its card carried at the latest look (no document, or a digest), with that look's nano time, so first start can check every look during its wait (R8).
   - `Peers.highestReportedSequence()`: as now (R13).
   - Card newness: the strictly-newer acceptance above, inside `MemberCards`; it has no hook of its own but is what `peerDigests()` reflects.
@@ -269,7 +267,7 @@ Current decisions only, each where it was made. Coordinator and planner calls ar
   5. OD-15 (i) and the refresh text move from "higher sequence" to digest coverage (R9, R10).
   6. The residuals below are documented, not fixed.
 - Coordinator, 2026-10-29 (owner may override): `stillPaused` is true for a TOOL or SCOPE target while `pause all` is active, and true when the post-resume snapshot fails, with status 200 and no further audit (R13).
-- Planner readings in this version (owner may override): the count prefixes in the digest (R7); refresh writes only by a fresh member (R10); a cards look older than a lease fails Covered (R6).
+- Planner readings in this version (owner may override): the count prefixes in the digest (R7); refresh writes only by a fresh member (R10). That a cards look older than a lease makes peer state unknown is now a coordinator decision (R6, 2.2 below).
 - Coordinator decisions 2026-11-02 after external review of PR #197 round 1, owner may override (contract version 2.1):
   - 197-1: a member with `held == null` publishes a no-document card, excluded from `peerDigests()` and Covered (R7, F5).
   - 197-2: Seen pins every digest referenced by a listed peer's last-seen card; only unpinned entries age out (R6).
@@ -282,6 +280,7 @@ Current decisions only, each where it was made. Coordinator and planner calls ar
   - 197-9: the "`receivedAt = now` outside the gate" mutant is split into one mutant per renewal point (A13).
 - Coordinator decisions 2026-11-02 after external review of PR #197 round 2, owner may override (contract version 2.2):
   - 197-10: until a member has completed a cards look since it started, clauses 2 and 3 fail whenever another member is listed; a lone member is unaffected (R6).
+  - 197-10, stale look: a cards look older than one lease is treated exactly like no look yet. Peer state is unknown, and clauses 2 and 3 both fail while another member is listed, so a cold member cannot pass clause 3 on a stale `unverifiedCount()` of 0. The two cases are one "peer state unknown" rule (R6).
   - 197-11: clause 4 forbids renewal only as part of the member's own write; a later read may renew it if the full gate passes then (R6).
   - 197-12: a card is accepted into last-seen state only if strictly newer, by a sealed per-process `cardSequence`; a replayed older card, no-document included, is ignored (R7, F5, Residuals). The choice of sequence over `issuedAt` is a planner detail.
   - 197-13: look age is measured on the monotonic nano clock, through `Peers.lastLookNanos()` (R6, R7).
@@ -357,6 +356,7 @@ All in `PauseDocumentTest` unless named. Both clocks are injected throughout.
 - [ ] Post-write renewal (197-3): for each renewal point of R6 that follows a write (`acceptWritten` after a repair, a restore, a refresh and each operator write; `reconcileAfterMerge` after a write; recovery after a tick write), a member lapsed when the write began is not fresh after it even though clauses 1-3 pass on the post-write state, and is fresh after its next non-write tick.
 - [ ] Lapsed own write, then a read (197-11): a member lapsed when it writes a repair is not fresh after the write. Run both ways. With no read and no tick after the write, it stays lapsed. With a read-path `judge` on the same stored bytes after the write, it is fresh after that read only if covered: once with a listed peer whose last-seen digest is outside Seen(M) (it stays lapsed), and once with every peer's digest in Seen(M) (it is fresh).
 - [ ] No look yet (197-10): a cold member with a listed peer, a replayed document inside the cold-start gate, and no completed cards look since it started stays not fresh, though `peerDigests()` is empty and `unverifiedCount()` is 0. After a completed look that shows the peer at a digest outside its Seen it is still not fresh; once it holds that content and a look shows it covered, it is fresh. A lone member with no look is fresh on its first passing gate.
+- [ ] Stale look and a late intruder (197-10, stale look): a cold member (`established` false) with a listed peer completes a cards look that finds no unverified member, holds the document and is covered by that look. A keyless intruder then joins, and no further look completes until the look is older than one lease by the nano clock. The member's `unverifiedCount()` still reads 0 from the stale look, but at every gate in that time it stays not fresh and `established()` stays false. After a fresh look that sees the intruder it is still not fresh; once the intruder leaves and a later look completes with every peer covered, it is fresh.
 - [ ] Wall-clock jump (197-13): with every member fresh and covered, moving the wall clock forward by more than a lease, and separately back by more than a lease, with the nano clock unchanged, changes neither `peerDigests()`, nor coverage, nor `fresh()`; and with the nano clock advanced past one lease since the last look, the gate fails whatever the wall clock reads.
 - [ ] Replayed no-document card (197-12): peer P's card at digest D has been accepted, D is outside Seen(M), and M is not covered. An older no-document card of P (a lower `cardSequence`) is replayed and a look completes. P's last-seen digest is still D, `peerDigests()` still has P, and M stays not covered and not fresh. A replayed older card with a digest in Seen(M) is ignored the same way. A newer card of P is accepted.
 - [ ] Every probe test from the previous review is a real, named test that passes and shows no defect: the fourth-hole variants and `crProbe_aColdMemberRecoversOverItsOwnLapsedUnionWriteAndRefreshesWithPLifted` included. No test is left that expects or documents a defect. The Outcome lists each probe with its new name.
@@ -453,6 +453,7 @@ Each must fail at least one named test. The Outcome lists each mutant with the t
 - [ ] The card is published only at half lease.
 - [ ] The lapsed union write renews the lease.
 - [ ] An empty peer set before the first completed cards look counts as covered *(197-10)*.
+- [ ] A stale cards look does not fail clause 3 (a cold member passes on the stale `unverifiedCount()`) *(197-10, stale look)*.
 - [ ] A read renews a lapsed member that is not covered *(197-11)*.
 - [ ] Last-seen state accepts a card that is not strictly newer *(197-12)*.
 - [ ] Look age is measured on the wall clock *(197-13)*.
@@ -492,7 +493,7 @@ Pause, resume and snapshot semantics for operators; the audit-first operator flo
 - No sleeps. Both clocks are injected; waits are on events or on polled state with a bound.
 ## Superseded (history, do not implement)
 
-Nothing in this section is part of the contract. It holds, verbatim from version 1 of this brief (the file at `main` 2bbc191f), every passage that version 2 replaces, grouped by where it stood, and, in its last two subsections, every passage of version 2 that version 2.1 replaces and every passage of version 2.1 that version 2.2 replaces. The only edit is that strike-through markers were removed, since every line here is superseded, and each passage is quoted. Line numbers are version 1's.
+Nothing in this section is part of the contract. It holds, verbatim from version 1 of this brief (the file at `main` 2bbc191f), every passage that version 2 replaces, grouped by where it stood, and, in its last three subsections, every passage of version 2 that version 2.1 replaces, every passage of version 2.1 that version 2.2 replaces, and every passage of the first version 2.2 text that the stale-look follow-up replaces. The only edit is that strike-through markers were removed, since every line here is superseded, and each passage is quoted. Line numbers are version 1's.
 
 Also superseded by the freshness decisions of 2026-11-02, though not in the version 1 text: refresh decision (a) on the implementation branch (a refresh needs the same corroboration as recovery: `unverified == 0` and `highestReportedSequence() <= held.sequence`), and the `renew` flag on `commit`, `acceptWritten` and the tick's `Action` (`PauseDocument.java` :409 and :880-943 at 3f472483).
 
@@ -794,7 +795,32 @@ Verbatim from version 2.1 (PR #197 head 2af006d9), replaced by the coordinator d
 
 > Nothing in this section is part of the contract. It holds, verbatim from version 1 of this brief (the file at `main` 2bbc191f), every passage that version 2 replaces, grouped by where it stood, and, in its last subsection, every passage of version 2 that version 2.1 replaces. The only edit is that strike-through markers were removed, since every line here is superseded, and each passage is quoted. Line numbers are version 1's.
 
+### First version 2.2 passages replaced by the stale-look follow-up
+
+Verbatim from the first version 2.2 text (PR #197 head a551e1b4), replaced by the coordinator decision of 2026-11-02 after external review of PR #197 round 2 that a stale cards look is treated exactly like no look yet. Line numbers are that text's. Passages the follow-up only added to are not repeated here.
+
+#### R6 peer state unknown (lines 153-155)
+
+> - Peer state is unknown, and the gate fails closed, in two cases. Neither applies to a lone member (no other member in Hazelcast's member list):
+>   - **No look yet.** Until this member has completed at least one cards look since it started (this process life), clauses 2 and 3 both fail whenever any other member is in the member list. An empty `peerDigests()` or an `unverifiedCount()` of 0 before the first completed look is not evidence *(197-10: coordinator decision 2026-11-02 after external review of PR #197 round 2, owner may override)*.
+>   - **Stale look.** If another member is in the member list and this member's latest completed cards look is older than one lease, `peerDigests()` is unknown and clause 2 fails *(planner reading, fail closed; owner may override)*. One lease is therefore the maximum accepted look age A of F1.
+
+#### R7 hook cross-references (lines 172, 173)
+
+>   - `Peers.lookCompleted()`: true once this member has completed at least one cards look since it started (R6, no look yet).
+>
+>   - `Peers.lastLookNanos()`: the injected nano-clock time at which the latest cards look completed, recorded by `MemberCards` on the nano clock and not on its wall clock (R6, stale look and look age).
+
+#### Decisions: planner readings (line 272)
+
+> - Planner readings in this version (owner may override): the count prefixes in the digest (R7); refresh writes only by a fresh member (R10); a cards look older than a lease fails Covered (R6).
+
+#### Superseded preamble (line 495)
+
+> Nothing in this section is part of the contract. It holds, verbatim from version 1 of this brief (the file at `main` 2bbc191f), every passage that version 2 replaces, grouped by where it stood, and, in its last two subsections, every passage of version 2 that version 2.1 replaces and every passage of version 2.1 that version 2.2 replaces. The only edit is that strike-through markers were removed, since every line here is superseded, and each passage is quoted. Line numbers are version 1's.
+
 ## Changelog
 - Contract version 2 (2026-11-02): version 1 and its amendments of 2026-10-29 and 2026-10-30 consolidated into one current contract; sequence-based freshness replaced by the digest-coverage gate and Card v2 (owner decisions 1-6 of 2026-11-02); `MemberCards`, `MemberCardTest`, `PrivacyClusterMembershipTest`, `ArchitectureTest` and `LegacyOversightStateTest` added to Owns.
 - Contract version 2.1 (2026-11-02): coordinator decisions after external review of PR #197 round 1, owner may override. No-document cards excluded from Covered (197-1); pinned Seen entries (197-2); the lapsed-own-write rule moved into the gate as clause 4 with every renewal point listed (197-3); merge metadata and an order property (197-4); 295 to be reissued before pickup (197-5); new A4, A6 and A13 cases for the uncovered paths (197-6); endScope precondition order over ABSENT (197-7); W = L + Tp + A (197-8); the renewal mutant split per renewal point (197-9).
 - Contract version 2.2 (2026-11-02): coordinator decisions after external review of PR #197 round 2, owner may override. Peer state unknown before the first completed cards look (197-10); a later read may renew a member after its own lapsed write if the full gate passes (197-11); last-seen state accepts only strictly newer cards, by a sealed `cardSequence` (197-12); look age on the nano clock (197-13); every `Peers` hook listed in R7 and the `MemberCards` Owns entry matched (197-14); unpinned Seen entries re-enter the ring at its head (197-15); the two-lapsed-holders test restated as states (197-16); the wrong-Doc(1) repair at `max(held.sequence, 1) + 1` (197-17); an operator pause over GATED writes `held ⊔ gated ⊔ change` (197-18); Tp defined and W ≤ 2.5 L (197-19).
+- Contract version 2.2, follow-up (2026-11-02): coordinator decision after external review of PR #197 round 2, owner may override. A cards look older than one lease is treated exactly like no look yet: one "peer state unknown" rule in R6 fails clauses 2 and 3 while another member is listed; new A4 case for a cold member with a stale look and a late intruder, and a mutant for a stale look that does not fail clause 3.
