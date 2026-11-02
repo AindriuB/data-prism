@@ -1,8 +1,8 @@
 # 228 — Replace pause flags with one sealed, leased, observed-remove pause document
 
-**Contract version:** 2.1 (2026-11-02)
+**Contract version:** 2.2 (2026-11-02)
 
-This version states the whole current contract. It replaces versions 1 and 2 and every amendment to them. Where version 1, a PR thread or the code on the implementation branch disagrees with this text, this text wins. Earlier wording is kept in "Superseded (history, do not implement)" at the end. Read it for history only and never build from it.
+This version states the whole current contract. It replaces versions 1, 2 and 2.1 and every amendment to them. Where version 1, a PR thread or the code on the implementation branch disagrees with this text, this text wins. Earlier wording is kept in "Superseded (history, do not implement)" at the end. Read it for history only and never build from it.
 
 Kept for 1.0 under owner decision (b), 2026-10-23: 1.0 supports multiple instances on a trusted network only, and the sealed-cluster briefs 224, 226, 229, 230, 231 and 264 are deferred past 1.0 (`docs/plan/tasks/deferred/`; 225 was restored to 0.8 by a second owner decision the same day). This brief depends on none of them; `SealedWrites`, keyed names and `ClusterSecuritySettings` are on `main` (223). In 1.0 the sealed stores are the pause document, the member cards and the sentinel (227), and the identity cache and re-identification index (225); the docs (213) name them as what is protected.
 
@@ -16,7 +16,7 @@ Kept for 1.0 under owner decision (b), 2026-10-23: 1.0 supports multiple instanc
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/PauseDocument.java *(new)*
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/OversightMaps.java
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/ClusterSecurityStatus.java *(insertions only: pause freshness and age)*
-- data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/MemberCards.java *(the card digest field, the format version, publish-on-change, the last-seen digests and the `Peers` hooks only; R7)*
+- data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/MemberCards.java *(the card digest field, the card sequence, the format version, publish-on-change, the last-seen digests and their newer-card-only acceptance, look timing on the nano clock, the per-look card markers and the `Peers` hooks only; R7)*
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/ScopeIdentityIndex.java *(the `endScope` pause step, its ordering and its deadline only; R12)*
 - data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/boundary/OversightMapsBoundary.java
 - data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/HazelcastOversightTest.java *(changes only where a stored value is read or written raw, plus new cases)*
@@ -58,11 +58,11 @@ A deleted, forged or replayed entry can no longer lift a pause. Pause state beco
   - the stored document is authentic and M lacks nothing from it (M has merged all of it), **and**
   - **Covered**: every verified peer's card digest is in Seen(M), meaning M holds that content now or has held it. No-document cards carry no digest and take no part in Covered (R7).
   
-  The bound on how long a member that stops being covered can stay fresh is W = L + Tp + A, where Tp is the card publication delay and A is the maximum accepted age of the cards look the gate judged on. A is at most one lease (R6), so W ≤ about 2.2 L with publish-on-change (R7) *(197-8: coordinator decision 2026-11-02 after external review of PR #197 round 1, owner may override)*.
+  The bound on how long a member that stops being covered can stay fresh is W = L + Tp + A. Tp is the maximum delay between a change of a member's held content and a published card that shows it: the card is published on change (R7), and the half-lease refresh bounds the delay when a change-triggered write is lost or coalesced, so Tp ≤ L/2. A is the maximum accepted age of the cards look the gate judged on, at most one lease (R6). So W = L + Tp + A ≤ 2.5 L *(197-8: coordinator decision 2026-11-02 after external review of PR #197 round 1, owner may override; 197-19: coordinator decision 2026-11-02 after external review of PR #197 round 2, owner may override)*.
 - **F2.** The gate's inputs are held content, peer card digests, Seen(M) and the monotonic clock, nothing else. The sequence, the refresh counter, the issuer, and who wrote the bytes are never evidence. There is no `renew` flag. Every lease reset goes through the gate, at one of the renewal points listed in R6.
 - **F3.** Unverified members never gate freshness for an established member. `unverified-member.action: alert` and the unverified grace period affect only `MemberCards`' serving status. `pause.fresh` is independent of them. Cold-start exception (owner decision 3 of 2026-11-02): a member that has not yet been fresh in this process life needs `unverifiedCount() == 0` for its first renewal. That renewal sets an `established` flag, which is reset whenever held becomes null.
 - **F4.** A lapsed member's own writes (a union repair, a reconcile, an operator pause, an ABSENT restore) apply content but never reset its lease. Its lease is reset only by a later gate evaluation that passes. The gate enforces this itself (R6 clause 4); no other rule repeats the condition.
-- **F5.** A formerly verified peer that is still in the member list but whose card is gone or expired is judged at the last digest this member saw from it. A peer that leaves the member list is forgotten. A peer whose latest card is a no-document card has no last-seen digest.
+- **F5.** A formerly verified peer that is still in the member list but whose card is gone or expired is judged at the last digest this member saw from it. A peer that leaves the member list is forgotten. A peer whose latest accepted card is a no-document card has no last-seen digest. A card is accepted into last-seen state only if it is strictly newer than the one already recorded for that peer (R7), so a replayed older card changes nothing *(197-12: coordinator decision 2026-11-02 after external review of PR #197 round 2, owner may override)*.
 - **Lone member.** With no verified peers, Covered is vacuously true.
 
 ## Rules
@@ -138,41 +138,61 @@ Under the oversight lock: re-read and judge the stored value, form base, and com
   1. the stored document read at this renewal point is authentic and held has every element and tombstone of it (it is merged first, R2). ABSENT, UNREADABLE and GATED fail this clause;
   2. Covered: for every entry of `Peers.peerDigests()`, the digest is in Seen(M);
   3. if `established` is false: `Peers.unverifiedCount() == 0`. A pass then sets `established = true`;
-  4. at a post-write renewal point: this member was fresh when the write began, and clauses 1-3 are judged on state read after that write: the stored document is the one the successful CAS wrote (or a re-read after it), held is merged with it, and `peerDigests()` and `unverifiedCount()` are read after the commit. A member that was lapsed when the write began never renews from that write, whatever clauses 1-3 say; it renews only at a later renewal point that passes and is not a reset from its own write *(197-3: coordinator decision 2026-11-02 after external review of PR #197 round 1, owner may override)*.
+  4. at a post-write renewal point: this member was fresh when the write began, and clauses 1-3 are judged on state read after that write: the stored document is the one the successful CAS wrote (or a re-read after it), held is merged with it, and `peerDigests()` and `unverifiedCount()` are read after the commit. A member that was lapsed when the write began never renews from that write, whatever clauses 1-3 say *(197-3: coordinator decision 2026-11-02 after external review of PR #197 round 1, owner may override)*.
 - Clause 4 is the only place the lapsed-own-write rule lives (F4). R3, R9, R11 and R13 refer to it and do not restate it.
+- Clause 4 forbids renewal only as part of this member's own write, that is, at the post-write renewal point that follows it. Any later renewal point, a read-path `judge` included, may renew the member if clauses 1-3 pass on the state read then, even when the stored bytes are the very ones this member wrote. This is sound because Covered depends only on peers' card digests: a document this member wrote is never evidence (F2), and its own write cannot put a peer's digest into Seen(M) *(197-11: coordinator decision 2026-11-02 after external review of PR #197 round 2, owner may override)*.
 - Seen(M) holds digests of M's own held content only. A peer's digest is never added to it, by a read or otherwise. It has two parts *(197-2: coordinator decision 2026-11-02 after external review of PR #197 round 1, owner may override)*:
   - the ring: the last 256 distinct unpinned values of `Digest(held)`, the current one included, appended on every change of held. Only unpinned entries age out of it;
-  - the pinned entries: every value in Seen(M) that equals the last-seen digest of some peer still in the member list (an entry of `peerDigests()`) is pinned and never evicted. It is unpinned when that peer's last-seen digest changes or the peer leaves the member list, and no other listed peer still references it; it then ages out like any ring entry.
+  - the pinned entries: every value in Seen(M) that equals the last-seen digest of some peer still in the member list (an entry of `peerDigests()`) is pinned and never evicted. It is unpinned when that peer's last-seen digest changes or the peer leaves the member list, and no other listed peer still references it. An entry that becomes unpinned re-enters the ring at its head, as if just appended, so it survives 256 further changes of held before it can be evicted *(197-15: coordinator decision 2026-11-02 after external review of PR #197 round 2, owner may override)*.
   - Bound: the number of pinned entries is at most the number of listed members, so Seen(M) holds at most 256 plus that many digests.
 - Coverage is membership in Seen(M), not equality with the current `Digest(held)`. A peer that holds content M held earlier is covered.
 - `established` is reset to false whenever held becomes null.
 - `fresh()` is true at t iff the gate passed at some renewal point within the last L before t, by the injected nano clock. Not fresh, ABSENT or unauthentic: every `OversightState` read answers paused or refuses with `OVERSIGHT_UNAVAILABLE` (OD-215-10).
 - `alert`, the unverified grace period and `MemberCards.status().serving()` are not inputs to the gate (F3).
 - The cold-start wall-clock gate is unchanged: the wall clock is used only to gate the first acceptance after a cold start. A document whose `issuedAt` is older than L plus `clockSkewTolerance` is not accepted by a member with `held == null` (GATED). After first acceptance a skewed wall clock has no effect on freshness.
-- If another member is in the member list and this member's latest completed cards look is older than one lease, `peerDigests()` is unknown and clause 2 fails *(planner reading, fail closed; owner may override)*. One lease is therefore the maximum accepted look age A of F1.
+- Peer state is unknown, and the gate fails closed, in two cases. Neither applies to a lone member (no other member in Hazelcast's member list):
+  - **No look yet.** Until this member has completed at least one cards look since it started (this process life), clauses 2 and 3 both fail whenever any other member is in the member list. An empty `peerDigests()` or an `unverifiedCount()` of 0 before the first completed look is not evidence *(197-10: coordinator decision 2026-11-02 after external review of PR #197 round 2, owner may override)*.
+  - **Stale look.** If another member is in the member list and this member's latest completed cards look is older than one lease, `peerDigests()` is unknown and clause 2 fails *(planner reading, fail closed; owner may override)*. One lease is therefore the maximum accepted look age A of F1.
+- Look age is measured on the injected monotonic nano clock, through `Peers.lastLookNanos()` (R7), never on the wall clock. A wall-clock jump forward or back changes neither coverage nor freshness *(197-13: coordinator decision 2026-11-02 after external review of PR #197 round 2, owner may override)*.
 
 ### R7. Card v2 (`MemberCards`)
 - The card gains `pauseDigest`: the first 16 bytes of SHA-256 over a 4-byte big-endian count of element ids, the element ids sorted ascending as unsigned 16-byte values, a 4-byte count of tombstone ids, then the sorted tombstone ids. The two counts stop an id that moves between the lists from leaving the digest unchanged *(the counts are a planner detail; owner may override)*.
-- A member with `held == null` publishes a no-document card: the digest field carries a distinct "no document" marker (for example a presence byte of 0 and no digest bytes), never `Digest(empty)` and never equal to any digest. `Digest(empty)` is reported only by a member that holds an empty document. A no-document card opens and verifies its member like any card, but it is excluded from `peerDigests()` and so from Covered, and on arrival it removes that member's last-seen digest entry (which unpins it, R6). So a restarted member never makes an established member stale, and once any member holds a document every other member can be covered by it *(197-1: coordinator decision 2026-11-02 after external review of PR #197 round 1, owner may override)*.
+- A member with `held == null` publishes a no-document card: the digest field carries a distinct "no document" marker (for example a presence byte of 0 and no digest bytes), never `Digest(empty)` and never equal to any digest. `Digest(empty)` is reported only by a member that holds an empty document. A no-document card opens and verifies its member like any card, but it is excluded from `peerDigests()` and so from Covered, and when it is accepted (it is strictly newer, below) it removes that member's last-seen digest entry (which unpins it, R6). So a restarted member never makes an established member stale, and once any member holds a document every other member can be covered by it *(197-1: coordinator decision 2026-11-02 after external review of PR #197 round 1, owner may override)*.
 - The card keeps `highestPauseSequence`. Resume's precondition reads it (R13). First start reads the digest, not the sequence (R8).
 - `FORMAT_VERSION` becomes 2. A version-1 card does not open as a card (the member is unverified), and that is tested. The cutover is non-rolling, as in 227.
 - The card is published when the reported digest or sequence changes, as well as at half lease, inside the single-writer `inFlight` rule: no two card writes run at once. A change seen while a write is in flight is published by the next write, which starts when the in-flight one completes or at the next schedule pass, whichever comes first. The latest value wins.
-- `MemberCards` keeps, per member in the live member list, the digest of the latest card from it that opened and was inside its lease. That entry survives the card's expiry or deletion while the member stays listed (F5). It is dropped when the member leaves the list.
-- Hooks: `Peers.peerDigests()` returns that map for every listed member other than this one; a member whose card this member has never seen, or whose latest card is a no-document card, is absent from it. `MemberCards` also takes a digest reporter beside `reportPauseSequence`, and a change notice for publish-on-change. `PauseDocument` exposes `established()` package-private for tests. Names may differ.
+- `MemberCards` keeps, per member in the live member list, the digest (or the no-document marker) and the card sequence of the latest accepted card from it: one that opened, was inside its lease, and was strictly newer than the card already recorded for that member. That entry survives the card's expiry or deletion while the member stays listed (F5). It is dropped when the member leaves the list.
+- Card newness *(197-12: coordinator decision 2026-11-02 after external review of PR #197 round 2, owner may override)*:
+  - Card v2 carries a sealed `cardSequence`: a per-process counter that the writing member increments on every card write. The entry is keyed by member UUID, and a restarted member has a new UUID, so the counter never needs to survive a restart.
+  - A card is accepted into last-seen state only if its `cardSequence` is strictly greater than the one recorded for that member. A card that is not newer, a replayed no-document card included, is ignored: it neither replaces nor removes the recorded digest.
+  - Newness is judged on the card sequence, not on a wall-clock `issuedAt`, so a peer whose wall clock jumps back cannot have its newer digest ignored *(the choice of sequence over `issuedAt` is a planner detail; owner may override)*.
+- Hooks *(197-14: coordinator decision 2026-11-02 after external review of PR #197 round 2, owner may override)*. Names may differ; these are all of them:
+  - `Peers.peerDigests()`: the last-seen map for every listed member other than this one. A member whose card this member has never accepted, or whose latest accepted card is a no-document card, is absent from it (R6 clause 2).
+  - `Peers.unverifiedCount()`: as in 227 (R6 clause 3, R8, R13).
+  - `Peers.lookCompleted()`: true once this member has completed at least one cards look since it started (R6, no look yet).
+  - `Peers.lastLookNanos()`: the injected nano-clock time at which the latest cards look completed, recorded by `MemberCards` on the nano clock and not on its wall clock (R6, stale look and look age).
+  - `Peers.lookMarkers()`: per verified member, this one included, the marker its card carried at the latest look (no document, or a digest), with that look's nano time, so first start can check every look during its wait (R8).
+  - `Peers.highestReportedSequence()`: as now (R13).
+  - Card newness: the strictly-newer acceptance above, inside `MemberCards`; it has no hook of its own but is what `peerDigests()` reflects.
+  - Inputs to `MemberCards`: a digest reporter (or no-document marker) beside `reportPauseSequence`, and a change notice for publish-on-change.
+  - `PauseDocument` exposes `established()` package-private for tests.
 
 ### R8. First start
 - A member with `held == null` that finds the document ABSENT may `putIfAbsent` an empty Doc(1) (no elements, no tombstones) only if all of these hold, judged under the oversight lock in the same decision as the write:
   - it is alone in Hazelcast's member list (the lone-member exemption: no uptime wait), or it is the oldest member (first in the list) and has been up at least one lease by its own nano clock;
   - `unverifiedCount() == 0`: every member is verified;
   - every verified card, its own included, was a no-document card or reported `Digest(empty)` at every look during that lease. Any other digest at any look restarts the wait. First start reads these markers from the cards directly, not through `peerDigests()`.
-- A wrong Doc(1), written where a document should have existed, is merged by every member that holds more (R2), so it cannot lift a pause. The repair tick then writes `held ⊔ Doc(1)` at sequence 2.
+- A wrong Doc(1), written where a document should have existed, is merged by every member that holds more (R2), so it cannot lift a pause. The repair tick then writes `held ⊔ Doc(1)` at `max(held.sequence, 1) + 1`, as R3's sequence rule gives *(197-17: coordinator decision 2026-11-02 after external review of PR #197 round 2, owner may override)*.
 - A member with `held != null` never takes this path.
 - After first start, freshness comes from the gate like any other renewal.
 
 ### R9. Lapsed holders, restore and repair
 - Owner decision (b): a member with `held != null` whose stored document is BEHIND (it lacks an element or tombstone of held) writes `held ⊔ stored` at `max + 1` with `replace` over the exact stored bytes. Over ABSENT it writes `putIfAbsent(held)` at `held.sequence + 1`. This holds whether the member is fresh or lapsed. Whether the write renews it is decided by the gate alone (R6 clause 4).
 - This is OD-15 (i) as amended by owner decision 5 of 2026-11-02: the restore is a union and has no "no higher sequence" condition, because a union cannot lift a pause (F0). Whether the restorer is fresh afterwards is decided by the gate alone, by digest coverage.
-- UNREADABLE or GATED values (plaintext, 0.7 format, random envelope, envelope under another key) are never overwritten by a tick and are counted as tamper. Only an operator pause replaces one, with `replace` over the exact stored bytes and `held ⊔ change`.
+- UNREADABLE or GATED values (plaintext, 0.7 format, random envelope, envelope under another key, or an authentic document too old for the cold-start gate) are never overwritten by a tick and are counted as tamper. Only an operator pause replaces one, with `replace` over the exact stored bytes, writing `held ⊔ gated ⊔ change` under the R4 guard *(197-18: coordinator decision 2026-11-02 after external review of PR #197 round 2, owner may override)*:
+  - `gated` is the stored value's content, unioned in only because it is authenticated: a GATED document opened and authenticated, and only its age failed the cold-start gate. An UNREADABLE value contributes nothing;
+  - for this write, the GATED document is the stored document of R3 and R4: base is `held ⊔ gated`, the guard's superset clause applies to it, and the sequence is `max(held.sequence, gated.sequence) + 1`, an absent term counting as 0. With `held == null` over GATED the write is `gated ⊔ change`. Over UNREADABLE it is `held ⊔ change` at `held.sequence + 1`, or Doc(1){change} when `held == null`;
+  - writing it does not pass the cold-start gate by the back door: the member merges what it wrote (R3), but it is fresh only through the gate, and clause 4 applies.
 - `held == null` over ABSENT, not eligible for first start: write nothing; reads refuse.
 - One rate-limited WARN for a lapse or a recovery, with no pause content, scope, tool or member address. No new metric.
 
@@ -258,11 +278,22 @@ Current decisions only, each where it was made. Coordinator and planner calls ar
   - 197-5: 295 must be reissued against this version before it is picked up (Ownership and ordering, Out of scope).
   - 197-6: added A4 and A6 cases and mutants for a stale cards look, a departed peer, ring eviction, the digest counts and publish coalescing.
   - 197-7: endScope checks R13's first three preconditions before treating ABSENT as a no-op success (R12).
-  - 197-8: W = L + Tp + A, with A ≤ L, so W ≤ about 2.2 L (F1).
+  - 197-8: W = L + Tp + A, with A ≤ L (F1); the bound is restated by 197-19 below.
   - 197-9: the "`receivedAt = now` outside the gate" mutant is split into one mutant per renewal point (A13).
+- Coordinator decisions 2026-11-02 after external review of PR #197 round 2, owner may override (contract version 2.2):
+  - 197-10: until a member has completed a cards look since it started, clauses 2 and 3 fail whenever another member is listed; a lone member is unaffected (R6).
+  - 197-11: clause 4 forbids renewal only as part of the member's own write; a later read may renew it if the full gate passes then (R6).
+  - 197-12: a card is accepted into last-seen state only if strictly newer, by a sealed per-process `cardSequence`; a replayed older card, no-document included, is ignored (R7, F5, Residuals). The choice of sequence over `issuedAt` is a planner detail.
+  - 197-13: look age is measured on the monotonic nano clock, through `Peers.lastLookNanos()` (R6, R7).
+  - 197-14: R7 lists every `Peers` hook; Owns for `MemberCards` matches (R7, Owns).
+  - 197-15: an entry that becomes unpinned re-enters the Seen ring at its head (R6).
+  - 197-16: the two-lapsed-holders test is restated as fresh or not-fresh states per step (A4).
+  - 197-17: the repair over a wrong Doc(1) writes at `max(held.sequence, 1) + 1` (R8).
+  - 197-18: an operator pause over GATED writes `held ⊔ gated ⊔ change` under the R4 guard (R9, A1).
+  - 197-19: Tp is defined and bounded by L/2, so W = L + Tp + A ≤ 2.5 L (F1).
 
 ## Residuals (recorded, not fixed)
-- A replayed card can mask a peer for up to L: a replay of a peer's old card, still inside its lease, carries a digest this member has held (owner decision 6).
+- A replayed card can mask a peer only until that peer's next newer card is seen, and never by erasing the peer's last-seen digest: a card that is not strictly newer than the recorded one is ignored, a replayed no-document card included (R7). The mask needs a replay newer than anything this member has accepted from that peer, carrying a digest this member has held (owner decision 6; 197-12: coordinator decision 2026-11-02 after external review of PR #197 round 2, owner may override).
 - A pause held only by members that have left the member list, or only by peers whose card this member never saw, can be lost (owner decision 6).
 - A lone member that restarts accepts a replayed older document inside the cold-start gate (L plus skew) and, having no peers, is fresh on it. The replay window equals the cold-start gate.
 - If the oldest member is hung, no member writes Doc(1); an operator pause is the fallback.
@@ -283,6 +314,7 @@ All in `PauseDocumentTest` unless named. Both clocks are injected throughout.
 - [ ] A replay of an old document holding an element that is now tombstoned: the element stays lifted on every warm member.
 - [ ] A cold member given a replay within the cold-start gate shows the replay's state until the next repair tick by any warm member, then shows the union.
 - [ ] An attacker document (plaintext, 0.7 format, random envelope, envelope under another key) written by a keyless member or client never lifts a pause, is never overwritten by a tick, is counted as tamper, and is replaced by an operator pause that keeps the held pauses.
+- [ ] GATED operator pause (197-18): a cold member (`held == null`) finds a GATED document holding {p} (authentic, `issuedAt` older than L plus skew). An operator pause of x replaces it with `replace` over the exact stored bytes; the written document holds {p, x}, at an order above the GATED document's, the commit guard accepts it, and p and x are paused on every member. The same with `held` = {q}: the written document holds {p, q, x}. Over an UNREADABLE value with `held` = {q}, the written document holds {q, x}.
 - [ ] Every existing `HazelcastOversightTest` case passes, changed only where a raw value was read or written. The `OversightState` SPI and `OversightSnapshot` are unchanged.
 
 ### A2. Commit guard and retries
@@ -302,7 +334,13 @@ All in `PauseDocumentTest` unless named. Both clocks are injected throughout.
 - [ ] 5a: A holds {seed, p} at sequence 2 and stalls. A replay of sequence 1 is put, then the document is deleted, and C ticks repeatedly. C's sequence reaches 2 but `fresh()` stays false on C throughout. Repeated after A's card has expired while A is still in the member list (F5): the same result.
 - [ ] Replay stepping: k replay, delete and tick loops (k at least 5). C's sequence rises by k and C is never fresh.
 - [ ] Alert and grace: three members plus a keyless intruder, once under `alert` and once under `refuse` inside a `PT10M` grace. The established members stay fresh and serve. Under `refuse` after the grace, `serving()` is false but `pause.fresh` is unchanged. A cold member is not fresh while the intruder is present, and is fresh once it leaves.
-- [ ] Two lapsed holders: A holds {p}, B holds {q}, and the document is deleted. Neither renews on the other's lapsed document alone. They converge to {p, q}, and then both renew.
+- [ ] Two lapsed holders (197-16): A holds {p}, B holds {q}, both are lapsed, the document is deleted, and every cards look is driven by the test. The test asserts only fresh or not-fresh states and held content after each step, never who wrote the bytes:
+  1. A ticks (it restores {p} over ABSENT): A not fresh, B not fresh.
+  2. B ticks (it repairs to {p, q}): B not fresh, A not fresh.
+  3. A reads after a look in which B's card still shows Digest({q}): A holds {p, q} and is not fresh.
+  4. A reads after a look in which B's card shows Digest({p, q}): A is fresh.
+  5. B reads after a look in which A's card still shows Digest({p}): B is not fresh.
+  6. B reads after a look in which A's card shows Digest({p, q}): B is fresh, and both hold {p, q}.
 - [ ] Reconcile and operator: a member that is not covered writes a reconcile union but is not fresh. An operator pause on such a member takes effect on every member, the member stays not fresh, and its resume is refused with `OVERSIGHT_UNAVAILABLE`. A covered member's operator pause does renew it.
 - [ ] Equal sequence, different content: split halves both at sequence 3. C accepts B's document and is not covered until it holds A's content too.
 - [ ] Card replay and delete: a replayed card extends a member's freshness by at most that card's own lease. Deleting a card never makes a member covered.
@@ -313,10 +351,14 @@ All in `PauseDocumentTest` unless named. Both clocks are injected throughout.
 - [ ] A member that missed a pause (partitioned) is not fresh while any verified peer's digest is outside its Seen, whatever it writes. A member that holds the latest content restores a deleted document as a union and is fresh after the restore.
 - [ ] Restart of one member (197-1): A, B and C are fresh; C restarts with `held == null` and publishes a no-document card. A and B stay fresh throughout, `peerDigests()` on A and B has no entry for C until C holds a document, and C becomes fresh once it accepts the document and is covered.
 - [ ] All-lapse recovery (197-1): every member lapses (no gate passes for more than L, by the nano clocks), with some members restarted and cold. Once any member holds a document that every other member is covered by, every member renews on its next tick with no operator pause, and the test asserts no operator write took place.
-- [ ] Seen pinning (197-2): peer P publishes a card at digest D and then stays silent and in the member list; M makes at least 257 distinct content changes. D is still in Seen(M), M still passes Covered for P, and the number of pinned entries never exceeds the number of listed members. When P leaves the member list, or P's card changes, D is unpinned and ages out after 256 further changes.
+- [ ] Seen pinning (197-2): peer P publishes a card at digest D and then stays silent and in the member list; M makes at least 257 distinct content changes. D is still in Seen(M), M still passes Covered for P, and the number of pinned entries never exceeds the number of listed members. When P leaves the member list, or P's card changes, D is unpinned and ages out after 256 further changes: it is still in Seen(M) after 255 of them and gone after the 256th (197-15).
 - [ ] Stale cards look (197-6): with a peer listed, every last-seen digest in Seen(M), and M's latest completed cards look older than one lease, the gate fails and `fresh()` goes false once the lease passes; a completed fresh look then lets the next gate pass.
 - [ ] Departed peer (197-6): a peer whose last-seen digest is outside Seen(M) blocks M's renewal while it is listed. Once it leaves the member list its entry is dropped from `peerDigests()` and M renews at its next gate.
 - [ ] Post-write renewal (197-3): for each renewal point of R6 that follows a write (`acceptWritten` after a repair, a restore, a refresh and each operator write; `reconcileAfterMerge` after a write; recovery after a tick write), a member lapsed when the write began is not fresh after it even though clauses 1-3 pass on the post-write state, and is fresh after its next non-write tick.
+- [ ] Lapsed own write, then a read (197-11): a member lapsed when it writes a repair is not fresh after the write. Run both ways. With no read and no tick after the write, it stays lapsed. With a read-path `judge` on the same stored bytes after the write, it is fresh after that read only if covered: once with a listed peer whose last-seen digest is outside Seen(M) (it stays lapsed), and once with every peer's digest in Seen(M) (it is fresh).
+- [ ] No look yet (197-10): a cold member with a listed peer, a replayed document inside the cold-start gate, and no completed cards look since it started stays not fresh, though `peerDigests()` is empty and `unverifiedCount()` is 0. After a completed look that shows the peer at a digest outside its Seen it is still not fresh; once it holds that content and a look shows it covered, it is fresh. A lone member with no look is fresh on its first passing gate.
+- [ ] Wall-clock jump (197-13): with every member fresh and covered, moving the wall clock forward by more than a lease, and separately back by more than a lease, with the nano clock unchanged, changes neither `peerDigests()`, nor coverage, nor `fresh()`; and with the nano clock advanced past one lease since the last look, the gate fails whatever the wall clock reads.
+- [ ] Replayed no-document card (197-12): peer P's card at digest D has been accepted, D is outside Seen(M), and M is not covered. An older no-document card of P (a lower `cardSequence`) is replayed and a look completes. P's last-seen digest is still D, `peerDigests()` still has P, and M stays not covered and not fresh. A replayed older card with a digest in Seen(M) is ignored the same way. A newer card of P is accepted.
 - [ ] Every probe test from the previous review is a real, named test that passes and shows no defect: the fourth-hole variants and `crProbe_aColdMemberRecoversOverItsOwnLapsedUnionWriteAndRefreshesWithPLifted` included. No test is left that expects or documents a defect. The Outcome lists each probe with its new name.
 
 ### A5. First start
@@ -336,7 +378,8 @@ All in `PauseDocumentTest` unless named. Both clocks are injected throughout.
 - [ ] A change of the reported digest triggers a card publication before the half-lease schedule would, and never two card writes at once.
 - [ ] Digest counts (197-6): content with elements {a} and no tombstones and content with no elements and tombstones {a} have different digests.
 - [ ] Publish coalescing (197-6): several digest and sequence changes while a card write is in flight produce exactly one further write once it completes, and the card then published carries the latest digest and sequence; never two writes at once.
-- [ ] No-document card (197-1): a member with `held == null` publishes a card whose marker differs from `Digest(empty)`; it opens and counts the member as verified; it is absent from `peerDigests()`; and on arrival it removes that member's earlier last-seen entry.
+- [ ] No-document card (197-1): a member with `held == null` publishes a card whose marker differs from `Digest(empty)`; it opens and counts the member as verified; it is absent from `peerDigests()`; and when it is newer than the recorded card it removes that member's earlier last-seen entry.
+- [ ] Card newness (197-12): a card whose `cardSequence` is not greater than the recorded one for its member, a no-document card included, leaves the recorded digest and sequence unchanged; a greater one replaces them. `lastLookNanos()` reads the injected nano clock and does not move when only the wall clock does (197-13).
 - [ ] Departed peer (197-6): a member that leaves the member list is dropped from the last-seen map and from `peerDigests()`; a member whose card expires while it stays listed is kept at its last-seen digest.
 
 ### A7. Lapsed holders, restore and repair
@@ -409,6 +452,12 @@ Each must fail at least one named test. The Outcome lists each mutant with the t
 - [ ] Coverage by equality with the current `Digest(held)` only.
 - [ ] The card is published only at half lease.
 - [ ] The lapsed union write renews the lease.
+- [ ] An empty peer set before the first completed cards look counts as covered *(197-10)*.
+- [ ] A read renews a lapsed member that is not covered *(197-11)*.
+- [ ] Last-seen state accepts a card that is not strictly newer *(197-12)*.
+- [ ] Look age is measured on the wall clock *(197-13)*.
+- [ ] An unpinned Seen entry keeps its old ring position instead of re-entering at the head *(197-15)*.
+- [ ] An operator pause over GATED writes `held ⊔ change` without the stored content *(197-18)*.
 
 ### A14. Build
 - [ ] `./mvnw -B -pl data-prism-hazelcast -am verify` and `./mvnw -B verify` exit 0. Report the test counts.
@@ -443,7 +492,7 @@ Pause, resume and snapshot semantics for operators; the audit-first operator flo
 - No sleeps. Both clocks are injected; waits are on events or on polled state with a bound.
 ## Superseded (history, do not implement)
 
-Nothing in this section is part of the contract. It holds, verbatim from version 1 of this brief (the file at `main` 2bbc191f), every passage that version 2 replaces, grouped by where it stood, and, in its last subsection, every passage of version 2 that version 2.1 replaces. The only edit is that strike-through markers were removed, since every line here is superseded, and each passage is quoted. Line numbers are version 1's.
+Nothing in this section is part of the contract. It holds, verbatim from version 1 of this brief (the file at `main` 2bbc191f), every passage that version 2 replaces, grouped by where it stood, and, in its last two subsections, every passage of version 2 that version 2.1 replaces and every passage of version 2.1 that version 2.2 replaces. The only edit is that strike-through markers were removed, since every line here is superseded, and each passage is quoted. Line numbers are version 1's.
 
 Also superseded by the freshness decisions of 2026-11-02, though not in the version 1 text: refresh decision (a) on the implementation branch (a refresh needs the same corroboration as recovery: `unverified == 0` and `highestReportedSequence() <= held.sequence`), and the `renew` flag on `commit`, `acceptWritten` and the tick's `Action` (`PauseDocument.java` :409 and :880-943 at 3f472483).
 
@@ -675,6 +724,77 @@ Verbatim from version 2 (PR #197 head a0be909f), replaced by the coordinator dec
 
 > - Tombstone garbage collection of any kind, including acks on tombstones (295). The document only grows in 0.8, within R5.
 
+### Version 2.1 passages replaced in version 2.2
+
+Verbatim from version 2.1 (PR #197 head 2af006d9), replaced by the coordinator decisions of 2026-11-02 after external review of PR #197 round 2 (findings 197-10 to 197-19). Line numbers are version 2.1's. Passages version 2.2 only added to are not repeated here.
+
+#### Header and preamble (lines 3, 5)
+
+> **Contract version:** 2.1 (2026-11-02)
+>
+> This version states the whole current contract. It replaces versions 1 and 2 and every amendment to them. Where version 1, a PR thread or the code on the implementation branch disagrees with this text, this text wins. Earlier wording is kept in "Superseded (history, do not implement)" at the end. Read it for history only and never build from it.
+
+#### Owns: `MemberCards.java` (line 19)
+
+> - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/MemberCards.java *(the card digest field, the format version, publish-on-change, the last-seen digests and the `Peers` hooks only; R7)*
+
+#### F1 bound (line 61)
+
+>   The bound on how long a member that stops being covered can stay fresh is W = L + Tp + A, where Tp is the card publication delay and A is the maximum accepted age of the cards look the gate judged on. A is at most one lease (R6), so W ≤ about 2.2 L with publish-on-change (R7) *(197-8: coordinator decision 2026-11-02 after external review of PR #197 round 1, owner may override)*.
+
+#### F5 (line 65)
+
+> - **F5.** A formerly verified peer that is still in the member list but whose card is gone or expired is judged at the last digest this member saw from it. A peer that leaves the member list is forgotten. A peer whose latest card is a no-document card has no last-seen digest.
+
+#### R6 clause 4 (line 141)
+
+>   4. at a post-write renewal point: this member was fresh when the write began, and clauses 1-3 are judged on state read after that write: the stored document is the one the successful CAS wrote (or a re-read after it), held is merged with it, and `peerDigests()` and `unverifiedCount()` are read after the commit. A member that was lapsed when the write began never renews from that write, whatever clauses 1-3 say; it renews only at a later renewal point that passes and is not a reset from its own write *(197-3: coordinator decision 2026-11-02 after external review of PR #197 round 1, owner may override)*.
+
+#### R6 pinned entries (line 145)
+
+>   - the pinned entries: every value in Seen(M) that equals the last-seen digest of some peer still in the member list (an entry of `peerDigests()`) is pinned and never evicted. It is unpinned when that peer's last-seen digest changes or the peer leaves the member list, and no other listed peer still references it; it then ages out like any ring entry.
+
+#### R6 cards-look age (line 152)
+
+> - If another member is in the member list and this member's latest completed cards look is older than one lease, `peerDigests()` is unknown and clause 2 fails *(planner reading, fail closed; owner may override)*. One lease is therefore the maximum accepted look age A of F1.
+
+#### R7 no-document card, last-seen digests and hooks (lines 156, 160, 161)
+
+> - A member with `held == null` publishes a no-document card: the digest field carries a distinct "no document" marker (for example a presence byte of 0 and no digest bytes), never `Digest(empty)` and never equal to any digest. `Digest(empty)` is reported only by a member that holds an empty document. A no-document card opens and verifies its member like any card, but it is excluded from `peerDigests()` and so from Covered, and on arrival it removes that member's last-seen digest entry (which unpins it, R6). So a restarted member never makes an established member stale, and once any member holds a document every other member can be covered by it *(197-1: coordinator decision 2026-11-02 after external review of PR #197 round 1, owner may override)*.
+>
+> - `MemberCards` keeps, per member in the live member list, the digest of the latest card from it that opened and was inside its lease. That entry survives the card's expiry or deletion while the member stays listed (F5). It is dropped when the member leaves the list.
+>
+> - Hooks: `Peers.peerDigests()` returns that map for every listed member other than this one; a member whose card this member has never seen, or whose latest card is a no-document card, is absent from it. `MemberCards` also takes a digest reporter beside `reportPauseSequence`, and a change notice for publish-on-change. `PauseDocument` exposes `established()` package-private for tests. Names may differ.
+
+#### R8 repair of a wrong Doc(1) (line 168)
+
+> - A wrong Doc(1), written where a document should have existed, is merged by every member that holds more (R2), so it cannot lift a pause. The repair tick then writes `held ⊔ Doc(1)` at sequence 2.
+
+#### R9 UNREADABLE or GATED values (line 175)
+
+> - UNREADABLE or GATED values (plaintext, 0.7 format, random envelope, envelope under another key) are never overwritten by a tick and are counted as tamper. Only an operator pause replaces one, with `replace` over the exact stored bytes and `held ⊔ change`.
+
+#### Decisions: 197-8 (line 261)
+
+>   - 197-8: W = L + Tp + A, with A ≤ L, so W ≤ about 2.2 L (F1).
+
+#### Residuals: replayed card (line 265)
+
+> - A replayed card can mask a peer for up to L: a replay of a peer's old card, still inside its lease, carries a digest this member has held (owner decision 6).
+
+#### A4 two lapsed holders (line 305)
+
+> - [ ] Two lapsed holders: A holds {p}, B holds {q}, and the document is deleted. Neither renews on the other's lapsed document alone. They converge to {p, q}, and then both renew.
+
+#### A6 no-document card (line 339)
+
+> - [ ] No-document card (197-1): a member with `held == null` publishes a card whose marker differs from `Digest(empty)`; it opens and counts the member as verified; it is absent from `peerDigests()`; and on arrival it removes that member's earlier last-seen entry.
+
+#### Superseded preamble (line 446)
+
+> Nothing in this section is part of the contract. It holds, verbatim from version 1 of this brief (the file at `main` 2bbc191f), every passage that version 2 replaces, grouped by where it stood, and, in its last subsection, every passage of version 2 that version 2.1 replaces. The only edit is that strike-through markers were removed, since every line here is superseded, and each passage is quoted. Line numbers are version 1's.
+
 ## Changelog
 - Contract version 2 (2026-11-02): version 1 and its amendments of 2026-10-29 and 2026-10-30 consolidated into one current contract; sequence-based freshness replaced by the digest-coverage gate and Card v2 (owner decisions 1-6 of 2026-11-02); `MemberCards`, `MemberCardTest`, `PrivacyClusterMembershipTest`, `ArchitectureTest` and `LegacyOversightStateTest` added to Owns.
 - Contract version 2.1 (2026-11-02): coordinator decisions after external review of PR #197 round 1, owner may override. No-document cards excluded from Covered (197-1); pinned Seen entries (197-2); the lapsed-own-write rule moved into the gate as clause 4 with every renewal point listed (197-3); merge metadata and an order property (197-4); 295 to be reissued before pickup (197-5); new A4, A6 and A13 cases for the uncovered paths (197-6); endScope precondition order over ABSENT (197-7); W = L + Tp + A (197-8); the renewal mutant split per renewal point (197-9).
+- Contract version 2.2 (2026-11-02): coordinator decisions after external review of PR #197 round 2, owner may override. Peer state unknown before the first completed cards look (197-10); a later read may renew a member after its own lapsed write if the full gate passes (197-11); last-seen state accepts only strictly newer cards, by a sealed `cardSequence` (197-12); look age on the nano clock (197-13); every `Peers` hook listed in R7 and the `MemberCards` Owns entry matched (197-14); unpinned Seen entries re-enter the ring at its head (197-15); the two-lapsed-holders test restated as states (197-16); the wrong-Doc(1) repair at `max(held.sequence, 1) + 1` (197-17); an operator pause over GATED writes `held ⊔ gated ⊔ change` (197-18); Tp defined and W ≤ 2.5 L (197-19).
