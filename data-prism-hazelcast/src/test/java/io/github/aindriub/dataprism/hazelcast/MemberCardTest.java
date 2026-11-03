@@ -1845,7 +1845,8 @@ class MemberCardTest {
             interruptedAfter.set(Thread.currentThread().isInterrupted());
         });
         waiter.start();
-        assertThat(Fixture.await(2, () -> false) || waiter.isAlive()).isTrue();
+        assertThat(Fixture.await(10, () -> waiter.getState() == Thread.State.TIMED_WAITING
+                || waiter.getState() == Thread.State.WAITING)).as("the waiter is waiting").isTrue();
         waiter.interrupt();
         waiter.join(30_000);
 
@@ -2444,27 +2445,34 @@ class MemberCardTest {
     void publishNowOverTwoBackToBackWritesWaitsUnderOneDeadlineNotOnePerRound() throws Exception {
         Pair pair = pair();
         MemberCards.Declarations declarations = MemberCards.declarations(pair.a().instance());
+        Duration bound = Duration.ofMillis(1500);
+        Duration releaseAfter = Duration.ofMillis(800);
         long first = declarations.beginWrite();
         long start = System.nanoTime();
         AtomicBoolean threw = new AtomicBoolean();
         Thread waiter = new Thread(() -> {
             try {
-                declarations.beginWriteWaiting(Duration.ofMillis(1500));
+                declarations.beginWriteWaiting(bound);
             } catch (IllegalStateException timedOut) {
                 threw.set(true);
             }
         });
         waiter.start();
-        assertThat(Fixture.await(1, () -> false) || waiter.isAlive()).isTrue();
+        // Wait on the thread's state, then until the release point, both computed and not slept for a fixed time.
+        assertThat(Fixture.await(10, () -> waiter.getState() == Thread.State.TIMED_WAITING
+                || waiter.getState() == Thread.State.WAITING)).as("the waiter is waiting").isTrue();
+        assertThat(Fixture.await(10, () -> System.nanoTime() - start >= releaseAfter.toNanos())).isTrue();
         synchronized (declarations) {
             // The first write ends and a second takes the flag before the waiter can wake: a second round.
             declarations.failed(first);
             assertThat(declarations.beginWrite()).isPositive();
         }
         waiter.join(10_000);
-        long elapsedMillis = (System.nanoTime() - start) / 1_000_000;
+        long elapsed = System.nanoTime() - start;
         assertThat(threw.get()).as("it throws at its one deadline").isTrue();
-        assertThat(elapsedMillis).as("not a fresh deadline for the second round").isLessThan(2_300);
+        // A fresh deadline for the second round would end at the release point plus the whole bound.
+        assertThat(elapsed).as("not a fresh deadline for the second round")
+                .isLessThan(releaseAfter.plus(bound).minusMillis(200).toNanos());
     }
 
     @Test
