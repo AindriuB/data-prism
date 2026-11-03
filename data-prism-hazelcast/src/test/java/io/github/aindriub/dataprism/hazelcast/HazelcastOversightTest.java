@@ -1015,9 +1015,22 @@ class HazelcastOversightTest {
             m.run(1);
             assertThat(m.storedSequence(0)).as("a Doc(1) would have lifted the pause").isGreaterThan(1);
             assertThat(m.tools(c)).contains("p");
-            // A Doc(1) forced in through beforeCommit is merged, and the pause is still in force.
-            m.states.get(c).document().beforeCommit = () -> { };
-            assertThat(m.tools(1)).contains("p");
+            // A Doc(1) planted inside a holder's own write is merged, not adopted: the write retries over the union.
+            java.util.concurrent.atomic.AtomicInteger hooks = new java.util.concurrent.atomic.AtomicInteger();
+            PauseDocument holder = m.states.get(0).document();
+            holder.beforeCommit = () -> {
+                if (hooks.incrementAndGet() == 1) {
+                    PauseDocumentTest.plant(m.wrappers.get(0), PauseDocumentTest.doc(1, 0, java.util.Map.of(),
+                            java.util.Set.of()));
+                }
+            };
+            m.states.get(0).pauseTool("w");
+            holder.beforeCommit = () -> { };
+            assertThat(hooks.get()).as("the Doc(1) was planted inside the write").isGreaterThanOrEqualTo(1);
+            m.run(1);
+            for (int i : new int[] {0, 1, c}) {
+                assertThat(m.tools(i)).as("member " + i).contains("p", "w");
+            }
         }
     }
 
