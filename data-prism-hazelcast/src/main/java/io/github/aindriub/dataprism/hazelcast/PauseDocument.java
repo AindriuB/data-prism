@@ -19,14 +19,19 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -39,35 +44,28 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
+import java.util.List;
 
 /**
- * The pause state of the cluster as one sealed, sequenced, leased document (docs/plan/design/cluster-security.md
- * 2.3.3, OD-3, OD-4, OD-14, OD-15). It sits under one keyed name in {@link PrivacyCluster#OVERSIGHT_MAP}; scope ids,
- * tool names and the flag for everything live only in its sealed plaintext.
+ * The pause state of the cluster as one sealed, observed-remove document under a freshness gate
+ * (docs/plan/design/cluster-security.md 2.3.3, OD-3, OD-4, OD-14, OD-15).
  *
  * <p><b>Pause state is an observed-remove set.</b> The document holds <i>elements</i> (each a pause of one target
  * under a fresh 128-bit id) and <i>tombstones</i> (ids). A target is paused while some element for it has no
  * tombstone. A pause always adds a new element; a resume tombstones the ids it observed, and only those, so a pause
- * that lands while a resume is being built stays in force. Documents are merged by union on every acceptance, so
- * nothing a member holds is lost to a document that is merely newer, and the merge is commutative, associative and
- * idempotent. The sequence and the refresh counter order documents for freshness; they never decide content.
+ * that lands while a resume is built stays in force. Accepting a document merges it into what this instance holds by
+ * union, so content only ever grows (F0). The sequence and the refresh counter order writes; they are never evidence
+ * of freshness.
  *
- * <p><b>Order and memory.</b> Documents are ordered by (sequence, refresh). An instance keeps the union of every
- * authentic document it accepted, with the highest order seen. A document of lower order never resets the lease, so
- * a replayed older document is not fresh; its content is still merged, and a member whose cluster document lacks
- * something it holds writes the union back.
+ * <p><b>Freshness</b> is one gate (F1 to F5). It passes when the stored document is authentic and wholly merged, every
+ * tracked peer shows a valid card whose digest this member has held or merged (Covered), and, for a member that has
+ * not yet been fresh in this process life, no member is unverified. A pass resets the lease. Only a pass does: this
+ * member's own writes never do, when it was lapsed as they began. A document that is absent, unauthentic or not fresh
+ * makes every read refuse.
  *
  * <p><b>Writes</b> are {@code replace(name, exactOldBytes, newBytes)}, or {@code putIfAbsent} when the document is
- * absent, under the key's bounded lock, after a read under that lock. A lost race re-reads and tries again,
- * {@value #MAX_ATTEMPTS} times, then fails closed. No time bound is added to the write itself beyond the lock wait.
- *
- * <p><b>Freshness</b> is measured from the local monotonic receipt of a document of higher order, for one lease. The
- * wall clock gates only the first acceptance after a cold start. A document that is absent, unauthentic, behind what
- * the instance has accepted, lacking something it holds, or older than its lease is not fresh, and every read then
- * refuses.
- *
- * <p><b>Residual</b>, stated plainly: a captured pre-pause document, replayed to an instance that has not yet seen
- * the pause and not older than the cold-start gate, lifts the pause for at most the lease.
+ * absent, under the key's bounded lock, after a read under that lock, computed from {@code held ⊔ stored}. A lost
+ * race re-reads and tries again, {@value #MAX_ATTEMPTS} times, then fails closed.
  */
 final class PauseDocument {
 
@@ -84,6 +82,7 @@ final class PauseDocument {
     private static final String FENCE_KEY = "all";
     private static final int MAX_ENTRIES = 1 << 20;
     private static final int MEMO_SIZE = 16;
+    private static final int RING_SIZE = 256;
     private static final long NANOS_PER_SECOND = TimeUnit.SECONDS.toNanos(1);
 
     /** The two clocks and the tick: injected so a test moves time itself. */
@@ -153,6 +152,38 @@ final class PauseDocument {
     }
 
     /**
+     * A pause digest: 16 bytes, value-compared. {@link #NONE} stands for "no valid card" in the peer digests; it is
+     * never a real digest. The no-document marker of a card is a null digest, never one of these.
+     */
+    record Digest(byte[] bytes) {
+
+        static final int LENGTH = 16;
+        /** Digest(empty): the digest of a document with no elements and no tombstones. */
+        static final Digest EMPTY = Doc.empty(0, 0, 0, "").digest();
+        /** A peer with no valid card at the latest look. */
+        static final Digest NONE = new Digest(new byte[0]);
+
+        Digest {
+            bytes = bytes.clone();
+        }
+
+        @Override
+        public byte[] bytes() {
+            return bytes.clone();
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof Digest digest && Arrays.equals(bytes, digest.bytes);
+        }
+
+        @Override
+        public int hashCode() {
+            return Arrays.hashCode(bytes);
+        }
+    }
+
+    /**
      * One document, as sealed in the cluster. The maps and sets are owned by the document and never changed after
      * construction; a caller hands over collections it no longer touches.
      */
@@ -187,16 +218,70 @@ final class PauseDocument {
             return false;
         }
 
-        /** The union of the contents, under this header. */
-        Doc union(Doc other) {
-            if (covers(other)) {
+        /**
+         * The union of the contents with the metadata of R2: the order is the lexicographic maximum, and the issued
+         * time and issuer are those of the maximum-order document; on an order tie the later issued time wins, then
+         * the greater issuer as encoded bytes, so merge is commutative.
+         */
+        Doc merge(Doc other) {
+            boolean thisWins = metaCompare(other) >= 0;
+            if (covers(other) && thisWins) {
                 return this;
+            }
+            if (other.covers(this) && !thisWins) {
+                return other;
             }
             Map<Id, Target> mergedElements = new HashMap<>(elements);
             mergedElements.putAll(other.elements);
             Set<Id> mergedTombstones = new HashSet<>(tombstones);
             mergedTombstones.addAll(other.tombstones);
-            return new Doc(sequence, refresh, issuedAtMillis, issuer, mergedElements, mergedTombstones);
+            Doc winner = thisWins ? this : other;
+            return new Doc(winner.sequence, winner.refresh, winner.issuedAtMillis, winner.issuer, mergedElements,
+                    mergedTombstones);
+        }
+
+        private int metaCompare(Doc other) {
+            int byOrder = compareOrder(other);
+            if (byOrder != 0) {
+                return byOrder;
+            }
+            int byIssued = Long.compare(issuedAtMillis, other.issuedAtMillis);
+            if (byIssued != 0) {
+                return byIssued;
+            }
+            return Arrays.compareUnsigned(issuer.getBytes(StandardCharsets.UTF_8),
+                    other.issuer.getBytes(StandardCharsets.UTF_8));
+        }
+
+        /** Digest(x): the first 16 bytes of SHA-256 over the counted, sorted element ids and tombstone ids. */
+        Digest digest() {
+            try {
+                MessageDigest sha = MessageDigest.getInstance("SHA-256");
+                sha.update(intBytes(elements.size()));
+                for (Id id : new TreeSet<>(elements.keySet())) {
+                    sha.update(idBytes(id));
+                }
+                sha.update(intBytes(tombstones.size()));
+                for (Id id : new TreeSet<>(tombstones)) {
+                    sha.update(idBytes(id));
+                }
+                return new Digest(Arrays.copyOf(sha.digest(), Digest.LENGTH));
+            } catch (NoSuchAlgorithmException impossible) {
+                throw new IllegalStateException("SHA-256 is unavailable");
+            }
+        }
+
+        private static byte[] intBytes(int value) {
+            return new byte[]{(byte) (value >>> 24), (byte) (value >>> 16), (byte) (value >>> 8), (byte) value};
+        }
+
+        private static byte[] idBytes(Id id) {
+            byte[] bytes = new byte[16];
+            for (int i = 0; i < 8; i++) {
+                bytes[i] = (byte) (id.high() >>> (56 - 8 * i));
+                bytes[8 + i] = (byte) (id.low() >>> (56 - 8 * i));
+            }
+            return bytes;
         }
 
         Doc withHeader(long newSequence, long newRefresh, long newIssuedAt, String newIssuer) {
@@ -342,24 +427,22 @@ final class PauseDocument {
         ABSENT,
         /** An entry that is not an authentic, well-formed document, or one that names a held id as another target. */
         UNREADABLE,
-        /** A document of higher order than any accepted: merged and accepted. */
-        ACCEPTED,
-        /** A document of the order already accepted that lacks nothing held. */
-        CURRENT,
-        /** A document of lower order than one accepted, or one that lacks something held: merged, not fresh. */
-        BEHIND,
-        /** A first document older than the cold-start gate allows: refused. */
+        /** An authentic document, merged into what is held. */
+        AUTHENTIC,
+        /** An authentic first document older than the cold-start gate allows: not accepted. */
         GATED
     }
 
     /**
      * What a look found.
      *
-     * @param stored    the authentic document read, else null
-     * @param lacks     whether the stored document lacks an element or tombstone held
-     * @param sameBytes whether the stored text is the one the held order came from
+     * @param stored the authentic document read (merged, unless {@code GATED}), else null
+     * @param lacks  whether the stored document lacks an element or tombstone held
+     * @param fresh  whether this member is fresh as the look leaves it, after the gate ran at it
+     * @param passed whether the gate passed at this look
+     * @param peers  the one snapshot of the peers this look and the decision that follows it read
      */
-    record Look(Status status, Doc stored, boolean lacks, boolean sameBytes) {
+    record Look(Status status, Doc stored, boolean lacks, boolean fresh, boolean passed, PeerView peers) {
     }
 
     /** What a commit did; the refusals are the guard clauses of the write. */
@@ -379,19 +462,48 @@ final class PauseDocument {
         OVERSIZE
     }
 
+    /**
+     * One consistent snapshot of what the cards say, with one read of Hazelcast's member list (R7).
+     *
+     * @param peerDigests      for every tracked peer, the digest its valid card showed at the latest completed look,
+     *                         or {@link Digest#NONE}; a valid no-document card and an untracked member are absent
+     * @param unverifiedCount  the listed members without an R7-valid card at that look
+     * @param lookCompleted    whether a look has completed whose member set equals the list this snapshot read
+     * @param lookAgeNanos     the time since that look on the instance nano clock; ignored while not completed
+     * @param cleanRunAgeNanos the age of the restart look, or -1 for none
+     * @param alone            whether no other member is in the member list
+     * @param oldest           whether this member is first in the member list
+     */
+    record PeerView(Map<UUID, Digest> peerDigests, int unverifiedCount, boolean lookCompleted, long lookAgeNanos,
+                    long cleanRunAgeNanos, boolean alone, boolean oldest) {
+
+        boolean isAlone() {
+            return alone;
+        }
+
+        boolean isOldest() {
+            return oldest;
+        }
+    }
+
     /** What the cards say about the other members; replaced by tests. */
     interface Peers {
-        /** The highest pause sequence any verified member reports, this member's own card included. */
-        long highestReportedSequence();
+        /** One snapshot of the tracker, made with no JVM monitor held. */
+        PeerView snapshot();
+    }
 
-        /** How many joined members have no valid card. */
-        int unverifiedCount();
+    /**
+     * What a caller brings: its metrics, its lock timeout, its serving status and a sealer that counts into those
+     * metrics. The shared document has none of its own: each operator call and tick uses the calling wrapper's.
+     */
+    record Dependencies(PrivacyMetrics metrics, Duration lockTimeout, Supplier<ClusterSecurityStatus> status,
+                        Sealer sealer) {
 
-        /** Whether this member is alone or the oldest member of the cluster. */
-        boolean isOldest();
-
-        /** Whether this member is the only one in Hazelcast's member list. */
-        boolean isAlone();
+        static Dependencies of(PrivacyCluster cluster, PrivacyMetrics metrics, Duration lockTimeout) {
+            PrivacyMetrics safe = FailSafeMetrics.wrap(Objects.requireNonNull(metrics, "metrics"));
+            return new Dependencies(safe, ClusterLocks.checked(lockTimeout), cluster::securityStatus,
+                    IdentityMaps.sealerFor(cluster, safe, ServingGate.open()));
+        }
     }
 
     private static final class Memo {
@@ -400,13 +512,14 @@ final class PauseDocument {
         boolean merged;
         /** Whether this document was counted as a conflict. */
         boolean counted;
+        Digest digest;
 
         Memo(Doc doc) {
             this.doc = doc;
         }
     }
 
-    private record Action(Doc base, Doc next, boolean recovery, boolean renews) {
+    private record Action(Doc base, Doc next, boolean freshBefore, boolean recovery) {
     }
 
     private enum Op { PAUSE, RESUME, END_SCOPE }
@@ -419,32 +532,35 @@ final class PauseDocument {
      * one of the few that may call {@code PrivacyCluster.instance()}.
      */
     private final Supplier<HazelcastInstance> instances;
-    private final Sealer sealer;
     private final String key;
-    private final PrivacyMetrics metrics;
     private final LongSupplier nanos;
     private final Clock wall;
     private final Duration lease;
     private final Duration skew;
-    private final Duration lockTimeout;
     private final Duration tickInterval;
+    /** Whether this is the instance's one main document, the only digest reporter (R7). */
+    private final boolean main;
     private final SecureRandom random = new SecureRandom();
+    private final long createdNanos;
 
     private final Object monitor = new Object();
-    /** The union of every authentic document accepted, under the highest order seen; null before the first. */
+    /** The union of every authentic document accepted; null before the first. */
     private Doc held;
-    /** The sealed text the held order came from. */
-    private String heldSealed;
+    private Digest heldDigest;
     /** What is paused according to {@link #held}; recomputed when the content changes. */
-    private Pauses view = Pauses.NONE;
-    /** When the held order was last raised, on the monotonic clock. */
+    private Pauses pauses = Pauses.NONE;
+    /** When the gate last passed, on the monotonic clock, and whether it ever has. */
     private long receivedAt;
-    /** Whether the latest look found the cluster at least as far on as {@link #held}. */
-    private boolean lookOk;
+    private boolean everPassed;
+    private boolean established;
+    /** The last 256 distinct unpinned digests, oldest first. */
+    private final LinkedHashSet<Digest> ring = new LinkedHashSet<>();
+    private final Set<Digest> pinned = new HashSet<>();
+    /** The sealed text of the stored document last read, and when it was first read, for the refresh. */
+    private String storedSealed;
+    private long storedSeenSince;
     /** The document held when a merge began. */
     private Doc mergeBase;
-    /** Where the wait for a first start began or was last restarted, on the monotonic clock. */
-    private long quietSince;
     private long lastMismatchWarn = Long.MIN_VALUE;
     private long lastRecoveryWarn = Long.MIN_VALUE;
     private final Map<String, Memo> memo = new LinkedHashMap<>(MEMO_SIZE, 0.75f, true) {
@@ -457,6 +573,8 @@ final class PauseDocument {
     private ScheduledExecutorService executor;
     private UUID lifecycleListener;
     private boolean closed;
+    private int users;
+    private volatile Dependencies tickDependencies;
 
     /** Runs after a write has read the stored value and sealed its next one, before it commits; a test seam. */
     volatile Runnable beforeCommit = () -> { };
@@ -465,54 +583,20 @@ final class PauseDocument {
     volatile Function<byte[], Doc> decoder = Doc::decode;
     volatile Logger log = LoggerFactory.getLogger(PauseDocument.class);
 
-    PauseDocument(PrivacyCluster cluster, Supplier<HazelcastInstance> instances, PrivacyMetrics metrics,
-                  Duration lockTimeout, Environment environment) {
+    PauseDocument(PrivacyCluster cluster, Supplier<HazelcastInstance> instances, Environment environment,
+                  boolean main, Peers peers) {
         this.cluster = Objects.requireNonNull(cluster, "cluster");
         this.instances = Objects.requireNonNull(instances, "instances");
-        this.metrics = FailSafeMetrics.wrap(Objects.requireNonNull(metrics, "metrics"));
-        this.lockTimeout = ClusterLocks.checked(lockTimeout);
+        this.main = main;
         this.nanos = environment.nanos();
         this.wall = environment.wall();
         this.tickInterval = environment.tickInterval();
         ClusterSecuritySettings settings = cluster.securitySettings();
         this.lease = settings.pauseLease();
         this.skew = settings.clockSkewTolerance();
-        this.quietSince = nanos.getAsLong();
-        // The ungated sealer: a member that is not serving must still read and write the pause document.
-        this.sealer = IdentityMaps.sealerFor(cluster, this.metrics, ServingGate.open());
+        this.createdNanos = nanos.getAsLong();
         this.key = cluster.keyedNames().mapKey(PrivacyCluster.OVERSIGHT_MAP, CANONICAL);
-        this.peers = new Peers() {
-            @Override
-            public long highestReportedSequence() {
-                return cluster.memberCards().map(MemberCards::highestReportedPauseSequence).orElse(0L);
-            }
-
-            @Override
-            public int unverifiedCount() {
-                return cluster.memberCards().map(MemberCards::unverifiedCount).orElse(0);
-            }
-
-            @Override
-            public boolean isAlone() {
-                try {
-                    return instances.get().getCluster().getMembers().size() == 1;
-                } catch (RuntimeException unknown) {
-                    return false;
-                }
-            }
-
-            @Override
-            public boolean isOldest() {
-                try {
-                    var hazelcast = instances.get().getCluster();
-                    Iterator<Member> oldest = hazelcast.getMembers().iterator();
-                    return !oldest.hasNext()
-                            || oldest.next().getUuid().equals(hazelcast.getLocalMember().getUuid());
-                } catch (RuntimeException unknown) {
-                    return false;
-                }
-            }
-        };
+        this.peers = peers;
     }
 
     // ---- reads ----------------------------------------------------------------------------------------
@@ -523,38 +607,54 @@ final class PauseDocument {
      * @throws IllegalStateException if the document is absent, unauthentic or not fresh (the caller sees
      *                               {@code OVERSIGHT_UNAVAILABLE})
      */
-    Pauses current() {
-        Look look = look();
-        if (look.status() == Status.ABSENT) {
-            boolean cold;
-            synchronized (monitor) {
-                cold = held == null;
-            }
-            if (cold) {
-                // The first start, if this member may make it; every other gap waits for a tick or an operator.
-                attempt(() -> maintain(look));
-                look();
-            }
-        }
+    Pauses current(Dependencies deps) {
+        look(deps);
         synchronized (monitor) {
             if (!freshLocked()) {
                 throw unavailable();
             }
-            return view;
+            return pauses;
         }
     }
 
-    /** Whether the pause document is present, authentic and inside its lease, as of the latest look. */
+    /** For tests: reads with the dependencies of the latest user. */
+    Pauses current() {
+        return current(tickDependencies);
+    }
+
+    /** For tests: ticks with the dependencies of the latest user. */
+    void tick() {
+        tick(tickDependencies);
+    }
+
+    /** For tests: reconciles with the dependencies of the latest user. */
+    void reconcileAfterMerge() {
+        reconcileAfterMerge(tickDependencies);
+    }
+
+    /** For tests: the dependencies that {@link #current()} and {@link #tick()} use, without starting the lease. */
+    void useDependencies(Dependencies deps) {
+        tickDependencies = deps;
+    }
+
+    /** Whether the gate has passed within the last lease, by the nano clock. */
     boolean fresh() {
         synchronized (monitor) {
             return freshLocked();
         }
     }
 
-    /** The age of the accepted document from its local receipt, in whole seconds; -1 if none was accepted. */
+    /** Whether the document has accepted anything. */
+    boolean hasAccepted() {
+        synchronized (monitor) {
+            return held != null;
+        }
+    }
+
+    /** The time since the last passing gate, in whole seconds; -1 if the gate has never passed. */
     long ageSeconds() {
         synchronized (monitor) {
-            return held == null ? -1 : Math.max(0, (nanos.getAsLong() - receivedAt) / NANOS_PER_SECOND);
+            return !everPassed ? -1 : Math.max(0, (nanos.getAsLong() - receivedAt) / NANOS_PER_SECOND);
         }
     }
 
@@ -579,20 +679,39 @@ final class PauseDocument {
         }
     }
 
-    /** Registers {@code pause.fresh} and {@code pause.age_seconds} with the metrics this document counts into. */
-    void registerGauges() {
-        metrics.gauge(Metric.CLUSTER_PAUSE_FRESH, () -> fresh() ? 1 : 0);
-        metrics.gauge(Metric.CLUSTER_PAUSE_AGE_SECONDS, () -> {
-            long age = ageSeconds();
-            return age < 0 ? Double.NaN : age;
-        });
+    /** Whether the gate has ever passed in this process life, for tests. */
+    boolean established() {
+        synchronized (monitor) {
+            return established;
+        }
+    }
+
+    /** Whether {@code digest} is in Seen, for tests. */
+    boolean seen(Digest digest) {
+        synchronized (monitor) {
+            return ring.contains(digest) || pinned.contains(digest);
+        }
+    }
+
+    /** How many digests are pinned, for tests. */
+    int pinnedCount() {
+        synchronized (monitor) {
+            return pinned.size();
+        }
+    }
+
+    /** Digest(held), or null before the first document, for tests. */
+    Digest heldDigest() {
+        synchronized (monitor) {
+            return heldDigest;
+        }
     }
 
     private boolean freshLocked() {
-        return held != null && lookOk && nanos.getAsLong() - receivedAt < lease.toNanos();
+        return everPassed && nanos.getAsLong() - receivedAt < lease.toNanos();
     }
 
-    private static IllegalStateException unavailable() {
+    static IllegalStateException unavailable() {
         return new IllegalStateException("the pause document is absent, unauthentic or not fresh");
     }
 
@@ -600,50 +719,45 @@ final class PauseDocument {
         return instances.get().getMap(PrivacyCluster.OVERSIGHT_MAP);
     }
 
-    private Look look() {
-        return judge(map().get(key));
+    private Look look(Dependencies deps) {
+        return judge(map().get(key), deps, peers.snapshot());
     }
 
     /**
-     * Judges a stored value against what this instance has accepted, and merges what it finds into what it holds.
-     * A document of higher order raises the held order and resets the lease; one of lower or equal order never does,
-     * but its content is still merged.
+     * Judges a stored value: merges what is authentic into what is held, then runs the gate (renewal point 1, R6).
+     * {@code peerView} is the one snapshot of the peers this judgement reads; it was taken with no monitor held.
      */
-    private Look judge(Object stored) {
+    private Look judge(Object stored, Dependencies deps, PeerView peerView) {
         if (stored == null) {
-            synchronized (monitor) {
-                lookOk = false;
-            }
-            return new Look(Status.ABSENT, null, false, false);
+            return noDocument(Status.ABSENT, peerView);
         }
-        Memo entry = open(stored);
+        Memo entry = open(stored, deps);
         if (entry == null) {
-            synchronized (monitor) {
-                lookOk = false;
-            }
-            return new Look(Status.UNREADABLE, null, false, false);
+            return noDocument(Status.UNREADABLE, peerView);
         }
         String sealed = (String) stored;
         Doc doc = entry.doc;
-        long now = nanos.getAsLong();
         boolean mismatch = false;
         Look result = null;
         synchronized (monitor) {
+            long now = nanos.getAsLong();
+            if (!sealed.equals(storedSealed)) {
+                storedSealed = sealed;
+                storedSeenSince = now;
+            }
             if (held == null) {
                 if (tooOldForColdStart(doc)) {
-                    lookOk = false;
-                    return new Look(Status.GATED, doc, false, false);
+                    gate(peerView, false, null);
+                    return new Look(Status.GATED, doc, false, freshLocked(), false, peerView);
                 }
                 held = doc;
-                heldSealed = sealed;
                 entry.merged = true;
-                receivedAt = now;
-                lookOk = true;
-                view = held.pauses();
-                return new Look(Status.ACCEPTED, doc, false, true);
+                entry.digest = doc.digest();
+                heldChanged(entry.digest, true, true);
+                boolean passed = gate(peerView, true, null);
+                return new Look(Status.AUTHENTIC, doc, false, freshLocked(), passed, peerView);
             }
             if (!entry.merged && held.conflictsWith(doc)) {
-                lookOk = false;
                 mismatch = true;
             } else {
                 int order = doc.compareOrder(held);
@@ -660,36 +774,167 @@ final class PauseDocument {
                 }
                 if ((lacks || (order <= 0 && brings)) && !entry.counted) {
                     entry.counted = true;
-                    metrics.increment(Metric.CLUSTER_PAUSE_CONFLICT);
+                    deps.metrics().increment(Metric.CLUSTER_PAUSE_CONFLICT);
                 }
-                boolean sameBytes = order == 0 && sealed.equals(heldSealed);
-                if (brings) {
-                    held = held.union(doc);
-                    view = held.pauses();
-                }
+                boolean firstMerge = !entry.merged;
+                Doc merged = held.merge(doc);
+                boolean grew = merged.elements().size() != held.elements().size()
+                        || merged.tombstones().size() != held.tombstones().size();
+                boolean sequenceMoved = merged.sequence() != held.sequence();
+                boolean anyChange = merged != held;
+                held = merged;
                 entry.merged = true;
-                if (order > 0) {
-                    held = held.withHeader(doc.sequence(), doc.refresh(), doc.issuedAtMillis(), doc.issuer());
-                    heldSealed = sealed;
-                    receivedAt = now;
+                if (grew) {
+                    heldChanged(held.digest(), true, sequenceMoved);
+                } else if (anyChange) {
+                    heldChanged(heldDigest, false, sequenceMoved);
                 }
-                lookOk = order >= 0 && !lacks;
-                Status status = order > 0 ? Status.ACCEPTED : (order == 0 && !lacks ? Status.CURRENT : Status.BEHIND);
-                result = new Look(status, doc, lacks, sameBytes);
+                if (firstMerge) {
+                    if (entry.digest == null) {
+                        entry.digest = doc.digest();
+                    }
+                    appendSeen(entry.digest);
+                }
+                boolean passed = gate(peerView, true, null);
+                result = new Look(Status.AUTHENTIC, doc, !doc.covers(held), freshLocked(), passed, peerView);
             }
         }
         if (mismatch) {
-            metrics.increment(Metric.CLUSTER_SEAL_TAMPER);
+            deps.metrics().increment(Metric.CLUSTER_SEAL_TAMPER);
             warnMismatch();
-            return new Look(Status.UNREADABLE, null, false, false);
+            return noDocument(Status.UNREADABLE, peerView);
         }
         return result;
     }
 
+    private Look noDocument(Status status, PeerView peerView) {
+        synchronized (monitor) {
+            gate(peerView, false, null);
+            return new Look(status, null, false, freshLocked(), false, peerView);
+        }
+    }
+
+    /**
+     * Held changed (R2): record its digest and target view, append the digest to Seen and, for the main document,
+     * tell the cards. The monitor is held; the notice only sets a mark and wakes the schedule.
+     */
+    private void heldChanged(Digest digest, boolean contentGrew, boolean sequenceMoved) {
+        heldDigest = digest;
+        if (contentGrew) {
+            pauses = held.pauses();
+        }
+        appendSeen(digest);
+        if (main && (contentGrew || sequenceMoved)) {
+            report(digest);
+        }
+    }
+
+    private void report(Digest digest) {
+        HazelcastInstance instance;
+        try {
+            instance = instances.get();
+        } catch (RuntimeException unreachable) {
+            return;
+        }
+        MemberCards.Declarations declarations = MemberCards.declarationsIfAny(instance);
+        if (declarations != null) {
+            declarations.report(digest);
+        }
+    }
+
+    // ---- Seen and the gate ----------------------------------------------------------------------------
+
+    private void appendSeen(Digest digest) {
+        if (pinned.contains(digest)) {
+            return;
+        }
+        ring.remove(digest);
+        ring.add(digest);
+        evict();
+    }
+
+    private void evict() {
+        Iterator<Digest> oldest = ring.iterator();
+        while (ring.size() > RING_SIZE && oldest.hasNext()) {
+            oldest.next();
+            oldest.remove();
+        }
+    }
+
+    /** Pins the Seen values that peers show now, and unpins the ones they no longer show (R6). */
+    private void updatePins(PeerView peerView) {
+        Set<Digest> shown = new HashSet<>();
+        for (Digest digest : peerView.peerDigests().values()) {
+            if (!digest.equals(Digest.NONE)) {
+                shown.add(digest);
+            }
+        }
+        for (Digest digest : shown) {
+            if (ring.remove(digest)) {
+                pinned.add(digest);
+            }
+        }
+        List<Digest> unpinned = new ArrayList<>();
+        Iterator<Digest> pins = pinned.iterator();
+        while (pins.hasNext()) {
+            Digest digest = pins.next();
+            if (!shown.contains(digest)) {
+                pins.remove();
+                unpinned.add(digest);
+            }
+        }
+        for (Digest digest : unpinned) {
+            // Back at the head, as if just appended: it survives 256 further changes.
+            ring.remove(digest);
+            ring.add(digest);
+        }
+        evict();
+    }
+
+    /**
+     * The one freshness gate (R6), the only code that sets {@code receivedAt}. The monitor is held.
+     *
+     * @param storedOk     clause 1: the stored document is authentic and wholly merged
+     * @param freshAtWrite null for a plain judgement; for a post-write renewal point, whether this member was fresh
+     *                     when the write began (clause 4)
+     */
+    private boolean gate(PeerView peerView, boolean storedOk, Boolean freshAtWrite) {
+        updatePins(peerView);
+        if (!storedOk) {
+            return false;
+        }
+        if (freshAtWrite != null && !freshAtWrite) {
+            return false;
+        }
+        if (peerStateUnknown(peerView)) {
+            return false;
+        }
+        for (Digest digest : peerView.peerDigests().values()) {
+            if (digest.equals(Digest.NONE) || !(ring.contains(digest) || pinned.contains(digest))) {
+                return false;
+            }
+        }
+        if (!established && peerView.unverifiedCount() != 0) {
+            return false;
+        }
+        receivedAt = nanos.getAsLong();
+        everPassed = true;
+        established = true;
+        return true;
+    }
+
+    /** R6, peer state unknown: no look, a stale look, or a look of another member set; a lone member is exempt. */
+    private boolean peerStateUnknown(PeerView peerView) {
+        if (peerView.isAlone()) {
+            return false;
+        }
+        return !peerView.lookCompleted() || peerView.lookAgeNanos() > lease.toNanos();
+    }
+
     /** The document in a stored value, memoised by its exact text, or null (counted) if it is not authentic. */
-    private Memo open(Object stored) {
+    private Memo open(Object stored, Dependencies deps) {
         if (!(stored instanceof String envelope)) {
-            metrics.increment(Metric.CLUSTER_SEAL_TAMPER);
+            deps.metrics().increment(Metric.CLUSTER_SEAL_TAMPER);
             return null;
         }
         synchronized (monitor) {
@@ -698,14 +943,14 @@ final class PauseDocument {
                 return known;
             }
         }
-        Opened opened = sealer.open(PrivacyCluster.OVERSIGHT_MAP, key, envelope);
+        Opened opened = deps.sealer().open(PrivacyCluster.OVERSIGHT_MAP, key, envelope);
         if (opened.outcome() != Opened.Outcome.AUTHENTIC) {
             // The sealer has counted it.
             return null;
         }
         Doc doc = decoder.apply(opened.plaintext());
         if (doc == null) {
-            metrics.increment(Metric.CLUSTER_SEAL_TAMPER);
+            deps.metrics().increment(Metric.CLUSTER_SEAL_TAMPER);
             return null;
         }
         synchronized (monitor) {
@@ -729,61 +974,48 @@ final class PauseDocument {
 
     /**
      * Pauses {@code target}: adds one fresh element for it, always, whether or not it is already paused. Allowed
-     * whenever the cluster can be written; it re-creates a document that is absent or unauthentic and keeps what
-     * this member holds.
+     * whenever the cluster can be written.
      *
      * @throws ClusterOperationRefusedException if the operating cap is reached, the write loses its race
      *                                          {@value #MAX_ATTEMPTS} times, or the document would be over the
      *                                          format bound
      */
-    void pause(Target target) {
-        change(Op.PAUSE, Objects.requireNonNull(target, "target"), 0L);
+    void pause(Target target, Dependencies deps) {
+        change(Op.PAUSE, Objects.requireNonNull(target, "target"), 0L, deps);
     }
 
     /**
      * Resumes {@code target}: tombstones the ids live for it in the first base this call reads, and no others, so a
-     * pause that lands meanwhile stays in force. Needs this member to serve, no unverified member, no peer card above
-     * the document, and a fresh document (OD-215-16 (a)).
-     *
-     * @throws ClusterOperationRefusedException if the member is not serving or a member is unverified
-     * @throws IllegalStateException            if the document is absent, unauthentic, behind a peer or not fresh
+     * pause that lands meanwhile stays in force. The preconditions of R13 hold on every read.
      */
-    void resume(Target target) {
-        change(Op.RESUME, Objects.requireNonNull(target, "target"), 0L);
+    void resume(Target target, Dependencies deps) {
+        change(Op.RESUME, Objects.requireNonNull(target, "target"), 0L, deps);
     }
 
-    /**
-     * Ends a scope's pause: as {@link #resume} for the scope, except that an absent document is a no-op success.
-     * Waits for the lock until {@code deadlineNanos} ({@link System#nanoTime()} units).
-     */
-    void endScope(String scopeId, long deadlineNanos) {
-        change(Op.END_SCOPE, Target.scope(Objects.requireNonNull(scopeId, "scopeId")), deadlineNanos);
+    /** Ends a scope's pause: as {@link #resume} for the scope. Waits for the lock until {@code deadlineNanos}. */
+    void endScope(String scopeId, long deadlineNanos, Dependencies deps) {
+        change(Op.END_SCOPE, Target.scope(Objects.requireNonNull(scopeId, "scopeId")), deadlineNanos, deps);
     }
 
-    private void change(Op op, Target target, long deadlineNanos) {
-        if (op != Op.PAUSE && !cluster.securityStatus().serving()) {
-            throw new ClusterOperationRefusedException(new IllegalStateException("the member is not serving"));
-        }
+    private void change(Op op, Target target, long deadlineNanos, Dependencies deps) {
         IMap<String, Object> map = map();
         // The lock is taken before the read, so writers queue for it instead of racing; correctness still rests on
         // the compare-and-set, which is what a writer that holds an expired lease, or a split-brain, falls back on.
         if (deadlineNanos == 0L) {
-            ClusterLocks.acquire(map, key, lockTimeout);
+            ClusterLocks.acquire(map, key, deps.lockTimeout());
         } else {
-            ClusterLocks.acquireUntil(map, key, deadlineNanos, lockTimeout);
+            ClusterLocks.acquireUntil(map, key, deadlineNanos, deps.lockTimeout());
         }
         try {
             Set<Id> observed = null;
+            String issuer = issuer();
             for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
                 Object stored = map.get(key);
-                Look look = judge(stored);
-                if (op == Op.END_SCOPE && look.status() == Status.ABSENT) {
-                    return;
+                // The snapshot is taken under the oversight lock, as part of the decision it serves.
+                Look look = judge(stored, deps, peers.snapshot());
+                if (op != Op.PAUSE) {
+                    refuseUnless(look, deps);
                 }
-                int unverified = op == Op.PAUSE ? 0 : peers.unverifiedCount();
-                long highest = op == Op.PAUSE ? 0 : peers.highestReportedSequence();
-                // Judged after the read, under the lock: the cards may have lapsed while the lock was awaited.
-                boolean serving = op == Op.PAUSE || cluster.securityStatus().serving();
                 Doc base;
                 Doc next;
                 Id fresh = null;
@@ -793,7 +1025,11 @@ final class PauseDocument {
                     Doc storedDoc = look.stored();
                     long top = Math.max(held == null ? 0 : held.sequence(), storedDoc == null ? 0 : storedDoc.sequence());
                     if (op == Op.PAUSE) {
-                        base = look.status() == Status.GATED ? storedDoc : held;
+                        if (look.status() == Status.GATED) {
+                            base = held == null ? storedDoc : held.merge(storedDoc);
+                        } else {
+                            base = held;
+                        }
                         int size = base == null ? 0 : base.elements().size();
                         int cap = target.kind() == Kind.ALL ? FORMAT_BOUND : PAUSE_CAP;
                         if (size + 1 > cap) {
@@ -803,25 +1039,9 @@ final class PauseDocument {
                         fresh = Id.random(random);
                         Map<Id, Target> elements = new HashMap<>(base == null ? Map.of() : base.elements());
                         elements.put(fresh, target);
-                        next = new Doc(top + 1, 0, wall.millis(), issuer(), elements,
+                        next = new Doc(top + 1, 0, wall.millis(), issuer, elements,
                                 base == null ? Set.of() : base.tombstones());
                     } else {
-                        if (look.status() == Status.UNREADABLE || look.status() == Status.GATED || held == null) {
-                            throw unavailable();
-                        }
-                        if (!serving) {
-                            throw new ClusterOperationRefusedException(new IllegalStateException(
-                                    "the member is not serving"));
-                        }
-                        if (unverified > 0) {
-                            throw ClusterRefusals.refused(new IllegalStateException("a member is unverified"));
-                        }
-                        if (highest > held.sequence()) {
-                            throw unavailable();
-                        }
-                        if (!freshLocked()) {
-                            throw unavailable();
-                        }
                         base = held;
                         Set<Id> liveNow = base.live(target);
                         if (observed == null) {
@@ -835,13 +1055,14 @@ final class PauseDocument {
                         Set<Id> tombstones = new HashSet<>(base.tombstones());
                         tombstones.addAll(tombstoned);
                         allowed = tombstoned;
-                        next = new Doc(top + 1, 0, wall.millis(), issuer(), base.elements(), tombstones);
+                        next = new Doc(top + 1, 0, wall.millis(), issuer, base.elements(), tombstones);
                     }
                 }
                 if (refusal != null) {
                     throw refusal;
                 }
-                Outcome outcome = commit(stored, look.stored(), base, next, fresh, allowed);
+                // Over UNREADABLE or GATED the exact stored bytes are replaced, with the gated content unioned in.
+                Outcome outcome = commit(stored, look.stored(), base, next, fresh, allowed, look.fresh(), deps);
                 switch (outcome) {
                     case WRITTEN -> {
                         return;
@@ -857,33 +1078,52 @@ final class PauseDocument {
         throw ClusterRefusals.refused(new IllegalStateException("the pause document write lost its race"));
     }
 
+    /** R13's preconditions, in R13's order and with its codes. Throws; returns only if all hold. */
+    private void refuseUnless(Look look, Dependencies deps) {
+        synchronized (monitor) {
+            if (held == null) {
+                throw unavailable();
+            }
+        }
+        if (!deps.status().get().serving()) {
+            throw new ClusterOperationRefusedException(new IllegalStateException("the member is not serving"));
+        }
+        PeerView peerView = look.peers();
+        if (peerView.unverifiedCount() > 0) {
+            throw ClusterRefusals.refused(new IllegalStateException("a member is unverified"));
+        }
+        if (peerStateUnknown(peerView)) {
+            throw ClusterRefusals.refused(new IllegalStateException("the state of the other members is unknown"));
+        }
+        if (look.status() != Status.AUTHENTIC) {
+            throw unavailable();
+        }
+        if (!look.passed()) {
+            throw unavailable();
+        }
+    }
+
     // ---- the commit -----------------------------------------------------------------------------------
 
     /**
      * Checks {@code next} against the guard clauses and, if they hold, seals it and writes it over exactly
-     * {@code storedRaw} ({@code putIfAbsent} when that is null), then accepts it. The caller holds the key's lock.
+     * {@code storedRaw} ({@code putIfAbsent} when that is null), then accepts it and runs the gate as a post-write
+     * renewal point (R6, clause 4). The caller holds the key's lock.
      *
-     * @param storedRaw  the value read, to be replaced; null if there was none
-     * @param storedDoc  the authentic document read, else null
-     * @param base       what {@code next} was computed from
-     * @param fresh      the one element a pause adds, else null
-     * @param tombstones the tombstones the change may add beyond the base (a resume's observed ids still live)
+     * @param storedRaw   the value read, to be replaced; null if there was none
+     * @param storedDoc   the authentic document read, else null
+     * @param base        what {@code next} was computed from
+     * @param fresh       the one element a pause adds, else null
+     * @param tombstones  the tombstones the change may add beyond the base (a resume's observed ids still live)
+     * @param freshBefore whether this member was fresh when the write began, as it stood after the judging read
      */
-    Outcome commit(Object storedRaw, Doc storedDoc, Doc base, Doc next, Id fresh, Set<Id> tombstones) {
-        return commit(storedRaw, storedDoc, base, next, fresh, tombstones, true);
-    }
-
-    /**
-     * As above. A write that does not {@code renew} raises the held order and merges, but leaves the lease where it
-     * was: the holder is fresh again only through recovery or by accepting a higher-order document.
-     */
-    private Outcome commit(Object storedRaw, Doc storedDoc, Doc base, Doc next, Id fresh, Set<Id> tombstones,
-                           boolean renew) {
+    Outcome commit(Object storedRaw, Doc storedDoc, Doc base, Doc next, Id fresh, Set<Id> tombstones,
+                   boolean freshBefore, Dependencies deps) {
         Outcome refused = guard(storedDoc, base, next, fresh, tombstones);
         if (refused != null) {
             return refused;
         }
-        String sealed = sealer.seal(PrivacyCluster.OVERSIGHT_MAP, key, next.encode());
+        String sealed = deps.sealer().seal(PrivacyCluster.OVERSIGHT_MAP, key, next.encode());
         beforeCommit.run();
         IMap<String, Object> map = map();
         boolean written = storedRaw == null ? map.putIfAbsent(key, sealed) == null : map.replace(key, storedRaw, sealed);
@@ -891,8 +1131,8 @@ final class PauseDocument {
         if (!written && !sealed.equals(map.get(key))) {
             return Outcome.LOST_RACE;
         }
-        acceptWritten(next, sealed, renew);
-        assertFence();
+        acceptWritten(next, sealed, freshBefore);
+        assertFence(deps);
         return Outcome.WRITTEN;
     }
 
@@ -926,30 +1166,28 @@ final class PauseDocument {
         return null;
     }
 
-    private void acceptWritten(Doc next, String sealed, boolean renew) {
-        long now = nanos.getAsLong();
+    /**
+     * Merges a document this member wrote into what it holds and runs the gate as a post-write renewal point. Neither
+     * the commit nor this takes a renew argument: a member that was lapsed when the write began never renews from it.
+     */
+    private void acceptWritten(Doc next, String sealed, boolean freshBefore) {
+        PeerView peerView = peers.snapshot();
         synchronized (monitor) {
             Memo written = new Memo(next);
-            if (held == null) {
-                held = next;
-                heldSealed = sealed;
-                receivedAt = now;
-            } else {
-                Doc merged = held.union(next);
-                if (next.compareOrder(held) >= 0) {
-                    held = merged.withHeader(next.sequence(), next.refresh(), next.issuedAtMillis(), next.issuer());
-                    heldSealed = sealed;
-                    if (renew) {
-                        receivedAt = now;
-                    }
-                } else {
-                    held = merged;
-                }
-            }
             written.merged = true;
+            written.digest = next.digest();
+            Doc before = held;
+            held = held == null ? next : held.merge(next);
             memo.put(sealed, written);
-            lookOk = next.covers(held);
-            view = held.pauses();
+            storedSealed = sealed;
+            storedSeenSince = nanos.getAsLong();
+            if (before != held) {
+                boolean grew = before == null || held.elements().size() != before.elements().size()
+                        || held.tombstones().size() != before.tombstones().size();
+                heldChanged(grew ? held.digest() : heldDigest, grew, before == null || held.sequence() != before.sequence());
+            }
+            appendSeen(written.digest);
+            gate(peerView, true, freshBefore);
         }
     }
 
@@ -958,13 +1196,13 @@ final class PauseDocument {
      * write that fails leaves only 0.7 members, which must not be there, without the fence. A member without keys is
      * solo by construction and refuses any member that joins, so it writes none.
      */
-    private void assertFence() {
+    private void assertFence(Dependencies deps) {
         if (cluster.memberCards().isEmpty()) {
             return;
         }
         try {
             instances.get().<String, Object>getMap(PrivacyCluster.OVERSIGHT_FENCE_MAP)
-                    .tryPut(FENCE_KEY, Boolean.TRUE, lockTimeout.toMillis(), TimeUnit.MILLISECONDS);
+                    .tryPut(FENCE_KEY, Boolean.TRUE, deps.lockTimeout().toMillis(), TimeUnit.MILLISECONDS);
         } catch (RuntimeException ignored) {
             // See above.
         }
@@ -981,32 +1219,32 @@ final class PauseDocument {
     // ---- maintenance ----------------------------------------------------------------------------------
 
     /**
-     * One pass of the lease, by the ticker or by a test: refresh the document when half the lease is spent, put it
-     * back when it has gone from the cluster (OD-15), write the first one on a first start, write a union back when
-     * the cluster document lacks something this member holds, and recover a lapsed lease over the document this
-     * member last accepted. Never throws.
+     * One pass of the lease, by the ticker or by a test, in the order of R6: judge (with the gate); then decide and
+     * write, if it writes; then accept the write (a post-write renewal point). Writes are a union repair or restore
+     * (R9), the first document (R8) and the refresh (R10). Never throws.
      */
-    void tick() {
-        attempt(() -> maintain(look()));
+    void tick(Dependencies deps) {
+        attempt(() -> maintain(deps));
     }
 
-    private void maintain(Look first) {
-        sampleCards();
+    private void maintain(Dependencies deps) {
+        Look first = look(deps);
         if (decide(first) == null) {
             return;
         }
         IMap<String, Object> map = map();
-        ClusterLocks.acquire(map, key, lockTimeout);
+        ClusterLocks.acquire(map, key, deps.lockTimeout());
         try {
             for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
                 Object stored = map.get(key);
-                Look look = judge(stored);
+                // R8 judges the member list under the lock, in the same decision as the write.
+                Look look = judge(stored, deps, peers.snapshot());
                 Action action = decide(look);
                 if (action == null) {
                     return;
                 }
-                Outcome outcome = commit(stored, look.stored(), action.base(), action.next(), null, Set.of(),
-                        action.renews());
+                Outcome outcome = commit(look.status() == Status.AUTHENTIC ? stored : null, look.stored(),
+                        action.base(), action.next(), null, Set.of(), action.freshBefore(), deps);
                 if (outcome == Outcome.WRITTEN && action.recovery()) {
                     warnRecovery();
                 }
@@ -1019,87 +1257,39 @@ final class PauseDocument {
         }
     }
 
-    /** A look at the cards while no document is held: a card above zero restarts the wait for a first start. */
-    private void sampleCards() {
-        long highest = peers.highestReportedSequence();
-        synchronized (monitor) {
-            if (held == null && highest > 0) {
-                quietSince = nanos.getAsLong();
-            }
-        }
-    }
-
     /** What the tick would write for {@code look}, or null for nothing. */
     private Action decide(Look look) {
-        long highest = peers.highestReportedSequence();
-        int unverified = peers.unverifiedCount();
-        boolean oldest = look.status() == Status.ABSENT && peers.isOldest();
-        boolean alone = look.status() == Status.ABSENT && peers.isAlone();
-        boolean serving = look.sameBytes() && look.status() == Status.CURRENT && cluster.securityStatus().serving();
+        PeerView peerView = look.peers();
+        String issuer = look.status() == Status.ABSENT || look.status() == Status.AUTHENTIC ? issuer() : null;
         synchronized (monitor) {
             long now = nanos.getAsLong();
             switch (look.status()) {
                 case UNREADABLE, GATED -> {
+                    // Never overwritten by a tick; only an operator pause replaces such a value (R9).
                     return null;
                 }
                 case ABSENT -> {
                     if (held != null) {
-                        if (now - receivedAt >= lease.toNanos()) {
-                            // A lapsed holder still puts back what it holds: the union only adds, so it cannot
-                            // lift a pause. It does not renew its own lease; recovery or a higher document does.
-                            return new Action(held, unionWrite(look), false, false);
-                        }
-                        // OD-15 (i): only from a document accepted within the last lease, and only if no verified
-                        // member reports a higher sequence.
-                        if (highest > held.sequence()) {
-                            return null;
-                        }
-                        return new Action(held, successor(held), false, true);
+                        // pushHeld: putIfAbsent(held) at held.sequence + 1, whether fresh or lapsed (R9).
+                        return new Action(held, new Doc(held.sequence() + 1, 0, wall.millis(), issuer, held.elements(),
+                                held.tombstones()), look.fresh(), true);
                     }
-                    if (highest > 0) {
-                        quietSince = now;
-                        return null;
-                    }
-                    if (!oldest || unverified != 0) {
-                        return null;
-                    }
-                    // A member alone in Hazelcast's member list is exempt from the wait for one lease of uptime.
-                    // Membership cannot be forged by writing to a map, and a lone member has no peer that holds a
-                    // pause a replayed seq-0 card could hide. Membership is read under the lock, in this decision.
-                    // A member that joins after it and before the putIfAbsent is harmless: a member holding pauses
-                    // arrives only through a merge, and putIfAbsent plus reconcileAfterMerge repair a Doc(1) that
-                    // meets a document holding more.
-                    boolean waited = now - quietSince >= lease.toNanos();
-                    if (!waited && !alone) {
-                        return null;
-                    }
-                    return new Action(null, Doc.empty(1, 0, wall.millis(), issuer()), false, true);
-                }
-                case BEHIND -> {
-                    if (now - receivedAt >= lease.toNanos()) {
-                        // Lapsed: put back the union over the exact stored bytes, without renewing the lease.
-                        return new Action(held, unionWrite(look), false, false);
-                    }
-                    if (highest > held.sequence()) {
-                        return null;
-                    }
-                    return new Action(held, unionWrite(look), false, true);
+                    return firstStart(peerView, now, issuer);
                 }
                 default -> {
-                    long age = now - receivedAt;
-                    if (look.lacks()) {
-                        return new Action(held, unionWrite(look), false, age < lease.toNanos());
+                    Doc stored = look.stored();
+                    if (!stored.covers(held)) {
+                        // pushHeld: held ⊔ stored at max + 1, over the exact stored bytes (R9).
+                        long top = Math.max(held.sequence(), stored.sequence());
+                        return new Action(held, new Doc(top + 1, 0, wall.millis(), issuer, held.elements(),
+                                held.tombstones()), look.fresh(), true);
                     }
-                    if (age >= lease.toNanos()) {
-                        if (serving && unverified == 0 && highest <= held.sequence()) {
-                            return new Action(held, successor(held), true, true);
-                        }
-                        return null;
-                    }
-                    // A refresh says the cluster is current; it needs the same corroboration as recovery.
-                    if (freshLocked() && age >= lease.dividedBy(2).toNanos() && unverified == 0
-                            && highest <= held.sequence()) {
-                        return new Action(held, successor(held), false, true);
+                    if (look.passed() && stored.elements().equals(held.elements())
+                            && stored.tombstones().equals(held.tombstones())
+                            && now - storedSeenSince >= lease.dividedBy(2).toNanos()) {
+                        // R10: a refresh, from a member that is fresh, once half a lease has passed.
+                        return new Action(stored, new Doc(stored.sequence(), stored.refresh() + 1, wall.millis(),
+                                issuer, stored.elements(), stored.tombstones()), look.passed(), false);
                     }
                     return null;
                 }
@@ -1107,14 +1297,25 @@ final class PauseDocument {
         }
     }
 
-    /** The held content at one sequence above the held and the stored documents; the monitor is held. */
-    private Doc unionWrite(Look look) {
-        long top = Math.max(held.sequence(), look.stored() == null ? 0 : look.stored().sequence());
-        return new Doc(top + 1, 0, wall.millis(), issuer(), held.elements(), held.tombstones());
-    }
-
-    private Doc successor(Doc doc) {
-        return new Doc(doc.sequence(), doc.refresh() + 1, wall.millis(), issuer(), doc.elements(), doc.tombstones());
+    /** R8: the first Doc(1), for a member with no document over an ABSENT one. The monitor is held. */
+    private Action firstStart(PeerView peerView, long now, String issuer) {
+        boolean alone = peerView.isAlone();
+        if (!alone && !(peerView.isOldest() && now - createdNanos >= lease.toNanos())) {
+            return null;
+        }
+        if (peerView.unverifiedCount() != 0) {
+            return null;
+        }
+        if (!alone) {
+            if (!peerView.lookCompleted() || peerView.lookAgeNanos() > lease.dividedBy(2).toNanos()) {
+                return null;
+            }
+            long clean = peerView.cleanRunAgeNanos();
+            if (clean < 0 || clean - peerView.lookAgeNanos() < lease.toNanos()) {
+                return null;
+            }
+        }
+        return new Action(null, Doc.empty(1, 0, wall.millis(), issuer), false, false);
     }
 
     /** Notes the document held now as the side of a heal that a higher cluster document would hide. */
@@ -1127,9 +1328,9 @@ final class PauseDocument {
     /**
      * Reconciles with the cluster after this member's side of a split healed (OD-14): writes
      * {@code mergeBase ⊔ held ⊔ stored} at one sequence above the held and stored documents, only if the stored one
-     * lacks something of it.
+     * lacks something of it. A write is a post-write renewal point; no write leaves only the ordinary judgement.
      */
-    void reconcileAfterMerge() {
+    void reconcileAfterMerge(Dependencies deps) {
         attempt(() -> {
             Doc began;
             synchronized (monitor) {
@@ -1137,11 +1338,12 @@ final class PauseDocument {
                 mergeBase = null;
             }
             IMap<String, Object> map = map();
-            ClusterLocks.acquire(map, key, lockTimeout);
+            ClusterLocks.acquire(map, key, deps.lockTimeout());
             try {
+                String issuer = issuer();
                 for (int tries = 0; tries < MAX_ATTEMPTS; tries++) {
                     Object stored = map.get(key);
-                    Look look = judge(stored);
+                    Look look = judge(stored, deps, peers.snapshot());
                     if (look.status() == Status.UNREADABLE || look.status() == Status.GATED) {
                         return;
                     }
@@ -1151,15 +1353,16 @@ final class PauseDocument {
                         if (held == null && began == null) {
                             return;
                         }
-                        base = held == null ? began : (began == null ? held : held.union(began));
+                        base = held == null ? began : (began == null ? held : held.merge(began));
                         Doc other = look.stored();
                         if (other != null && other.covers(base)) {
                             return;
                         }
                         long top = Math.max(held == null ? 0 : held.sequence(), other == null ? 0 : other.sequence());
-                        next = new Doc(top + 1, 0, wall.millis(), issuer(), base.elements(), base.tombstones());
+                        next = new Doc(top + 1, 0, wall.millis(), issuer, base.elements(), base.tombstones());
                     }
-                    if (commit(stored, look.stored(), base, next, null, Set.of()) != Outcome.LOST_RACE) {
+                    if (commit(look.status() == Status.AUTHENTIC ? stored : null, look.stored(), base, next, null,
+                            Set.of(), look.fresh(), deps) != Outcome.LOST_RACE) {
                         return;
                     }
                 }
@@ -1175,7 +1378,7 @@ final class PauseDocument {
             if (held != null) {
                 held = new Doc(held.sequence(), held.refresh(), held.issuedAtMillis(), held.issuer(), Map.of(),
                         Set.of());
-                view = held.pauses();
+                pauses = held.pauses();
             }
         }
     }
@@ -1188,7 +1391,7 @@ final class PauseDocument {
 
     private void warnRecovery() {
         if (shouldWarn(false)) {
-            log.warn("the pause lease had lapsed and was renewed over the document this member last accepted");
+            log.warn("a pause document was put back from the content this member holds");
         }
     }
 
@@ -1219,9 +1422,15 @@ final class PauseDocument {
 
     // ---- lifecycle ------------------------------------------------------------------------------------
 
-    /** Starts the lease: a first pass, the merge listener, and a ticker if the environment has an interval. */
-    void start() {
+    /**
+     * Registers a user of this document, with the dependencies its ticks use. The first user starts the lease: a
+     * first pass, the merge listener, and a ticker if the environment has an interval. The ticker stops when the last
+     * user releases; the document itself lives on, so a later user finds what it held.
+     */
+    void retain(Dependencies deps) {
         synchronized (monitor) {
+            users++;
+            tickDependencies = deps;
             if (closed || executor != null) {
                 return;
             }
@@ -1231,18 +1440,42 @@ final class PauseDocument {
                 return thread;
             });
         }
-        attempt(this::tick);
+        tick(deps);
         HazelcastInstance instance = instances.get();
-        lifecycleListener = instance.getLifecycleService().addLifecycleListener(event -> {
+        UUID listener = instance.getLifecycleService().addLifecycleListener(event -> {
             if (event.getState() == LifecycleEvent.LifecycleState.MERGING) {
                 beginMerge();
             } else if (event.getState() == LifecycleEvent.LifecycleState.MERGED) {
-                submit(this::reconcileAfterMerge);
+                Dependencies current = tickDependencies;
+                submit(() -> reconcileAfterMerge(current));
             }
         });
-        if (tickInterval != null && !tickInterval.isZero() && !tickInterval.isNegative()) {
+        ScheduledExecutorService running;
+        synchronized (monitor) {
+            lifecycleListener = listener;
+            running = executor;
+        }
+        if (running != null && tickInterval != null && !tickInterval.isZero() && !tickInterval.isNegative()) {
             long millis = tickInterval.toMillis();
-            executor.scheduleWithFixedDelay(this::tickWhileRunning, millis, millis, TimeUnit.MILLISECONDS);
+            try {
+                running.scheduleWithFixedDelay(this::tickWhileRunning, millis, millis, TimeUnit.MILLISECONDS);
+            } catch (RejectedExecutionException closedDown) {
+                // Released already.
+            }
+        }
+    }
+
+    /** A user is done: the last release stops the ticker and the merge listener. The document stays. */
+    void release() {
+        boolean last;
+        synchronized (monitor) {
+            if (users > 0) {
+                users--;
+            }
+            last = users == 0;
+        }
+        if (last) {
+            stopTicking();
         }
     }
 
@@ -1254,9 +1487,12 @@ final class PauseDocument {
             running = false;
         }
         if (running) {
-            tick();
+            Dependencies deps = tickDependencies;
+            if (deps != null) {
+                tick(deps);
+            }
         } else {
-            close();
+            stopTicking();
         }
     }
 
@@ -1276,10 +1512,17 @@ final class PauseDocument {
 
     /** Stops the ticker and the merge listener; the document stays in the cluster. Safe to call twice. */
     void close() {
+        synchronized (monitor) {
+            closed = true;
+            users = 0;
+        }
+        stopTicking();
+    }
+
+    private void stopTicking() {
         ScheduledExecutorService stopping;
         UUID listener;
         synchronized (monitor) {
-            closed = true;
             stopping = executor;
             executor = null;
             listener = lifecycleListener;

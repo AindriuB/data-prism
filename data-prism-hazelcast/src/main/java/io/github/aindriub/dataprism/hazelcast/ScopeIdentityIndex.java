@@ -41,6 +41,7 @@ public final class ScopeIdentityIndex {
     private final Object pauseLock = new Object();
     /** The index's own, never-started view of the pause document, made on first use. */
     private PauseDocument pauseDocument;
+    private PauseDocument.Dependencies pauseDependencies;
     /** Resolves a map by name; a seam for tests. */
     Function<String, IMap<String, ?>> maps;
 
@@ -159,15 +160,20 @@ public final class ScopeIdentityIndex {
         if (remaining < ClusterLocks.MIN_TIMEOUT.toNanos()) {
             throw new ClusterLockTimeoutException();
         }
-        pauseDocument().endScope(scopeId, deadline);
+        PauseDocument document = pauseDocument();
+        document.endScope(scopeId, deadline, pauseDependencies);
     }
 
     private PauseDocument pauseDocument() {
         synchronized (pauseLock) {
             if (pauseDocument == null) {
                 // Ending a scope needs a serving member, so the document is reached through the gated accessor.
-                pauseDocument = new PauseDocument(cluster, cluster::servingInstance, metrics, lockTimeout,
-                        PauseDocument.Environment.system(cluster.securitySettings().pauseLease()));
+                // It never publishes a card digest and is never started: it judges with its own Seen and its own
+                // nano clock, and reads look age only as a duration through the Peers of the instance.
+                pauseDependencies = PauseDocument.Dependencies.of(cluster, metrics, lockTimeout);
+                pauseDocument = new PauseDocument(cluster, cluster::servingInstance,
+                        PauseDocument.Environment.system(cluster.securitySettings().pauseLease()), false,
+                        cluster.memberCards().isPresent() ? MemberCards.peers(cluster) : HazelcastOversightState.lonePeers(cluster, cluster.instance()));
             }
             return pauseDocument;
         }

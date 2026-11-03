@@ -46,6 +46,7 @@ class PauseSplitBrainTest {
     @AfterEach
     void shutDown() {
         states.forEach(HazelcastOversightState::close);
+        nodes.forEach(Node::close);
         if (lone != null) {
             lone.close();
         }
@@ -65,7 +66,52 @@ class PauseSplitBrainTest {
         return state;
     }
 
-    /** A solo member of no keys: several states on it stand for several instances. */
+    private final List<Node> nodes = new ArrayList<>();
+
+    /** One member of the solo cluster: a bare document with its own clocks and its own idea of the cards. */
+    final class Node {
+        final PauseDocument doc;
+        final PauseDocumentTest.StubPeers peers = PauseDocumentTest.StubPeers.lone();
+        final PauseDocument.Dependencies deps;
+
+        Node() {
+            deps = PauseDocument.Dependencies.of(lone, new Fixture.Metrics(), ClusterLocks.DEFAULT_TIMEOUT);
+            doc = new PauseDocument(lone, lone::instance, new PauseDocument.Environment(new Nanos(), fixture.clock,
+                    null), true, peers);
+            doc.useDependencies(deps);
+            nodes.add(this);
+        }
+
+        void pauseTool(String name) {
+            doc.pause(Target.tool(name), deps);
+        }
+
+        void resumeTool(String name) {
+            doc.resume(Target.tool(name), deps);
+        }
+
+        void tick() {
+            doc.tick(deps);
+        }
+
+        Set<String> tools() {
+            return doc.current(deps).tools();
+        }
+
+        long sequence() {
+            return doc.acceptedSequence();
+        }
+
+        void close() {
+            doc.close();
+        }
+    }
+
+    private Node node() {
+        return new Node();
+    }
+
+    /** A solo member of no keys: several nodes on it stand for several instances. */
     private PrivacyCluster solo() {
         Config config = new Config();
         config.setClusterName(TestMembers.uniqueName("split-solo"));
@@ -74,10 +120,6 @@ class PauseSplitBrainTest {
         config.getNetworkConfig().getJoin().getTcpIpConfig().setEnabled(false);
         lone = PrivacyCluster.embedded(config, false);
         return lone;
-    }
-
-    private HazelcastOversightState instance() {
-        return state(lone, new Fixture.Metrics());
     }
 
     private static String key(PrivacyCluster on) {
@@ -221,28 +263,28 @@ class PauseSplitBrainTest {
      * then rolled back, deleted or replaced by garbage, and C pauses x three times, so its sequence climbs above
      * A's and B's.
      */
-    private record Shape(HazelcastOversightState a, HazelcastOversightState b, HazelcastOversightState c,
+    private record Shape(Node a, Node b, Node c,
                           long sequenceAB) {
     }
 
     private Shape shape(Rollback rollback, boolean coldC) {
         solo();
-        var a = instance();
+        var a = node();
         a.pauseTool("s1");
         a.pauseTool("s2");
         a.pauseTool("s3");
-        HazelcastOversightState c = coldC ? null : instance();
+        Node c = coldC ? null : node();
         if (c != null) {
-            assertThat(c.snapshot().pausedTools()).hasSize(3);
+            assertThat(c.tools()).hasSize(3);
         }
         Object atSeq3 = map(lone).get(key(lone));
         a.pauseTool("p");
         a.pauseTool("q");
-        var b = instance();
-        assertThat(b.snapshot().pausedTools()).containsExactlyInAnyOrder("s1", "s2", "s3", "p", "q");
-        long sequenceAB = a.document().acceptedSequence();
+        var b = node();
+        assertThat(b.tools()).containsExactlyInAnyOrder("s1", "s2", "s3", "p", "q");
+        long sequenceAB = a.sequence();
         rollBack(rollback, atSeq3);
-        return new Shape(a, b, coldC ? instance() : c, sequenceAB);
+        return new Shape(a, b, coldC ? node() : c, sequenceAB);
     }
 
     private void rollBack(Rollback rollback, Object atSeq3) {
@@ -254,12 +296,12 @@ class PauseSplitBrainTest {
     }
 
     private void assertEverythingSurvives(Shape shape, boolean exactRepairSequence) {
-        shape.a().document().tick();
-        shape.b().document().tick();
-        shape.c().document().tick();
+        shape.a().tick();
+        shape.b().tick();
+        shape.c().tick();
         Doc healed = stored(lone);
         for (var state : List.of(shape.a(), shape.b(), shape.c())) {
-            assertThat(state.snapshot().pausedTools()).contains("p", "q", "x");
+            assertThat(state.tools()).contains("p", "q", "x");
         }
         assertThat(healed.live(Target.tool("p"))).hasSize(1);
         assertThat(healed.live(Target.tool("q"))).hasSize(1);
@@ -280,7 +322,7 @@ class PauseSplitBrainTest {
     void repeatedPausesFromABehindMemberNeverLiftThePausesOfTheMembersAheadOfIt_rolledBackStorage() {
         Shape shape = shape(Rollback.ROLL_BACK, false);
         cPausesXThreeTimes(shape);
-        assertThat(shape.c().document().acceptedSequence()).as("C climbed above A and B").isEqualTo(shape.sequenceAB() + 1);
+        assertThat(shape.c().sequence()).as("C climbed above A and B").isEqualTo(shape.sequenceAB() + 1);
 
         assertEverythingSurvives(shape, true);
     }
@@ -305,8 +347,8 @@ class PauseSplitBrainTest {
     void theSameShapeWithAColdMemberThatHoldsNothing() {
         for (Rollback rollback : Rollback.values()) {
             if (lone != null) {
-                states.forEach(HazelcastOversightState::close);
-                states.clear();
+                nodes.forEach(Node::close);
+                nodes.clear();
                 lone.close();
             }
             Shape shape = shape(rollback, true);
@@ -317,66 +359,46 @@ class PauseSplitBrainTest {
     }
 
     @Test
-    void theSameShapeWithAMemberWhoseCardsAreStalledAndWhoseWriteConsultsNoPeer() {
+    void theSameShapeWithAMemberWhoseCardsLookIsOldAndWhoseSequencesAreNotDerivedFromAnyPeer() {
         Shape shape = shape(Rollback.ROLL_BACK, false);
-        shape.c().document().peers = new PauseDocument.Peers() {
-            @Override
-            public long highestReportedSequence() {
-                throw new IllegalStateException("the cards look is old");
-            }
-
-            @Override
-            public int unverifiedCount() {
-                throw new IllegalStateException("the cards look is old");
-            }
-
-            @Override
-            public boolean isOldest() {
-                throw new IllegalStateException("the cards look is old");
-            }
-
-            @Override
-            public boolean isAlone() {
-                throw new IllegalStateException("the cards look is old");
-            }
-        };
+        // The look is old, and a peer is listed: no gate passes for C, but its sequences come from the documents only.
+        shape.c().peers.lookCompleted = false;
 
         cPausesXThreeTimes(shape);
 
-        // A peer-derived term in a sequence would have thrown above; and nothing is lifted.
-        shape.a().document().tick();
+        shape.a().tick();
         assertThat(stored(lone).live(Target.tool("p"))).hasSize(1);
-        assertThat(shape.c().document().acceptedSequence()).isEqualTo(shape.sequenceAB() + 1);
+        assertThat(shape.c().sequence()).isEqualTo(shape.sequenceAB() + 1);
     }
 
     @Test
     void theSameShapeWithTheRollbackTakenAfterAResumeOfPKeepsPLiftedOnAAndBAndOnCOnceItMerges() {
         solo();
-        var a = instance();
+        var a = node();
         a.pauseTool("s1");
         a.pauseTool("s2");
         a.pauseTool("s3");
-        var c = instance();
-        assertThat(c.snapshot().pausedTools()).hasSize(3);
+        var c = node();
+        assertThat(c.tools()).hasSize(3);
         Object atSeq3 = map(lone).get(key(lone));
         a.pauseTool("p");
         a.pauseTool("q");
         a.resumeTool("p");
-        var b = instance();
-        assertThat(b.snapshot().pausedTools()).containsExactlyInAnyOrder("s1", "s2", "s3", "q");
-        long sequence = a.document().acceptedSequence();
+        var b = node();
+        assertThat(b.tools()).containsExactlyInAnyOrder("s1", "s2", "s3", "q");
+        long sequence = a.sequence();
         map(lone).put(key(lone), atSeq3);
 
         for (int i = 0; i < 3; i++) {
             c.pauseTool("x");
         }
-        assertThat(c.document().acceptedSequence()).as("equal to A and B, with other bytes").isEqualTo(sequence);
-        a.document().tick();
-        b.document().tick();
-        c.document().tick();
+        assertThat(c.sequence()).as("equal to A and B, with other bytes").isEqualTo(sequence);
+        a.tick();
+        b.tick();
+        c.tick();
 
         for (var state : List.of(a, b, c)) {
-            assertThat(state.snapshot().pausedTools()).containsExactlyInAnyOrder("s1", "s2", "s3", "q", "x");
+            assertThat(state.tools()).containsExactlyInAnyOrder("s1", "s2", "s3", "q", "x");
         }
         assertThat(stored(lone).sequence()).isEqualTo(sequence + 1);
     }
@@ -384,50 +406,50 @@ class PauseSplitBrainTest {
     @Test
     void aReplayOfAnOldDocumentHoldingAnElementThatIsNowTombstonedLeavesItLiftedOnEveryWarmMember() {
         solo();
-        var a = instance();
+        var a = node();
         a.pauseTool("p");
         Object replay = map(lone).get(key(lone));
         a.pauseTool("q");
         a.resumeTool("p");
-        var b = instance();
-        assertThat(b.snapshot().pausedTools()).containsExactly("q");
+        var b = node();
+        assertThat(b.tools()).containsExactly("q");
 
         map(lone).put(key(lone), replay);
-        a.document().tick();
+        a.tick();
 
         for (var state : List.of(a, b)) {
-            assertThat(state.toolPaused("p")).as("p stays lifted").isFalse();
-            assertThat(state.toolPaused("q")).isTrue();
+            assertThat(state.tools().contains("p")).as("p stays lifted").isFalse();
+            assertThat(state.tools().contains("q")).isTrue();
         }
     }
 
     @Test
     void aColdMemberGivenAReplayShowsTheReplaysStateUntilAWarmMembersRepairTickThenTheUnion() {
         solo();
-        var a = instance();
+        var a = node();
         a.pauseTool("p");
         Object replay = map(lone).get(key(lone));
         a.pauseTool("q");
         a.resumeTool("p");
         map(lone).put(key(lone), replay);
 
-        var cold = instance();
-        assertThat(cold.snapshot().pausedTools()).as("the replay's state, within the cold-start gate").containsExactly("p");
+        var cold = node();
+        assertThat(cold.tools()).as("the replay's state, within the cold-start gate").containsExactly("p");
 
-        a.document().tick();
+        a.tick();
 
-        assertThat(cold.snapshot().pausedTools()).as("the union, once a warm member repaired").containsExactly("q");
+        assertThat(cold.tools()).as("the union, once a warm member repaired").containsExactly("q");
     }
 
     @Test
     void twoWritersRacingOnTheCompareAndSetEachKeepTheirPause() {
         solo();
-        var one = instance();
-        var two = instance();
+        var one = node();
+        var two = node();
         one.pauseTool("seed");
-        assertThat(two.snapshot().pausedTools()).containsExactly("seed");
+        assertThat(two.tools()).containsExactly("seed");
         java.util.concurrent.atomic.AtomicInteger hooks = new java.util.concurrent.atomic.AtomicInteger();
-        one.document().beforeCommit = () -> {
+        one.doc.beforeCommit = () -> {
             if (hooks.incrementAndGet() == 1) {
                 two.pauseTool("two");
             }
@@ -435,8 +457,8 @@ class PauseSplitBrainTest {
 
         one.pauseTool("one");
 
-        assertThat(one.snapshot().pausedTools()).containsExactlyInAnyOrder("seed", "one", "two");
-        assertThat(two.snapshot().pausedTools()).containsExactlyInAnyOrder("seed", "one", "two");
+        assertThat(one.tools()).containsExactlyInAnyOrder("seed", "one", "two");
+        assertThat(two.tools()).containsExactlyInAnyOrder("seed", "one", "two");
     }
 
     // ---- over the operating cap ---------------------------------------------------------------------------

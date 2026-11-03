@@ -7,6 +7,7 @@ import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
 import io.github.aindriub.dataprism.hazelcast.ClusterSecuritySettings.UnverifiedMemberAction;
 import io.github.aindriub.dataprism.hazelcast.MemberCardTest.Fixture;
+import io.github.aindriub.dataprism.hazelcast.PauseDocument.Digest;
 import io.github.aindriub.dataprism.hazelcast.PauseDocument.Doc;
 import io.github.aindriub.dataprism.hazelcast.PauseDocument.Id;
 import io.github.aindriub.dataprism.hazelcast.PauseDocument.Kind;
@@ -26,17 +27,13 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
@@ -45,11 +42,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * T4: the pause document (docs/plan/design/cluster-security.md 2.3.3, OD-3, OD-4, OD-15) as an observed-remove set of
- * elements and tombstones. Every instance here is a {@link HazelcastOversightState} (or a bare
- * {@link PauseDocument}) with its own monotonic clock and its own wall clock, which a test moves; none ticks on its
- * own and none sleeps. Two states on one cluster stand for two instances, with separate memory. The merge cases are
- * in {@link PauseSplitBrainTest}.
+ * The pause document under its freshness gate (docs/plan/design/cluster-security.md 2.3.3, OD-3, OD-4, OD-15; brief
+ * 228, contract version 2.40). Every member here is a bare {@link PauseDocument} with its own monotonic clock, its own
+ * wall clock and a {@link StubPeers}, which a test moves to say what the cards show; none ticks on its own and none
+ * sleeps. Two members on one cluster stand for two instances, with separate memory. The real tracker is tested in
+ * {@link MemberCardTest}; the merge cases are in {@link PauseSplitBrainTest}.
  */
 class PauseDocumentTest {
 
@@ -69,49 +66,57 @@ class PauseDocumentTest {
 
     /** What the cards would say, as a test sets it. */
     static final class StubPeers implements PauseDocument.Peers {
-        volatile long highest;
+        volatile Map<UUID, Digest> digests = Map.of();
         volatile int unverified;
+        volatile boolean lookCompleted = true;
+        volatile long lookAgeNanos;
+        volatile long cleanRunAgeNanos = -1;
         volatile boolean oldest = true;
         volatile boolean alone;
 
-        StubPeers(long highest) {
-            this.highest = highest;
+        /** A member with no peers. */
+        static StubPeers lone() {
+            StubPeers peers = new StubPeers();
+            peers.alone = true;
+            return peers;
+        }
+
+        /** A member with one listed peer that shows nothing, and a fresh completed look. */
+        static StubPeers withPeer() {
+            return new StubPeers();
+        }
+
+        StubPeers shows(Digest digest) {
+            digests = Map.of(PEER, digest);
+            return this;
+        }
+
+        StubPeers shows(Map<UUID, Digest> shown) {
+            digests = shown;
+            return this;
         }
 
         @Override
-        public long highestReportedSequence() {
-            return highest;
-        }
-
-        @Override
-        public int unverifiedCount() {
-            return unverified;
-        }
-
-        @Override
-        public boolean isOldest() {
-            return oldest;
-        }
-
-        @Override
-        public boolean isAlone() {
-            return alone;
+        public PauseDocument.PeerView snapshot() {
+            return new PauseDocument.PeerView(digests, unverified, lookCompleted, lookAgeNanos, cleanRunAgeNanos,
+                    alone, oldest);
         }
     }
+
+    static final UUID PEER = UUID.fromString("00000000-0000-0000-0000-0000000000a1");
+    static final UUID OTHER = UUID.fromString("00000000-0000-0000-0000-0000000000a2");
 
     private static final Duration LEASE = ClusterSecuritySettings.DEFAULT_PAUSE_LEASE;
     private static final Duration SKEW = ClusterSecuritySettings.DEFAULT_CLOCK_SKEW_TOLERANCE;
     private static final Duration TIMEOUT = ClusterLocks.DEFAULT_TIMEOUT;
 
     private final Fixture fixture = new Fixture();
-    private final List<HazelcastOversightState> states = new ArrayList<>();
     private final List<PauseDocument> documents = new ArrayList<>();
     private PrivacyCluster cluster;
     private final Fixture.Metrics metrics = new Fixture.Metrics();
 
     @AfterEach
     void shutDown() {
-        states.forEach(HazelcastOversightState::close);
         documents.forEach(PauseDocument::close);
         if (cluster != null) {
             cluster.close();
@@ -134,28 +139,90 @@ class PauseDocumentTest {
         return cluster;
     }
 
-    private HazelcastOversightState instance(PrivacyCluster on, Nanos nanos, Fixture.TestClock wall) {
-        HazelcastOversightState state = new HazelcastOversightState(on, TIMEOUT, metrics,
-                new PauseDocument.Environment(nanos, wall, null));
-        states.add(state);
-        return state;
+    /** One member of the cluster: a bare document with its own clocks and its own idea of what the cards say. */
+    final class Member {
+        final PauseDocument doc;
+        final Nanos nanos;
+        final Fixture.TestClock wall;
+        final StubPeers peers;
+        final PauseDocument.Dependencies deps;
+
+        Member(Nanos nanos, Fixture.TestClock wall, StubPeers peers) {
+            this.nanos = nanos;
+            this.wall = wall;
+            this.peers = peers;
+            this.deps = PauseDocument.Dependencies.of(cluster, metrics, TIMEOUT);
+            this.doc = new PauseDocument(cluster, cluster::instance, new PauseDocument.Environment(nanos, wall, null),
+                    true, peers);
+            doc.useDependencies(deps);
+            documents.add(doc);
+        }
+
+        void pauseTool(String name) {
+            doc.pause(Target.tool(name), deps);
+        }
+
+        void resumeTool(String name) {
+            doc.resume(Target.tool(name), deps);
+        }
+
+        void pauseScope(String name) {
+            doc.pause(Target.scope(name), deps);
+        }
+
+        void resumeScope(String name) {
+            doc.resume(Target.scope(name), deps);
+        }
+
+        void pauseAll() {
+            doc.pause(Target.ALL, deps);
+        }
+
+        void resumeAll() {
+            doc.resume(Target.ALL, deps);
+        }
+
+        void tick() {
+            doc.tick(deps);
+        }
+
+        Set<String> tools() {
+            return doc.current(deps).tools();
+        }
+
+        boolean allPaused() {
+            return doc.current(deps).all();
+        }
+
+        boolean fresh() {
+            return doc.fresh();
+        }
+
+        Doc held() {
+            return doc.accepted();
+        }
+
+        Digest digest() {
+            return doc.heldDigest();
+        }
+
+        /** The member reads: judges what is stored and answers whether it is fresh. */
+        boolean reads() {
+            try {
+                doc.current(deps);
+                return true;
+            } catch (IllegalStateException refused) {
+                return false;
+            }
+        }
     }
 
-    private HazelcastOversightState instance(Nanos nanos, Fixture.TestClock wall) {
-        return instance(cluster, nanos, wall);
+    private Member member(StubPeers peers) {
+        return new Member(new Nanos(), new Fixture.TestClock(), peers);
     }
 
-    private HazelcastOversightState instance() {
-        return instance(new Nanos(), new Fixture.TestClock());
-    }
-
-    /** A bare, unstarted document on {@code on}, so a test drives its peers and ticks itself. */
-    private PauseDocument bare(PrivacyCluster on, Nanos nanos, Fixture.TestClock wall, PauseDocument.Peers peers) {
-        PauseDocument document = new PauseDocument(on, on::instance, metrics, TIMEOUT,
-                new PauseDocument.Environment(nanos, wall, null));
-        document.peers = peers;
-        documents.add(document);
-        return document;
+    private Member member() {
+        return member(StubPeers.lone());
     }
 
     private IMap<String, Object> map(PrivacyCluster on) {
@@ -203,1078 +270,267 @@ class PauseDocumentTest {
         return doc(sequence, 0, elements, Set.of());
     }
 
-    // ---- deletion, replay, restart ------------------------------------------------------------------------
+    private static Map<Id, Target> mapPlus(Map<Id, Target> elements, Id id, Target target) {
+        Map<Id, Target> more = new HashMap<>(elements);
+        more.put(id, target);
+        return more;
+    }
+
+    // ---- A1: deletion, replay, restart ---------------------------------------------------------------------
 
     @Test
-    void deletingTheDocumentMakesEveryInstanceRefuseAndPauseFreshReadZero() {
+    void deletingTheDocumentMakesAMemberRefuseAndPauseFreshReadZeroOnceItsLeasePassesWithoutAPassingGate() {
         solo();
-        var one = instance();
-        var two = instance();
+        Member one = member();
+        Member two = member(StubPeers.withPeer());
         one.pauseAll();
         assertThat(two.allPaused()).isTrue();
-        assertThat(metrics.gauge(Metric.CLUSTER_PAUSE_FRESH)).isEqualTo(1.0);
+        assertThat(two.fresh()).isTrue();
 
+        // A peer shows content two has never held, so no gate can pass; then the document is deleted.
+        two.peers.shows(new Digest(new byte[16]));
         map(cluster).delete(key(cluster));
 
-        for (var state : List.of(one, two)) {
-            assertThatThrownBy(state::allPaused).isInstanceOf(IllegalStateException.class);
-            assertThatThrownBy(() -> state.toolPaused("search")).isInstanceOf(IllegalStateException.class);
-            assertThatThrownBy(() -> state.scopePaused("CASE-A")).isInstanceOf(IllegalStateException.class);
-            assertThatThrownBy(state::snapshot).isInstanceOf(IllegalStateException.class);
-            assertThat(state.securityStatus().pauseFresh()).isFalse();
-            assertThat(state.securityStatus().reason()).isEqualTo(ClusterSecurityStatus.Reason.PAUSE_NOT_FRESH);
-        }
-        assertThat(metrics.gauge(Metric.CLUSTER_PAUSE_FRESH)).isEqualTo(0.0);
+        // The lease has not run out, so reads still answer from what two holds.
+        assertThat(two.reads()).isTrue();
+        two.nanos.advance(LEASE.minusNanos(1));
+        assertThat(two.fresh()).isTrue();
+        two.nanos.advance(Duration.ofNanos(1));
+        assertThat(two.fresh()).isFalse();
+        assertThat(two.reads()).isFalse();
+        assertThatThrownBy(two::allPaused).isInstanceOf(IllegalStateException.class);
     }
 
     @Test
-    void aDocumentOlderThanOneAnInstanceHasSeenIsRejectedByIt() {
+    void aDocumentOlderThanWhatAMemberHoldsNeverResetsItsLeaseOrRemovesContent() {
         solo();
-        var seen = instance();
+        StubPeers peers = StubPeers.withPeer();
+        Member seen = member(peers);
         seen.pauseTool("alpha");
         String older = (String) map(cluster).get(key(cluster));
         seen.pauseTool("beta");
-        long[] before = seen.document().acceptedOrder();
+        long[] before = seen.doc.acceptedOrder();
+        assertThat(seen.fresh()).isTrue();
 
+        // A peer shows a digest the member never held: its gate fails from now on.
+        peers.shows(new Digest(new byte[16]));
+        seen.nanos.advance(LEASE);
         map(cluster).put(key(cluster), older);
 
-        // The instance neither lowers what it accepted nor answers from the replayed document.
-        assertThatThrownBy(() -> seen.toolPaused("beta")).isInstanceOf(IllegalStateException.class);
-        assertThatThrownBy(() -> seen.toolPaused("gamma")).isInstanceOf(IllegalStateException.class);
-        assertThat(seen.document().acceptedOrder()).containsExactly(before);
-        assertThat(seen.securityStatus().pauseFresh()).isFalse();
+        assertThat(seen.reads()).isFalse();
+        assertThat(seen.fresh()).isFalse();
+        assertThat(seen.doc.acceptedOrder()).containsExactly(before);
+        assertThat(seen.held().live(Target.tool("beta"))).hasSize(1);
+        assertThat(seen.held().live(Target.tool("alpha"))).hasSize(1);
     }
 
     @Test
     void aTickRepairsAReplayedOlderDocumentWithAUnionSoNoPauseOfEitherIsDropped_andALiftedPauseStaysLifted() {
         solo();
-        var seen = instance();
+        Member seen = member();
         seen.pauseTool("alpha");
         String older = (String) map(cluster).get(key(cluster));
         Doc replay = stored(cluster);
         seen.resumeTool("alpha");
         seen.pauseTool("beta");
         map(cluster).put(key(cluster), older);
-        assertThatThrownBy(() -> seen.toolPaused("beta")).isInstanceOf(IllegalStateException.class);
 
-        seen.document().tick();
+        seen.tick();
 
-        // The replayed document is back to the present: the replay held alpha, but its tombstone is held here.
-        assertThat(seen.snapshot().pausedTools()).containsExactly("beta");
-        assertThat(seen.securityStatus().pauseFresh()).isTrue();
-        assertThat(instance().snapshot().pausedTools()).containsExactly("beta");
+        assertThat(seen.tools()).containsExactly("beta");
+        assertThat(seen.fresh()).isTrue();
         Doc repaired = stored(cluster);
         assertThat(repaired.covers(replay)).isTrue();
-        assertThat(seen.document().accepted().covers(repaired)).isTrue();
+        assertThat(seen.held().covers(repaired)).isTrue();
         assertThat(repaired.sequence()).isGreaterThan(replay.sequence());
+        assertThat(repaired.live(Target.tool("alpha"))).isEmpty();
     }
 
     @Test
-    void aRestartedInstanceAcceptsAReplayedOlderDocumentOnlyInsideTheLeaseAndTheColdStartGate_theNamedResidual() {
+    void aRestartedMemberMergesAReplayedOlderDocumentOnlyInsideTheColdStartGate_andAloneItIsFresh_theNamedResidual() {
         solo();
-        var first = instance();
+        Member first = member();
         first.pauseTool("seed");
         String beforeThePause = (String) map(cluster).get(key(cluster));
         first.pauseAll();
-        // The attacker deletes the pause document and puts the captured pre-pause one back.
         map(cluster).put(key(cluster), beforeThePause);
 
-        // A restarted instance (no memory) one second inside the cold-start gate accepts it: the pause is lifted for
-        // this instance, and only for as long as the lease lasts from its receipt.
+        // Inside the gate, alone: the replay is accepted and the member is fresh on it. The residual window equals
+        // the cold-start gate: lease plus skew.
         Fixture.TestClock insideGate = new Fixture.TestClock();
         insideGate.advance(LEASE.plus(SKEW));
-        Nanos nanos = new Nanos();
-        var restarted = instance(nanos, insideGate);
-        // The holder's card reports its higher sequence, as a live holder's would.
-        restarted.document().peers = new StubPeers(first.document().acceptedSequence());
+        Member restarted = new Member(new Nanos(), insideGate, StubPeers.lone());
         assertThat(restarted.allPaused()).as("the residual: a replayed pre-pause document lifts the pause").isFalse();
+        assertThat(restarted.fresh()).isTrue();
 
-        // The ticker runs all along but a card above the document stops every refresh, so the window is exactly the
-        // configured lease from receipt: one nanosecond short is still open, the lease is not.
-        nanos.advance(LEASE.dividedBy(2));
-        restarted.document().tick();
-        nanos.advance(LEASE.dividedBy(2).minusNanos(1));
-        restarted.document().tick();
-        assertThat(restarted.allPaused()).isFalse();
-        nanos.advance(Duration.ofNanos(1));
-        restarted.document().tick();
-        assertThatThrownBy(restarted::allPaused).isInstanceOf(IllegalStateException.class);
-        nanos.advance(LEASE.multipliedBy(3));
-        restarted.document().tick();
-        assertThatThrownBy(restarted::allPaused).as("never fresh again while a card is higher")
-                .isInstanceOf(IllegalStateException.class);
+        // With a tracked peer that holds newer content, the restarted member is not fresh.
+        StubPeers withPeer = StubPeers.withPeer().shows(first.digest());
+        Member covered = new Member(new Nanos(), insideGate, withPeer);
+        assertThat(covered.reads()).isFalse();
+        assertThat(covered.fresh()).isFalse();
 
-        // One millisecond past the cold-start gate, a restarted instance does not accept the replayed document.
+        // One millisecond past the cold-start gate the replayed document is not accepted.
         Fixture.TestClock pastGate = new Fixture.TestClock();
         pastGate.advance(LEASE.plus(SKEW).plusMillis(1));
-        var tooLate = instance(new Nanos(), pastGate);
-        assertThatThrownBy(tooLate::allPaused).isInstanceOf(IllegalStateException.class);
-        assertThat(tooLate.document().acceptedSequence()).isZero();
+        Member tooLate = new Member(new Nanos(), pastGate, StubPeers.lone());
+        assertThat(tooLate.reads()).isFalse();
+        assertThat(tooLate.doc.acceptedSequence()).isZero();
+        assertThat(tooLate.doc.hasAccepted()).isFalse();
     }
 
     @Test
-    void aDocumentNobodyRefreshesGoesStaleAfterOneLeaseAndARefreshByAnyInstanceKeepsItFresh() {
+    void aWriterThatLosesTheRaceReReadsAndBothPausesSurviveAtAHigherOrder() {
         solo();
-        Nanos nanosOne = new Nanos();
-        Nanos nanosTwo = new Nanos();
-        Fixture.TestClock wall = new Fixture.TestClock();
-        var one = instance(nanosOne, wall);
-        var two = instance(nanosTwo, wall);
-        one.pauseTool("search");
-        assertThat(two.toolPaused("search")).isTrue();
-
-        nanosOne.advance(LEASE.dividedBy(2));
-        nanosTwo.advance(LEASE.dividedBy(2));
-        long[] before = two.document().acceptedOrder();
-        two.document().tick();
-        // The second instance refreshed it: same pauses, refresh counter one higher.
-        assertThat(one.toolPaused("search")).isTrue();
-        assertThat(one.document().acceptedOrder()[0]).isEqualTo(before[0]);
-        assertThat(one.document().acceptedOrder()[1]).isEqualTo(before[1] + 1);
-
-        nanosOne.advance(LEASE.dividedBy(2).plusNanos(1));
-        nanosTwo.advance(LEASE.dividedBy(2).plusNanos(1));
-        assertThat(one.toolPaused("search")).as("the refresh renewed it from its receipt").isTrue();
-
-        // Nobody refreshes it from here: it goes stale one lease after the last receipt.
-        nanosOne.advance(LEASE);
-        assertThatThrownBy(() -> one.toolPaused("search")).isInstanceOf(IllegalStateException.class);
-        assertThat(one.securityStatus().pauseFresh()).isFalse();
-        assertThat(one.document().fresh()).isFalse();
-    }
-
-    @Test
-    void theAgeGaugeCountsFromLocalReceiptAndTheStatusCarriesNoPauseContent() {
-        solo();
-        Nanos nanos = new Nanos();
-        var state = instance(nanos, new Fixture.TestClock());
-        state.pauseTool("secret-tool-name");
-        state.pauseScope("CASE-SECRET");
-        nanos.advance(Duration.ofSeconds(7));
-        assertThat(state.toolPaused("secret-tool-name")).isTrue();
-
-        assertThat(metrics.gauge(Metric.CLUSTER_PAUSE_AGE_SECONDS)).isEqualTo(7.0);
-        ClusterSecurityStatus status = state.securityStatus();
-        assertThat(status.pauseFresh()).isTrue();
-        assertThat(status.pauseAgeSeconds()).isEqualTo(7);
-        assertThat(status.serving()).isTrue();
-        assertThat(status.text() + status).doesNotContain("secret-tool-name").doesNotContain("CASE-SECRET");
-    }
-
-    // ---- concurrent writers ----------------------------------------------------------------------------------
-
-    @Test
-    void aWriterThatLosesTheRaceReReadsAndBothPausesSurviveInSequenceAtAHigherOrder() {
-        solo();
-        var one = instance();
-        var two = instance();
+        Member one = member();
+        Member two = member();
         one.pauseTool("seed");
-        long start = one.document().acceptedSequence();
-        AtomicInteger commits = new AtomicInteger();
-        // The first writer has read and sealed its next document when the second writer completes its own.
-        one.document().beforeCommit = () -> {
-            if (commits.incrementAndGet() == 1) {
-                two.pauseTool("beta");
+        AtomicInteger hooks = new AtomicInteger();
+        one.doc.beforeCommit = () -> {
+            if (hooks.incrementAndGet() == 1) {
+                two.pauseTool("rival");
             }
         };
 
-        one.pauseTool("alpha");
+        one.pauseTool("mine");
 
-        assertThat(commits.get()).as("the first writer lost once and retried").isEqualTo(2);
-        assertThat(two.snapshot().pausedTools()).containsExactlyInAnyOrder("seed", "alpha", "beta");
-        assertThat(one.document().acceptedSequence()).isEqualTo(start + 2);
-    }
-
-    @Test
-    void manyWritersOnManyInstancesLoseNoPause() throws Exception {
-        solo();
-        int writers = 4;
-        int each = 5;
-        List<HazelcastOversightState> instances = new ArrayList<>();
-        for (int i = 0; i < writers; i++) {
-            instances.add(instance());
-        }
-        ExecutorService pool = Executors.newFixedThreadPool(writers);
-        try {
-            CountDownLatch go = new CountDownLatch(1);
-            List<Future<?>> done = new ArrayList<>();
-            for (int w = 0; w < writers; w++) {
-                int writer = w;
-                done.add(pool.submit(() -> {
-                    go.await();
-                    for (int n = 0; n < each; n++) {
-                        instances.get(writer).pauseTool("tool-" + writer + "-" + n);
-                    }
-                    return null;
-                }));
-            }
-            go.countDown();
-            for (Future<?> f : done) {
-                f.get();
-            }
-        } finally {
-            pool.shutdownNow();
-        }
-        assertThat(instances.get(0).snapshot().pausedTools()).hasSize(writers * each);
+        assertThat(hooks.get()).isEqualTo(2);
+        Doc finalDoc = stored(cluster);
+        assertThat(finalDoc.pauses().tools()).containsExactlyInAnyOrder("seed", "mine", "rival");
+        assertThat(one.tools()).containsExactlyInAnyOrder("seed", "mine", "rival");
     }
 
     @Test
     void aWallClockSkewedByMoreThanTheToleranceDoesNotMakeAHealthyDocumentStaleAfterTheFirstAcceptance() {
         solo();
-        Fixture.TestClock writerWall = new Fixture.TestClock();
-        var writer = instance(new Nanos(), writerWall);
+        Member writer = member();
         writer.pauseTool("search");
+        Fixture.TestClock reader = new Fixture.TestClock();
+        Member skewed = new Member(new Nanos(), reader, StubPeers.lone());
+        assertThat(skewed.tools()).containsExactly("search");
 
-        Fixture.TestClock readerWall = new Fixture.TestClock();
-        var reader = instance(new Nanos(), readerWall);
-        assertThat(reader.toolPaused("search")).isTrue();
-
-        // The reader's wall clock jumps an hour ahead, then a day behind: only the monotonic clock is consulted.
-        readerWall.advance(Duration.ofHours(1));
-        assertThat(reader.toolPaused("search")).isTrue();
-        readerWall.advance(Duration.ofHours(-25));
-        assertThat(reader.toolPaused("search")).isTrue();
-
-        // A writer whose own clock runs ten minutes fast issues a document the reader accepts at once.
-        writerWall.advance(Duration.ofMinutes(10));
-        writer.pauseTool("lookup");
-        assertThat(reader.toolPaused("lookup")).isTrue();
-        assertThat(reader.securityStatus().pauseFresh()).isTrue();
+        reader.advance(SKEW.multipliedBy(4));
+        skewed.nanos.advance(LEASE.dividedBy(3));
+        skewed.tick();
+        reader.advance(Duration.ofHours(5));
+        assertThat(skewed.tools()).containsExactly("search");
+        assertThat(skewed.fresh()).isTrue();
     }
 
-    // ---- OD-15 ----------------------------------------------------------------------------------------------
-
     @Test
-    void aMemberThatMissedAPauseDoesNotRewriteAnOlderDocumentWhileAVerifiedMemberReportsAHigherSequence() {
+    void anAttackerDocumentNeverLiftsAPauseIsNeverOverwrittenByATickIsCountedAndAnOperatorPauseKeepsTheHeldPauses() {
         solo();
-        var seeder = instance();
-        seeder.pauseTool("seed");
-        var behind = instance();
-        var current = instance();
-        assertThat(behind.snapshot().pausedTools()).containsExactly("seed");
-        // "behind" accepted the first document and never looked again; "current" then paused.
-        current.pauseAll();
-        long reported = current.document().acceptedSequence();
-        assertThat(behind.document().acceptedSequence()).isLessThan(reported);
-        map(cluster).delete(key(cluster));
-
-        behind.document().peers = new StubPeers(reported);
-        behind.document().tick();
-        assertThat(map(cluster).containsKey(key(cluster))).as("no rewrite from an older document").isFalse();
-
-        current.document().peers = new StubPeers(reported);
-        current.document().tick();
-        assertThat(map(cluster).containsKey(key(cluster))).as("rewritten by the member that has the latest").isTrue();
-        assertThat(behind.allPaused()).isTrue();
-    }
-
-    @Test
-    void aMemberThatAcceptedTheLatestDocumentWithinTheLeaseRewritesADeletedOneAndAfterTheLeaseOnlyAsAUnionThatDoesNotRenewIt() {
-        solo();
-        Nanos nanos = new Nanos();
-        var member = instance(nanos, new Fixture.TestClock());
-        member.pauseScope("CASE-A");
-        map(cluster).delete(key(cluster));
-        member.document().peers = new StubPeers(member.document().acceptedSequence());
-
-        member.document().tick();
-        assertThat(map(cluster).containsKey(key(cluster))).isTrue();
-        assertThat(member.scopePaused("CASE-A")).isTrue();
-        assertThat(instance().scopePaused("CASE-A")).isTrue();
-
-        // A document accepted more than a lease ago is put back as a union all the same, but that does not renew it.
-        map(cluster).delete(key(cluster));
-        nanos.advance(LEASE);
-        member.document().tick();
-        assertThat(map(cluster).containsKey(key(cluster))).as("accepted a lease ago").isTrue();
-        assertThat(stored(cluster).live(Target.scope("CASE-A"))).hasSize(1);
-        assertThat(member.document().fresh()).as("its own freshness is not renewed").isFalse();
-    }
-
-    @Test
-    void aReplayedOlderDocumentIsRepairedToASupersetOfItAndOfWhatWasHeld_elementsAndTombstones() {
-        solo();
-        var member = instance();
-        member.pauseTool("alpha");
-        member.pauseTool("beta");
-        Doc replay = stored(cluster);
-        member.resumeTool("alpha");
-        member.pauseTool("gamma");
-        Doc held = member.document().accepted();
-        plant(cluster, replay);
-
-        member.document().tick();
-
-        Doc repaired = stored(cluster);
-        assertThat(repaired.covers(replay)).isTrue();
-        assertThat(repaired.covers(held)).isTrue();
-        assertThat(repaired.sequence()).isEqualTo(held.sequence() + 1);
-        assertThat(repaired.tombstones()).containsAll(held.tombstones()).isNotEmpty();
-        assertThat(member.snapshot().pausedTools()).containsExactlyInAnyOrder("beta", "gamma");
-    }
-
-    // ---- first start (amendment 1) -------------------------------------------------------------------------
-
-    @Test
-    void theOldestMemberWritesNoFirstDocumentBeforeOneLeaseOfUptimeAndWritesItAfter() {
-        solo();
-        Nanos nanos = new Nanos();
-        var document = bare(cluster, nanos, new Fixture.TestClock(), new StubPeers(0));
-
-        document.tick();
-        nanos.advance(LEASE.minusNanos(1));
-        document.tick();
-        assertThat(map(cluster).containsKey(key(cluster))).as("one nanosecond short of a lease").isFalse();
-
-        nanos.advance(Duration.ofNanos(1));
-        document.tick();
-        assertThat(map(cluster).containsKey(key(cluster))).isTrue();
-        Doc first = stored(cluster);
-        assertThat(first.sequence()).isEqualTo(1);
-        assertThat(first.refresh()).isZero();
-        assertThat(first.elements()).isEmpty();
-        assertThat(first.tombstones()).isEmpty();
-        assertThat(document.current().all()).isFalse();
-    }
-
-    @Test
-    void theOldestMemberWithAnyCardAboveZeroDoesNotWriteAndTheWaitRestartsWhenTheCardGoes() {
-        solo();
-        Nanos nanos = new Nanos();
-        var peers = new StubPeers(0);
-        var document = bare(cluster, nanos, new Fixture.TestClock(), peers);
-        document.tick();
-        nanos.advance(LEASE.dividedBy(2));
-        peers.highest = 1;
-        document.tick();
-        nanos.advance(LEASE.multipliedBy(2));
-        document.tick();
-        assertThat(map(cluster).containsKey(key(cluster))).as("a card above zero at every look").isFalse();
-
-        peers.highest = 0;
-        document.tick();
-        nanos.advance(LEASE.minusNanos(1));
-        document.tick();
-        assertThat(map(cluster).containsKey(key(cluster))).as("the wait restarted at the last card").isFalse();
-        nanos.advance(Duration.ofNanos(1));
-        document.tick();
-        assertThat(map(cluster).containsKey(key(cluster))).isTrue();
-    }
-
-    @Test
-    void aCardAboveZeroThatAppearsBetweenTheFirstLookAndTheWriteStopsTheFirstStart() {
-        solo();
-        Nanos nanos = new Nanos();
-        AtomicInteger looks = new AtomicInteger();
-        var document = bare(cluster, nanos, new Fixture.TestClock(), new PauseDocument.Peers() {
-            @Override
-            public long highestReportedSequence() {
-                // The cards are read for the sample, for the pre-check and again under the lock.
-                return looks.incrementAndGet() <= 2 ? 0 : 5;
-            }
-
-            @Override
-            public int unverifiedCount() {
-                return 0;
-            }
-
-            @Override
-            public boolean isOldest() {
-                return true;
-            }
-
-            @Override
-            public boolean isAlone() {
-                return false;
-            }
-        });
-        nanos.advance(LEASE.multipliedBy(2));
-
-        document.tick();
-
-        assertThat(looks.get()).as("the write was considered under the lock").isGreaterThanOrEqualTo(3);
-        assertThat(map(cluster).containsKey(key(cluster))).isFalse();
-    }
-
-    @Test
-    void aLoneMemberServesAtOnceAfterStartWithoutWaitingForALease() {
-        solo();
-        var state = instance();
-
-        assertThat(state.allPaused()).isFalse();
-        assertThat(state.snapshot().pausedTools()).isEmpty();
-        assertThat(stored(cluster).sequence()).isEqualTo(1);
-        assertThat(state.securityStatus().pauseFresh()).isTrue();
-    }
-
-    @Test
-    void theExemptionIsJudgedAgainUnderTheLockSoAMemberPresentByThenMeansTheWaitApplies() {
-        solo();
-        Nanos nanos = new Nanos();
-        AtomicInteger looks = new AtomicInteger();
-        var document = bare(cluster, nanos, new Fixture.TestClock(), new PauseDocument.Peers() {
-            @Override
-            public long highestReportedSequence() {
-                return 0;
-            }
-
-            @Override
-            public int unverifiedCount() {
-                return 0;
-            }
-
-            @Override
-            public boolean isOldest() {
-                return true;
-            }
-
-            @Override
-            public boolean isAlone() {
-                // Alone for the pre-check; another member is in the list when the decision is made under the lock.
-                return looks.incrementAndGet() <= 1;
-            }
-        });
-
-        document.tick();
-
-        assertThat(looks.get()).isGreaterThanOrEqualTo(2);
-        assertThat(map(cluster).containsKey(key(cluster))).as("the exemption was withdrawn").isFalse();
-    }
-
-    @Test
-    void aMemberThatIsNotTheOldestAnUnverifiedMemberOrACardLessMemberMeansNoFirstStart() {
-        solo();
-        Nanos nanos = new Nanos();
-        var notOldest = new StubPeers(0);
-        notOldest.oldest = false;
-        var unverified = new StubPeers(0);
-        unverified.unverified = 1;
-        var first = bare(cluster, nanos, new Fixture.TestClock(), notOldest);
-        var second = bare(cluster, nanos, new Fixture.TestClock(), unverified);
-
-        nanos.advance(LEASE.multipliedBy(3));
-        first.tick();
-        second.tick();
-
-        assertThat(map(cluster).containsKey(key(cluster))).isFalse();
-        assertThatThrownBy(first::current).isInstanceOf(IllegalStateException.class);
-        assertThatThrownBy(second::current).isInstanceOf(IllegalStateException.class);
-    }
-
-    @Test
-    void twoEligibleMembersRaceToWriteTheFirstDocumentAndOneDocumentResultsWithNoConflictCounted() {
-        solo();
-        Nanos nanos = new Nanos();
-        var one = bare(cluster, nanos, new Fixture.TestClock(), new StubPeers(0));
-        var two = bare(cluster, nanos, new Fixture.TestClock(), new StubPeers(0));
-        nanos.advance(LEASE);
-        AtomicInteger hooks = new AtomicInteger();
-        one.beforeCommit = () -> {
-            if (hooks.incrementAndGet() == 1) {
-                two.tick();
-            }
-        };
-
-        one.tick();
-
-        assertThat(hooks.get()).as("the first writer lost its putIfAbsent").isEqualTo(1);
-        assertThat(stored(cluster).sequence()).isEqualTo(1);
-        assertThat(one.accepted().sequence()).isEqualTo(1);
-        assertThat(two.accepted().sequence()).isEqualTo(1);
-        assertThat(metrics.count(Metric.CLUSTER_PAUSE_CONFLICT)).isZero();
-        assertThat(one.current().all()).isFalse();
-    }
-
-    private void threeMembersStartAndTick(String prefix) {
-        String name = TestMembers.uniqueName(prefix);
-        int first = FreePorts.consecutive(3);
-        List<String> all = List.of("127.0.0.1:" + first, "127.0.0.1:" + (first + 1), "127.0.0.1:" + (first + 2));
-        ClusterSecuritySettings settings = Fixture.settings(UnverifiedMemberAction.REFUSE);
-        List<PrivacyCluster> members = new ArrayList<>();
-        List<Nanos> clocks = new ArrayList<>();
-        List<HazelcastOversightState> started = new ArrayList<>();
-        for (int i = 0; i < 3; i++) {
-            PrivacyCluster member = fixture.keyed(name, first + i, all, TestMembers.KEYS, settings,
-                    new Fixture.Metrics(), new RecordingLogger(), false);
-            members.add(member);
-        }
-        for (PrivacyCluster member : members) {
-            assertThat(Fixture.awaitMembers(member, 3)).isTrue();
-        }
-        assertThat(TestMembers.settled(30, members.toArray(new PrivacyCluster[0]))).isTrue();
-        // The states start once the cluster has formed: a member alone at its start is exempt from the wait.
-        for (PrivacyCluster member : members) {
-            Nanos nanos = new Nanos();
-            clocks.add(nanos);
-            started.add(instance(member, nanos, fixture.clock));
-        }
-        for (PrivacyCluster member : members) {
-            member.memberCards().orElseThrow().tick();
-        }
-        for (PrivacyCluster member : members) {
-            assertThat(member.memberCards().orElseThrow().unverifiedCount()).isZero();
-        }
-        for (var state : started) {
-            assertThatThrownBy(state::allPaused).as("nothing before the first document").isInstanceOf(IllegalStateException.class);
-        }
-        for (Nanos clock : clocks) {
-            clock.advance(Fixture.settings(UnverifiedMemberAction.REFUSE).pauseLease());
-        }
-        for (var state : started) {
-            state.document().tick();
-        }
-
-        for (var state : started) {
-            assertThat(state.allPaused()).isFalse();
-            assertThat(state.document().acceptedOrder()).as("exactly one first document, never refreshed").containsExactly(1, 0);
-        }
-        Doc written = stored(members.get(0));
-        assertThat(written.sequence()).isEqualTo(1);
-        assertThat(written.elements()).isEmpty();
-    }
-
-    @Test
-    void threeMembersStartedTogetherProduceExactlyOneFirstDocumentAndEveryReadWorks() {
-        threeMembersStartAndTick("first-start-3");
-    }
-
-    @Test
-    void aFullClusterRestartProducesExactlyOneFirstDocument() {
-        threeMembersStartAndTick("first-start-restart-a");
-        states.forEach(HazelcastOversightState::close);
-        states.clear();
-        fixture.closeAll();
-
-        threeMembersStartAndTick("first-start-restart-b");
-    }
-
-    @Test
-    void aCardLessMemberPresentMeansNoFirstStartUntilItLeaves() {
-        String name = TestMembers.uniqueName("first-start-outsider");
-        int first = FreePorts.consecutive(3);
-        List<String> all = List.of("127.0.0.1:" + first, "127.0.0.1:" + (first + 1), "127.0.0.1:" + (first + 2));
-        ClusterSecuritySettings settings = Fixture.settings(UnverifiedMemberAction.REFUSE);
-        PrivacyCluster a = fixture.keyed(name, first, all, TestMembers.KEYS, settings, new Fixture.Metrics(),
-                new RecordingLogger(), false);
-        PrivacyCluster b = fixture.keyed(name, first + 1, all, TestMembers.KEYS, settings, new Fixture.Metrics(),
-                new RecordingLogger(), false);
-        com.hazelcast.core.HazelcastInstance outsider = Fixture.plain(name, first + 2, all);
-        try {
-            assertThat(Fixture.awaitMembers(a, 3)).isTrue();
-            assertThat(Fixture.awaitMembers(b, 3)).isTrue();
-            Nanos nanosA = new Nanos();
-            var stateA = instance(a, nanosA, fixture.clock);
-            Nanos nanosB = new Nanos();
-            var stateB = instance(b, nanosB, fixture.clock);
-            a.memberCards().orElseThrow().tick();
-            b.memberCards().orElseThrow().tick();
-            assertThat(a.memberCards().orElseThrow().unverifiedCount()).isEqualTo(1);
-
-            nanosA.advance(settings.pauseLease().multipliedBy(2));
-            nanosB.advance(settings.pauseLease().multipliedBy(2));
-            stateA.document().tick();
-            stateB.document().tick();
-            assertThat(a.instance().getMap(PrivacyCluster.OVERSIGHT_MAP).isEmpty()).as("no first document").isTrue();
-            assertThatThrownBy(stateA::allPaused).isInstanceOf(IllegalStateException.class);
-
-            outsider.shutdown();
-            assertThat(Fixture.awaitMembers(a, 2)).isTrue();
-            assertThat(Fixture.awaitMembers(b, 2)).isTrue();
-            a.memberCards().orElseThrow().tick();
-            b.memberCards().orElseThrow().tick();
-            stateA.document().tick();
-            stateB.document().tick();
-
-            assertThat(stateA.allPaused()).isFalse();
-            assertThat(stateB.allPaused()).isFalse();
-            assertThat(stored(a).sequence()).isEqualTo(1);
-        } finally {
-            outsider.shutdown();
-        }
-    }
-
-    /** A pause at sequence 2 held by A and B; the document is then deleted, and C (the oldest) restarts with no memory. */
-    private record Held(HazelcastOversightState a, HazelcastOversightState b, long sequence) {
-    }
-
-    private Held aAndBHoldAPause() {
-        var a = instance();
-        a.pauseTool("seed");
-        a.pauseTool("kept");
-        var b = instance();
-        assertThat(b.toolPaused("kept")).isTrue();
-        long sequence = a.document().acceptedSequence();
-        assertThat(sequence).as("Doc(1) of the lone start, then two pauses").isEqualTo(3);
-        return new Held(a, b, sequence);
-    }
-
-    @Test
-    void whenTheDocumentIsDeletedAndTheRestartedOldestSeesTheCardsItWritesNothingAndTheHoldersRestoreIt() {
-        solo();
-        Held held = aAndBHoldAPause();
-        map(cluster).delete(key(cluster));
-        Nanos nanos = new Nanos();
-        var peers = new StubPeers(held.sequence());
-        var c = bare(cluster, nanos, new Fixture.TestClock(), peers);
-
-        nanos.advance(LEASE.multipliedBy(2));
-        c.tick();
-        assertThat(map(cluster).containsKey(key(cluster))).as("a card above zero: not a first start").isFalse();
-        assertThatThrownBy(c::current).isInstanceOf(IllegalStateException.class);
-
-        held.a().document().peers = new StubPeers(held.sequence());
-        held.a().document().tick();
-        assertThat(c.current().tools()).containsExactlyInAnyOrder("seed", "kept");
-        assertThat(stored(cluster).sequence()).as("the holder's restore, never a first document").isEqualTo(held.sequence());
-        assertThat(held.b().toolPaused("kept")).isTrue();
-    }
-
-    @Test
-    void whenTheCardsAreAlsoDeletedTheRestartedOldestStillWaitsAnUptimeAndTheHoldersRestoreFirst() {
-        solo();
-        Held held = aAndBHoldAPause();
-        map(cluster).delete(key(cluster));
-        Nanos nanos = new Nanos();
-        var c = bare(cluster, nanos, new Fixture.TestClock(), new StubPeers(0));
-
-        nanos.advance(LEASE.dividedBy(2));
-        c.tick();
-        assertThat(map(cluster).containsKey(key(cluster))).as("no card, but not a lease of uptime yet").isFalse();
-        held.a().document().peers = new StubPeers(0);
-        held.a().document().tick();
-        nanos.advance(LEASE.dividedBy(2));
-        c.tick();
-
-        assertThat(c.current().tools()).containsExactlyInAnyOrder("seed", "kept");
-        Doc now = stored(cluster);
-        assertThat(now.sequence()).isEqualTo(held.sequence());
-        assertThat(now.elements()).hasSize(2);
-        assertThat(held.b().toolPaused("kept")).isTrue();
-    }
-
-    @Test
-    void staleSequenceZeroCardsReplayedWhileTheOldestWaitsAreBeatenByTheRealCardsAndThePauseSurvivesEverywhere() {
-        solo();
-        Held held = aAndBHoldAPause();
-        map(cluster).delete(key(cluster));
-        Nanos nanos = new Nanos();
-        var peers = new StubPeers(0);
-        var c = bare(cluster, nanos, new Fixture.TestClock(), peers);
-
-        nanos.advance(LEASE.dividedBy(2));
-        c.tick();
-        // The real card of A or B arrives inside the lease: the wait restarts.
-        peers.highest = held.sequence();
-        c.tick();
-        peers.highest = 0;
-        nanos.advance(LEASE.dividedBy(2).plusNanos(1));
-        c.tick();
-        assertThat(map(cluster).containsKey(key(cluster))).as("the wait restarted at the real card").isFalse();
-
-        // A Doc(1) forced in anyway (the commit seam stands for a write the rules did not allow) is merged.
-        Doc forced = Doc.empty(1, 0, new Fixture.TestClock().millis(), "forced");
-        assertThat(c.commit(null, null, null, forced, null, Set.of())).isEqualTo(Outcome.WRITTEN);
-        held.a().document().peers = new StubPeers(held.sequence());
-        held.a().document().tick();
-        held.b().document().peers = new StubPeers(held.sequence());
-        held.b().document().tick();
-
-        for (var state : List.of(held.a(), held.b())) {
-            assertThat(state.snapshot().pausedTools()).containsExactlyInAnyOrder("seed", "kept");
-        }
-        assertThat(c.current().tools()).containsExactlyInAnyOrder("seed", "kept");
-    }
-
-    // ---- lapsed-lease recovery (amendment 2) ---------------------------------------------------------------
-
-    private RecordingLogger captureWarnings(PauseDocument document) {
-        RecordingLogger recording = new RecordingLogger();
-        document.log = recording.logger();
-        return recording;
-    }
-
-    @Test
-    void aSoloMembersLapsedLeaseIsRecoveredByOneTickWithTheSameSequenceAndRefreshPlusOne() {
-        solo();
-        Nanos nanos = new Nanos();
-        var member = instance(nanos, new Fixture.TestClock());
-        RecordingLogger warnings = captureWarnings(member.document());
-        member.pauseTool("search");
-        long[] order = member.document().acceptedOrder();
-
-        nanos.advance(LEASE);
-        assertThatThrownBy(() -> member.toolPaused("search")).isInstanceOf(IllegalStateException.class);
-        assertThat(metrics.gauge(Metric.CLUSTER_PAUSE_FRESH)).isEqualTo(0.0);
-
-        member.document().tick();
-
-        assertThat(member.toolPaused("search")).isTrue();
-        assertThat(metrics.gauge(Metric.CLUSTER_PAUSE_FRESH)).isEqualTo(1.0);
-        assertThat(member.document().acceptedOrder()).containsExactly(order[0], order[1] + 1);
-        assertThat(warnings.lines()).hasSize(1);
-        assertThat(warnings.lines().get(0).message()).doesNotContain("search").doesNotContain("127.0.0.1");
-
-        // Rate limited to one line per lease: a recovery one lease later logs again, and no sooner.
-        nanos.advance(LEASE);
-        member.document().tick();
-        assertThat(warnings.lines()).hasSize(2);
-    }
-
-    @Test
-    void theIdenticalBytesPutBackDoNotResetFreshness() {
-        solo();
-        Nanos nanos = new Nanos();
-        var member = instance(nanos, new Fixture.TestClock());
-        member.pauseTool("search");
-        String same = (String) map(cluster).get(key(cluster));
-        nanos.advance(LEASE);
-
-        map(cluster).put(key(cluster), same);
-
-        assertThatThrownBy(() -> member.toolPaused("search")).isInstanceOf(IllegalStateException.class);
-        assertThat(member.document().fresh()).isFalse();
-    }
-
-    @Test
-    void aLapsedLeaseIsNotRecoveredWhenAPeerCardIsHigherAMemberIsUnverifiedTheStoredValueIsBehindOrAbsentOrTheMemberRestarted() {
-        solo();
-        Nanos nanos = new Nanos();
-        var member = instance(nanos, new Fixture.TestClock());
-        member.pauseTool("a");
-        String replay = (String) map(cluster).get(key(cluster));
-        member.pauseTool("b");
-        long[] order = member.document().acceptedOrder();
-        nanos.advance(LEASE);
-
-        member.document().peers = new StubPeers(order[0] + 1);
-        member.document().tick();
-        assertThat(member.document().acceptedOrder()).as("a peer card is higher").containsExactly(order);
-
-        StubPeers unverified = new StubPeers(order[0]);
-        unverified.unverified = 1;
-        member.document().peers = unverified;
-        member.document().tick();
-        assertThat(member.document().acceptedOrder()).as("a member is unverified").containsExactly(order);
-
-        assertThat(member.document().fresh()).as("no recovery with a card higher or a member unverified").isFalse();
-
-        member.document().peers = new StubPeers(order[0]);
-        map(cluster).put(key(cluster), replay);
-        member.document().tick();
-        assertThat(stored(cluster).sequence()).as("a replay is repaired by a union write").isGreaterThan(order[0]);
-        assertThat(member.document().fresh()).as("the union write is not a recovery").isFalse();
-
-        map(cluster).delete(key(cluster));
-        member.document().tick();
-        assertThat(map(cluster).containsKey(key(cluster))).as("absent: put back, not a recovery").isTrue();
-        assertThat(member.document().fresh()).isFalse();
-
-        // A restarted member that holds nothing never recovers a lapsed lease: the gate and the lease still apply.
-        plant(cluster, member.document().accepted());
-        Fixture.TestClock pastGate = new Fixture.TestClock();
-        pastGate.advance(LEASE.plus(SKEW).plusMillis(1));
-        Nanos restartedNanos = new Nanos();
-        var restarted = bare(cluster, restartedNanos, pastGate, new StubPeers(0));
-        restarted.tick();
-        restartedNanos.advance(LEASE);
-        restarted.tick();
-        assertThat(restarted.acceptedOrder()).isNull();
-        assertThatThrownBy(restarted::current).isInstanceOf(IllegalStateException.class);
-    }
-
-    @Test
-    void aLapsedLeaseOverAnAbsentDocumentIsPutBackWithoutRenewalAndAnOperatorPauseKeepsTheHeldPauses() {
-        solo();
-        Nanos nanos = new Nanos();
-        var member = instance(nanos, new Fixture.TestClock());
-        member.pauseTool("kept");
-        map(cluster).delete(key(cluster));
-        nanos.advance(LEASE);
-
-        member.document().tick();
-        assertThat(map(cluster).containsKey(key(cluster))).isTrue();
-        assertThat(member.document().fresh()).isFalse();
-
-        member.pauseTool("added");
-
-        assertThat(member.snapshot().pausedTools()).containsExactlyInAnyOrder("kept", "added");
-        assertThat(instance().snapshot().pausedTools()).containsExactlyInAnyOrder("kept", "added");
-    }
-
-    // ---- attacker documents --------------------------------------------------------------------------------
-
-    @Test
-    void anAttackerDocumentFromAKeylessMemberOrClientNeverLiftsAPauseAndIsCounted() {
-        solo();
-        var victim = instance();
-        victim.pauseAll();
-        long[] accepted = victim.document().acceptedOrder();
-        IMap<String, Object> raw = map(cluster);
-        String key = key(cluster);
-
-        ClusterKeys foreign = new ClusterKeys("other-cluster-1", Fixture.filled('x'), null, null, null, null,
-                "other-name-1", Fixture.filled('y'));
-        Sealer attacker = Sealer.builder(foreign, PrivacyMetrics.none()).build();
-        String randomEnvelope = "dps1.solo-cluster." + b64(16) + "." + b64(12) + "." + b64(48);
-        List<Object> forgeries = List.of(
-                "{\"all\":false}",                                                       // plaintext
-                Boolean.TRUE,                                                            // the 0.7 format
-                randomEnvelope,
-                attacker.seal(PrivacyCluster.OVERSIGHT_MAP, key, "not a document".getBytes()),   // another key
-                attacker.seal(PrivacyCluster.OVERSIGHT_MAP, "another-key", new byte[]{1, 0, 0}),
-                "");
-        for (Object forgery : forgeries) {
-            int before = metrics.count(Metric.CLUSTER_SEAL_TAMPER) + metrics.count(Metric.CLUSTER_SEAL_UNSUPPORTED_FORMAT);
-            raw.put(key, forgery);
-
-            assertThatThrownBy(victim::allPaused).as("never answers not-paused for %s", forgery)
-                    .isInstanceOf(IllegalStateException.class);
-            assertThat(metrics.count(Metric.CLUSTER_SEAL_TAMPER) + metrics.count(Metric.CLUSTER_SEAL_UNSUPPORTED_FORMAT))
-                    .as("counted: %s", forgery).isGreaterThan(before);
-            assertThat(victim.document().acceptedOrder()).containsExactly(accepted);
-
-            // A tick never overwrites it.
-            victim.document().tick();
-            assertThat(raw.get(key)).as("a tick leaves %s", forgery).isEqualTo(forgery);
-        }
-
-        // The operator's pause replaces the forged entry, and keeps what the victim held.
-        victim.pauseTool("search");
-        assertThat(victim.allPaused()).isTrue();
-        assertThat(victim.toolPaused("search")).isTrue();
-        assertThat(instance().allPaused()).isTrue();
-    }
-
-    @Test
-    void aDocumentThatNamesAHeldIdAsAnotherTargetIsNotAcceptedIsCountedAsTamperAndWarnsOnce() {
-        solo();
-        var member = instance();
-        RecordingLogger warnings = captureWarnings(member.document());
-        member.pauseTool("search");
-        Id held = member.document().accepted().elements().keySet().iterator().next();
-        Doc clash = doc(member.document().acceptedSequence() + 5, 0, Map.of(held, Target.tool("rival-name")), Set.of());
-        plant(cluster, clash);
-        Doc before = member.document().accepted();
-        int tamper = metrics.count(Metric.CLUSTER_SEAL_TAMPER);
-
-        assertThatThrownBy(member::allPaused).isInstanceOf(IllegalStateException.class);
-        assertThatThrownBy(member::allPaused).isInstanceOf(IllegalStateException.class);
-
-        assertThat(member.document().accepted()).isEqualTo(before);
-        assertThat(metrics.count(Metric.CLUSTER_SEAL_TAMPER)).isGreaterThan(tamper);
-        assertThat(warnings.lines()).as("rate limited").hasSize(1);
-        assertThat(warnings.lines().get(0).message()).doesNotContain("search").doesNotContain("rival-name");
-        member.document().tick();
-        assertThat(stored(cluster).sequence()).as("not repaired by a tick").isEqualTo(clash.sequence());
-        member.pauseTool("again");
-        assertThat(member.snapshot().pausedTools()).containsExactlyInAnyOrder("search", "again");
-    }
-
-    @Test
-    void aResumeIsRefusedWhileTheDocumentIsNotFreshAndAPauseIsStillAccepted() {
-        solo();
-        var state = instance();
-        state.pauseTool("search");
-        map(cluster).delete(key(cluster));
-
-        assertThatThrownBy(() -> state.resumeTool("search")).isInstanceOf(IllegalStateException.class)
-                .isNotInstanceOf(ClusterOperationRefusedException.class);
-        state.pauseScope("CASE-A");
-        // The pause re-created the document from what the instance had accepted, so nothing it held is lost.
-        assertThat(state.toolPaused("search")).isTrue();
-        assertThat(state.scopePaused("CASE-A")).isTrue();
-        state.resumeTool("search");
-        assertThat(state.toolPaused("search")).isFalse();
-    }
-
-    @Test
-    void plaintextZeroPointSevenRandomAndWrongKeyEnvelopesAreNeverOverwrittenByATickAndAnOperatorPauseKeepsTheHeldPauses() {
-        solo();
-        var member = instance();
-        member.pauseTool("kept");
-        ClusterKeys foreign = new ClusterKeys("other-cluster-1", Fixture.filled('x'), null, null, null, null,
-                "other-name-1", Fixture.filled('y'));
-        String wrongKey = Sealer.builder(foreign, PrivacyMetrics.none()).build()
-                .seal(PrivacyCluster.OVERSIGHT_MAP, key(cluster), "x".getBytes());
-        for (Object forged : List.of("plaintext", Boolean.TRUE, "dps1.solo-cluster." + b64(16) + "." + b64(12) + "." + b64(48), wrongKey)) {
-            int before = metrics.count(Metric.CLUSTER_SEAL_TAMPER) + metrics.count(Metric.CLUSTER_SEAL_UNSUPPORTED_FORMAT);
-            map(cluster).put(key(cluster), forged);
-            member.document().tick();
-            assertThat(map(cluster).get(key(cluster))).isEqualTo(forged);
-            assertThat(metrics.count(Metric.CLUSTER_SEAL_TAMPER) + metrics.count(Metric.CLUSTER_SEAL_UNSUPPORTED_FORMAT))
-                    .isGreaterThan(before);
-            member.pauseTool("added-" + forged.hashCode());
-            assertThat(member.snapshot().pausedTools()).contains("kept");
-        }
-    }
-
-    private static String b64(int bytes) {
-        byte[] random = new byte[bytes];
-        new java.security.SecureRandom().nextBytes(random);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(random);
-    }
-
-    // ---- the 0.7 fence ------------------------------------------------------------------------------------
-
-    @Test
-    void aMemberWithKeysKeepsTheFenceForA07MemberAndAssertsItAgainAtEachLeaseRefresh() {
-        int port = FreePorts.consecutive(1);
-        cluster = fixture.keyed(TestMembers.uniqueName("fence"), port, List.of("127.0.0.1:" + port), TestMembers.KEYS,
-                Fixture.settings(UnverifiedMemberAction.REFUSE), new Fixture.Metrics(), new RecordingLogger(), false);
-        Nanos nanos = new Nanos();
-        var state = instance(nanos, fixture.clock);
-        IMap<String, Object> fence = cluster.instance().getMap(PrivacyCluster.OVERSIGHT_FENCE_MAP);
-        state.pauseTool("search");
-        assertThat(fence.get("all")).isEqualTo(Boolean.TRUE);
-
-        fence.delete("all");
-        nanos.advance(cluster.securitySettings().pauseLease().dividedBy(2));
-        state.document().tick();
-
-        assertThat(fence.get("all")).as("re-asserted at the refresh").isEqualTo(Boolean.TRUE);
-        assertThat(fence.size()).isEqualTo(1);
-    }
-
-    // ---- OD-215-16 (a) -------------------------------------------------------------------------------------
-
-    @Test
-    void withTheServingGateClosedAPauseIsWrittenAndSeenByEveryInstanceAndAResumeIsRefusedUntilItReopens() {
-        String name = TestMembers.uniqueName("gate");
-        int first = FreePorts.consecutive(3);
-        List<String> all = List.of("127.0.0.1:" + first, "127.0.0.1:" + (first + 1), "127.0.0.1:" + (first + 2));
-        ClusterSecuritySettings settings = Fixture.settings(UnverifiedMemberAction.REFUSE);
-        PrivacyCluster a = fixture.keyed(name, first, all, TestMembers.KEYS, settings, new Fixture.Metrics(),
-                new RecordingLogger(), false);
-        Nanos nanos = new Nanos();
-        var stateA = instance(a, nanos, fixture.clock);
-        PrivacyCluster b = fixture.keyed(name, first + 1, all, TestMembers.KEYS, settings, new Fixture.Metrics(),
-                new RecordingLogger(), false);
-        var stateB = instance(b, new Nanos(), fixture.clock);
-        com.hazelcast.core.HazelcastInstance outsider = Fixture.plain(name, first + 2, all);
-        try {
-            assertThat(Fixture.awaitMembers(a, 3)).isTrue();
-            assertThat(Fixture.awaitMembers(b, 3)).isTrue();
-            a.memberCards().orElseThrow().tick();
-            b.memberCards().orElseThrow().tick();
-            fixture.clock.advance(MemberCardTest.GRACE);
-            a.memberCards().orElseThrow().tick();
-            b.memberCards().orElseThrow().tick();
-            assertThat(a.securityStatus().serving()).as("the gate is closed").isFalse();
-            assertThat(b.securityStatus().serving()).isFalse();
-
-            stateA.pauseTool("search");
-            assertThat(stateB.toolPaused("search")).as("seen by every instance").isTrue();
-            assertThat(stateA.toolPaused("search")).isTrue();
-
-            assertThatThrownBy(() -> stateA.resumeTool("search")).isInstanceOf(ClusterOperationRefusedException.class)
-                    .satisfies(refusal -> assertThat(((ClusterOperationRefusedException) refusal).code())
-                            .isEqualTo("CLUSTER_OPERATION_REFUSED"));
-            assertThatThrownBy(() -> stateB.resumeTool("search")).isInstanceOf(ClusterOperationRefusedException.class);
-            assertThat(stateB.toolPaused("search")).as("the refused resume changed nothing").isTrue();
-
-            outsider.shutdown();
-            assertThat(Fixture.awaitMembers(a, 2)).isTrue();
-            assertThat(Fixture.awaitMembers(b, 2)).isTrue();
-            a.memberCards().orElseThrow().tick();
-            b.memberCards().orElseThrow().tick();
-            assertThat(a.securityStatus().serving()).as("the gate reopened").isTrue();
-
-            stateA.resumeTool("search");
-            assertThat(stateB.toolPaused("search")).isFalse();
-        } finally {
-            outsider.shutdown();
-        }
-    }
-
-    @Test
-    void anUnverifiedMemberRefusesAResumeEvenWhileTheMemberStillServes() {
-        solo();
-        var member = instance();
-        member.pauseTool("search");
-        StubPeers peers = new StubPeers(0);
-        peers.unverified = 1;
-        member.document().peers = peers;
-
-        assertThatThrownBy(() -> member.resumeTool("search")).isInstanceOf(ClusterOperationRefusedException.class);
-        assertThat(member.toolPaused("search")).isTrue();
-    }
-
-    @Test
-    void aResumeIsRefusedAsUnavailableWhenAPeerCardIsAboveTheDocumentOrNoDocumentWasAccepted() {
-        solo();
-        var member = instance();
-        member.pauseTool("search");
-        member.document().peers = new StubPeers(member.document().acceptedSequence() + 1);
-        assertThatThrownBy(() -> member.resumeTool("search")).isInstanceOf(IllegalStateException.class)
-                .isNotInstanceOf(ClusterOperationRefusedException.class);
-        assertThat(member.toolPaused("search")).isTrue();
-
-        map(cluster).delete(key(cluster));
-        var cold = bare(cluster, new Nanos(), new Fixture.TestClock(), new StubPeers(0));
-        assertThatThrownBy(() -> cold.resume(Target.tool("search"))).isInstanceOf(IllegalStateException.class)
-                .isNotInstanceOf(ClusterOperationRefusedException.class);
-        assertThat(map(cluster).containsKey(key(cluster))).as("a refused resume writes nothing").isFalse();
-    }
-
-    // ---- the boundary --------------------------------------------------------------------------------------
-
-    @Test
-    void theOversightMapHoldsExactlyTheDocumentAndItOpensUnderTheTestKey() {
-        int port = FreePorts.consecutive(1);
-        cluster = fixture.keyed(TestMembers.uniqueName("boundary"), port, List.of("127.0.0.1:" + port),
-                TestMembers.KEYS, Fixture.settings(UnverifiedMemberAction.REFUSE), new Fixture.Metrics(),
-                new RecordingLogger(), false);
-        var state = instance(new Nanos(), fixture.clock);
-        state.pauseAll();
-        state.pauseTool("search");
-        state.pauseScope("CASE-42");
-
-        Inputs inputs = new Inputs(cluster.keyedNames(), null, "CASE-42", "subject-42", null, "synthetic", "ap-1",
-                "alice", null, "search");
-        IMap<Object, Object> contents = cluster.instance().getMap(PrivacyCluster.OVERSIGHT_MAP);
-        new OversightMapsBoundary().check(PrivacyCluster.OVERSIGHT_MAP, contents, inputs);
-        assertThat(OversightMapsBoundary.opensUnderTestKey(contents, inputs)).isTrue();
-        assertThat(contents.size()).isEqualTo(1);
-        OversightMapsBoundary.checkMapConfigs(cluster.instance());
-    }
-
-    @Test
-    void theBoundaryFailsRatherThanSkipsWhenTheNamesAreTheTestNamesAndTheEnvelopeDoesNotOpen() {
-        int port = FreePorts.consecutive(1);
-        cluster = fixture.keyed(TestMembers.uniqueName("boundary-fail"), port, List.of("127.0.0.1:" + port),
-                TestMembers.KEYS, Fixture.settings(UnverifiedMemberAction.REFUSE), new Fixture.Metrics(),
-                new RecordingLogger(), false);
-        var state = instance(new Nanos(), fixture.clock);
-        state.pauseTool("search");
+        Member member = member();
+        member.pauseTool("held");
+        Sealer sealer = sealer(cluster);
         ClusterKeys foreign = new ClusterKeys("other-cluster-1", Fixture.filled('x'), null, null, null, null,
                 "test-name-1", Fixture.filled('n'));
-        String wrongKey = Sealer.builder(foreign, PrivacyMetrics.none()).build()
-                .seal(PrivacyCluster.OVERSIGHT_MAP, key(cluster), "x".getBytes());
-        IMap<Object, Object> contents = cluster.instance().getMap(PrivacyCluster.OVERSIGHT_MAP);
-        contents.put(key(cluster), wrongKey);
-        Inputs inputs = new Inputs(cluster.keyedNames(), null, "CASE-42", "subject-42", null, "synthetic", "ap-1",
-                "alice", null, "search");
+        List<Object> attackers = List.of("plaintext not an envelope", 42,
+                Sealer.builder(foreign, PrivacyMetrics.none()).build()
+                        .seal(PrivacyCluster.OVERSIGHT_MAP, key(cluster), "x".getBytes()),
+                sealer.seal(PrivacyCluster.OVERSIGHT_MAP, key(cluster), new byte[]{1, 2, 3}));
+        for (Object attacker : attackers) {
+            map(cluster).put(key(cluster), attacker);
+            int before = metrics.count(Metric.CLUSTER_SEAL_TAMPER)
+                    + metrics.count(Metric.CLUSTER_SEAL_UNSUPPORTED_FORMAT);
 
-        assertThatThrownBy(() -> new OversightMapsBoundary().check(PrivacyCluster.OVERSIGHT_MAP, contents, inputs))
-                .isInstanceOf(AssertionError.class);
+            member.tick();
+
+            assertThat(map(cluster).get(key(cluster))).as("a tick never overwrites it").isEqualTo(attacker);
+            assertThat(metrics.count(Metric.CLUSTER_SEAL_TAMPER)
+                    + metrics.count(Metric.CLUSTER_SEAL_UNSUPPORTED_FORMAT)).isGreaterThan(before);
+            assertThat(member.held().live(Target.tool("held"))).as("the pause is held").hasSize(1);
+
+            member.pauseTool("after");
+            assertThat(stored(cluster).pauses().tools()).contains("held", "after");
+            member.resumeTool("after");
+        }
     }
 
-    // ---- the guard clauses of the commit (amendment 4) -----------------------------------------------------
+    @Test
+    void aGatedDocumentIsUnionedIntoAnOperatorPauseOverItsExactBytes() {
+        solo();
+        Doc gated = new Doc(5, 0, new Fixture.TestClock().millis() - LEASE.plus(SKEW).plusSeconds(1).toMillis(),
+                "test-issuer", Map.of(id(1), Target.tool("p")), Set.of());
+        plant(cluster, gated);
+        Object raw = map(cluster).get(key(cluster));
+        Member cold = member();
 
-    private record Setup(HazelcastOversightState state, Object raw, Doc stored) {
+        assertThat(cold.reads()).isFalse();
+        cold.pauseTool("x");
+
+        Doc written = stored(cluster);
+        assertThat(written.pauses().tools()).containsExactlyInAnyOrder("p", "x");
+        assertThat(written.compareOrder(gated)).isGreaterThan(0);
+        assertThat(map(cluster).get(key(cluster))).isNotEqualTo(raw);
+        assertThat(cold.held().pauses().tools()).containsExactlyInAnyOrder("p", "x");
+
+        // With held = {q} over a GATED document the written document holds {p, q, x}.
+        solo();
+        plant(cluster, gated);
+        Member holder = member();
+        holder.pauseTool("q");
+        plant(cluster, gated);
+        holder.pauseTool("x");
+        assertThat(stored(cluster).pauses().tools()).containsExactlyInAnyOrder("p", "q", "x");
+    }
+
+    @Test
+    void aReplayWithAnElementThatIsNowTombstonedLeavesItLiftedOnEveryWarmMember() {
+        solo();
+        Member a = member();
+        Member b = member();
+        a.pauseTool("p");
+        String withP = (String) map(cluster).get(key(cluster));
+        assertThat(b.tools()).containsExactly("p");
+        a.resumeTool("p");
+        assertThat(b.tools()).isEmpty();
+
+        map(cluster).put(key(cluster), withP);
+
+        assertThat(a.reads() ? a.tools() : Set.of()).isEmpty();
+        a.tick();
+        b.tick();
+        assertThat(a.tools()).isEmpty();
+        assertThat(b.tools()).isEmpty();
+    }
+
+    @Test
+    void aColdMemberGivenAReplayShowsItsStateUntilTheNextRepairTickThenTheUnion() {
+        solo();
+        Member warm = member();
+        warm.pauseTool("p");
+        String replay = (String) map(cluster).get(key(cluster));
+        warm.resumeTool("p");
+        warm.pauseTool("q");
+        map(cluster).put(key(cluster), replay);
+
+        Member cold = member();
+        assertThat(cold.tools()).containsExactly("p");
+
+        warm.tick();
+        cold.tick();
+        assertThat(cold.tools()).containsExactly("q");
+    }
+
+    // ---- A2: the commit guard and retries ------------------------------------------------------------------
+
+    private record Setup(Member member, Object raw, Doc stored) {
     }
 
     private Setup pausedOnce() {
         solo();
-        var state = instance();
-        state.pauseTool("kept");
-        return new Setup(state, map(cluster).get(key(cluster)), stored(cluster));
+        Member member = member();
+        member.pauseTool("kept");
+        return new Setup(member, map(cluster).get(key(cluster)), stored(cluster));
+    }
+
+    private Outcome commit(Setup setup, Doc next, Id fresh, Set<Id> tombstones) {
+        return setup.member().doc.commit(setup.raw(), setup.stored(), setup.stored(), next, fresh, tombstones, true,
+                setup.member().deps);
     }
 
     private void assertRefusedAndUntouched(Setup setup, Outcome expected, Doc next, Id fresh, Set<Id> tombstones) {
-        Outcome outcome = setup.state().document().commit(setup.raw(), setup.stored(), setup.stored(), next, fresh,
-                tombstones);
-        assertThat(outcome).isEqualTo(expected);
+        assertThat(commit(setup, next, fresh, tombstones)).isEqualTo(expected);
         assertThat(map(cluster).get(key(cluster))).as("nothing was written").isEqualTo(setup.raw());
     }
 
@@ -1285,9 +541,8 @@ class PauseDocumentTest {
         assertRefusedAndUntouched(setup, Outcome.DROPS_STORED,
                 doc(stored.sequence() + 1, 0, Map.of(), Set.of()), null, Set.of());
 
-        // With a tombstone stored, a next that keeps the element but not the tombstone drops it.
-        setup.state().resumeTool("kept");
-        Setup resumed = new Setup(setup.state(), map(cluster).get(key(cluster)), stored(cluster));
+        setup.member().resumeTool("kept");
+        Setup resumed = new Setup(setup.member(), map(cluster).get(key(cluster)), stored(cluster));
         assertThat(resumed.stored().tombstones()).hasSize(1);
         assertRefusedAndUntouched(resumed, Outcome.DROPS_STORED,
                 doc(resumed.stored().sequence() + 1, 0, resumed.stored().elements(), Set.of()), null, Set.of());
@@ -1301,10 +556,7 @@ class PauseDocumentTest {
         Doc next = doc(setup.stored().sequence() + 1, 0, elements, Set.of());
         assertRefusedAndUntouched(setup, Outcome.ADDS_ELEMENT, next, null, Set.of());
         assertRefusedAndUntouched(setup, Outcome.ADDS_ELEMENT, next, id(100), Set.of());
-        // The fresh element itself is allowed.
-        Outcome allowed = setup.state().document().commit(setup.raw(), setup.stored(), setup.stored(), next, id(99),
-                Set.of());
-        assertThat(allowed).isEqualTo(Outcome.WRITTEN);
+        assertThat(commit(setup, next, id(99), Set.of())).isEqualTo(Outcome.WRITTEN);
     }
 
     @Test
@@ -1312,146 +564,85 @@ class PauseDocumentTest {
         Setup setup = pausedOnce();
         Id live = setup.stored().elements().keySet().iterator().next();
         Doc tombstoned = doc(setup.stored().sequence() + 1, 0, setup.stored().elements(), Set.of(live));
-        // A pause (no tombstones allowed) that tombstones.
         assertRefusedAndUntouched(setup, Outcome.ADDS_TOMBSTONE, tombstoned, null, Set.of());
-        // A resume of another target, whose allowed ids do not include this one.
         assertRefusedAndUntouched(setup, Outcome.ADDS_TOMBSTONE, tombstoned, null, Set.of(id(7)));
-        // A tombstone for an id that is in no element is outside the base too.
         Doc unknown = doc(setup.stored().sequence() + 1, 0, setup.stored().elements(), Set.of(id(12345)));
         assertRefusedAndUntouched(setup, Outcome.ADDS_TOMBSTONE, unknown, null, Set.of(live));
-        // Its own is allowed.
-        assertThat(setup.state().document().commit(setup.raw(), setup.stored(), setup.stored(), tombstoned, null,
-                Set.of(live))).isEqualTo(Outcome.WRITTEN);
+        assertThat(commit(setup, tombstoned, null, Set.of(live))).isEqualTo(Outcome.WRITTEN);
     }
 
     @Test
     void aWriteThatIsNotAboveTheStoredOrderAndNotItsRefreshIsRefused() {
         Setup setup = pausedOnce();
         Doc stored = setup.stored();
-        // Same order, a new element: not above, not a refresh (the sets differ).
         assertRefusedAndUntouched(setup, Outcome.ORDER,
                 doc(stored.sequence(), stored.refresh(), mapPlus(stored.elements(), id(5), Target.scope("s")),
                         Set.of()), id(5), Set.of());
-        // A lower order.
         assertRefusedAndUntouched(setup, Outcome.ORDER,
                 doc(stored.sequence() - 1, 0, stored.elements(), Set.of()), null, Set.of());
-        // The very same order again, with the same sets, is neither above nor a refresh successor.
         assertRefusedAndUntouched(setup, Outcome.ORDER,
                 doc(stored.sequence(), stored.refresh(), stored.elements(), Set.of()), null, Set.of());
-        // A genuine refresh successor is written.
-        assertThat(setup.state().document().commit(setup.raw(), stored, stored,
-                doc(stored.sequence(), stored.refresh() + 1, stored.elements(), Set.of()), null, Set.of()))
-                .isEqualTo(Outcome.WRITTEN);
+        assertThat(commit(setup, doc(stored.sequence(), stored.refresh() + 1, stored.elements(), Set.of()), null,
+                Set.of())).isEqualTo(Outcome.WRITTEN);
     }
 
     @Test
     void aWriteOverAnEntryAnotherWriterChangedLosesItsRaceAndWritesNothing() {
         Setup setup = pausedOnce();
-        instance().pauseTool("rival");
+        member().pauseTool("rival");
         Doc next = doc(setup.stored().sequence() + 1, 0, setup.stored().elements(), Set.of());
 
-        Outcome outcome = setup.state().document().commit(setup.raw(), setup.stored(), setup.stored(), next, null,
-                Set.of());
-
-        assertThat(outcome).isEqualTo(Outcome.LOST_RACE);
+        assertThat(commit(setup, next, null, Set.of())).isEqualTo(Outcome.LOST_RACE);
         assertThat(stored(cluster).elements()).hasSize(2);
     }
 
     @Test
-    void aRivalThatWritesAHigherDocumentWithAnExtraPauseBetweenReadAndCommitLeavesBothInTheFinalDocumentAtAHigherOrder() {
+    void aRivalThatWritesAHigherDocumentWithAnExtraPauseBetweenReadAndCommitLeavesBothAtAHigherOrder() {
         solo();
-        var writer = instance();
-        var rival = instance();
+        Member writer = member();
+        Member rival = member();
         writer.pauseTool("seed");
         AtomicInteger hooks = new AtomicInteger();
-        writer.document().beforeCommit = () -> {
+        writer.doc.beforeCommit = () -> {
             if (hooks.incrementAndGet() == 1) {
                 rival.pauseTool("rival-1");
                 rival.pauseTool("rival-2");
             }
         };
-        long before = writer.document().acceptedSequence();
+        long before = writer.doc.acceptedSequence();
 
         writer.pauseTool("writer");
 
-        Doc finalDoc = stored(cluster);
-        assertThat(writer.snapshot().pausedTools()).containsExactlyInAnyOrder("seed", "rival-1", "rival-2", "writer");
-        assertThat(finalDoc.sequence()).isGreaterThan(before + 2);
+        assertThat(writer.tools()).containsExactlyInAnyOrder("seed", "rival-1", "rival-2", "writer");
+        assertThat(stored(cluster).sequence()).isGreaterThan(before + 2);
     }
 
     @Test
-    void aTickNeverWritesOverAStoredDocumentThatAlreadyCoversWhatItHolds() {
+    void pushHeldNeverWritesOverAStoredDocumentThatIsASupersetOfWhatIsHeld() {
         solo();
-        var member = instance();
+        Member member = member();
         member.pauseTool("a");
-        Doc held = member.document().accepted();
+        Doc held = member.held();
         Doc superset = doc(held.sequence() + 3, 0, mapPlus(held.elements(), id(50), Target.tool("extra")),
                 held.tombstones());
         plant(cluster, superset);
         Object raw = map(cluster).get(key(cluster));
 
-        member.document().tick();
+        member.tick();
 
         assertThat(map(cluster).get(key(cluster))).as("the superset is left alone").isEqualTo(raw);
-        assertThat(member.snapshot().pausedTools()).containsExactlyInAnyOrder("a", "extra");
-    }
-
-    private static Map<Id, Target> mapPlus(Map<Id, Target> elements, Id id, Target target) {
-        Map<Id, Target> more = new HashMap<>(elements);
-        more.put(id, target);
-        return more;
-    }
-
-    // ---- pauses are never deduped; a resume lifts what it saw ----------------------------------------------
-
-    @Test
-    void aPauseAlwaysMintsAFreshElementAndOneResumeLiftsEveryPauseOfTheTarget() {
-        solo();
-        var state = instance();
-        state.pauseTool("search");
-        state.pauseTool("search");
-        state.pauseTool("search");
-        assertThat(state.document().accepted().elements()).hasSize(3);
-
-        state.resumeTool("search");
-
-        assertThat(state.toolPaused("search")).isFalse();
-        assertThat(state.document().accepted().tombstones()).hasSize(3);
+        assertThat(member.tools()).containsExactlyInAnyOrder("a", "extra");
     }
 
     @Test
-    void aResumeLiftsOnlyThePausesOfItsOwnTarget_notOtherToolsOtherKindsOrTheGlobalPause() {
+    void aPauseOfXLandingBetweenAResumesReadAndItsCommitStaysInForceAndNamesTheOriginalObservedSetOnly() {
         solo();
-        var state = instance();
-        state.pauseTool("search");
-        state.pauseTool("lookup");
-        state.pauseScope("search");
-        state.pauseAll();
-
-        state.resumeTool("search");
-
-        assertThat(state.toolPaused("search")).isFalse();
-        assertThat(state.toolPaused("lookup")).isTrue();
-        assertThat(state.scopePaused("search")).as("a scope of the same name is another target").isTrue();
-        assertThat(state.allPaused()).isTrue();
-        assertThat(state.document().accepted().tombstones()).hasSize(1);
-
-        state.resumeAll();
-        assertThat(state.allPaused()).isFalse();
-        assertThat(state.toolPaused("lookup")).isTrue();
-        assertThat(state.scopePaused("search")).isTrue();
-        assertThat(state.document().accepted().tombstones()).hasSize(2);
-    }
-
-    @Test
-    void aConcurrentPauseOfTheSameTargetBetweenAResumesReadAndCommitStaysInForceAndASecondResumeClearsIt() {
-        solo();
-        var state = instance();
-        var rival = instance();
+        Member state = member();
+        Member rival = member();
         state.pauseTool("X");
-        Set<Id> observed = new HashSet<>(state.document().accepted().live(Target.tool("X")));
+        Set<Id> observed = new HashSet<>(state.held().live(Target.tool("X")));
         AtomicInteger hooks = new AtomicInteger();
-        state.document().beforeCommit = () -> {
+        state.doc.beforeCommit = () -> {
             if (hooks.incrementAndGet() == 1) {
                 rival.pauseTool("X");
             }
@@ -1460,45 +651,173 @@ class PauseDocumentTest {
         state.resumeTool("X");
 
         assertThat(hooks.get()).as("the resume lost its race and retried").isEqualTo(2);
-        assertThat(state.toolPaused("X")).as("the pause that landed mid-resume stays in force").isTrue();
-        assertThat(state.document().accepted().tombstones()).isEqualTo(observed);
-        assertThat(state.snapshot().pausedTools()).containsExactly("X");
+        assertThat(state.tools()).as("the pause that landed mid-resume stays in force").containsExactly("X");
+        assertThat(state.held().tombstones()).isEqualTo(observed);
 
-        state.document().beforeCommit = () -> { };
+        state.doc.beforeCommit = () -> { };
         state.resumeTool("X");
-        assertThat(state.toolPaused("X")).isFalse();
+        assertThat(state.tools()).isEmpty();
     }
 
     @Test
     void aResumeWhoseObservedIdsWereAllTombstonedElsewhereBeforeItsRetryWritesNothingAndSucceeds() {
         solo();
-        var state = instance();
-        var rival = instance();
+        Member state = member();
+        Member rival = member();
         state.pauseTool("X");
         AtomicInteger hooks = new AtomicInteger();
         AtomicLong sequenceAfterRival = new AtomicLong();
-        state.document().beforeCommit = () -> {
+        state.doc.beforeCommit = () -> {
             if (hooks.incrementAndGet() == 1) {
                 rival.resumeTool("X");
-                sequenceAfterRival.set(rival.document().acceptedSequence());
+                sequenceAfterRival.set(rival.doc.acceptedSequence());
             }
         };
 
         state.resumeTool("X");
 
-        assertThat(state.toolPaused("X")).isFalse();
-        assertThat(state.document().acceptedSequence()).as("no write of its own").isEqualTo(sequenceAfterRival.get());
+        assertThat(state.tools()).isEmpty();
+        assertThat(state.doc.acceptedSequence()).as("no write of its own").isEqualTo(sequenceAfterRival.get());
         assertThat(hooks.get()).isEqualTo(1);
     }
 
-    // ---- the cap and the format bound (amendment 4) --------------------------------------------------------
+    @Test
+    void aRetryThatFindsTheDocumentDeletedOrUnreadableIsRefusedAsUnavailableAndWritesNothing() {
+        solo();
+        Member state = member();
+        state.pauseTool("X");
+        AtomicInteger hooks = new AtomicInteger();
+        // The first read finds the document; beforeCommit deletes it, so the CAS fails; the retry reads ABSENT.
+        state.doc.beforeCommit = () -> {
+            if (hooks.incrementAndGet() == 1) {
+                map(cluster).delete(key(cluster));
+            }
+        };
+        assertThatThrownBy(() -> state.resumeTool("X")).isInstanceOf(IllegalStateException.class)
+                .isNotInstanceOf(ClusterOperationRefusedException.class);
+        assertThat(map(cluster).get(key(cluster))).as("no putIfAbsent").isNull();
+        assertThat(state.held().live(Target.tool("X"))).hasSize(1);
+
+        // The same with an UNREADABLE value: not replaced.
+        solo();
+        Member second = member();
+        second.pauseTool("X");
+        hooks.set(0);
+        second.doc.beforeCommit = () -> {
+            if (hooks.incrementAndGet() == 1) {
+                map(cluster).put(key(cluster), "not an envelope");
+            }
+        };
+        assertThatThrownBy(() -> second.resumeTool("X")).isInstanceOf(IllegalStateException.class)
+                .isNotInstanceOf(ClusterOperationRefusedException.class);
+        assertThat(map(cluster).get(key(cluster))).isEqualTo("not an envelope");
+    }
 
     @Test
-    void eightThousandOneHundredSeventySixPausesFitAndTheNextOneIsRefusedWithNothingWritten_aResumeAtTheCapIsAccepted() {
+    void aRetryAfterTheMemberListChangedIsRefusedAsPeerStateUnknownAndWritesNothing() {
         solo();
-        var state = instance();
+        StubPeers peers = StubPeers.withPeer();
+        Member state = member(peers);
+        Member rival = member();
+        state.pauseTool("X");
+        AtomicInteger hooks = new AtomicInteger();
+        state.doc.beforeCommit = () -> {
+            if (hooks.incrementAndGet() == 1) {
+                rival.pauseTool("rival");
+                // A keyless intruder joined and no look has completed since.
+                peers.lookCompleted = false;
+            }
+        };
+        Object before = map(cluster).get(key(cluster));
+
+        assertThatThrownBy(() -> state.resumeTool("X")).isInstanceOf(ClusterOperationRefusedException.class);
+
+        assertThat(peers.unverified).isZero();
+        assertThat(map(cluster).get(key(cluster))).isNotEqualTo(before);
+        assertThat(stored(cluster).live(Target.tool("X"))).hasSize(1);
+    }
+
+    @Test
+    void aRetryAfterAMemberBecameUnverifiedIsRefusedAndWritesNothing() {
+        solo();
+        StubPeers peers = StubPeers.withPeer();
+        Member state = member(peers);
+        Member rival = member();
+        state.pauseTool("X");
+        AtomicInteger hooks = new AtomicInteger();
+        state.doc.beforeCommit = () -> {
+            if (hooks.incrementAndGet() == 1) {
+                rival.pauseTool("rival");
+                peers.unverified = 1;
+            }
+        };
+
+        assertThatThrownBy(() -> state.resumeTool("X")).isInstanceOf(ClusterOperationRefusedException.class);
+        assertThat(stored(cluster).live(Target.tool("X"))).hasSize(1);
+    }
+
+    // ---- pauses are never deduped; a resume lifts what it saw -----------------------------------------------
+
+    @Test
+    void aPauseAlwaysMintsAFreshElementAndOneResumeLiftsEveryPauseOfTheTarget() {
+        solo();
+        Member state = member();
+        state.pauseTool("search");
+        state.pauseTool("search");
+        state.pauseTool("search");
+        assertThat(state.held().elements()).hasSize(3);
+
+        state.resumeTool("search");
+
+        assertThat(state.tools()).isEmpty();
+        assertThat(state.held().tombstones()).hasSize(3);
+    }
+
+    @Test
+    void aResumeLiftsOnlyThePausesOfItsOwnTarget_notOtherToolsOtherKindsOrTheGlobalPause() {
+        solo();
+        Member state = member();
+        state.pauseTool("search");
+        state.pauseTool("lookup");
+        state.pauseScope("search");
+        state.pauseAll();
+
+        state.resumeTool("search");
+
+        assertThat(state.tools()).containsExactly("lookup");
+        assertThat(state.doc.current(state.deps).scopes()).as("a scope of the same name is another target")
+                .containsExactly("search");
+        assertThat(state.allPaused()).isTrue();
+        assertThat(state.held().tombstones()).hasSize(1);
+
+        state.resumeAll();
+        assertThat(state.allPaused()).isFalse();
+        assertThat(state.held().tombstones()).hasSize(2);
+    }
+
+    @Test
+    void endScopeTombstonesOnlyTheScopeKindWithThatName() {
+        solo();
+        Member state = member();
+        state.pauseScope("S");
+        state.pauseTool("S");
+        state.pauseScope("T");
+
+        state.doc.endScope("S", 0L, state.deps);
+
+        assertThat(state.doc.current(state.deps).scopes()).containsExactly("T");
+        assertThat(state.tools()).containsExactly("S");
+        assertThat(state.held().elements()).as("tombstoned, not deleted").hasSize(3);
+    }
+
+    // ---- A3: the cap and the format bound ------------------------------------------------------------------
+
+    @Test
+    void eightThousandOneHundredSeventySixPausesFitAndTheNextOneIsRefused_aResumeAtTheCapIsAccepted() {
+        solo();
+        Member state = member();
         plant(cluster, docOfTools(1000, "t", PauseDocument.PAUSE_CAP - 1));
-        assertThat(state.snapshot().pausedTools()).hasSize(PauseDocument.PAUSE_CAP - 1);
+        assertThat(state.tools()).hasSize(PauseDocument.PAUSE_CAP - 1);
 
         state.pauseTool("the-8176th");
         Object raw = map(cluster).get(key(cluster));
@@ -1507,33 +826,33 @@ class PauseDocumentTest {
                 .satisfies(refusal -> assertThat(((ClusterOperationRefusedException) refusal).code())
                         .isEqualTo("CLUSTER_OPERATION_REFUSED"));
         assertThat(map(cluster).get(key(cluster))).as("refused, never truncated").isEqualTo(raw);
-        assertThat(state.document().accepted().elements()).hasSize(PauseDocument.PAUSE_CAP);
+        assertThat(state.held().elements()).hasSize(PauseDocument.PAUSE_CAP);
 
         state.resumeTool("the-8176th");
-        assertThat(state.toolPaused("the-8176th")).isFalse();
+        assertThat(state.tools()).doesNotContain("the-8176th");
     }
 
     @Test
-    void theCapCountsElementsOnly_manyResumedPausesDoNotBlockANonAllPause() {
+    void allEightThousandOneHundredSeventySixResumedThenPauseAllSucceedsAndTheNextNonAllPauseIsRefused() {
         solo();
-        var state = instance();
-        // 4,200 elements, every one tombstoned: elements plus tombstones is above 8,176, elements alone are not.
-        Doc doc = docOfTools(1000, "t", 4_200);
-        plant(cluster, new Doc(doc.sequence(), 0, doc.issuedAtMillis(), "test", doc.elements(),
-                new HashSet<>(doc.elements().keySet())));
-        assertThat(state.snapshot().pausedTools()).isEmpty();
+        Member state = member();
+        Doc full = docOfTools(1000, "t", PauseDocument.PAUSE_CAP);
+        plant(cluster, new Doc(full.sequence(), 0, full.issuedAtMillis(), "test", full.elements(),
+                new HashSet<>(full.elements().keySet())));
+        assertThat(state.tools()).isEmpty();
 
-        state.pauseTool("fits");
-
-        assertThat(state.toolPaused("fits")).isTrue();
+        // The cap counts elements only: 8,176 elements, all tombstoned, still block a non-all pause.
+        assertThatThrownBy(() -> state.pauseTool("over")).isInstanceOf(ClusterOperationRefusedException.class);
+        state.pauseAll();
+        assertThat(state.allPaused()).isTrue();
     }
 
     @Test
     void pauseAllCyclesAtTheCapAreNeverRefused_theReserveIsTheWholeGapToTheFormatBound() {
         solo();
-        var state = instance();
+        Member state = member();
         plant(cluster, docOfTools(1000, "t", PauseDocument.PAUSE_CAP));
-        assertThat(state.snapshot().pausedTools()).hasSize(PauseDocument.PAUSE_CAP);
+        assertThat(state.tools()).hasSize(PauseDocument.PAUSE_CAP);
         assertThatThrownBy(() -> state.pauseTool("over")).isInstanceOf(ClusterOperationRefusedException.class);
 
         for (int cycle = 0; cycle < 20; cycle++) {
@@ -1545,16 +864,16 @@ class PauseDocumentTest {
         state.pauseAll();
 
         assertThat(state.allPaused()).isTrue();
-        assertThat(state.document().accepted().elements()).hasSize(PauseDocument.PAUSE_CAP + 21);
+        assertThat(state.held().elements()).hasSize(PauseDocument.PAUSE_CAP + 21);
         assertThatThrownBy(() -> state.pauseTool("still-over")).isInstanceOf(ClusterOperationRefusedException.class);
     }
 
     @Test
     void pauseAllAtTheFormatBoundIsRefusedWithCodeAndNothingIsWritten() {
         solo();
-        var state = instance();
+        Member state = member();
         plant(cluster, docOfTools(1000, "t", PauseDocument.FORMAT_BOUND));
-        assertThat(state.snapshot().pausedTools()).hasSize(PauseDocument.FORMAT_BOUND);
+        assertThat(state.tools()).hasSize(PauseDocument.FORMAT_BOUND);
         Object raw = map(cluster).get(key(cluster));
 
         assertThatThrownBy(state::pauseAll).isInstanceOf(ClusterOperationRefusedException.class);
@@ -1609,21 +928,23 @@ class PauseDocumentTest {
     @Test
     void aDocumentAboveTheFormatBoundDecodesAsUnreadableAndCountedAsTamper_oneAtTheBoundOrWellBelowItOpens() throws Exception {
         solo();
-        var state = instance();
+        Member state = member();
         state.pauseTool("seed");
+        assertThat(state.reads()).isTrue();
         Sealer sealer = sealer(cluster);
-        for (byte[] oversize : List.of(plaintext(PauseDocument.FORMAT_BOUND + 1, 0), plaintext(0, PauseDocument.FORMAT_BOUND + 1))) {
+        for (byte[] oversize : List.of(plaintext(PauseDocument.FORMAT_BOUND + 1, 0),
+                plaintext(0, PauseDocument.FORMAT_BOUND + 1))) {
             assertThat(Doc.decode(oversize)).isNull();
             int before = metrics.count(Metric.CLUSTER_SEAL_TAMPER);
             map(cluster).put(key(cluster), sealer.seal(PrivacyCluster.OVERSIGHT_MAP, key(cluster), oversize));
-            assertThatThrownBy(state::allPaused).isInstanceOf(IllegalStateException.class);
+            state.reads();
             assertThat(metrics.count(Metric.CLUSTER_SEAL_TAMPER)).isGreaterThan(before);
         }
         assertThat(Doc.decode(plaintext(PauseDocument.FORMAT_BOUND, PauseDocument.FORMAT_BOUND))).isNotNull();
         assertThat(Doc.decode(plaintext(16_000, 0))).isNotNull();
         map(cluster).put(key(cluster), sealer.seal(PrivacyCluster.OVERSIGHT_MAP, key(cluster),
                 plaintext(16_000, 0)));
-        assertThat(instance().snapshot().pausedTools()).containsExactly("t");
+        assertThat(member().tools()).containsExactly("t");
     }
 
     @Test
@@ -1660,28 +981,28 @@ class PauseDocumentTest {
         assertThat(round.elements()).isEqualTo(withOrphan.elements());
     }
 
-    // ---- memoisation --------------------------------------------------------------------------------------
+    // ---- memoisation and pause.conflict ---------------------------------------------------------------------
 
     @Test
     void identicalSealedBytesAreNotDecodedTwiceAndDifferentBytesAre() {
         solo();
-        var writer = instance();
-        var reader = instance();
+        Member writer = member();
+        Member reader = member();
         AtomicInteger decodes = new AtomicInteger();
-        reader.document().decoder = plaintext -> {
+        reader.doc.decoder = plaintext -> {
             decodes.incrementAndGet();
             return Doc.decode(plaintext);
         };
         writer.pauseTool("alpha");
 
         for (int i = 0; i < 5; i++) {
-            assertThat(reader.toolPaused("alpha")).isTrue();
+            assertThat(reader.tools()).contains("alpha");
         }
         assertThat(decodes.get()).isEqualTo(1);
 
         writer.pauseTool("beta");
         for (int i = 0; i < 5; i++) {
-            assertThat(reader.toolPaused("beta")).isTrue();
+            assertThat(reader.tools()).contains("beta");
         }
         assertThat(decodes.get()).isEqualTo(2);
     }
@@ -1689,210 +1010,726 @@ class PauseDocumentTest {
     @Test
     void twoDocumentsOfTheSameOrderButDifferentBytesAreNeverMistakenForOne() {
         solo();
-        var reader = instance();
+        Member reader = member();
         Doc one = doc(10, 0, Map.of(id(1), Target.tool("one")), Set.of());
         Doc two = doc(10, 0, Map.of(id(2), Target.tool("two")), Set.of());
         plant(cluster, one);
-        assertThat(reader.snapshot().pausedTools()).containsExactly("one");
+        assertThat(reader.tools()).containsExactly("one");
 
         plant(cluster, two);
-        assertThatThrownBy(reader::snapshot).isInstanceOf(IllegalStateException.class);
-        assertThat(reader.document().accepted().live(Target.tool("two"))).hasSize(1);
-        assertThat(reader.document().accepted().live(Target.tool("one"))).hasSize(1);
+        assertThat(reader.tools()).containsExactlyInAnyOrder("one", "two");
+        assertThat(reader.held().live(Target.tool("two"))).hasSize(1);
+        assertThat(reader.held().live(Target.tool("one"))).hasSize(1);
     }
-
-    // ---- pause.conflict (amendment 7) ----------------------------------------------------------------------
 
     @Test
     void conflictIsCountedOnceForARolledBackStoredDocumentAndOnceForALowerOrderDocumentCarryingAnExtraElement() {
         solo();
-        var member = instance();
+        Member member = member();
         member.pauseTool("a");
         String rolledBack = (String) map(cluster).get(key(cluster));
         member.pauseTool("b");
         member.pauseTool("c");
-        int baseline = metrics.count(Metric.CLUSTER_PAUSE_CONFLICT);
-        assertThat(baseline).as("ordinary writes are no conflict").isZero();
+        assertThat(metrics.count(Metric.CLUSTER_PAUSE_CONFLICT)).as("ordinary writes are no conflict").isZero();
 
         map(cluster).put(key(cluster), rolledBack);
-        assertThatThrownBy(() -> member.toolPaused("a")).isInstanceOf(IllegalStateException.class);
+        member.reads();
         assertThat(metrics.count(Metric.CLUSTER_PAUSE_CONFLICT)).isEqualTo(1);
-        // The same bytes again, and a tick that looks at them, count nothing more.
-        assertThatThrownBy(() -> member.toolPaused("a")).isInstanceOf(IllegalStateException.class);
+        member.reads();
         assertThat(metrics.count(Metric.CLUSTER_PAUSE_CONFLICT)).isEqualTo(1);
 
-        // A lower-order document that holds everything held and one more: it brings an element held lacks.
-        Doc held = member.document().accepted();
+        Doc held = member.held();
         Doc lowerWithExtra = doc(1, 0, mapPlus(held.elements(), id(900), Target.tool("extra")), held.tombstones());
         plant(cluster, lowerWithExtra);
-        assertThatThrownBy(() -> member.toolPaused("a")).isInstanceOf(IllegalStateException.class);
+        member.reads();
         assertThat(metrics.count(Metric.CLUSTER_PAUSE_CONFLICT)).isEqualTo(2);
-        assertThatThrownBy(() -> member.toolPaused("a")).isInstanceOf(IllegalStateException.class);
-        member.document().tick();
+        member.reads();
+        member.tick();
         assertThat(metrics.count(Metric.CLUSTER_PAUSE_CONFLICT)).as("the same bytes seen on a tick").isEqualTo(2);
-        assertThat(member.snapshot().pausedTools()).containsExactlyInAnyOrder("a", "b", "c", "extra");
+        assertThat(member.held().pauses().tools()).containsExactlyInAnyOrder("a", "b", "c", "extra");
     }
 
-    // ---- a pause must not stay lifted on a cold member (review of c94c290d) ---------------------------------
+    @Test
+    void aDocumentThatNamesAHeldIdAsAnotherTargetIsNotAcceptedIsCountedAsTamperAndWarnsOnce() {
+        solo();
+        Member member = member();
+        member.pauseTool("a");
+        Id heldId = member.held().elements().keySet().iterator().next();
+        plant(cluster, doc(50, 0, Map.of(heldId, Target.tool("other")), Set.of()));
+        int before = metrics.count(Metric.CLUSTER_SEAL_TAMPER);
+
+        member.reads();
+
+        assertThat(metrics.count(Metric.CLUSTER_SEAL_TAMPER)).isGreaterThan(before);
+        assertThat(member.held().live(Target.tool("a"))).hasSize(1);
+        assertThat(member.held().live(Target.tool("other"))).isEmpty();
+    }
+
+    // ---- A4: the freshness gate ----------------------------------------------------------------------------
+
+    private static final Digest UNKNOWN = new Digest(new byte[]{9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9});
+
+    /** Makes {@code member} lapse: a peer shows content it never held, and its lease runs out. */
+    private void lapse(Member member) {
+        member.peers.shows(UNKNOWN);
+        member.nanos.advance(LEASE.plusSeconds(1));
+        assertThat(member.reads()).isFalse();
+        assertThat(member.fresh()).isFalse();
+    }
 
     @Test
-    void aColdMembersRefreshIsSkippedWhileAPeerCardReportsHigher_andItLapsesWithinOneLease() {
+    void aReplayedSequenceThenADeleteAndRepeatedTicksNeverMakeAColdMemberFresh_andItsSequenceRisesByOnePerLoop() {
         solo();
-        Nanos nanos = new Nanos();
-        var peers = new StubPeers(0);
-        var c = bare(cluster, nanos, new Fixture.TestClock(), peers);
-        plant(cluster, doc(5, 0, Map.of(id(1), Target.tool("seed")), Set.of()));
-        assertThat(c.current().tools()).containsExactly("seed");
-        long[] order = c.acceptedOrder();
+        Member stalled = member();
+        stalled.pauseTool("seed");
+        stalled.pauseTool("p");
+        Digest stalledDigest = stalled.digest();
+        Doc replay = doc(1, 0, Map.of(id(1), Target.tool("seed")), Set.of());
 
-        peers.highest = 9;
-        nanos.advance(LEASE.dividedBy(2));
+        StubPeers peers = StubPeers.withPeer().shows(stalledDigest);
+        Member c = member(peers);
+        map(cluster).delete(key(cluster));
+        for (int loop = 0; loop < 6; loop++) {
+            plant(cluster, replay);
+            c.tick();
+            map(cluster).delete(key(cluster));
+            long before = c.doc.acceptedSequence();
+            c.tick();
+            assertThat(c.fresh()).as("loop " + loop).isFalse();
+            assertThat(c.doc.acceptedSequence()).isEqualTo(before + 1);
+        }
+        assertThat(c.doc.acceptedSequence()).as("1 for the first replay, then one per loop").isEqualTo(7);
+
+        // The stalled peer's card expires while it is still listed: it fails Covered (F5), the same result.
+        peers.shows(Map.of(PEER, Digest.NONE));
+        plant(cluster, replay);
         c.tick();
-        assertThat(c.acceptedOrder()).as("no refresh while a card is higher").containsExactly(order);
-        peers.highest = 0;
+        assertThat(c.fresh()).isFalse();
+    }
+
+    @Test
+    void twoLapsedHoldersRecoverAsStatesWhateverWroteTheBytes() {
+        solo();
+        StubPeers peersA = StubPeers.withPeer();
+        StubPeers peersB = StubPeers.withPeer();
+        Member b = member(peersB);
+        b.pauseTool("q");
+        map(cluster).delete(key(cluster));
+        Member a = member(peersA);
+        a.pauseTool("p");
+        Digest digestP = a.digest();
+        map(cluster).delete(key(cluster));
+        Digest digestQ = b.digest();
+        lapse(a);
+        lapse(b);
+
+        // 1. A ticks (it restores {p} over ABSENT): A not fresh, B not fresh.
+        peersA.shows(digestQ);
+        peersB.shows(digestP);
+        a.tick();
+        assertThat(a.fresh()).isFalse();
+        assertThat(b.fresh()).isFalse();
+        assertThat(stored(cluster).pauses().tools()).containsExactly("p");
+
+        // 2. B ticks after a look in which A's card shows Digest({p}): its judge merges A's restore, which puts
+        // Digest({p}) into Seen(B), so B is fresh, and it repairs to {p, q}. A is not fresh.
+        b.tick();
+        assertThat(b.fresh()).isTrue();
+        assertThat(stored(cluster).pauses().tools()).containsExactlyInAnyOrder("p", "q");
+        assertThat(a.fresh()).isFalse();
+
+        // 3. A reads after a look in which B's card still shows Digest({q}): A holds {p, q} and is not fresh.
+        assertThat(a.reads()).isFalse();
+        assertThat(a.held().pauses().tools()).containsExactlyInAnyOrder("p", "q");
+
+        // 4. A reads after a look in which B's card shows Digest({p, q}): A is fresh.
+        peersA.shows(b.digest());
+        assertThat(a.reads()).isTrue();
+
+        // 5. B reads after a look in which A's card still shows Digest({p}): B stays fresh.
+        assertThat(b.reads()).isTrue();
+
+        // 6. B reads after a look in which A's card shows Digest({p, q}): fresh, both hold {p, q}.
+        peersB.shows(a.digest());
+        assertThat(b.reads()).isTrue();
+        assertThat(a.held().pauses()).isEqualTo(b.held().pauses());
+    }
+
+    @Test
+    void aMemberThatIsNotCoveredWritesAUnionButIsNotFresh_anOperatorPauseTakesEffectEverywhereAndItsResumeIsRefused() {
+        solo();
+        StubPeers peers = StubPeers.withPeer();
+        Member uncovered = member(peers);
+        Member other = member();
+        uncovered.pauseTool("seed");
+        assertThat(other.tools()).containsExactly("seed");
+        lapse(uncovered);
+
+        uncovered.pauseTool("x");
+
+        assertThat(other.tools()).containsExactlyInAnyOrder("seed", "x");
+        assertThat(uncovered.fresh()).as("an operator pause on an uncovered member does not renew it").isFalse();
+        assertThatThrownBy(() -> uncovered.resumeTool("x")).isInstanceOf(IllegalStateException.class)
+                .isNotInstanceOf(ClusterOperationRefusedException.class);
+
+        // A covered member's operator pause does renew it.
+        peers.digests = Map.of();
+        uncovered.pauseTool("y");
+        assertThat(uncovered.fresh()).isTrue();
+        uncovered.resumeTool("x");
+        assertThat(other.tools()).containsExactlyInAnyOrder("seed", "y");
+    }
+
+    @Test
+    void splitHalvesAtTheSameSequenceMergeAndTheMemberIsCoveredOnlyOnceItHoldsBothContents() {
+        solo();
+        Doc a = doc(3, 0, Map.of(id(1), Target.tool("a")), Set.of());
+        Doc b = doc(3, 0, Map.of(id(2), Target.tool("b")), Set.of());
+        StubPeers peers = StubPeers.withPeer().shows(Map.of(PEER, a.digest(), OTHER, b.digest()));
+        Member c = member(peers);
+        plant(cluster, b);
+
+        assertThat(c.reads()).as("holds only b").isFalse();
+        plant(cluster, a);
+        assertThat(c.reads()).as("merged a as well").isTrue();
+        assertThat(c.held().pauses().tools()).containsExactlyInAnyOrder("a", "b");
+    }
+
+    @Test
+    void aLoneMemberRefreshesOnEveryTickAndStaysFreshAcrossManyLeases() {
+        solo();
+        Member lone = member();
+        lone.pauseTool("search");
+        for (int i = 0; i < 8; i++) {
+            lone.nanos.advance(LEASE.dividedBy(2));
+            lone.tick();
+            assertThat(lone.fresh()).isTrue();
+        }
+        assertThat(lone.held().refresh()).isGreaterThan(0);
+    }
+
+    @Test
+    void aSoloMembersClockPastTheLeaseRefusesReadsAndOneTickRenewsItThroughTheGate() {
+        solo();
+        Member lone = member();
+        lone.pauseTool("search");
+        lone.nanos.advance(LEASE);
+        assertThat(lone.fresh()).isFalse();
+        // A member is only ever renewed by a passing gate: a tick judges, and a lone member passes it.
+        lone.tick();
+        assertThat(lone.fresh()).isTrue();
+    }
+
+    @Test
+    void aMemberWhoseGateFailsIsNeverRenewedByIdenticalBytesAHigherRefreshOrAHigherSequenceWrittenByAnyone() {
+        solo();
+        StubPeers peers = StubPeers.withPeer();
+        Member m = member(peers);
+        Member writer = member();
+        writer.pauseTool("a");
+        assertThat(m.reads()).isTrue();
+        lapse(m);
+
+        Doc current = stored(cluster);
+        plant(cluster, current);
+        assertThat(m.reads()).isFalse();
+        plant(cluster, new Doc(current.sequence(), current.refresh() + 1, current.issuedAtMillis(), "x",
+                current.elements(), current.tombstones()));
+        assertThat(m.reads()).isFalse();
+        plant(cluster, new Doc(current.sequence() + 5, 0, current.issuedAtMillis(), "x", current.elements(),
+                current.tombstones()));
+        assertThat(m.reads()).isFalse();
+        assertThat(m.fresh()).isFalse();
+    }
+
+    @Test
+    void noRenewalOverAbsentOrUnreadableStoredValuesOrForAColdMemberWhileAMemberIsUnverified() {
+        solo();
+        Member writer = member();
+        writer.pauseTool("a");
+
+        // A cold member with an unverified member is not fresh, whatever else holds.
+        StubPeers peers = StubPeers.withPeer();
         peers.unverified = 1;
-        c.tick();
-        assertThat(c.acceptedOrder()).as("no refresh while a member is unverified").containsExactly(order);
-        nanos.advance(LEASE.dividedBy(2));
-        c.tick();
-        assertThatThrownBy(c::current).isInstanceOf(IllegalStateException.class);
+        Member cold = member(peers);
+        assertThat(cold.reads()).isFalse();
+        assertThat(cold.doc.established()).isFalse();
+        peers.unverified = 0;
+        assertThat(cold.reads()).isTrue();
+        assertThat(cold.doc.established()).isTrue();
+        // Established, an unverified member no longer blocks it.
+        peers.unverified = 2;
+        assertThat(cold.reads()).isTrue();
+
+        // Over an absent or unreadable value nothing renews.
+        lapse(cold);
+        peers.digests = Map.of();
+        map(cluster).delete(key(cluster));
+        assertThat(cold.reads()).isFalse();
+        map(cluster).put(key(cluster), "garbage");
+        assertThat(cold.reads()).isFalse();
+    }
+
+    @Test
+    void aMemberThatMissedAPauseIsNotFreshWhileAPeersDigestIsOutsideItsSeen_whateverItWrites() {
+        solo();
+        Member holder = member();
+        holder.pauseTool("p");
+        assertThat(holder.reads()).isTrue();
+        StubPeers peers = StubPeers.withPeer().shows(holder.digest());
+        Member missed = member(peers);
+        Doc old = doc(1, 0, Map.of(id(77), Target.tool("old")), Set.of());
+        plant(cluster, old);
+        assertThat(missed.reads()).isFalse();
+        missed.pauseTool("mine");
+        assertThat(missed.fresh()).isFalse();
+        // A member that holds the latest content restores a deleted document as a union and is fresh after it.
+        map(cluster).delete(key(cluster));
+        assertThat(holder.reads()).isTrue();
+        holder.tick();
+        assertThat(holder.fresh()).isTrue();
+        assertThat(stored(cluster).pauses().tools()).contains("p");
+    }
+
+    @Test
+    void sinceNoLookHasCompletedAColdMemberWithAListedPeerIsNotFreshUntilALookShowsItCovered() {
+        solo();
+        Member writer = member();
+        writer.pauseTool("a");
+        StubPeers peers = StubPeers.withPeer();
+        peers.lookCompleted = false;
+        Member cold = member(peers);
+        assertThat(cold.reads()).as("peerDigests() empty and unverifiedCount() 0, but no look").isFalse();
+
+        peers.lookCompleted = true;
+        peers.shows(new Digest(new byte[16]));
+        assertThat(cold.reads()).as("a peer at a digest outside Seen").isFalse();
+        peers.shows(writer.digest());
+        assertThat(cold.reads()).as("it holds that content now").isTrue();
+
+        // A lone member with no look is fresh on its first passing gate.
+        Member lone = member();
+        assertThat(lone.reads()).isTrue();
+    }
+
+    @Test
+    void aStaleLookFailsTheGateAndAFreshOneLetsTheNextGatePass() {
+        solo();
+        StubPeers peers = StubPeers.withPeer();
+        Member m = member(peers);
+        m.pauseTool("a");
+        assertThat(m.reads()).isTrue();
+        peers.lookAgeNanos = LEASE.toNanos() + 1;
+        m.nanos.advance(LEASE.plusSeconds(1));
+        assertThat(m.reads()).isFalse();
+        peers.lookAgeNanos = 0;
+        assertThat(m.reads()).isTrue();
+    }
+
+    @Test
+    void aDepartedPeersDigestBlocksUntilItLeavesTheMemberList() {
+        solo();
+        StubPeers peers = StubPeers.withPeer();
+        Member m = member(peers);
+        m.pauseTool("a");
+        peers.shows(UNKNOWN);
+        m.nanos.advance(LEASE.plusSeconds(1));
+        assertThat(m.reads()).isFalse();
+        peers.digests = Map.of();
+        assertThat(m.reads()).isTrue();
+    }
+
+    @Test
+    void aDeletedBlockedOrReplacedCardOfATrackedPeerFailsCoveredAndANewerValidCardRestoresIt() {
+        solo();
+        StubPeers peers = StubPeers.withPeer();
+        Member m = member(peers);
+        m.pauseTool("a");
+        peers.shows(m.digest());
+        assertThat(m.reads()).isTrue();
+        peers.shows(Map.of(PEER, Digest.NONE));
+        m.nanos.advance(LEASE.plusSeconds(1));
+        assertThat(m.reads()).isFalse();
+        assertThat(m.fresh()).isFalse();
+        peers.shows(m.digest());
+        assertThat(m.reads()).isTrue();
+    }
+
+    @Test
+    void aPeersDigestInSeenStaysThereAfter257ChangesWhilePinned_andAgesOutAfter256OnceUnpinned() {
+        solo();
+        StubPeers peers = StubPeers.withPeer();
+        Member m = member(peers);
+        m.pauseTool("t0");
+        Digest pinned = m.digest();
+        peers.shows(pinned);
+        assertThat(m.reads()).isTrue();
+        assertThat(m.doc.pinnedCount()).isEqualTo(1);
+
+        for (int i = 1; i <= 257; i++) {
+            m.pauseTool("t" + i);
+        }
+        assertThat(m.doc.seen(pinned)).isTrue();
+        assertThat(m.reads()).as("still covered for the peer").isTrue();
+        assertThat(m.doc.pinnedCount()).isLessThanOrEqualTo(1);
+
+        // The peer's card changes: the digest is unpinned and re-enters the ring at its head.
+        peers.shows(UNKNOWN);
+        m.reads();
+        assertThat(m.doc.pinnedCount()).isZero();
+        for (int i = 0; i < 255; i++) {
+            m.pauseTool("u" + i);
+        }
+        assertThat(m.doc.seen(pinned)).as("after 255 further changes").isTrue();
+        m.pauseTool("last");
+        assertThat(m.doc.seen(pinned)).as("after the 256th").isFalse();
+    }
+
+    @Test
+    void anOperatorPauseOfALapsedMemberIsNotRenewedByItsOwnWriteEvenWhenThePostWriteStatePasses() {
+        solo();
+        StubPeers peers = StubPeers.withPeer();
+        Member m = member(peers);
+        m.pauseTool("a");
+        lapse(m);
+        Digest held = m.digest();
+        // The look in beforeCommit shows a digest in Seen: clauses 1 to 3 pass after the write.
+        m.doc.beforeCommit = () -> peers.shows(held);
+
+        m.pauseTool("b");
+
+        assertThat(m.fresh()).as("a member lapsed when the write began never renews from it").isFalse();
+        m.doc.beforeCommit = () -> { };
+        m.tick();
+        assertThat(m.fresh()).as("fresh after its next non-write tick").isTrue();
+    }
+
+    @Test
+    void aTickRepairByALapsedMemberIsNotRenewedByItsOwnWriteEvenWhenThePostWriteStatePasses() {
+        solo();
+        StubPeers peers = StubPeers.withPeer();
+        Member m = member(peers);
+        m.pauseTool("a");
+        Doc rolledBack = doc(1, 0, Map.of(), Set.of());
+        lapse(m);
+        Digest held = m.digest();
+        plant(cluster, rolledBack);
+        m.doc.beforeCommit = () -> peers.shows(held);
+
+        m.tick();
+
+        assertThat(stored(cluster).pauses().tools()).containsExactly("a");
+        assertThat(m.fresh()).isFalse();
+        m.doc.beforeCommit = () -> { };
+        assertThat(m.reads()).isTrue();
+    }
+
+    @Test
+    void aRefreshDoesNotRenewPastTheGate_theLeaseRunsFromTheJudgeNotTheWrite() {
+        solo();
+        StubPeers peers = StubPeers.withPeer();
+        Member m = member(peers);
+        m.pauseTool("a");
+        m.nanos.advance(LEASE.dividedBy(2));
+        m.doc.beforeCommit = () -> {
+            m.nanos.advance(LEASE.dividedBy(2));
+            peers.shows(UNKNOWN);
+        };
+
+        m.tick();
+
+        assertThat(m.held().refresh()).as("the refresh was written").isEqualTo(1);
+        m.doc.beforeCommit = () -> { };
+        m.nanos.advance(LEASE.dividedBy(2).plusMillis(1));
+        assertThat(m.fresh()).as("tj + L + epsilon").isFalse();
+    }
+
+    @Test
+    void anOperatorResumeDoesNotRenewPastTheGate_theLeaseRunsFromTheInLockJudge() {
+        solo();
+        StubPeers peers = StubPeers.withPeer();
+        Member m = member(peers);
+        m.pauseTool("a");
+        AtomicInteger hooks = new AtomicInteger();
+        m.doc.beforeCommit = () -> {
+            hooks.incrementAndGet();
+            m.nanos.advance(LEASE.dividedBy(2));
+            peers.shows(UNKNOWN);
+        };
+
+        m.resumeTool("a");
+
+        assertThat(hooks.get()).isEqualTo(1);
+        assertThat(m.held().live(Target.tool("a"))).isEmpty();
+        m.nanos.advance(LEASE.dividedBy(2).plusMillis(1));
+        assertThat(m.fresh()).isFalse();
+    }
+
+    @Test
+    void endScopeDoesNotRenewPastTheGateEither() {
+        solo();
+        StubPeers peers = StubPeers.withPeer();
+        Member m = new Member(new Nanos(), new Fixture.TestClock(), peers);
+        m.pauseScope("S");
+        PauseDocument index = new PauseDocument(cluster, cluster::instance,
+                new PauseDocument.Environment(m.nanos, m.wall, null), false, peers);
+        documents.add(index);
+        index.useDependencies(m.deps);
+        assertThat(index.current(m.deps).scopes()).containsExactly("S");
+        index.beforeCommit = () -> {
+            m.nanos.advance(LEASE.dividedBy(2));
+            peers.shows(UNKNOWN);
+        };
+
+        index.endScope("S", 0L, m.deps);
+
+        assertThat(index.accepted().live(Target.scope("S"))).isEmpty();
+        m.nanos.advance(LEASE.dividedBy(2).plusMillis(1));
+        assertThat(index.fresh()).isFalse();
+    }
+
+    @Test
+    void theTicksAcceptWrittenJudgesClause4OnFreshnessAfterItsJudge() {
+        solo();
+        StubPeers peers = StubPeers.withPeer();
+        Member m = member(peers);
+        m.pauseTool("p");
+        m.pauseTool("q");
+        Doc behind = doc(1, 0, Map.of(), Set.of());
+        lapse(m);
+        peers.digests = Map.of();
+        plant(cluster, behind);
+        m.doc.beforeCommit = () -> m.nanos.advance(LEASE.dividedBy(2));
+
+        m.tick();
+
+        assertThat(stored(cluster).pauses().tools()).containsExactlyInAnyOrder("p", "q");
+        m.doc.beforeCommit = () -> { };
+        m.nanos.advance(LEASE.dividedBy(2).minusSeconds(1));
+        assertThat(m.fresh()).as("renewed at the write: tj + L + epsilon is still fresh").isTrue();
+    }
+
+    @Test
+    void aLapsedMembersResumeNeedsEveryPeerCoveredAtItsInLockJudge() {
+        solo();
+        StubPeers peers = StubPeers.withPeer();
+        Member m = member(peers);
+        m.pauseTool("a");
+        lapse(m);
+        assertThatThrownBy(() -> m.resumeTool("a")).isInstanceOf(IllegalStateException.class)
+                .isNotInstanceOf(ClusterOperationRefusedException.class);
+        peers.digests = Map.of();
+        m.resumeTool("a");
+        assertThat(m.tools()).isEmpty();
+    }
+
+    @Test
+    void aResumeIsRefusedWhenTheStoredDocumentIsMissingOrUnreadableEvenWhileTheMemberIsStillFresh() {
+        solo();
+        Member m = member();
+        m.pauseTool("a");
+        assertThat(m.reads()).isTrue();
+        map(cluster).delete(key(cluster));
+        assertThat(m.fresh()).isTrue();
+        assertThatThrownBy(() -> m.resumeTool("a")).isInstanceOf(IllegalStateException.class)
+                .isNotInstanceOf(ClusterOperationRefusedException.class);
+        assertThat(map(cluster).get(key(cluster))).as("nothing written").isNull();
+        map(cluster).put(key(cluster), "garbage");
+        assertThatThrownBy(() -> m.resumeTool("a")).isInstanceOf(IllegalStateException.class);
+        assertThat(map(cluster).get(key(cluster))).isEqualTo("garbage");
+        assertThat(m.held().live(Target.tool("a"))).hasSize(1);
+    }
+
+    @Test
+    void aResumeIsRefusedWhenAPeerIsOutsideSeenNowEvenThoughTheMemberIsStillFreshFromAnEarlierGate() {
+        solo();
+        StubPeers peers = StubPeers.withPeer();
+        Member m = member(peers);
+        m.pauseTool("a");
+        assertThat(m.reads()).isTrue();
+        m.nanos.advance(LEASE.dividedBy(4));
+        peers.shows(UNKNOWN);
+        assertThat(m.fresh()).isTrue();
+
+        assertThatThrownBy(() -> m.resumeTool("a")).isInstanceOf(IllegalStateException.class)
+                .isNotInstanceOf(ClusterOperationRefusedException.class);
+        assertThat(stored(cluster).live(Target.tool("a"))).hasSize(1);
+    }
+
+    @Test
+    void aResumeIsRefusedWithPeerStateUnknownAnUnverifiedMemberOrANotServingMemberButNotForALoneMember() {
+        solo();
+        StubPeers peers = StubPeers.withPeer();
+        Member m = member(peers);
+        m.pauseTool("a");
+        peers.lookCompleted = false;
+        assertThatThrownBy(() -> m.resumeTool("a")).isInstanceOf(ClusterOperationRefusedException.class);
+        peers.lookCompleted = true;
+        peers.unverified = 1;
+        assertThatThrownBy(() -> m.resumeTool("a")).isInstanceOf(ClusterOperationRefusedException.class);
+        peers.unverified = 0;
+        m.resumeTool("a");
+        assertThat(m.tools()).isEmpty();
+
+        // A lone member is not refused by the peer-state check.
+        solo();
+        StubPeers lone = StubPeers.lone();
+        lone.lookCompleted = false;
+        Member l = member(lone);
+        l.pauseTool("b");
+        l.resumeTool("b");
+        assertThat(l.tools()).isEmpty();
+
+        // Not serving.
+        solo();
+        Member notServing = member();
+        notServing.pauseTool("c");
+        PauseDocument.Dependencies closed = new PauseDocument.Dependencies(notServing.deps.metrics(),
+                TIMEOUT, () -> ClusterSecurityStatus.notServing(ClusterSecurityStatus.Reason.CARDS_UNAVAILABLE, 1, 0),
+                notServing.deps.sealer());
+        assertThatThrownBy(() -> notServing.doc.resume(Target.tool("c"), closed))
+                .isInstanceOf(ClusterOperationRefusedException.class);
+        notServing.doc.pause(Target.tool("d"), closed);
+        assertThat(notServing.tools()).containsExactlyInAnyOrder("c", "d");
+    }
+
+    @Test
+    void aResumeAfterARollbackSucceedsOnceTheMemberIsFreshAndCoveredAndWritesItsTombstones() {
+        solo();
+        Member m = member();
+        m.pauseTool("p");
+        Doc rolledBack = doc(1, 0, Map.of(), Set.of());
+        plant(cluster, rolledBack);
+        m.tick();
+        m.resumeTool("p");
+        assertThat(m.tools()).isEmpty();
+        assertThat(stored(cluster).live(Target.tool("p"))).isEmpty();
+    }
+
+    // ---- A5: first start ------------------------------------------------------------------------------------
+
+    @Test
+    void aLoneMemberWritesTheFirstDocumentAtOnceWithNoUptimeWait() {
+        solo();
+        Member lone = member();
+        lone.tick();
+        assertThat(stored(cluster).sequence()).isEqualTo(1);
+        assertThat(stored(cluster).elements()).isEmpty();
+        assertThat(lone.reads()).isTrue();
+        assertThat(lone.doc.established()).isTrue();
+    }
+
+    @Test
+    void theOldestMemberWritesNoFirstDocumentBeforeOneLeaseOfUptimeAndNeedsALeaseOfCleanLooks() {
+        solo();
+        StubPeers peers = StubPeers.withPeer();
+        Member oldest = member(peers);
+        oldest.tick();
+        assertThat(map(cluster).get(key(cluster))).isNull();
+
+        oldest.nanos.advance(LEASE);
+        peers.cleanRunAgeNanos = LEASE.toNanos() - 1;
+        oldest.tick();
+        assertThat(map(cluster).get(key(cluster))).as("the clean span is a nanosecond short").isNull();
+
+        peers.lookAgeNanos = LEASE.dividedBy(2).toNanos() + 1;
+        peers.cleanRunAgeNanos = LEASE.toNanos() + peers.lookAgeNanos;
+        oldest.tick();
+        assertThat(map(cluster).get(key(cluster))).as("the latest look is older than L/2").isNull();
+
+        peers.lookAgeNanos = LEASE.dividedBy(2).toNanos();
+        peers.cleanRunAgeNanos = LEASE.toNanos() + peers.lookAgeNanos;
+        peers.lookCompleted = false;
+        oldest.tick();
+        assertThat(map(cluster).get(key(cluster))).as("peer state is unknown").isNull();
+
+        peers.lookCompleted = true;
+        peers.unverified = 1;
+        oldest.tick();
+        assertThat(map(cluster).get(key(cluster))).as("a member is unverified").isNull();
 
         peers.unverified = 0;
-        nanos.advance(LEASE.dividedBy(2));
-        // Once corroborated the refresh is allowed again (recovery over the unchanged document).
-        c.tick();
-        assertThat(c.current().tools()).containsExactly("seed");
+        peers.oldest = false;
+        oldest.tick();
+        assertThat(map(cluster).get(key(cluster))).as("not the oldest").isNull();
+
+        peers.oldest = true;
+        oldest.tick();
+        assertThat(stored(cluster).sequence()).isEqualTo(1);
     }
 
     @Test
-    void aPrePauseReplayOnAColdMemberIsRepairedByTheLapsedHolderAndPStaysPaused() {
+    void aCleanSpanUnderOneLeaseDoesNotWriteWhateverTheCleanRunAgeIs() {
         solo();
-        Nanos nanosA = new Nanos();
-        Nanos nanosC = new Nanos();
-        var wall = new Fixture.TestClock();
-        var a = bare(cluster, nanosA, wall, new StubPeers(0));
-        a.pause(Target.tool("seed"));
-        String prePause = (String) map(cluster).get(key(cluster));
-        a.pause(Target.tool("p"));
-        long aSeq = a.acceptedSequence();
-        // Garbage stops A's repair; A's lease lapses.
-        map(cluster).put(key(cluster), "garbage");
-        a.tick();
-        assertThat(map(cluster).get(key(cluster))).as("never over unreadable").isEqualTo("garbage");
-        nanosA.advance(LEASE);
-        wall.advance(LEASE);
-        // The pre-pause document is replayed inside the gate; C restarts cold. A's card reports A's sequence.
-        map(cluster).put(key(cluster), prePause);
-        var c = bare(cluster, nanosC, wall, new StubPeers(aSeq));
-        assertThat(c.current().tools()).as("the residual, for now").doesNotContain("p");
-
-        a.tick();
-
-        assertThat(stored(cluster).live(Target.tool("p"))).as("the cluster document regains p").hasSize(1);
-        assertThat(c.current().tools()).as("C holds p, merged").contains("seed", "p");
-        assertThatThrownBy(a::current).as("the union write did not renew A").isInstanceOf(IllegalStateException.class);
-        assertThat(a.fresh()).isFalse();
-        // A recovers through amendment 2 on the next tick: the document is current and the cards corroborate.
-        a.tick();
-        assertThat(a.current().tools()).containsExactlyInAnyOrder("seed", "p");
-        for (int i = 0; i < 8; i++) {
-            nanosC.advance(LEASE.dividedBy(2));
-            nanosA.advance(LEASE.dividedBy(2));
-            c.tick();
-            a.tick();
-            assertThat(c.current().tools()).as("p never lifted on C").contains("p");
-            assertThat(a.current().tools()).contains("p");
-        }
+        StubPeers peers = StubPeers.withPeer();
+        Member oldest = member(peers);
+        oldest.nanos.advance(LEASE.multipliedBy(2));
+        // cleanRunAge L + L/4 + epsilon, look age L/4: the span is L, enough. With look age L/4 + epsilon: not.
+        peers.lookAgeNanos = LEASE.dividedBy(4).toNanos();
+        peers.cleanRunAgeNanos = LEASE.toNanos() + peers.lookAgeNanos - 1;
+        oldest.tick();
+        assertThat(map(cluster).get(key(cluster))).isNull();
+        peers.cleanRunAgeNanos = LEASE.toNanos() + peers.lookAgeNanos;
+        oldest.tick();
+        assertThat(map(cluster).get(key(cluster))).isNotNull();
     }
 
     @Test
-    void anOperatorPauseFromAColdMemberAfterTheHoldersLapsedDoesNotLoseTheirPauses() {
+    void twoEligibleMembersRaceToWriteTheFirstDocumentAndOneDocumentResultsWithNoConflictCounted() {
         solo();
-        Nanos nanosA = new Nanos();
-        Nanos nanosC = new Nanos();
-        var wall = new Fixture.TestClock();
-        var a = bare(cluster, nanosA, wall, new StubPeers(0));
-        a.pause(Target.tool("seed"));
-        a.pause(Target.tool("p"));
-        long aSeq = a.acceptedSequence();
-        map(cluster).delete(key(cluster));
-        // A's restore does not run for a lease (its lock is held, say); A lapses.
-        nanosA.advance(LEASE);
-        var c = bare(cluster, nanosC, wall, new StubPeers(aSeq));
-        assertThatThrownBy(c::current).isInstanceOf(IllegalStateException.class);
-        c.pause(Target.tool("x"));
-        assertThat(c.current().tools()).containsExactly("x");
-
-        a.tick();
-
-        assertThat(stored(cluster).live(Target.tool("p"))).hasSize(1);
-        assertThat(c.current().tools()).as("C holds p, merged").containsExactlyInAnyOrder("seed", "p", "x");
-        assertThat(a.fresh()).as("not renewed by its own union write").isFalse();
-        a.tick();
-        assertThat(a.current().tools()).containsExactlyInAnyOrder("seed", "p", "x");
-        for (int i = 0; i < 8; i++) {
-            nanosC.advance(LEASE.dividedBy(2));
-            nanosA.advance(LEASE.dividedBy(2));
-            c.tick();
-            a.tick();
-            assertThat(c.current().tools()).contains("p");
-        }
-    }
-
-    @Test
-    void aLapsedHoldersUnionWriteNeverGoesOverAnUnreadableDocument() {
-        solo();
-        Nanos nanos = new Nanos();
-        var wall = new Fixture.TestClock();
-        var a = bare(cluster, nanos, wall, new StubPeers(0));
-        a.pause(Target.tool("p"));
-        nanos.advance(LEASE);
-        for (Object forged : List.of("garbage", Boolean.TRUE)) {
-            map(cluster).put(key(cluster), forged);
-            a.tick();
-            assertThat(map(cluster).get(key(cluster))).isEqualTo(forged);
-        }
-    }
-
-    @Test
-    void aResumeWhoseCardsLapseWhileItWaitsForTheLockIsRefusedAsNotServing() {
-        int port = FreePorts.consecutive(1);
-        cluster = fixture.keyed(TestMembers.uniqueName("serving-recheck"), port, List.of("127.0.0.1:" + port),
-                TestMembers.KEYS, Fixture.settings(UnverifiedMemberAction.REFUSE), new Fixture.Metrics(),
-                new RecordingLogger(), false);
-        var state = instance(new Nanos(), fixture.clock);
-        state.pauseTool("search");
-        // The cards are read after the read under the lock; they lapse just then.
-        state.document().peers = new PauseDocument.Peers() {
-            @Override
-            public long highestReportedSequence() {
-                return 0;
-            }
-
-            @Override
-            public int unverifiedCount() {
-                fixture.clock.advance(cluster.securitySettings().pauseLease().multipliedBy(2));
-                return 0;
-            }
-
-            @Override
-            public boolean isOldest() {
-                return true;
-            }
-
-            @Override
-            public boolean isAlone() {
-                return false;
+        Member a = member();
+        Member b = member();
+        AtomicInteger hooks = new AtomicInteger();
+        a.doc.beforeCommit = () -> {
+            if (hooks.incrementAndGet() == 1) {
+                b.tick();
             }
         };
-        assertThat(cluster.securityStatus().serving()).isTrue();
 
-        assertThatThrownBy(() -> state.resumeTool("search")).isInstanceOf(ClusterOperationRefusedException.class);
-        assertThat(cluster.securityStatus().serving()).isFalse();
-        assertThat(stored(cluster).live(Target.tool("search"))).as("nothing was lifted").hasSize(1);
+        a.tick();
+
+        assertThat(stored(cluster).sequence()).isEqualTo(1);
+        assertThat(a.doc.hasAccepted()).isTrue();
+        assertThat(b.doc.hasAccepted()).isTrue();
+        assertThat(metrics.count(Metric.CLUSTER_PAUSE_CONFLICT)).isZero();
+        assertThat(a.reads()).isTrue();
     }
 
-    // ---- properties of the merge --------------------------------------------------------------------------
+    @Test
+    void aMemberWithAHeldDocumentNeverTakesTheFirstStartPath_andAWrongDocOneIsMergedAndRepaired() {
+        solo();
+        Member holder = member();
+        holder.pauseTool("p");
+        Member cold = member();
+        map(cluster).delete(key(cluster));
+        // A Doc(1) forced in through beforeCommit by the cold member.
+        cold.tick();
+        assertThat(stored(cluster).sequence()).isEqualTo(1);
+        holder.tick();
+        assertThat(holder.tools()).containsExactly("p");
+        Doc repaired = stored(cluster);
+        assertThat(repaired.live(Target.tool("p"))).hasSize(1);
+        assertThat(repaired.sequence()).isEqualTo(Math.max(holder.doc.acceptedSequence(), 1));
+        assertThat(repaired.sequence()).isGreaterThan(1);
+    }
+
+    @Test
+    void aMemberPastTheColdStartGateOverAnAbsentOrGatedOrUnreadableDocumentWritesNothing() {
+        solo();
+        Member cold = member(StubPeers.withPeer());
+        cold.nanos.advance(LEASE.multipliedBy(2));
+        map(cluster).put(key(cluster), "garbage");
+        cold.tick();
+        assertThat(map(cluster).get(key(cluster))).isEqualTo("garbage");
+        Doc gated = new Doc(5, 0, new Fixture.TestClock().millis() - LEASE.plus(SKEW).plusSeconds(1).toMillis(), "i",
+                Map.of(id(1), Target.tool("p")), Set.of());
+        plant(cluster, gated);
+        Object raw = map(cluster).get(key(cluster));
+        cold.tick();
+        assertThat(map(cluster).get(key(cluster))).isEqualTo(raw);
+    }
+
+    // ---- A12: properties ------------------------------------------------------------------------------------
 
     private static Doc randomDoc(Random random, int pool) {
         Map<Id, Target> elements = new HashMap<>();
@@ -1911,12 +1748,17 @@ class PauseDocumentTest {
                 tombstones.add(id(i));
             }
         }
-        return doc(random.nextInt(10), random.nextInt(3), elements, tombstones);
+        return new Doc(random.nextInt(10), random.nextInt(3), random.nextInt(4), "issuer-" + random.nextInt(3),
+                elements, tombstones);
     }
 
-    private static void assertSameContent(Doc left, Doc right, String message) {
+    private static void assertSameDoc(Doc left, Doc right, String message) {
         assertThat(left.elements()).as(message + " elements").isEqualTo(right.elements());
         assertThat(left.tombstones()).as(message + " tombstones").isEqualTo(right.tombstones());
+        assertThat(left.sequence()).as(message + " sequence").isEqualTo(right.sequence());
+        assertThat(left.refresh()).as(message + " refresh").isEqualTo(right.refresh());
+        assertThat(left.issuedAtMillis()).as(message + " issuedAt").isEqualTo(right.issuedAtMillis());
+        assertThat(left.issuer()).as(message + " issuer").isEqualTo(right.issuer());
     }
 
     @Test
@@ -1926,17 +1768,16 @@ class PauseDocumentTest {
             Doc a = randomDoc(random, 24);
             Doc b = randomDoc(random, 24);
             Doc c = randomDoc(random, 24);
-            assertSameContent(a.union(b), b.union(a), "commutative");
-            assertSameContent(a.union(b).union(c), a.union(b.union(c)), "associative");
-            assertSameContent(a.union(a), a, "idempotent");
-            assertSameContent(a.union(b).union(b), a.union(b), "idempotent over a merge");
+            assertSameDoc(a.merge(b), b.merge(a), "commutative");
+            assertSameDoc(a.merge(b).merge(c), a.merge(b.merge(c)), "associative");
+            assertSameDoc(a.merge(a), a, "idempotent");
+            assertSameDoc(a.merge(b).merge(b), a.merge(b), "idempotent over a merge");
 
-            Doc merged = a.union(b);
+            Doc merged = a.merge(b);
             Set<Id> tombstones = new HashSet<>(a.tombstones());
             tombstones.addAll(b.tombstones());
             Map<Id, Target> elements = new HashMap<>(a.elements());
             elements.putAll(b.elements());
-            // No merge removes an element, and none lifts one unless its tombstone is in the merged state.
             assertThat(merged.elements()).isEqualTo(elements);
             PauseDocument.Pauses view = merged.pauses();
             boolean all = false;
@@ -1954,7 +1795,6 @@ class PauseDocumentTest {
             assertThat(view.all()).isEqualTo(all);
             assertThat(view.tools()).isEqualTo(tools);
             assertThat(view.scopes()).isEqualTo(scopes);
-            // A target that is paused in either input without a tombstone in the merged state is paused in it.
             for (Doc input : List.of(a, b)) {
                 for (Map.Entry<Id, Target> element : input.elements().entrySet()) {
                     if (!tombstones.contains(element.getKey())) {
@@ -1962,6 +1802,77 @@ class PauseDocumentTest {
                     }
                 }
             }
+        }
+    }
+
+    @Test
+    void aMergedOrderNeverDecreasesEqualsTheLexicographicMaximumAndTakesTheMetadataOfTheMaxOrderInput() {
+        Random random = new Random(40);
+        for (int run = 0; run < 400; run++) {
+            Doc held = randomDoc(random, 12);
+            Doc other = randomDoc(random, 12);
+            Doc merged = held.merge(other);
+            assertThat(merged.compareOrder(held)).isGreaterThanOrEqualTo(0);
+            assertThat(merged.compareOrder(other)).isGreaterThanOrEqualTo(0);
+            Doc top = held.compareOrder(other) >= 0 ? held : other;
+            assertThat(merged.sequence()).isEqualTo(top.sequence());
+            assertThat(merged.refresh()).isEqualTo(top.refresh());
+            if (held.compareOrder(other) != 0) {
+                assertThat(merged.issuedAtMillis()).isEqualTo(top.issuedAtMillis());
+                assertThat(merged.issuer()).isEqualTo(top.issuer());
+            }
+        }
+    }
+
+    // ---- A10: boundary and the map -------------------------------------------------------------------------
+
+    @Test
+    void theOversightMapHoldsExactlyTheDocumentAndItOpensUnderTheTestKey() {
+        int port = FreePorts.consecutive(1);
+        cluster = fixture.keyed(TestMembers.uniqueName("boundary"), port, List.of("127.0.0.1:" + port),
+                TestMembers.KEYS, Fixture.settings(UnverifiedMemberAction.REFUSE), new Fixture.Metrics(),
+                new RecordingLogger(), false);
+        HazelcastOversightState state = new HazelcastOversightState(cluster, TIMEOUT, metrics);
+        try {
+            state.pauseAll();
+            state.pauseTool("search");
+            state.pauseScope("CASE-42");
+
+            Inputs inputs = new Inputs(cluster.keyedNames(), null, "CASE-42", "subject-42", null, "synthetic", "ap-1",
+                    "alice", null, "search");
+            IMap<Object, Object> contents = cluster.instance().getMap(PrivacyCluster.OVERSIGHT_MAP);
+            new OversightMapsBoundary().check(PrivacyCluster.OVERSIGHT_MAP, contents, inputs);
+            assertThat(OversightMapsBoundary.opensUnderTestKey(contents, inputs)).isTrue();
+            assertThat(contents.size()).isEqualTo(1);
+            OversightMapsBoundary.checkMapConfigs(cluster.instance());
+        } finally {
+            state.close();
+        }
+    }
+
+    @Test
+    void theBoundaryFailsRatherThanSkipsWhenTheNamesAreTheTestNamesAndTheEnvelopeDoesNotOpen() {
+        int port = FreePorts.consecutive(1);
+        cluster = fixture.keyed(TestMembers.uniqueName("boundary-fail"), port, List.of("127.0.0.1:" + port),
+                TestMembers.KEYS, Fixture.settings(UnverifiedMemberAction.REFUSE), new Fixture.Metrics(),
+                new RecordingLogger(), false);
+        HazelcastOversightState state = new HazelcastOversightState(cluster, TIMEOUT, metrics);
+        try {
+            state.pauseTool("search");
+            ClusterKeys foreign = new ClusterKeys("other-cluster-1", Fixture.filled('x'), null, null, null, null,
+                    "test-name-1", Fixture.filled('n'));
+            String wrongKey = Sealer.builder(foreign, PrivacyMetrics.none()).build()
+                    .seal(PrivacyCluster.OVERSIGHT_MAP, key(cluster), "x".getBytes());
+            IMap<Object, Object> contents = cluster.instance().getMap(PrivacyCluster.OVERSIGHT_MAP);
+            contents.put(key(cluster), wrongKey);
+            Inputs inputs = new Inputs(cluster.keyedNames(), null, "CASE-42", "subject-42", null, "synthetic", "ap-1",
+                    "alice", null, "search");
+
+            org.assertj.core.api.Assertions.assertThatThrownBy(
+                            () -> new OversightMapsBoundary().check(PrivacyCluster.OVERSIGHT_MAP, contents, inputs))
+                    .isInstanceOf(AssertionError.class);
+        } finally {
+            state.close();
         }
     }
 }

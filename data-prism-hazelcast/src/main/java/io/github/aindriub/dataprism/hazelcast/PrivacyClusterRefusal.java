@@ -22,7 +22,9 @@ public final class PrivacyClusterRefusal extends IllegalStateException {
         UNSAFE_HAZELCAST_SERIALIZATION,
         UNSEALED_CLUSTER_STATE,
         MISSING_CLUSTER_KEY,
-        CLUSTER_KEY_MISMATCH
+        CLUSTER_KEY_MISMATCH,
+        /** A wrapper's pause lease, clock skew tolerance or cluster key ids differ from the instance's first (228). */
+        CLUSTER_SETTINGS_MISMATCH
     }
 
     private final Code code;
