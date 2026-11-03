@@ -575,6 +575,15 @@ final class PauseDocument {
     private boolean closed;
     private int users;
     private volatile Dependencies tickDependencies;
+    /** The dependencies of every user still retained, oldest first; ticks use the latest of them. */
+    private final java.util.List<Dependencies> retained = new java.util.ArrayList<>();
+    /** The stored values that failed to open, remembered so a repeated read does not count tamper again. */
+    private final Map<String, Boolean> rejected = new LinkedHashMap<>(MEMO_SIZE, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest) {
+            return size() > MEMO_SIZE;
+        }
+    };
 
     /** Runs after a write has read the stored value and sealed its next one, before it commits; a test seam. */
     volatile Runnable beforeCommit = () -> { };
@@ -608,13 +617,19 @@ final class PauseDocument {
      *                               {@code OVERSIGHT_UNAVAILABLE})
      */
     Pauses current(Dependencies deps) {
-        look(deps);
+        Look look = look(deps);
         synchronized (monitor) {
-            if (!freshLocked()) {
+            // A stored document that is absent, unauthentic or gated is unavailable, whatever the lease says (R6).
+            if (look.status() != Status.AUTHENTIC || !freshLocked()) {
                 throw unavailable();
             }
             return pauses;
         }
+    }
+
+    /** For tests: the dependencies ticks use now. */
+    Dependencies tickDependenciesForTest() {
+        return tickDependencies;
     }
 
     /** For tests: reads with the dependencies of the latest user. */
@@ -934,6 +949,12 @@ final class PauseDocument {
     /** The document in a stored value, memoised by its exact text, or null (counted) if it is not authentic. */
     private Memo open(Object stored, Dependencies deps) {
         if (!(stored instanceof String envelope)) {
+            String marker = "object:" + stored;
+            synchronized (monitor) {
+                if (rejected.put(marker, Boolean.TRUE) != null) {
+                    return null;
+                }
+            }
             deps.metrics().increment(Metric.CLUSTER_SEAL_TAMPER);
             return null;
         }
@@ -942,15 +963,20 @@ final class PauseDocument {
             if (known != null) {
                 return known;
             }
+            if (rejected.containsKey(envelope)) {
+                return null;
+            }
         }
         Opened opened = deps.sealer().open(PrivacyCluster.OVERSIGHT_MAP, key, envelope);
         if (opened.outcome() != Opened.Outcome.AUTHENTIC) {
-            // The sealer has counted it.
+            // The sealer has counted it; remember the value so the same bytes are not counted at every read.
+            remember(envelope);
             return null;
         }
         Doc doc = decoder.apply(opened.plaintext());
         if (doc == null) {
             deps.metrics().increment(Metric.CLUSTER_SEAL_TAMPER);
+            remember(envelope);
             return null;
         }
         synchronized (monitor) {
@@ -961,6 +987,12 @@ final class PauseDocument {
             Memo created = new Memo(doc);
             memo.put(envelope, created);
             return created;
+        }
+    }
+
+    private void remember(String envelope) {
+        synchronized (monitor) {
+            rejected.put(envelope, Boolean.TRUE);
         }
     }
 
@@ -1430,6 +1462,7 @@ final class PauseDocument {
     void retain(Dependencies deps) {
         synchronized (monitor) {
             users++;
+            retained.add(deps);
             tickDependencies = deps;
             if (closed || executor != null) {
                 return;
@@ -1469,13 +1502,18 @@ final class PauseDocument {
     }
 
     /** A user is done: the last release stops the ticker and the merge listener. The document stays. */
-    void release() {
+    void release(Dependencies deps) {
         boolean last;
         synchronized (monitor) {
+            retained.remove(deps);
             if (users > 0) {
                 users--;
             }
             last = users == 0;
+            if (!retained.isEmpty()) {
+                // Hand the ticks to a user that is still live, not the one that has just gone.
+                tickDependencies = retained.get(retained.size() - 1);
+            }
         }
         if (last) {
             stopTicking();
@@ -1518,6 +1556,7 @@ final class PauseDocument {
         synchronized (monitor) {
             closed = true;
             users = 0;
+            retained.clear();
         }
         stopTicking();
     }

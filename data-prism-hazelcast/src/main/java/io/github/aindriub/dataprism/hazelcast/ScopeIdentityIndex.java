@@ -114,7 +114,8 @@ public final class ScopeIdentityIndex {
      * <p>The scope's pause is the last step, run only after every sweep and the approval forget have succeeded: its
      * live pauses in the pause document are tombstoned (and no other target's), under the same checks as a resume. A
      * failed sweep, a skipped lock or a failed check keeps the pause. When a check fails the data is still erased,
-     * and the call throws the check's own refusal after the sweeps. An absent pause document is nothing to end.
+     * and the call throws the check's own refusal after the sweeps. With no pause document held, or one that is absent, unauthentic or not fresh, the
+     * data is still erased and the call then refuses with OVERSIGHT_UNAVAILABLE (R12, R13).
      *
      * @throws ClusterLockTimeoutException if the lock of an entry of the
      *         scope timed out; that entry is left in place (for an approval, with its id claim and its pending slot);
@@ -174,7 +175,7 @@ public final class ScopeIdentityIndex {
                 pauseDependencies = PauseDocument.Dependencies.of(cluster, metrics, lockTimeout);
                 pauseDocument = new PauseDocument(cluster, cluster::servingInstance,
                         PauseDocument.Environment.system(cluster.securitySettings().pauseLease()), false,
-                        cluster.memberCards().isPresent() ? MemberCards.peers(cluster) : HazelcastOversightState.lonePeers(cluster, cluster.servingInstance()));
+                        cluster.memberCards().isPresent() ? MemberCards.peers(cluster) : HazelcastOversightState.lonePeersReadOnly(cluster, cluster.servingInstance()));
             }
             return pauseDocument;
         }

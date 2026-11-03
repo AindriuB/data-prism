@@ -1319,4 +1319,35 @@ class HazelcastOversightTest {
             assertThat(state2.snapshot().pausedTools()).doesNotContain("p");
         }
     }
+
+    @Test
+    void aKeylessEndScopeBeforeAnyStateExistsMakesNeitherTheRefusedMarkNorItsListener() {
+        String name = "dataprism-keyless-index-" + System.nanoTime();
+        int port = FreePorts.consecutive(1);
+        Config config = PrivacyCluster.configure(ClusterMembership.none(name).withPort(port).toConfig());
+        var real = Hazelcast.newHazelcastInstance(config);
+        List<com.hazelcast.cluster.MembershipListener> listeners = new java.util.ArrayList<>();
+        a = PrivacyCluster.using(capturing(real, listeners), false);
+        int registered = listeners.size();
+        try {
+            new ScopeIdentityIndex(a).endScope("S");
+        } catch (IllegalStateException unavailable) {
+            // no pause document exists: refused after the sweeps
+        }
+        assertThat(listeners).as("the index registered no listener").hasSize(registered);
+        assertThat(real.getUserContext().get("dataprism.cluster.pause.keyless.refused")).isNull();
+
+        // A member joins and leaves; a state made afterwards is not marked refused.
+        var local = real.getCluster().getLocalMember();
+        listeners.forEach(l -> l.memberAdded(new com.hazelcast.cluster.MembershipEvent(real.getCluster(), local,
+                com.hazelcast.cluster.MembershipEvent.MEMBER_ADDED, java.util.Set.of(local))));
+        listeners.forEach(l -> l.memberRemoved(new com.hazelcast.cluster.MembershipEvent(real.getCluster(), local,
+                com.hazelcast.cluster.MembershipEvent.MEMBER_REMOVED, java.util.Set.of())));
+        b = PrivacyCluster.using(real, false);
+        try (var state = new HazelcastOversightState(b, ClusterLocks.DEFAULT_TIMEOUT,
+                io.github.aindriub.dataprism.core.metrics.PrivacyMetrics.none(), java.time.Clock.systemUTC(),
+                () -> 1_000_000_000L)) {
+            assertThat(state.document().peers.snapshot().isAlone()).as("not marked refused").isTrue();
+        }
+    }
 }

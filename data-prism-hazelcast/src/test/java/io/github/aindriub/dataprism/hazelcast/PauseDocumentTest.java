@@ -299,8 +299,8 @@ class PauseDocumentTest {
         two.peers.shows(new Digest(new byte[16]));
         map(cluster).delete(key(cluster));
 
-        // The lease has not run out, so reads still answer from what two holds.
-        assertThat(two.reads()).isTrue();
+        // The lease has not run out, but a stored document that is absent makes every read refuse (R6).
+        assertThat(two.reads()).isFalse();
         two.nanos.advance(LEASE.minusNanos(1));
         assertThat(two.fresh()).isTrue();
         two.nanos.advance(Duration.ofNanos(1));
@@ -1311,8 +1311,9 @@ class PauseDocumentTest {
         assertThat(missed.fresh()).isFalse();
         // A member that holds the latest content restores a deleted document as a union and is fresh after it.
         map(cluster).delete(key(cluster));
-        assertThat(holder.reads()).isTrue();
+        assertThat(holder.reads()).as("refused while the document is absent").isFalse();
         holder.tick();
+        assertThat(holder.reads()).isTrue();
         assertThat(holder.fresh()).isTrue();
         assertThat(stored(cluster).pauses().tools()).contains("p");
     }
@@ -1979,6 +1980,63 @@ class PauseDocumentTest {
         m.nanos.advance(LEASE.dividedBy(2).plusSeconds(1));
         assertThat(m.fresh()).as("fresh when the write began, as it stood after the judge: renewed at the write")
                 .isTrue();
+    }
+
+    @Test
+    void aFreshMemberReadingOverADeletedOrGarbageDocumentIsRefusedWhateverItsLeaseSays() {
+        for (String shape : List.of("deleted", "garbage")) {
+            solo();
+            Member a = member();
+            Member bMember = member();
+            a.pauseTool("a");
+            assertThat(bMember.tools()).containsExactly("a");
+            assertThat(a.reads()).isTrue();
+            a.pauseTool("x");
+            if (shape.equals("deleted")) {
+                map(cluster).delete(key(cluster));
+            } else {
+                map(cluster).put(key(cluster), "garbage");
+            }
+            assertThat(bMember.fresh()).as(shape + ": still inside its lease").isTrue();
+
+            assertThatThrownBy(bMember::tools).as(shape).isInstanceOf(IllegalStateException.class)
+                    .isNotInstanceOf(ClusterOperationRefusedException.class);
+            assertThatThrownBy(bMember::allPaused).as(shape).isInstanceOf(IllegalStateException.class);
+            cluster.close();
+            cluster = null;
+        }
+    }
+
+    @Test
+    void aFailedOpenOfTheSameStoredValueIsCountedAsTamperOnceNotAtEveryRead() {
+        solo();
+        Member m = member();
+        m.pauseTool("a");
+        map(cluster).put(key(cluster), "garbage");
+        int before = metrics.count(Metric.CLUSTER_SEAL_TAMPER) + metrics.count(Metric.CLUSTER_SEAL_UNSUPPORTED_FORMAT);
+        for (int i = 0; i < 5; i++) {
+            m.reads();
+        }
+        int after = metrics.count(Metric.CLUSTER_SEAL_TAMPER) + metrics.count(Metric.CLUSTER_SEAL_UNSUPPORTED_FORMAT);
+        assertThat(after - before).isEqualTo(1);
+    }
+
+    @Test
+    void whenAUserReleasesTheSharedDocumentsTicksUseTheDependenciesOfAUserThatIsStillRetained() {
+        solo();
+        PauseDocument.Dependencies first = PauseDocument.Dependencies.of(cluster, metrics, TIMEOUT);
+        PauseDocument.Dependencies second = PauseDocument.Dependencies.of(cluster, metrics, TIMEOUT);
+        PauseDocument shared = new PauseDocument(cluster, cluster::instance,
+                new PauseDocument.Environment(new Nanos(), new Fixture.TestClock(), null), true, StubPeers.lone());
+        documents.add(shared);
+        shared.retain(first);
+        shared.retain(second);
+        assertThat(shared.tickDependenciesForTest()).isSameAs(second);
+
+        shared.release(second);
+
+        assertThat(shared.tickDependenciesForTest()).as("the one that closed is not used again").isSameAs(first);
+        shared.release(first);
     }
 
     // ---- A12: properties ------------------------------------------------------------------------------------

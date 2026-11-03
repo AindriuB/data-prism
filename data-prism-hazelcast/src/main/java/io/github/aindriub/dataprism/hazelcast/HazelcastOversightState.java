@@ -138,6 +138,31 @@ public final class HazelcastOversightState implements OversightState, AutoClosea
      * instance (IR-54): the mark lives in the instance's user context.
      */
     static PauseDocument.Peers lonePeers(PrivacyCluster cluster, HazelcastInstance instance) {
+        return lonePeers(cluster, instance, true);
+    }
+
+    /**
+     * As {@link #lonePeers(PrivacyCluster, HazelcastInstance)}, for the scope index's own document: it reads the
+     * refused mark if the main document's state has made one, and never creates the mark or its listener (R7).
+     */
+    static PauseDocument.Peers lonePeersReadOnly(PrivacyCluster cluster, HazelcastInstance instance) {
+        return lonePeers(cluster, instance, false);
+    }
+
+    private static PauseDocument.Peers lonePeers(PrivacyCluster cluster, HazelcastInstance instance, boolean create) {
+        if (!create) {
+            return () -> {
+                Object mark = instance.getUserContext().get(KEYLESS_REFUSED_CONTEXT_KEY);
+                boolean marked = mark instanceof AtomicBoolean flag && flag.get();
+                Set<Member> members = instance.getCluster().getMembers();
+                UUID self = instance.getCluster().getLocalMember().getUuid();
+                boolean other = members.stream().anyMatch(member -> !member.getUuid().equals(self));
+                if (other || marked || cluster.isRefused()) {
+                    return new PauseDocument.PeerView(Map.of(), 0, false, Long.MAX_VALUE, -1, false, false);
+                }
+                return new PauseDocument.PeerView(Map.of(), 0, true, 0, -1, true, true);
+            };
+        }
         AtomicBoolean refused = (AtomicBoolean) instance.getUserContext()
                 .computeIfAbsent(KEYLESS_REFUSED_CONTEXT_KEY, key -> {
                     AtomicBoolean mark = new AtomicBoolean();
@@ -306,7 +331,7 @@ public final class HazelcastOversightState implements OversightState, AutoClosea
     @Override
     public void close() {
         if (closed.compareAndSet(false, true) && document != null) {
-            document.release();
+            document.release(dependencies);
         }
     }
 
