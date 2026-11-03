@@ -1810,4 +1810,79 @@ class MemberCardTest {
             wrappers[0].close();
         }
     }
+
+    /** Holds a card write of A in flight by locking its card key from B, and returns the key. */
+    private String holdAWriteOfA(Pair pair) {
+        MemberCards cards = pair.a().memberCards().orElseThrow();
+        String keyA = cards.keyForTest(Fixture.uuidOf(pair.a()));
+        Fixture.cardMap(pair.b()).lock(keyA);
+        fixture.clock.advance(LEASE.dividedBy(2));
+        cards.tick();
+        assertThat(cards.writeOutstanding()).as("a write is held in flight").isTrue();
+        return keyA;
+    }
+
+    @Test
+    @Timeout(240)
+    void publishNowCalledWhileAWriteIsHeldWaitsForItAndThenWritesACardCarryingTheCurrentState() throws Exception {
+        Pair pair = pair();
+        MemberCards cards = pair.a().memberCards().orElseThrow();
+        String keyA = holdAWriteOfA(pair);
+        int before = cards.writesStarted();
+        CompletableFuture<Void> waiting = CompletableFuture.runAsync(cards::publishNow);
+
+        assertThat(Fixture.await(2, waiting::isDone)).as("it does not return while the write is held").isFalse();
+        Fixture.cardMap(pair.b()).unlock(keyA);
+
+        waiting.get(60, TimeUnit.SECONDS);
+        assertThat(cards.writesStarted() - before).as("the held write, then its own").isEqualTo(1);
+        assertThat(cards.writeOutstanding()).isFalse();
+    }
+
+    @Test
+    @Timeout(240)
+    void publishNowThrowsWhenTheHeldWriteOutlastsTheWriteTimeoutAndItNeverClearsTheOtherWritesFlag() {
+        Pair pair = pair();
+        MemberCards cards = pair.a().memberCards().orElseThrow();
+        String keyA = holdAWriteOfA(pair);
+        try {
+            assertThatThrownBy(cards::publishNow).isInstanceOf(IllegalStateException.class);
+            assertThat(cards.writeOutstanding()).as("the other write's flag is untouched").isTrue();
+        } finally {
+            Fixture.cardMap(pair.b()).unlock(keyA);
+        }
+        assertThat(Fixture.await(30, () -> !cards.writeOutstanding())).isTrue();
+    }
+
+    @Test
+    @Timeout(240)
+    void anInterruptedPublishNowWaitRestoresTheInterruptFlagThrowsAndChangesNeitherTheFlagNorTheMark()
+            throws Exception {
+        Pair pair = pair();
+        MemberCards cards = pair.a().memberCards().orElseThrow();
+        MemberCards.Declarations declarations = MemberCards.declarations(pair.a().instance());
+        String keyA = holdAWriteOfA(pair);
+        boolean markBefore = declarations.marked();
+        AtomicBoolean interruptedAfter = new AtomicBoolean();
+        AtomicBoolean threw = new AtomicBoolean();
+        Thread waiter = new Thread(() -> {
+            try {
+                cards.publishNow();
+            } catch (IllegalStateException interrupted) {
+                threw.set(true);
+            }
+            interruptedAfter.set(Thread.currentThread().isInterrupted());
+        });
+        waiter.start();
+        assertThat(Fixture.await(2, () -> false) || waiter.isAlive()).isTrue();
+        waiter.interrupt();
+        waiter.join(30_000);
+
+        assertThat(threw.get()).isTrue();
+        assertThat(interruptedAfter.get()).as("the interrupt flag is set again").isTrue();
+        assertThat(cards.writeOutstanding()).isTrue();
+        assertThat(declarations.marked()).isEqualTo(markBefore);
+        Fixture.cardMap(pair.b()).unlock(keyA);
+        assertThat(Fixture.await(30, () -> !cards.writeOutstanding())).isTrue();
+    }
 }
