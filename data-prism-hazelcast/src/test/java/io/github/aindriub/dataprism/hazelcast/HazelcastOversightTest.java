@@ -992,6 +992,122 @@ class HazelcastOversightTest {
         return mesh;
     }
 
+    /** The quarter-lease step at which three members started together write the first document. */
+    private static int stepOfTheFirstDocument() {
+        try (Mesh m = startedMeshNoRun(3)) {
+            for (int step = 1; step <= 16; step++) {
+                m.advance(MESH_LEASE.dividedBy(4));
+                m.round();
+                if (m.storedSequence(0) == 1) {
+                    return step;
+                }
+            }
+        }
+        throw new AssertionError("no first document was written");
+    }
+
+    @Test
+    void aVerifiedMemberLeavingJustBeforeTheDecisionDefersTheFirstDocumentToTheNextLookWithoutAnotherLease() {
+        int decision = stepOfTheFirstDocument();
+        try (Mesh m = startedMeshNoRun(4)) {
+            // Four members, so two others stay listed after the leave and the oldest is never alone.
+            for (int step = 1; step < decision; step++) {
+                m.advance(MESH_LEASE.dividedBy(4));
+                m.round();
+                assertThat(m.storedSequence(0)).as("step " + step).isEqualTo(-1);
+            }
+            m.advance(MESH_LEASE.dividedBy(4));
+            m.leave(3);
+            // The oldest decides without a new look: its latest look names a member that is no longer listed.
+            m.states.get(0).document().tick();
+            assertThat(m.storedSequence(0)).as("peer state is unknown: no Doc(1)").isEqualTo(-1);
+            // One look later peer state is known and Doc(1) is written at once.
+            m.tick(0);
+            m.tick(1);
+            m.tick(2);
+            assertThat(m.storedSequence(0)).as("one look later").isEqualTo(1);
+        }
+    }
+
+    @Test
+    void theOldestMemberWithAVerifiedCardReportingANonEmptyDigestNeverWritesTheFirstDocument() {
+        try (Mesh m = new Mesh(4)) {
+            for (int i = 0; i < 3; i++) {
+                m.addMember();
+            }
+            m.state(1);
+            m.state(2);
+            m.state(1).pauseTool("p");
+            m.advance(MESH_LEASE.dividedBy(4));
+            for (int i = 0; i < 3; i++) {
+                m.wrappers.get(i).memberCards().orElseThrow().tick();
+            }
+            m.documentMap(0).delete(m.documentKey(0));
+            // The oldest has never read a document; its peers' real cards report a non-empty digest.
+            m.state(0);
+            for (int step = 0; step < 12; step++) {
+                m.advance(MESH_LEASE.dividedBy(4));
+                m.tick(0);
+                m.wrappers.get(1).memberCards().orElseThrow().tick();
+                m.wrappers.get(2).memberCards().orElseThrow().tick();
+            }
+            assertThat(m.peers(0).peerDigests().values()).anyMatch(digest -> !digest.equals(
+                    PauseDocument.Digest.NONE));
+            assertThat(m.storedSequence(0)).as("no Doc(1) in three leases").isEqualTo(-1);
+            assertThat(m.reads(0)).isFalse();
+            // A holder ticks: it restores what it holds, and the oldest reads the pause.
+            m.tick(1);
+            m.run(2);
+            assertThat(m.tools(0)).contains("p");
+        }
+    }
+
+    @Test
+    void aCardLessOrAVersionOneCardMemberPresentMeansNoFirstDocumentUntilItIsGone() throws Exception {
+        // A 0.7 member holds no key and writes no card, as an outsider; its listed presence is the whole condition.
+        try (Mesh m = startedMeshNoRun(3)) {
+            m.addIntruder();
+            for (int step = 0; step < 12; step++) {
+                m.advance(MESH_LEASE.dividedBy(4));
+                m.round();
+            }
+            assertThat(m.storedSequence(0)).as("card-less member present").isEqualTo(-1);
+            assertThat(m.peers(0).unverifiedCount()).isPositive();
+            m.intruders.get(0).getLifecycleService().terminate();
+            m.run(2);
+            assertThat(m.storedSequence(0)).as("once it is gone").isEqualTo(1);
+        }
+        // A version-1 card: the layout without a card sequence and a digest.
+        try (Mesh m = startedMeshNoRun(3)) {
+            java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+            java.io.DataOutputStream out = new java.io.DataOutputStream(bytes);
+            var memberB = m.instances.get(1).getCluster().getLocalMember().getUuid();
+            out.writeUTF("dpcard");
+            out.writeInt(1);
+            out.writeUTF(memberB.toString());
+            out.writeLong(m.clocks.get(0).instant().plus(MESH_LEASE.multipliedBy(100)).toEpochMilli());
+            out.writeLong(0L);
+            out.writeInt(1);
+            out.writeUTF("test-cluster-1");
+            out.writeInt(0);
+            String key = m.cardKey(0, 1);
+            String v1 = io.github.aindriub.dataprism.hazelcast.seal.Sealer
+                    .builder(TestMembers.KEYS, io.github.aindriub.dataprism.core.metrics.PrivacyMetrics.none()).build()
+                    .seal(PrivacyCluster.MEMBER_CARD_MAP, key, bytes.toByteArray());
+            for (int step = 0; step < 12; step++) {
+                m.advance(MESH_LEASE.dividedBy(4));
+                m.cardMap(0).set(key, v1);
+                m.tick(0);
+                m.tick(2);
+                m.states.get(1).document().tick();
+            }
+            assertThat(m.peers(0).unverifiedCount()).as("the version-1 member reads as unverified").isEqualTo(1);
+            assertThat(m.storedSequence(0)).as("version-1 card present").isEqualTo(-1);
+            m.run(3);
+            assertThat(m.storedSequence(0)).as("once its card is current").isEqualTo(1);
+        }
+    }
+
     @Test
     void aMemberUnverifiedAtAPastLookRestartsTheFirstStartWaitFromTheNextLook() {
         offendingLook(MESH_LEASE.dividedBy(4), 4);
