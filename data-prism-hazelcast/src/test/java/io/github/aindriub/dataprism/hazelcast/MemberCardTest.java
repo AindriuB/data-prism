@@ -2697,4 +2697,22 @@ class MemberCardTest {
             pool.shutdownNow();
         }
     }
+
+    @Test
+    @Timeout(240)
+    void aWrapperJoiningLaterContinuesTheInstancesCardSequenceAndNeverGoesBack() {
+        HazelcastInstance instance = instanceWithNano(new long[] {1_000_000_000L});
+        PrivacyCluster first = wrapperOn(instance, fixture.clock);
+        MemberCards firstCards = first.memberCards().orElseThrow();
+        for (int i = 0; i < 3; i++) {
+            firstCards.publishNow();
+        }
+        long before = cardOf(first).cardSequence();
+
+        PrivacyCluster second = wrapperOn(instance, fixture.clock);
+
+        assertThat(cardOf(second).cardSequence()).as("the instance's count continues").isGreaterThan(before);
+        second.close();
+        first.close();
+    }
 }
