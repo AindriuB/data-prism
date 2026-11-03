@@ -577,13 +577,6 @@ final class PauseDocument {
     private volatile Dependencies tickDependencies;
     /** The dependencies of every user still retained, oldest first; ticks use the latest of them. */
     private final java.util.List<Dependencies> retained = new java.util.ArrayList<>();
-    /** The stored values that failed to open, remembered so a repeated read does not count tamper again. */
-    private final Map<String, Boolean> rejected = new LinkedHashMap<>(MEMO_SIZE, 0.75f, true) {
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest) {
-            return size() > MEMO_SIZE;
-        }
-    };
 
     /** Runs after a write has read the stored value and sealed its next one, before it commits; a test seam. */
     volatile Runnable beforeCommit = () -> { };
@@ -949,12 +942,6 @@ final class PauseDocument {
     /** The document in a stored value, memoised by its exact text, or null (counted) if it is not authentic. */
     private Memo open(Object stored, Dependencies deps) {
         if (!(stored instanceof String envelope)) {
-            String marker = "object:" + stored;
-            synchronized (monitor) {
-                if (rejected.put(marker, Boolean.TRUE) != null) {
-                    return null;
-                }
-            }
             deps.metrics().increment(Metric.CLUSTER_SEAL_TAMPER);
             return null;
         }
@@ -963,20 +950,15 @@ final class PauseDocument {
             if (known != null) {
                 return known;
             }
-            if (rejected.containsKey(envelope)) {
-                return null;
-            }
         }
         Opened opened = deps.sealer().open(PrivacyCluster.OVERSIGHT_MAP, key, envelope);
         if (opened.outcome() != Opened.Outcome.AUTHENTIC) {
-            // The sealer has counted it; remember the value so the same bytes are not counted at every read.
-            remember(envelope);
+            // The sealer has counted it.
             return null;
         }
         Doc doc = decoder.apply(opened.plaintext());
         if (doc == null) {
             deps.metrics().increment(Metric.CLUSTER_SEAL_TAMPER);
-            remember(envelope);
             return null;
         }
         synchronized (monitor) {
@@ -987,12 +969,6 @@ final class PauseDocument {
             Memo created = new Memo(doc);
             memo.put(envelope, created);
             return created;
-        }
-    }
-
-    private void remember(String envelope) {
-        synchronized (monitor) {
-            rejected.put(envelope, Boolean.TRUE);
         }
     }
 

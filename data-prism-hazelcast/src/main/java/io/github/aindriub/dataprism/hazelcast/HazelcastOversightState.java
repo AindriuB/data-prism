@@ -61,12 +61,19 @@ public final class HazelcastOversightState implements OversightState, AutoClosea
     private final PauseDocument.Dependencies dependencies;
     private final AtomicBoolean closed = new AtomicBoolean();
 
-    /** With the default lock timeout of two seconds. */
+    /**
+     * With the default lock timeout of two seconds. {@link #close()} is required: a state that is never closed keeps
+     * its cluster, sealer and metrics reachable through the instance's shared pause document for the life of the
+     * instance.
+     */
     public HazelcastOversightState(PrivacyCluster cluster) {
         this(cluster, ClusterLocks.DEFAULT_TIMEOUT);
     }
 
     /**
+     * {@link #close()} is required: a state that is never closed keeps its cluster, sealer and metrics reachable
+     * through the instance's shared pause document for the life of the instance.
+     *
      * @param lockTimeout how long a write waits for its key's lock before it is refused, {@code PT100MS} to
      *                    {@code PT30S}
      * @throws IllegalArgumentException if the timeout is outside that range
@@ -75,7 +82,10 @@ public final class HazelcastOversightState implements OversightState, AutoClosea
         this(cluster, lockTimeout, PrivacyMetrics.none());
     }
 
-    /** As above, counting into {@code metrics} and registering the {@code pause.fresh} and age gauges with it. */
+    /**
+     * As above, counting into {@code metrics} and registering the {@code pause.fresh} and age gauges with it.
+     * {@link #close()} is required, as above.
+     */
     public HazelcastOversightState(PrivacyCluster cluster, Duration lockTimeout, PrivacyMetrics metrics) {
         this(cluster, lockTimeout, metrics,
                 PauseDocument.Environment.system(Objects.requireNonNull(cluster, "cluster")
@@ -326,7 +336,8 @@ public final class HazelcastOversightState implements OversightState, AutoClosea
 
     /**
      * Stops using the shared document. The last state of the instance to close stops the ticker and the merge watch;
-     * the document and its content stay, so a later state finds them. Safe to call twice.
+     * the document and its content stay, so a later state finds them. Safe to call twice. Required: a state that is
+     * never closed keeps its dependencies reachable for the life of the instance.
      */
     @Override
     public void close() {

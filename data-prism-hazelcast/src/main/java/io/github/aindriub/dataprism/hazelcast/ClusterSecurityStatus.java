@@ -12,8 +12,10 @@ package io.github.aindriub.dataprism.hazelcast;
  * @param reason          why not, {@link Reason#NONE} while serving
  * @param memberCount     the members in the live member list
  * @param unverifiedCount the joined members without a valid member card (inside the grace period or not)
- * @param pauseFresh      whether the pause document is present, authentic and inside its lease; {@code true} in a
- *                        status that does not speak for the pause document (the member cards produce those)
+ * @param pauseFresh      whether the freshness gate has passed within the last lease (the pause document's
+ *                        {@code fresh()}); reads can still refuse while it is {@code true} when the stored document
+ *                        is not authentic; {@code true} in a status that does not speak for the pause document (the
+ *                        member cards produce those)
  * @param pauseAgeSeconds the age of the accepted pause document from local monotonic receipt, in whole seconds;
  *                        {@code -1} when none has been accepted or the producer does not know
  */

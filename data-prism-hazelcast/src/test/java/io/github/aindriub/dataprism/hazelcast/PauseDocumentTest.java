@@ -2008,20 +2008,6 @@ class PauseDocumentTest {
     }
 
     @Test
-    void aFailedOpenOfTheSameStoredValueIsCountedAsTamperOnceNotAtEveryRead() {
-        solo();
-        Member m = member();
-        m.pauseTool("a");
-        map(cluster).put(key(cluster), "garbage");
-        int before = metrics.count(Metric.CLUSTER_SEAL_TAMPER) + metrics.count(Metric.CLUSTER_SEAL_UNSUPPORTED_FORMAT);
-        for (int i = 0; i < 5; i++) {
-            m.reads();
-        }
-        int after = metrics.count(Metric.CLUSTER_SEAL_TAMPER) + metrics.count(Metric.CLUSTER_SEAL_UNSUPPORTED_FORMAT);
-        assertThat(after - before).isEqualTo(1);
-    }
-
-    @Test
     void whenAUserReleasesTheSharedDocumentsTicksUseTheDependenciesOfAUserThatIsStillRetained() {
         solo();
         PauseDocument.Dependencies first = PauseDocument.Dependencies.of(cluster, metrics, TIMEOUT);
