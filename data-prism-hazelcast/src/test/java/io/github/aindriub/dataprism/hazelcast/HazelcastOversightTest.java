@@ -992,6 +992,31 @@ class HazelcastOversightTest {
         return mesh;
     }
 
+    @Test
+    void aPeerReportingAHighPauseSequenceNeverRaisesTheSequenceAMemberWrites() {
+        try (Mesh m = startedMesh(3, 2)) {
+            // B runs ahead: four pauses take its sequence well above A's, and its card says so.
+            for (int i = 0; i < 4; i++) {
+                m.state(1).pauseTool("b" + i);
+            }
+            m.wrappers.get(1).memberCards().orElseThrow().tick();
+            m.wrappers.get(0).memberCards().orElseThrow().tick();
+            long reported = m.wrappers.get(0).memberCards().orElseThrow().highestReportedPauseSequence();
+            assertThat(reported).as("A's look shows B's high sequence").isGreaterThanOrEqualTo(5);
+
+            // Storage is rolled back to a lower document that A has already merged (seq 2, holding nothing).
+            PauseDocumentTest.plant(m.wrappers.get(0), PauseDocumentTest.doc(2, 0, java.util.Map.of(),
+                    java.util.Set.of()));
+            long aHeld = m.states.get(0).document().acceptedSequence();
+            m.state(0).pauseTool("a1");
+            assertThat(m.storedSequence(0)).as("max(held, stored) + 1, with no term from B's card")
+                    .isEqualTo(Math.max(aHeld, 2) + 1);
+            assertThat(m.storedSequence(0)).isLessThan(reported);
+            m.state(0).pauseTool("a2");
+            assertThat(m.storedSequence(0)).isEqualTo(Math.max(aHeld, 2) + 2);
+        }
+    }
+
     /** The quarter-lease step at which three members started together write the first document. */
     private static int stepOfTheFirstDocument() {
         try (Mesh m = startedMeshNoRun(3)) {

@@ -312,16 +312,25 @@ class PauseSplitBrainTest {
         }
     }
 
-    private void cPausesXThreeTimes(Shape shape) {
+    /**
+     * C pauses x three times; returns C's accepted sequence after each pause. By R3 each is max(held, stored) + 1,
+     * with an absent or unreadable document counting as nothing: a C that holds seq 3 writes 4, 5, 6 whatever the
+     * storage says, and a cold C over a deleted or unreadable document starts a Doc(1) and writes 1, 2, 3.
+     */
+    private List<Long> cPausesXThreeTimes(Shape shape) {
+        List<Long> sequences = new ArrayList<>();
         for (int i = 0; i < 3; i++) {
             shape.c().pauseTool("x");
+            sequences.add(shape.c().sequence());
         }
+        return sequences;
     }
 
     @Test
     void repeatedPausesFromABehindMemberNeverLiftThePausesOfTheMembersAheadOfIt_rolledBackStorage() {
         Shape shape = shape(Rollback.ROLL_BACK, false);
-        cPausesXThreeTimes(shape);
+        assertThat(cPausesXThreeTimes(shape)).as("C writes at its own held + 1 each time")
+                .containsExactly(4L, 5L, 6L);
         assertThat(shape.c().sequence()).as("C climbed above A and B").isEqualTo(shape.sequenceAB() + 1);
 
         assertEverythingSurvives(shape, true);
@@ -330,7 +339,8 @@ class PauseSplitBrainTest {
     @Test
     void repeatedPausesFromABehindMemberNeverLiftThePausesOfTheMembersAheadOfIt_deletedStorage() {
         Shape shape = shape(Rollback.DELETE, false);
-        cPausesXThreeTimes(shape);
+        assertThat(cPausesXThreeTimes(shape)).as("C writes at its own held + 1 each time")
+                .containsExactly(4L, 5L, 6L);
 
         assertEverythingSurvives(shape, true);
     }
@@ -338,7 +348,8 @@ class PauseSplitBrainTest {
     @Test
     void repeatedPausesFromABehindMemberNeverLiftThePausesOfTheMembersAheadOfIt_garbageInStorage() {
         Shape shape = shape(Rollback.GARBAGE, false);
-        cPausesXThreeTimes(shape);
+        assertThat(cPausesXThreeTimes(shape)).as("C writes at its own held + 1 each time")
+                .containsExactly(4L, 5L, 6L);
 
         assertEverythingSurvives(shape, true);
     }
@@ -352,7 +363,9 @@ class PauseSplitBrainTest {
                 lone.close();
             }
             Shape shape = shape(rollback, true);
-            cPausesXThreeTimes(shape);
+            assertThat(cPausesXThreeTimes(shape)).as(rollback.name())
+                    .containsExactlyElementsOf(rollback == Rollback.ROLL_BACK ? List.of(4L, 5L, 6L)
+                            : List.of(1L, 2L, 3L));
 
             assertEverythingSurvives(shape, false);
         }
@@ -364,7 +377,7 @@ class PauseSplitBrainTest {
         // The look is old, and a peer is listed: no gate passes for C, but its sequences come from the documents only.
         shape.c().peers.lookCompleted = false;
 
-        cPausesXThreeTimes(shape);
+        assertThat(cPausesXThreeTimes(shape)).containsExactly(4L, 5L, 6L);
 
         shape.a().tick();
         assertThat(stored(lone).live(Target.tool("p"))).hasSize(1);
@@ -378,7 +391,7 @@ class PauseSplitBrainTest {
         shape.c().peers.lookCompleted = true;
         shape.c().peers.lookAgeNanos = ClusterSecuritySettings.DEFAULT_PAUSE_LEASE.multipliedBy(3).toNanos();
 
-        cPausesXThreeTimes(shape);
+        assertThat(cPausesXThreeTimes(shape)).containsExactly(4L, 5L, 6L);
         shape.a().tick();
         shape.b().tick();
         shape.c().tick();
