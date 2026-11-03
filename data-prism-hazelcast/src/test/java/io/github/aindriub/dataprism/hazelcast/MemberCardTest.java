@@ -1688,69 +1688,6 @@ class MemberCardTest {
     }
 
     @Test
-    void aJoinerBehindAHeldWriteIsSeededFromTheLastSuccessfulBuildAndReadsServingAtOnce() {
-        PrivacyCluster[] wrappers = twoWrappers();
-        MemberCards second = wrappers[1].memberCards().orElseThrow();
-        assertThat(wrappers[1].securityStatus().serving()).isTrue();
-        assertThat(second.status().serving()).isTrue();
-        wrappers[1].close();
-        wrappers[0].close();
-    }
-
-    @Test
-    @Timeout(240)
-    void twoWrappersLookAndPublishConcurrentlyWhilePausesCommitWithoutADeadlockAndNoCardIsBuiltUnderTheDeclarationsMonitor()
-            throws Exception {
-        PrivacyCluster[] wrappers = twoWrappers();
-        MemberCards.Declarations declarations = MemberCards.declarations(wrappers[0].instance());
-        AtomicInteger violations = new AtomicInteger();
-        java.util.List<Long> sequences = java.util.Collections.synchronizedList(new ArrayList<>());
-        for (PrivacyCluster wrapper : wrappers) {
-            MemberCards cards = wrapper.memberCards().orElseThrow();
-            cards.afterCardBuilt = () -> {
-                if (Thread.holdsLock(declarations)) {
-                    violations.incrementAndGet();
-                }
-            };
-        }
-        ScheduledExecutorService pool = Executors.newScheduledThreadPool(4);
-        try {
-            List<java.util.concurrent.Future<?>> work = new ArrayList<>();
-            for (PrivacyCluster wrapper : wrappers) {
-                MemberCards cards = wrapper.memberCards().orElseThrow();
-                work.add(pool.submit(() -> {
-                    for (int i = 0; i < 40; i++) {
-                        cards.tick();
-                    }
-                }));
-                work.add(pool.submit(() -> {
-                    for (int i = 0; i < 20; i++) {
-                        try {
-                            cards.publishNow();
-                        } catch (IllegalStateException timedOutBehindAnotherWrite) {
-                            // The flag is per instance: a wait that outlasts the write timeout throws.
-                        }
-                    }
-                }));
-            }
-            work.add(pool.submit(() -> {
-                for (int i = 0; i < 60; i++) {
-                    declarations.report(cardDoc(i, "t" + i).digest());
-                }
-            }));
-            for (var future : work) {
-                future.get(180, TimeUnit.SECONDS);
-            }
-        } finally {
-            pool.shutdownNow();
-        }
-        assertThat(violations.get()).as("a card is built with the Declarations monitor released").isZero();
-        assertThat(Fixture.await(30, () -> !wrappers[0].memberCards().orElseThrow().writeOutstanding())).isTrue();
-        wrappers[1].close();
-        wrappers[0].close();
-    }
-
-    @Test
     @Timeout(240)
     void aCardCarriesTheNoDocumentMarkerUntilAMainDocumentExistsThenTheDigestOfWhatItHolds() {
         PrivacyCluster[] wrappers = twoWrappers();
@@ -1885,4 +1822,247 @@ class MemberCardTest {
         Fixture.cardMap(pair.b()).unlock(keyA);
         assertThat(Fixture.await(30, () -> !cards.writeOutstanding())).isTrue();
     }
+
+    private final ScheduledExecutorService keyHolder = Executors.newSingleThreadScheduledExecutor(task -> {
+        Thread thread = new Thread(task, "key-holder");
+        thread.setDaemon(true);
+        return thread;
+    });
+
+    /** Locks a key from another thread of the same instance, so a card write by the test thread is held. */
+    private void holdKey(HazelcastInstance instance, String key) {
+        try {
+            keyHolder.submit(() -> instance.getMap(PrivacyCluster.MEMBER_CARD_MAP).lock(key)).get(30, TimeUnit.SECONDS);
+        } catch (Exception failed) {
+            throw new IllegalStateException(failed);
+        }
+    }
+
+    private void releaseKey(HazelcastInstance instance, String key) {
+        try {
+            keyHolder.submit(() -> instance.getMap(PrivacyCluster.MEMBER_CARD_MAP).unlock(key))
+                    .get(30, TimeUnit.SECONDS);
+        } catch (Exception failed) {
+            throw new IllegalStateException(failed);
+        }
+    }
+
+    /** A host-managed instance whose nano clock a test moves, with the wrappers over it built by the caller. */
+    private HazelcastInstance instanceWithNano(long[] nanos) {
+        String name = TestMembers.uniqueName("nano");
+        int port = FreePorts.consecutive(1);
+        Config config = PrivacyCluster.configure(ClusterMembership.tcpIp(name, List.of("127.0.0.1:" + port))
+                .withPort(port).withInterface("127.0.0.1").toConfig());
+        config.getUserContext().put(MemberCards.NANO_CLOCK_CONTEXT_KEY, (java.util.function.LongSupplier) () -> nanos[0]);
+        return Hazelcast.newHazelcastInstance(config);
+    }
+
+    private PrivacyCluster wrapperOn(HazelcastInstance instance, Clock clock) {
+        var environment = new PrivacyCluster.Environment(clock, new Fixture.Metrics(),
+                new RecordingLogger().logger(), Duration.ofHours(1));
+        return PrivacyCluster.using(instance, false, Duration.ofMinutes(1), TestMembers.KEYS,
+                Fixture.settings(UnverifiedMemberAction.REFUSE), environment);
+    }
+
+    @Test
+    @Timeout(240)
+    void entryPointsUnderAHeldFlagNeverThrowSetOnlyTheMarkTheySpecifyAndCloseSetsNone() {
+        PrivacyCluster[] wrappers = twoWrappers();
+        MemberCards first = wrappers[0].memberCards().orElseThrow();
+        MemberCards second = wrappers[1].memberCards().orElseThrow();
+        MemberCards.Declarations declarations = MemberCards.declarations(wrappers[0].instance());
+        String keyA = first.keyForTest(Fixture.uuidOf(wrappers[0]));
+        holdKey(wrappers[0].instance(), keyA);
+        try {
+            fixture.clock.advance(LEASE.dividedBy(2));
+            first.tick();
+            assertThat(first.writeOutstanding()).as("a write is held in flight").isTrue();
+            assertThat(declarations.marked()).as("W1 cleared the mark").isFalse();
+
+            // T4: a pass due only by age loses the race and sets nothing.
+            second.tick();
+            assertThat(declarations.marked()).isFalse();
+
+            // T2: addPurposeKey on the second wrapper returns without throwing and sets the mark.
+            second.addPurposeKey("test-link-5", Fixture.filled('5'));
+            assertThat(declarations.marked()).isTrue();
+
+            // T3: a pass due because the mark is set loses the race; the mark stays.
+            second.tick();
+            assertThat(declarations.marked()).isTrue();
+
+            // T7: a wrapper's close() sets no mark (checked on a clean mark below).
+        } finally {
+            releaseKey(wrappers[0].instance(), keyA);
+        }
+        assertThat(Fixture.await(30, () -> !first.writeOutstanding())).isTrue();
+        // X1: the generation moved while the write was held, so the mark is set; one further write carries the key.
+        second.tick();
+        assertThat(Fixture.await(30, () -> !first.writeOutstanding() && !second.writeOutstanding())).isTrue();
+        assertThat(cardOf(wrappers[0]).keyCheckValues()).containsKey("test-link-5");
+        wrappers[1].close();
+        assertThat(declarations.marked()).as("close sets no mark").isFalse();
+        wrappers[0].close();
+    }
+
+    @Test
+    @Timeout(240)
+    void twoWrappersServeAcrossTwoLeasesBecauseEachCompletedWriteRefreshesEveryLiveWrappersStamp() {
+        PrivacyCluster[] wrappers = twoWrappers();
+        for (int step = 0; step < 8; step++) {
+            fixture.clock.advance(LEASE.dividedBy(4));
+            wrappers[0].memberCards().orElseThrow().tick();
+            wrappers[1].memberCards().orElseThrow().tick();
+            assertThat(wrappers[0].memberCards().orElseThrow().status().serving()).as("first, step " + step).isTrue();
+            assertThat(wrappers[1].memberCards().orElseThrow().status().serving()).as("second, step " + step).isTrue();
+        }
+        wrappers[1].close();
+        wrappers[0].close();
+    }
+
+    @Test
+    @Timeout(240)
+    void aLateWriteStampsNoWrapperPastItsBuildInstantAndEveryWrapperReadsNotServingOnceThatInstantPlusALeasePasses() {
+        PrivacyCluster[] wrappers = twoWrappers();
+        MemberCards first = wrappers[0].memberCards().orElseThrow();
+        MemberCards second = wrappers[1].memberCards().orElseThrow();
+        String keyA = first.keyForTest(Fixture.uuidOf(wrappers[0]));
+        holdKey(wrappers[0].instance(), keyA);
+        try {
+            fixture.clock.advance(LEASE.dividedBy(2));
+            first.tick();
+            assertThat(first.writeOutstanding()).isTrue();
+            fixture.clock.advance(LEASE.plusSeconds(1));
+        } finally {
+            releaseKey(wrappers[0].instance(), keyA);
+        }
+        assertThat(Fixture.await(30, () -> !first.writeOutstanding())).isTrue();
+        Instant stamped = first.lastPublishAtForTest();
+        assertThat(stamped).as("the stamp is the build instant, not the completion time")
+                .isBefore(fixture.clock.instant().minus(LEASE));
+        assertThat(second.lastPublishAtForTest()).isBefore(fixture.clock.instant().minus(LEASE));
+        assertThat(first.status().serving()).isFalse();
+        assertThat(second.status().serving()).isFalse();
+        wrappers[1].close();
+        wrappers[0].close();
+    }
+
+    @Test
+    @Timeout(240)
+    void wrappersOnDifferentClocksAreStampedOnTheirOwnAndLapseOneLeaseLaterOnTheirOwn() {
+        long[] nanos = {1_000_000_000L};
+        HazelcastInstance instance = instanceWithNano(nanos);
+        Fixture.TestClock clockOne = new Fixture.TestClock();
+        Fixture.TestClock clockTwo = new Fixture.TestClock();
+        clockTwo.advance(LEASE.dividedBy(2).plusSeconds(5));
+        PrivacyCluster one = wrapperOn(instance, clockOne);
+        PrivacyCluster two = wrapperOn(instance, clockTwo);
+        one.memberCards().orElseThrow().publishNow();
+
+        assertThat(one.memberCards().orElseThrow().lastPublishAtForTest()).isEqualTo(clockOne.instant());
+        assertThat(two.memberCards().orElseThrow().lastPublishAtForTest()).isEqualTo(clockTwo.instant());
+
+        clockOne.advance(LEASE.plusSeconds(1));
+        assertThat(one.memberCards().orElseThrow().status().serving()).isFalse();
+        assertThat(two.memberCards().orElseThrow().status().serving()).as("its own clock has not moved").isTrue();
+        two.close();
+        one.close();
+    }
+
+    @Test
+    @Timeout(240)
+    void aJoinerBehindAHeldWriteIsSeededWhenTheLastBuildIsUnderALeaseOldAndNotSeededWhenOlder() {
+        long[] nanos = {1_000_000_000L};
+        HazelcastInstance instance = instanceWithNano(nanos);
+        PrivacyCluster first = wrapperOn(instance, fixture.clock);
+        String keyA = first.memberCards().orElseThrow().keyForTest(Fixture.uuidOf(first));
+        holdKey(instance, keyA);
+        PrivacyCluster second;
+        try {
+            fixture.clock.advance(LEASE.dividedBy(2));
+            nanos[0] += LEASE.dividedBy(2).toNanos();
+            first.memberCards().orElseThrow().tick();
+            assertThat(first.memberCards().orElseThrow().writeOutstanding()).isTrue();
+            second = wrapperOn(instance, fixture.clock);
+            assertThat(second.memberCards().orElseThrow().status().serving())
+                    .as("seeded: the last successful build is under a lease old").isTrue();
+            assertThat(second.memberCards().orElseThrow().lastPublishAtForTest()).isNotNull();
+        } finally {
+            releaseKey(instance, keyA);
+        }
+        assertThat(Fixture.await(30, () -> !first.memberCards().orElseThrow().writeOutstanding())).isTrue();
+        second.close();
+
+        // An old build: the joiner's stamp stays null and it reads not serving until its own card is written.
+        nanos[0] += LEASE.plusSeconds(1).toNanos();
+        holdKey(instance, keyA);
+        PrivacyCluster third = null;
+        try {
+            fixture.clock.advance(LEASE.dividedBy(2));
+            first.memberCards().orElseThrow().tick();
+            third = wrapperOn(instance, fixture.clock);
+            assertThat(third.memberCards().orElseThrow().lastPublishAtForTest()).as("not seeded").isNull();
+            assertThat(third.memberCards().orElseThrow().status().serving()).isFalse();
+        } finally {
+            releaseKey(instance, keyA);
+            if (third != null) {
+                third.close();
+            }
+            first.close();
+        }
+    }
+
+    @Test
+    @Timeout(240)
+    void twoWrappersLookAndPublishConcurrentlyWhilePausesCommitWithoutADeadlockAndNoCardIsBuiltUnderTheDeclarationsMonitor()
+            throws Exception {
+        PrivacyCluster[] wrappers = twoWrappers();
+        MemberCards.Declarations declarations = MemberCards.declarations(wrappers[0].instance());
+        AtomicInteger violations = new AtomicInteger();
+        java.util.List<Long> sequences = java.util.Collections.synchronizedList(new ArrayList<>());
+        for (PrivacyCluster wrapper : wrappers) {
+            MemberCards cards = wrapper.memberCards().orElseThrow();
+            cards.afterCardBuilt = () -> {
+                if (Thread.holdsLock(declarations)) {
+                    violations.incrementAndGet();
+                }
+            };
+        }
+        ScheduledExecutorService pool = Executors.newScheduledThreadPool(4);
+        try {
+            List<java.util.concurrent.Future<?>> work = new ArrayList<>();
+            for (PrivacyCluster wrapper : wrappers) {
+                MemberCards cards = wrapper.memberCards().orElseThrow();
+                work.add(pool.submit(() -> {
+                    for (int i = 0; i < 40; i++) {
+                        cards.tick();
+                    }
+                }));
+                work.add(pool.submit(() -> {
+                    for (int i = 0; i < 20; i++) {
+                        try {
+                            cards.publishNow();
+                        } catch (IllegalStateException timedOutBehindAnotherWrite) {
+                            // The flag is per instance: a wait that outlasts the write timeout throws.
+                        }
+                    }
+                }));
+            }
+            work.add(pool.submit(() -> {
+                for (int i = 0; i < 60; i++) {
+                    declarations.report(cardDoc(i, "t" + i).digest());
+                }
+            }));
+            for (var future : work) {
+                future.get(180, TimeUnit.SECONDS);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(violations.get()).as("a card is built with the Declarations monitor released").isZero();
+        assertThat(Fixture.await(30, () -> !wrappers[0].memberCards().orElseThrow().writeOutstanding())).isTrue();
+        wrappers[1].close();
+        wrappers[0].close();
+    }
+
 }

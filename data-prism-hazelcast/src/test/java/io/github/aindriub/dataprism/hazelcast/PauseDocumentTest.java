@@ -848,6 +848,21 @@ class PauseDocumentTest {
     }
 
     @Test
+    void theCapCountsElementsOnly_manyResumedPausesDoNotBlockANonAllPause() {
+        solo();
+        Member state = member();
+        // 4,200 elements, every one tombstoned: elements plus tombstones is above 8,176, elements alone are not.
+        Doc doc = docOfTools(1000, "t", 4_200);
+        plant(cluster, new Doc(doc.sequence(), 0, doc.issuedAtMillis(), "test", doc.elements(),
+                new HashSet<>(doc.elements().keySet())));
+        assertThat(state.tools()).isEmpty();
+
+        state.pauseTool("fits");
+
+        assertThat(state.tools()).containsExactly("fits");
+    }
+
+    @Test
     void pauseAllCyclesAtTheCapAreNeverRefused_theReserveIsTheWholeGapToTheFormatBound() {
         solo();
         Member state = member();

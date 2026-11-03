@@ -680,6 +680,11 @@ public final class MemberCards {
     private boolean firstLook = true;
     private final AtomicInteger writes = new AtomicInteger();
 
+    /** The reading of this wrapper's own clock at the card build it last relies on, for tests; null if none. */
+    Instant lastPublishAtForTest() {
+        return lastPublishAt;
+    }
+
     /** How many card writes were started, for tests. */
     int writesStarted() {
         return writes.get();
