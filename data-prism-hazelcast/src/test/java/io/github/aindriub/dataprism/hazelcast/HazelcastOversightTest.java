@@ -817,15 +817,20 @@ class HazelcastOversightTest {
             assertThat(mesh.tools(b)).contains("p");
             mesh.leave(a);
             mesh.documentMap(b).delete(mesh.documentKey(b));
-            mesh.leave(b);
-        }
-        try (Mesh restarted = new Mesh(1)) {
-            int b = restarted.addMember();
-            restarted.state(b).document().tick();
-            restarted.advance(Duration.ofSeconds(1));
-            restarted.tick(b);
-            assertThat(restarted.storedSequence(b)).as("alone, so at once and with no wait").isEqualTo(1);
-            assertThat(restarted.tools(b)).as("the departed member's pause is lost").doesNotContain("p");
+
+            // B restarts its wrapper and its document only: the instance, and the cluster's other state, remain, so
+            // the assertion below can fail if anything B held leaked through the restart.
+            mesh.states.get(b).close();
+            mesh.states.set(b, null);
+            mesh.wrappers.get(b).close();
+            mesh.instances.get(b).getUserContext().remove(HazelcastOversightState.MAIN_DOCUMENT_CONTEXT_KEY);
+            mesh.wrappers.set(b, mesh.wrapperOn(mesh.instances.get(b), mesh.clocks.get(b)));
+            assertThat(mesh.state(b).document().accepted().elements()).as("a cold document holds nothing").isEmpty();
+            mesh.state(b).document().tick();
+            mesh.advance(Duration.ofSeconds(1));
+            mesh.tick(b);
+            assertThat(mesh.storedSequence(b)).as("alone, so at once and with no wait").isEqualTo(1);
+            assertThat(mesh.tools(b)).as("the departed member's pause is lost").doesNotContain("p");
         }
     }
 

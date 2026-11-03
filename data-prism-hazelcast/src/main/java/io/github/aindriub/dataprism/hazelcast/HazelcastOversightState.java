@@ -48,7 +48,7 @@ import java.util.function.LongSupplier;
 public final class HazelcastOversightState implements OversightState, AutoCloseable {
 
     private static final String LEGACY_PAUSED_SUFFIX = "\0paused";
-    private static final String MAIN_DOCUMENT_CONTEXT_KEY = "dataprism.cluster.pause.main";
+    static final String MAIN_DOCUMENT_CONTEXT_KEY = "dataprism.cluster.pause.main";
     private static final String GAUGE_SLOT_CONTEXT_KEY = "dataprism.cluster.pause.gauges";
     private static final String KEYLESS_REFUSED_CONTEXT_KEY = "dataprism.cluster.pause.keyless.refused";
 
