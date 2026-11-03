@@ -516,6 +516,53 @@ class KeyedScopeEndTest {
     }
 
     @Test
+    void oneLongLivedIndexRefusesAnUncoveredAnAbsentAndANotServingMemberAndEndsTheScopeOnceTheCauseIsGone() {
+        singleMember();
+        PrivacyCluster cluster = members[0];
+        var state = new HazelcastOversightState(cluster, TIMEOUT);
+        String uncovered = "scope-uncovered";
+        String absent = "scope-absent";
+        String stopped = "scope-not-serving";
+        populate(uncovered, "subject-1");
+        state.pauseScope(absent);
+        state.pauseScope(stopped);
+        var index = index(cluster);
+        index.endScope("scope-warm-up");
+        String key = cluster.keyedNames().mapKey(PrivacyCluster.OVERSIGHT_MAP, PauseDocument.CANONICAL);
+        IMap<String, Object> map = cluster.instance().getMap(PrivacyCluster.OVERSIGHT_MAP);
+
+        // The index is not covered: a listed peer shows content it never held. Nothing is written; once covered,
+        // the same index ends the scope.
+        PauseDocument.Peers covered = index.pauseDocument().peers;
+        index.pauseDocument().peers = () -> new PauseDocument.PeerView(
+                Map.of(java.util.UUID.randomUUID(), new PauseDocument.Digest(new byte[16])), 0, true, 0, -1, false,
+                true);
+        Object rawBefore = map.get(key);
+        PauseDocumentTest.assertUnavailable("index not covered", () -> index.endScope(uncovered));
+        assertThat(map.get(key)).as("nothing written").isEqualTo(rawBefore);
+        assertThat(document(cluster).live(Target.scope(uncovered))).as("the pause is kept").isNotEmpty();
+        index.pauseDocument().peers = covered;
+        index.endScope(uncovered);
+        assertThat(document(cluster).live(Target.scope(uncovered))).isEmpty();
+
+        // The document goes absent after the index held it: unavailable, and no putIfAbsent. Restored, it ends.
+        Object saved = map.get(key);
+        map.delete(key);
+        PauseDocumentTest.assertUnavailable("absent with held", () -> index.endScope(absent));
+        assertThat(map.get(key)).as("still absent").isNull();
+        map.put(key, saved);
+        index.endScope(absent);
+        assertThat(document(cluster).live(Target.scope(absent))).isEmpty();
+
+        // The member stops serving (closing it shuts the embedded instance down): CLUSTER_OPERATION_REFUSED.
+        cluster.close();
+        assertThatThrownBy(() -> index.endScope(stopped)).isInstanceOf(ClusterOperationRefusedException.class)
+                .satisfies(refusal -> assertThat(((ClusterOperationRefusedException) refusal).code())
+                        .isEqualTo("CLUSTER_OPERATION_REFUSED"));
+        state.close();
+    }
+
+    @Test
     void aSweepFailureKeepsThePauseAndThrowsTheSweepsRefusal() {
         singleMember();
         populate(ENDED, "subject-1");

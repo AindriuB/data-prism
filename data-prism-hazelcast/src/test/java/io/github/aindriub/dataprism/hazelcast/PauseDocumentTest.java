@@ -2277,11 +2277,11 @@ class PauseDocumentTest {
      * OVERSIGHT_UNAVAILABLE is exactly an IllegalStateException with the document's own message; not a refusal, not a
      * subclass, not another IllegalStateException.
      */
-    private static void assertUnavailable(ThrowingCallable call) {
+    static void assertUnavailable(ThrowingCallable call) {
         assertUnavailable("unavailable", call);
     }
 
-    private static void assertUnavailable(String description, ThrowingCallable call) {
+    static void assertUnavailable(String description, ThrowingCallable call) {
         Throwable thrown = catchThrowable(call);
         assertThat(thrown).as(description).isNotNull();
         assertThat(thrown.getClass()).as(description).isEqualTo(IllegalStateException.class);
