@@ -52,7 +52,15 @@ class PauseDocumentTest {
 
     /** A monotonic clock that only moves when a test says so. */
     static final class Nanos implements LongSupplier {
-        private final AtomicLong now = new AtomicLong(1_000_000_000L);
+        private final AtomicLong now;
+
+        Nanos() {
+            this(1_000_000_000L);
+        }
+
+        Nanos(long start) {
+            now = new AtomicLong(start);
+        }
 
         @Override
         public long getAsLong() {
@@ -1272,9 +1280,12 @@ class PauseDocumentTest {
         peers.unverified = 0;
         assertThat(cold.reads()).isTrue();
         assertThat(cold.doc.established()).isTrue();
-        // Established, an unverified member no longer blocks it.
+        // Established, an unverified member no longer blocks its renewal: the lease runs out and the gate passes.
         peers.unverified = 2;
+        cold.nanos.advance(LEASE.plusSeconds(1));
+        assertThat(cold.fresh()).isFalse();
         assertThat(cold.reads()).isTrue();
+        assertThat(cold.fresh()).isTrue();
 
         // Over an absent or unreadable value nothing renews.
         lapse(cold);
@@ -1742,6 +1753,27 @@ class PauseDocumentTest {
         Object raw = map(cluster).get(key(cluster));
         cold.tick();
         assertThat(map(cluster).get(key(cluster))).isEqualTo(raw);
+    }
+
+    @Test
+    void theGateDecidesTheSameWhenTheMonotonicClockStartsNearLongMaxValueAndWraps() {
+        solo();
+        for (long start : new long[] {1_000_000_000L, Long.MAX_VALUE - LEASE.dividedBy(2).toNanos(),
+                Long.MIN_VALUE + 7}) {
+            Nanos nanos = new Nanos(start);
+            StubPeers peers = StubPeers.withPeer();
+            Member m = new Member(nanos, new Fixture.TestClock(), peers);
+            m.pauseTool("a" + start);
+            assertThat(m.reads()).isTrue();
+            nanos.advance(LEASE.minusNanos(1));
+            assertThat(m.fresh()).as("one nanosecond short of the lease, start " + start).isTrue();
+            nanos.advance(Duration.ofNanos(1));
+            assertThat(m.fresh()).as("the lease, start " + start).isFalse();
+            peers.lookAgeNanos = LEASE.toNanos() + 1;
+            assertThat(m.reads()).as("a stale look fails the gate whatever the clock reads").isFalse();
+            peers.lookAgeNanos = 0;
+            assertThat(m.reads()).isTrue();
+        }
     }
 
     // ---- A7: lapsed holders, restore and repair ------------------------------------------------------------
