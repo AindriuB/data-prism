@@ -397,6 +397,105 @@ class PauseDocumentTest {
                 .isEqualTo(3);
     }
 
+    @Test
+    void aNotServingMemberRefusesAResumeThroughClusterRefusalsAndItIsLoggedOnce() throws Exception {
+        solo();
+        Member one = member();
+        one.pauseTool("a");
+        PauseDocument.Dependencies notServing = new PauseDocument.Dependencies(one.deps.metrics(),
+                one.deps.lockTimeout(), () -> ClusterSecurityStatus.notServing(
+                        ClusterSecurityStatus.Reason.UNVERIFIED_MEMBER, 2, 1), one.deps.sealer());
+        var recorder = new RecordingLogger();
+        try (var ignored = ClusterRefusals.captureTo(recorder.logger())) {
+            assertThatThrownBy(() -> one.doc.resume(Target.tool("a"), notServing))
+                    .isInstanceOf(ClusterOperationRefusedException.class);
+        }
+        assertThat(recorder.lines()).hasSize(1);
+        assertThat(recorder.lines().get(0).message()).contains("CLUSTER_OPERATION_REFUSED", "IllegalStateException");
+        assertThat(one.tools()).as("nothing was written").containsExactly("a");
+    }
+
+    /** An instance whose lifecycle listeners are counted, and whose adding of one can run a hook first. */
+    private static final class CountingInstance {
+        final AtomicInteger added = new AtomicInteger();
+        final AtomicInteger removed = new AtomicInteger();
+        volatile Runnable whileAdding = () -> { };
+        volatile boolean failToAdd;
+        final com.hazelcast.core.HazelcastInstance instance;
+
+        CountingInstance(com.hazelcast.core.HazelcastInstance real) {
+            com.hazelcast.core.LifecycleService lifecycle = (com.hazelcast.core.LifecycleService)
+                    java.lang.reflect.Proxy.newProxyInstance(PauseDocumentTest.class.getClassLoader(),
+                            new Class<?>[] {com.hazelcast.core.LifecycleService.class}, (proxy, method, args) -> {
+                                switch (method.getName()) {
+                                    case "addLifecycleListener" -> {
+                                        added.incrementAndGet();
+                                        whileAdding.run();
+                                        if (failToAdd) {
+                                            throw new IllegalStateException("cannot add a listener");
+                                        }
+                                        return UUID.randomUUID();
+                                    }
+                                    case "removeLifecycleListener" -> {
+                                        removed.incrementAndGet();
+                                        return true;
+                                    }
+                                    default -> {
+                                        return invoke(method, real.getLifecycleService(), args);
+                                    }
+                                }
+                            });
+            this.instance = (com.hazelcast.core.HazelcastInstance) java.lang.reflect.Proxy.newProxyInstance(
+                    PauseDocumentTest.class.getClassLoader(), new Class<?>[] {com.hazelcast.core.HazelcastInstance.class},
+                    (proxy, method, args) -> method.getName().equals("getLifecycleService") ? lifecycle
+                            : invoke(method, real, args));
+        }
+
+        private static Object invoke(java.lang.reflect.Method method, Object target, Object[] args) throws Throwable {
+            try {
+                return method.invoke(target, args);
+            } catch (java.lang.reflect.InvocationTargetException failed) {
+                throw failed.getCause();
+            }
+        }
+    }
+
+    @Test
+    void aReleaseThatLandsWhileTheLifecycleListenerIsBeingAddedLeavesNoListenerBehind() {
+        solo();
+        CountingInstance counting = new CountingInstance(cluster.instance());
+        PauseDocument.Dependencies deps = PauseDocument.Dependencies.of(cluster, metrics, TIMEOUT);
+        PauseDocument doc = new PauseDocument(cluster, () -> counting.instance,
+                new PauseDocument.Environment(new Nanos(), new Fixture.TestClock(), null), true, StubPeers.lone());
+        documents.add(doc);
+        counting.whileAdding = () -> doc.release(deps);
+
+        doc.retain(deps);
+
+        assertThat(counting.added.get()).isEqualTo(1);
+        assertThat(counting.removed.get()).as("the listener is removed, not kept for a ticker that is gone")
+                .isEqualTo(1);
+    }
+
+    @Test
+    void aStartThatFailsUndoesTheUserAndALaterRetainStartsAgain() {
+        solo();
+        CountingInstance counting = new CountingInstance(cluster.instance());
+        PauseDocument.Dependencies deps = PauseDocument.Dependencies.of(cluster, metrics, TIMEOUT);
+        PauseDocument doc = new PauseDocument(cluster, () -> counting.instance,
+                new PauseDocument.Environment(new Nanos(), new Fixture.TestClock(), null), true, StubPeers.lone());
+        documents.add(doc);
+        counting.failToAdd = true;
+
+        assertThatThrownBy(() -> doc.retain(deps)).isInstanceOf(IllegalStateException.class);
+        counting.failToAdd = false;
+        doc.retain(deps);
+
+        assertThat(counting.added.get()).as("the second retain starts again").isEqualTo(2);
+        doc.release(deps);
+        assertThat(counting.removed.get()).as("its release removes the one listener that was kept").isEqualTo(1);
+    }
+
     // ---- A1: deletion, replay, restart ---------------------------------------------------------------------
 
     @Test
