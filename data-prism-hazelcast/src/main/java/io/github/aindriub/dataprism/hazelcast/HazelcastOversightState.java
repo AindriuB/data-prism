@@ -143,6 +143,15 @@ public final class HazelcastOversightState implements OversightState, AutoClosea
     }
 
     /**
+     * The instance without the serving gate, for the scope index's own pause document: R13's preconditions, in
+     * R13's order, decide whether a scope may end, so the gate must not pre-empt them. This class is allowed to call
+     * {@code PrivacyCluster.instance()}; the index goes through it.
+     */
+    static HazelcastInstance ungatedInstance(PrivacyCluster cluster) {
+        return cluster.instance();
+    }
+
+    /**
      * The Peers of a member without cluster keys: nothing is tracked, no member is unverified, and peer state is
      * known only while it is the only member. Once refused (a member joined it), it stays refused for the life of the
      * instance (IR-54): the mark lives in the instance's user context.

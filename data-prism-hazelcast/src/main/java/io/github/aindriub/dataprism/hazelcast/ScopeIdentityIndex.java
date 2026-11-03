@@ -179,7 +179,8 @@ public final class ScopeIdentityIndex {
                 // the instance through the ungated accessor, so refuseUnless orders the refusals (R13).
                 PauseDocument.Environment clocks = pauseEnvironment != null ? pauseEnvironment
                         : PauseDocument.Environment.system(cluster.securitySettings().pauseLease());
-                pauseDocument = new PauseDocument(cluster, cluster::instance, clocks, false, peers());
+                pauseDocument = new PauseDocument(cluster, () -> HazelcastOversightState.ungatedInstance(cluster), clocks, false,
+                        peers());
             }
             return pauseDocument;
         }
@@ -189,6 +190,7 @@ public final class ScopeIdentityIndex {
         if (cluster.memberCards().isPresent()) {
             return MemberCards.peers(cluster);
         }
-        return HazelcastOversightState.lonePeersReadOnly(cluster, cluster.instance());
+        return HazelcastOversightState.lonePeersReadOnly(cluster,
+                HazelcastOversightState.ungatedInstance(cluster));
     }
 }
