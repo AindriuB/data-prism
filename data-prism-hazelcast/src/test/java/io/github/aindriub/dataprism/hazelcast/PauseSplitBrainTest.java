@@ -182,8 +182,8 @@ class PauseSplitBrainTest {
         long sequence = one.document().acceptedSequence();
         copyDocument(other, side);
 
-        // Equal order, and the stored document lacks alpha: not fresh until the union is written back.
-        assertThatThrownBy(one::snapshot).isInstanceOf(IllegalStateException.class);
+        // Equal order, and the stored document lacks alpha: merged on the read, written back by the tick.
+        assertThat(one.snapshot().pausedTools()).containsExactlyInAnyOrder("alpha", "beta");
         one.document().tick();
 
         assertThat(one.snapshot().pausedTools()).containsExactlyInAnyOrder("alpha", "beta");
