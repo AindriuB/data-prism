@@ -1555,6 +1555,8 @@ class MemberCardTest {
                 settings, environment);
         String cardBefore = (String) instance.getMap(PrivacyCluster.MEMBER_CARD_MAP)
                 .get(first.memberCards().orElseThrow().keyForTest(Fixture.uuidOf(first)));
+        Object mainBefore = instance.getUserContext().get(HazelcastOversightState.MAIN_DOCUMENT_CONTEXT_KEY);
+        int writesBefore = first.memberCards().orElseThrow().writesStarted();
 
         ClusterSecuritySettings otherLease = new ClusterSecuritySettings(LEASE.plusSeconds(10),
                 settings.clockSkewTolerance(), settings.unverifiedMemberAction(), settings.unverifiedMemberGrace(),
@@ -1573,6 +1575,12 @@ class MemberCardTest {
         assertThat(instance.getMap(PrivacyCluster.MEMBER_CARD_MAP)
                 .get(first.memberCards().orElseThrow().keyForTest(Fixture.uuidOf(first))))
                 .as("the first wrapper's card is unchanged").isEqualTo(cardBefore);
+        assertThat(first.memberCards().orElseThrow().writesStarted())
+                .as("no card write was started by a refused wrapper").isEqualTo(writesBefore);
+        assertThat(PrivacyCluster.liveWrapperCount(instance)).as("the refused wrappers are closed, not live")
+                .isEqualTo(1);
+        assertThat(instance.getUserContext().get(HazelcastOversightState.MAIN_DOCUMENT_CONTEXT_KEY))
+                .as("the main document is unchanged (no refused wrapper made one)").isSameAs(mainBefore);
         // The same values with other purpose keys start.
         PrivacyCluster third = PrivacyCluster.using(instance, false, Duration.ofMinutes(1), TestMembers.KEYS,
                 settings, environment);
