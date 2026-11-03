@@ -137,7 +137,7 @@ public final class HazelcastOversightState implements OversightState, AutoClosea
         } else {
             peers = lonePeers(cluster, instance);
         }
-        PauseDocument created = new PauseDocument(cluster, cluster::instance, clocks, true, peers);
+        PauseDocument created = new PauseDocument(cluster, () -> instance, clocks, true, peers);
         Object winner = instance.getUserContext().putIfAbsent(MAIN_DOCUMENT_CONTEXT_KEY, created);
         return winner == null ? created : (PauseDocument) winner;
     }

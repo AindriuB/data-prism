@@ -1119,7 +1119,8 @@ public final class MemberCards {
                 readings.put(wrapper, wrapper.clock.instant());
             }
             long buildNanos = declarations.nanoNow();
-            Instant build = clock.instant();
+            // The lease and the writer's stamp both use this wrapper's own reading from W2, not a second one.
+            Instant build = readings.getOrDefault(this, clock.instant());
             UUID self = cluster.instance().getCluster().getLocalMember().getUuid();
             Card card = new Card(self, FORMAT_VERSION, keys.held().stream().map(ClusterKeys.Key::id).toList(),
                     checks, declarations.pause(), sequence, digest, build.plus(settings.pauseLease()));

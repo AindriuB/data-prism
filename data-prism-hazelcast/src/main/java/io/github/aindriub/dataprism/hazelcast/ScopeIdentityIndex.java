@@ -41,7 +41,9 @@ public final class ScopeIdentityIndex {
     private final Object pauseLock = new Object();
     /** The index's own, never-started view of the pause document, made on first use. */
     private PauseDocument pauseDocument;
-    private PauseDocument.Dependencies pauseDependencies;
+    private final PauseDocument.Dependencies pauseDependencies;
+    /** The clocks of the index's own document, null for the system clocks; a seam for tests, set before first use. */
+    PauseDocument.Environment pauseEnvironment;
     /** Resolves a map by name; a seam for tests. */
     Function<String, IMap<String, ?>> maps;
 
@@ -72,6 +74,7 @@ public final class ScopeIdentityIndex {
         this.maps = name -> cluster.servingInstance().getMap(name);
         this.approvals = HazelcastApprovalStore.forScopeEnd(cluster, lockTimeout, metrics);
         this.sealer = IdentityMaps.sealerFor(cluster, metrics, Objects.requireNonNull(gate, "gate"));
+        this.pauseDependencies = PauseDocument.Dependencies.of(cluster, metrics, lockTimeout);
     }
 
     /**
@@ -169,15 +172,21 @@ public final class ScopeIdentityIndex {
     PauseDocument pauseDocument() {
         synchronized (pauseLock) {
             if (pauseDocument == null) {
-                // Ending a scope needs a serving member, so the document is reached through the gated accessor.
                 // It never publishes a card digest and is never started: it judges with its own Seen and its own
-                // nano clock, and reads look age only as a duration through the Peers of the instance.
-                pauseDependencies = PauseDocument.Dependencies.of(cluster, metrics, lockTimeout);
-                pauseDocument = new PauseDocument(cluster, cluster::servingInstance,
-                        PauseDocument.Environment.system(cluster.securitySettings().pauseLease()), false,
-                        cluster.memberCards().isPresent() ? MemberCards.peers(cluster) : HazelcastOversightState.lonePeersReadOnly(cluster, cluster.servingInstance()));
+                // nano clock, and reads look age only as a duration through the Peers of the instance. It reaches
+                // the instance through the ungated accessor, so refuseUnless orders the refusals (R13).
+                PauseDocument.Environment clocks = pauseEnvironment != null ? pauseEnvironment
+                        : PauseDocument.Environment.system(cluster.securitySettings().pauseLease());
+                pauseDocument = new PauseDocument(cluster, cluster::instance, clocks, false, peers());
             }
             return pauseDocument;
         }
+    }
+
+    private PauseDocument.Peers peers() {
+        if (cluster.memberCards().isPresent()) {
+            return MemberCards.peers(cluster);
+        }
+        return HazelcastOversightState.lonePeersReadOnly(cluster, cluster.instance());
     }
 }
