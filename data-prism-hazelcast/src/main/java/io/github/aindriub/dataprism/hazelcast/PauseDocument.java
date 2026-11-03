@@ -1018,7 +1018,6 @@ final class PauseDocument {
             return null;
         }
         synchronized (monitor) {
-            lastRejected = null;
             Memo known = memo.get(envelope);
             if (known != null) {
                 return known;
