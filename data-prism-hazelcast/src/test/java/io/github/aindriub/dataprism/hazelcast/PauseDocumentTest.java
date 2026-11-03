@@ -149,6 +149,11 @@ class PauseDocumentTest {
 
     /** A solo member: it seals under keys drawn at random for its process. */
     private PrivacyCluster solo() {
+        if (cluster != null) {
+            documents.forEach(PauseDocument::close);
+            documents.clear();
+            cluster.close();
+        }
         cluster = PrivacyCluster.embedded(config(TestMembers.uniqueName("pause")), false);
         return cluster;
     }
@@ -579,15 +584,29 @@ class PauseDocumentTest {
         assertThat(written.compareOrder(gated)).isGreaterThan(0);
         assertThat(map(cluster).get(key(cluster))).isNotEqualTo(raw);
         assertThat(cold.held().pauses().tools()).containsExactlyInAnyOrder("p", "x");
+    }
 
-        // With held = {q} over a GATED document the written document holds {p, q, x}.
-        solo();
-        plant(cluster, gated);
-        Member holder = member();
-        holder.pauseTool("q");
-        plant(cluster, gated);
-        holder.pauseTool("x");
-        assertThat(stored(cluster).pauses().tools()).containsExactlyInAnyOrder("p", "q", "x");
+    @Test
+    void aMemberHoldingOnlyQKeepsItAndUnionsAnOlderDocumentOrAnUnreadableOneIntoAnOperatorPause() {
+        Doc older = new Doc(5, 0, new Fixture.TestClock().millis() - LEASE.plus(SKEW).plusSeconds(1).toMillis(),
+                "test-issuer", Map.of(id(1), Target.tool("p")), Set.of());
+        for (String stored : List.of("older document", "unreadable value")) {
+            solo();
+            Member holder = member();
+            holder.pauseTool("q");
+            assertThat(holder.held().pauses().tools()).as(stored + ": held is q alone").containsExactly("q");
+            if (stored.startsWith("older")) {
+                plant(cluster, older);
+            } else {
+                map(cluster).put(key(cluster), "not an envelope");
+            }
+
+            holder.pauseTool("x");
+
+            assertThat(stored(cluster).pauses().tools()).as(stored)
+                    .containsExactlyInAnyOrder(stored.startsWith("older") ? new String[] {"p", "q", "x"}
+                            : new String[] {"q", "x"});
+        }
     }
 
     @Test
