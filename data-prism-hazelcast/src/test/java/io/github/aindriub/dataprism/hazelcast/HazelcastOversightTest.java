@@ -1304,7 +1304,10 @@ class HazelcastOversightTest {
         nanos[0] += ClusterSecuritySettings.DEFAULT_PAUSE_LEASE.toNanos() + 1;
         state.document().tick();
         assertThat(state.document().fresh()).as("the gate does not pass").isFalse();
-        assertThatThrownBy(() -> state.resumeTool("seed")).isInstanceOf(RuntimeException.class);
+        // Refused by the document's own preconditions (peer state unknown), not by the refused wrapper's accessor.
+        assertThat(a.isRefused()).as("the first wrapper is refused").isTrue();
+        assertThatThrownBy(() -> state.resumeTool("seed"))
+                .isInstanceOf(io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException.class);
 
         // The joiner leaves: announced to every listener too. The mark is not cleared.
         var gone = new com.hazelcast.cluster.MembershipEvent(real.getCluster(), local,
@@ -1321,7 +1324,10 @@ class HazelcastOversightTest {
             assertThat(later.lookCompleted()).isFalse();
             again.document().tick();
             assertThat(again.document().fresh()).isFalse();
-            assertThatThrownBy(() -> again.resumeTool("seed")).isInstanceOf(RuntimeException.class);
+            // The shared document is bound to the instance, so the refused first wrapper does not poison it.
+            assertThatThrownBy(() -> again.resumeTool("seed")).isInstanceOf(
+                    io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException.class);
+            assertThat(again.document()).isSameAs(state.document());
         }
     }
 
