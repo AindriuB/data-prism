@@ -466,16 +466,15 @@ public final class MemberCards {
         /** A change of the main document's reported digest: sets the mark and wakes the schedule (T5). */
         void report(PauseDocument.Digest digest) {
             reportedDigest = digest;
-            MemberCards target = null;
             synchronized (this) {
                 mark = true;
-                for (MemberCards wrapper : live) {
-                    target = wrapper;
-                    break;
-                }
             }
-            if (target != null) {
-                target.submitPass();
+            // Outside the monitor: the first live wrapper whose executor accepts the pass gets it. If none does, or
+            // there is none, the mark stays for the next pass or the next start.
+            for (MemberCards wrapper : live) {
+                if (wrapper.submitPass()) {
+                    return;
+                }
             }
         }
 
@@ -769,10 +768,10 @@ public final class MemberCards {
         Objects.requireNonNull(material, "material");
         synchronized (state) {
             ownCheckValues.put(id, KeyCheckValue.compute(id, material));
-            // Due at the next tick even if the write below fails.
-            publishedAt = null;
         }
-        // The generation moves first (T1), so a write that began earlier sets the mark when it completes.
+        // The generation moves first (T1), so a write that began earlier sets the mark when it completes. The mark,
+        // not a reset of the stamp, makes the next pass due even if the write below fails (invariant I5: the stamps
+        // never move backwards).
         declarations().generation.incrementAndGet();
         if (running && !closed) {
             try {
@@ -967,15 +966,17 @@ public final class MemberCards {
     }
 
     /** Submits a schedule pass to this wrapper's executor (T5); a rejection leaves the mark for the next pass. */
-    void submitPass() {
+    boolean submitPass() {
         ScheduledExecutorService current = executor;
         if (current == null || closed) {
-            return;
+            return false;
         }
         try {
             current.execute(this::tick);
+            return true;
         } catch (RejectedExecutionException closing) {
             // The mark stays set.
+            return false;
         }
     }
 

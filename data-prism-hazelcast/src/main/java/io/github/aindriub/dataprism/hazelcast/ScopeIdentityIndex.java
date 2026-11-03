@@ -164,7 +164,8 @@ public final class ScopeIdentityIndex {
         document.endScope(scopeId, deadline, pauseDependencies);
     }
 
-    private PauseDocument pauseDocument() {
+    /** The index's own document, made on first use; package-private so a test can say what the cards show it. */
+    PauseDocument pauseDocument() {
         synchronized (pauseLock) {
             if (pauseDocument == null) {
                 // Ending a scope needs a serving member, so the document is reached through the gated accessor.

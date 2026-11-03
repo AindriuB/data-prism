@@ -462,8 +462,13 @@ class UnverifiedMemberTest {
                 .isNotInstanceOf(ClusterOperationRefusedException.class);
         assertThat(a.instance().getMap(PrivacyCluster.OVERSIGHT_MAP).isEmpty()).isTrue();
         state.pauseAll();
-        assertThat(state.allPaused()).isTrue();
+        // The pause is written. A cold member beside an unverified one is not fresh (F3), so its own reads refuse
+        // too, which is the safe direction.
         assertThat(a.instance().getMap(PrivacyCluster.OVERSIGHT_MAP).size()).isEqualTo(1);
+        assertThat(state.document().accepted().pauses().all()).isTrue();
+        assertThatThrownBy(state::allPaused).isInstanceOf(IllegalStateException.class)
+                .isNotInstanceOf(ClusterOperationRefusedException.class);
+        state.close();
     }
 
     /** OD-215-16 (a): the gate never blocks a pause, and a resume waits for it to reopen. */
@@ -479,11 +484,14 @@ class UnverifiedMemberTest {
 
         stateA.pauseTool("search");
 
-        assertThat(stateB.toolPaused("search")).as("seen by every instance").isTrue();
+        // Seen by every instance: B, cold beside the unverified outsider, refuses its reads, but holds the pause.
+        assertThatThrownBy(() -> stateB.toolPaused("search")).isInstanceOf(IllegalStateException.class);
+        assertThat(stateB.document().accepted().pauses().tools()).containsExactly("search");
         assertThatThrownBy(() -> stateA.resumeTool("search")).isInstanceOf(ClusterOperationRefusedException.class)
                 .satisfies(refusal -> assertThat(((PrivacyRefusedException) refusal).code()).isEqualTo(CODE));
         assertThatThrownBy(() -> stateB.resumeTool("search")).isInstanceOf(ClusterOperationRefusedException.class);
-        assertThat(stateB.toolPaused("search")).as("the refused resume changed nothing").isTrue();
+        assertThat(stateB.document().accepted().pauses().tools()).as("the refused resume changed nothing")
+                .containsExactly("search");
 
         outsiderLeaves();
         look();

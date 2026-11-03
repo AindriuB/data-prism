@@ -346,4 +346,211 @@ class HazelcastOversightTest {
                     .isNotInstanceOf(ApprovalRefusedException.class);
         }
     }
+
+    // ---- 228 A10: the pause gauges are registered once per instance and read through the instance's slot -------
+
+    /** Records every gauge registration, and lets a test read the registered suppliers. */
+    private static final class Gauges implements io.github.aindriub.dataprism.core.metrics.PrivacyMetrics {
+        final java.util.Map<io.github.aindriub.dataprism.core.metrics.Metric, java.util.List<java.util.function.DoubleSupplier>>
+                registered = new java.util.concurrent.ConcurrentHashMap<>();
+
+        @Override
+        public void record(io.github.aindriub.dataprism.core.metrics.Metric metric, String tag, Duration elapsed) {
+        }
+
+        @Override
+        public void increment(io.github.aindriub.dataprism.core.metrics.Metric metric, String tag) {
+        }
+
+        @Override
+        public void increment(io.github.aindriub.dataprism.core.metrics.Metric metric) {
+        }
+
+        @Override
+        public void gauge(io.github.aindriub.dataprism.core.metrics.Metric metric,
+                          java.util.function.DoubleSupplier supplier) {
+            registered.computeIfAbsent(metric, m -> new java.util.concurrent.CopyOnWriteArrayList<>()).add(supplier);
+        }
+
+        int registrations(io.github.aindriub.dataprism.core.metrics.Metric metric) {
+            var suppliers = registered.get(metric);
+            return suppliers == null ? 0 : suppliers.size();
+        }
+
+        double read(io.github.aindriub.dataprism.core.metrics.Metric metric) {
+            return registered.get(metric).get(0).getAsDouble();
+        }
+    }
+
+    private static final io.github.aindriub.dataprism.core.metrics.Metric FRESH =
+            io.github.aindriub.dataprism.core.metrics.Metric.CLUSTER_PAUSE_FRESH;
+    private static final io.github.aindriub.dataprism.core.metrics.Metric AGE =
+            io.github.aindriub.dataprism.core.metrics.Metric.CLUSTER_PAUSE_AGE_SECONDS;
+
+    private static void assertRegisteredOnce(Gauges gauges) {
+        assertThat(gauges.registrations(FRESH)).isEqualTo(1);
+        assertThat(gauges.registrations(AGE)).isEqualTo(1);
+    }
+
+    @Test
+    void oneWrapperAndOneStateRegisterTheGaugesOnce() {
+        single();
+        Gauges gauges = new Gauges();
+        try (var state = new HazelcastOversightState(a, ClusterLocks.DEFAULT_TIMEOUT, gauges)) {
+            assertRegisteredOnce(gauges);
+            state.pauseAll();
+            assertThat(state.allPaused()).isTrue();
+            assertThat(gauges.read(FRESH)).isEqualTo(1.0);
+            assertThat(gauges.read(AGE)).isGreaterThanOrEqualTo(0.0);
+        }
+        assertRegisteredOnce(gauges);
+    }
+
+    @Test
+    void twoWrappersOverOneInstanceOnOneRegistryRegisterTheGaugesOnce() {
+        String name = "dataprism-gauges-" + System.nanoTime();
+        int port = FreePorts.consecutive(1);
+        var instance = Hazelcast.newHazelcastInstance(member(name, port, port));
+        a = PrivacyCluster.using(instance, false, TestMembers.KEYS);
+        b = PrivacyCluster.using(instance, false, TestMembers.KEYS);
+        Gauges gauges = new Gauges();
+        try (var first = new HazelcastOversightState(a, ClusterLocks.DEFAULT_TIMEOUT, gauges);
+             var second = new HazelcastOversightState(b, ClusterLocks.DEFAULT_TIMEOUT, gauges)) {
+            assertRegisteredOnce(gauges);
+            first.pauseTool("search");
+            assertThat(second.toolPaused("search")).as("one shared document").isTrue();
+        }
+    }
+
+    @Test
+    void twoStatesOverOneWrapperOnOneRegistryRegisterTheGaugesOnce() {
+        single();
+        Gauges gauges = new Gauges();
+        try (var first = new HazelcastOversightState(a, ClusterLocks.DEFAULT_TIMEOUT, gauges);
+             var second = new HazelcastOversightState(a, ClusterLocks.DEFAULT_TIMEOUT, gauges)) {
+            assertRegisteredOnce(gauges);
+            assertThat(first.document()).isSameAs(second.document());
+        }
+    }
+
+    @Test
+    void theRegisteringStateClosingLeavesTheGaugesRegisteredOnceAndReadingTheDocument() {
+        single();
+        Gauges gauges = new Gauges();
+        var registering = new HazelcastOversightState(a, ClusterLocks.DEFAULT_TIMEOUT, gauges);
+        try (var other = new HazelcastOversightState(a, ClusterLocks.DEFAULT_TIMEOUT, gauges)) {
+            other.pauseAll();
+            assertThat(other.allPaused()).isTrue();
+            registering.close();
+            assertRegisteredOnce(gauges);
+            assertThat(gauges.read(FRESH)).as("still reading the document").isEqualTo(1.0);
+        }
+    }
+
+    @Test
+    void everyStateClosingKeepsTheGaugesReadingAndFreshReadsZeroOnceTheLeasePassesWithoutARenewal() {
+        single();
+        Gauges gauges = new Gauges();
+        long[] now = {1_000_000_000L};
+        var state = new HazelcastOversightState(a, ClusterLocks.DEFAULT_TIMEOUT, gauges,
+                java.time.Clock.systemUTC(), () -> now[0]);
+        state.pauseAll();
+        assertThat(state.allPaused()).isTrue();
+        assertThat(gauges.read(FRESH)).isEqualTo(1.0);
+
+        state.close();
+        assertThat(gauges.read(FRESH)).isEqualTo(1.0);
+        now[0] += ClusterSecuritySettings.DEFAULT_PAUSE_LEASE.toNanos() + 1;
+        assertThat(gauges.read(FRESH)).as("no renewal once every state is closed").isEqualTo(0.0);
+        assertRegisteredOnce(gauges);
+    }
+
+    @Test
+    void whenTheInstanceIsShutDownFreshReadsZeroAndTheAgeReadsNaN() {
+        single();
+        Gauges gauges = new Gauges();
+        var state = new HazelcastOversightState(a, ClusterLocks.DEFAULT_TIMEOUT, gauges);
+        state.pauseAll();
+        assertThat(state.allPaused()).isTrue();
+        a.instance().getLifecycleService().terminate();
+
+        assertThat(gauges.read(FRESH)).isEqualTo(0.0);
+        assertThat(gauges.read(AGE)).isNaN();
+    }
+
+    @Test
+    void beforeTheDocumentHasAcceptedAnythingFreshReadsZeroAndTheAgeReadsNaN() {
+        single();
+        // An unreadable value stands where the document should be: nothing is accepted, and a lone member does not
+        // write over it.
+        a.instance().getMap(PrivacyCluster.OVERSIGHT_MAP).put(
+                a.keyedNames().mapKey(PrivacyCluster.OVERSIGHT_MAP, PauseDocument.CANONICAL), "garbage");
+        Gauges gauges = new Gauges();
+        try (var state = new HazelcastOversightState(a, ClusterLocks.DEFAULT_TIMEOUT, gauges)) {
+            assertThat(gauges.read(FRESH)).isEqualTo(0.0);
+            assertThat(gauges.read(AGE)).isNaN();
+        }
+    }
+
+    @Test
+    void twoStatesCreatedAtOnceOverOneInstanceRegisterTheGaugesExactlyOnce() throws Exception {
+        single();
+        Gauges gauges = new Gauges();
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CountDownLatch go = new CountDownLatch(1);
+        try {
+            Callable<HazelcastOversightState> create = () -> {
+                go.await();
+                return new HazelcastOversightState(a, ClusterLocks.DEFAULT_TIMEOUT, gauges);
+            };
+            Future<HazelcastOversightState> one = pool.submit(create);
+            Future<HazelcastOversightState> two = pool.submit(create);
+            go.countDown();
+            one.get(60, java.util.concurrent.TimeUnit.SECONDS).close();
+            two.get(60, java.util.concurrent.TimeUnit.SECONDS).close();
+            assertRegisteredOnce(gauges);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void aNoneRegistryDoesNotClaimTheSlotSoALaterRecordingRegistryRegistersOnce() {
+        single();
+        Gauges gauges = new Gauges();
+        try (var first = new HazelcastOversightState(a, ClusterLocks.DEFAULT_TIMEOUT,
+                io.github.aindriub.dataprism.core.metrics.PrivacyMetrics.none());
+             var second = new HazelcastOversightState(a, ClusterLocks.DEFAULT_TIMEOUT, gauges)) {
+            assertRegisteredOnce(gauges);
+        }
+    }
+
+    // ---- 228 A9: the status and the operator-visible refusals ------------------------------------------------
+
+    @Test
+    void withTheGateOpenAndTheDocumentNotFreshReadsAndResumeRefuseAsUnavailableAndTheClusterStillServes() {
+        single();
+        long[] now = {1_000_000_000L};
+        var state = new HazelcastOversightState(a, ClusterLocks.DEFAULT_TIMEOUT,
+                io.github.aindriub.dataprism.core.metrics.PrivacyMetrics.none(), java.time.Clock.systemUTC(),
+                () -> now[0]);
+        try {
+            state.pauseTool("search");
+            assertThat(state.toolPaused("search")).isTrue();
+            // Make the gate fail: the stored document is deleted, and the lease runs out.
+            a.instance().getMap(PrivacyCluster.OVERSIGHT_MAP).delete(
+                    a.keyedNames().mapKey(PrivacyCluster.OVERSIGHT_MAP, PauseDocument.CANONICAL));
+            state.document().close();
+            now[0] += ClusterSecuritySettings.DEFAULT_PAUSE_LEASE.toNanos() + 1;
+
+            assertThatThrownBy(() -> state.toolPaused("search")).isInstanceOf(IllegalStateException.class)
+                    .isNotInstanceOf(io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException.class);
+            assertThatThrownBy(() -> state.resumeTool("search")).isInstanceOf(IllegalStateException.class)
+                    .isNotInstanceOf(io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException.class);
+            assertThat(state.securityStatus().reason()).isEqualTo(ClusterSecurityStatus.Reason.PAUSE_NOT_FRESH);
+            assertThat(a.securityStatus().serving()).isTrue();
+        } finally {
+            state.close();
+        }
+    }
 }

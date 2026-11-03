@@ -1729,6 +1729,47 @@ class PauseDocumentTest {
         assertThat(map(cluster).get(key(cluster))).isEqualTo(raw);
     }
 
+    // ---- A7: lapsed holders, restore and repair ------------------------------------------------------------
+
+    @Test
+    void aLapsedHolderOverAbsentPutsBackWhatItHoldsWithoutRenewing_itsNextTickRenewsItOnlyIfCovered() {
+        solo();
+        StubPeers peers = StubPeers.withPeer();
+        Member m = member(peers);
+        m.pauseTool("a");
+        lapse(m);
+        map(cluster).delete(key(cluster));
+
+        m.tick();
+
+        assertThat(stored(cluster).pauses().tools()).containsExactly("a");
+        assertThat(m.fresh()).as("its own write never renews a lapsed member").isFalse();
+        m.tick();
+        assertThat(m.fresh()).as("still not covered").isFalse();
+        peers.digests = Map.of();
+        m.tick();
+        assertThat(m.fresh()).as("covered at its next tick").isTrue();
+    }
+
+    @Test
+    void aReplayedOlderDocumentIsRepairedToASupersetOfItAndOfHeldElementsAndTombstones() {
+        solo();
+        Member m = member();
+        m.pauseTool("p");
+        m.pauseTool("q");
+        m.resumeTool("q");
+        Doc replay = doc(1, 0, Map.of(id(900), Target.tool("old")), Set.of());
+        plant(cluster, replay);
+
+        m.tick();
+
+        Doc repaired = stored(cluster);
+        assertThat(repaired.covers(replay)).isTrue();
+        assertThat(repaired.covers(m.held())).isTrue();
+        assertThat(m.held().covers(repaired)).isTrue();
+        assertThat(repaired.tombstones()).isNotEmpty();
+    }
+
     // ---- A12: properties ------------------------------------------------------------------------------------
 
     private static Doc randomDoc(Random random, int pool) {

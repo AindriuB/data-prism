@@ -443,15 +443,17 @@ class KeyedScopeEndTest {
     }
 
     @Test
-    void endingAScopeWhileNoPauseDocumentExistsIsANoOpSuccess() {
+    void endingAScopeWhileNoPauseDocumentExistsErasesTheDataWritesNothingAndThrowsUnavailable() {
         singleMember();
         populate(KEPT, "subject-1");
         members[0].instance().getMap(PrivacyCluster.OVERSIGHT_MAP).clear();
 
-        index(members[0]).endScope(KEPT);
+        assertThatThrownBy(() -> index(members[0]).endScope(KEPT)).isInstanceOf(IllegalStateException.class)
+                .isNotInstanceOf(ClusterOperationRefusedException.class)
+                .isNotInstanceOf(ClusterLockTimeoutException.class);
 
-        assertThat(members[0].instance().getMap(PrivacyCluster.OVERSIGHT_MAP).isEmpty()).isTrue();
-        assertThat(members[0].instance().getMap(PrivacyCluster.IDENTITY_MAP).isEmpty()).isTrue();
+        assertThat(members[0].instance().getMap(PrivacyCluster.OVERSIGHT_MAP).isEmpty()).as("still absent").isTrue();
+        assertThat(members[0].instance().getMap(PrivacyCluster.IDENTITY_MAP).isEmpty()).as("data erased").isTrue();
     }
 
     @Test
@@ -494,17 +496,17 @@ class KeyedScopeEndTest {
     }
 
     @Test
-    void aStaleDocumentKeepsThePauseErasesTheDataAndThrowsUnavailable() {
+    void aDocumentThatIsNotFreshKeepsThePauseErasesTheDataAndThrowsUnavailable() {
         singleMember();
         var state = new HazelcastOversightState(members[0], TIMEOUT);
         state.pauseScope(ENDED);
         var index = index(members[0]);
         index.endScope("another-scope");
         populate(ENDED, "subject-1");
-        // A replay of an older document: this index has accepted a higher order, so what it finds is behind.
-        Doc replay = new Doc(0, 0, System.currentTimeMillis(), "replay", Map.of(new Id(1, 1), Target.scope(ENDED)),
-                Set.of());
-        PauseDocumentTest.plant(members[0], replay);
+        // A listed peer shows content the index document never held: its gate fails, so it is not fresh.
+        index.pauseDocument().peers = () -> new PauseDocument.PeerView(
+                Map.of(java.util.UUID.randomUUID(), new PauseDocument.Digest(new byte[16])), 0, true, 0, -1, false,
+                true);
 
         assertThatThrownBy(() -> index.endScope(ENDED)).isInstanceOf(IllegalStateException.class)
                 .isNotInstanceOf(ClusterOperationRefusedException.class);

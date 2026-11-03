@@ -1284,12 +1284,12 @@ final class PauseDocument {
                         return new Action(held, new Doc(top + 1, 0, wall.millis(), issuer, held.elements(),
                                 held.tombstones()), look.fresh(), true);
                     }
-                    if (look.passed() && stored.elements().equals(held.elements())
+                    if (look.fresh() && stored.elements().equals(held.elements())
                             && stored.tombstones().equals(held.tombstones())
                             && now - storedSeenSince >= lease.dividedBy(2).toNanos()) {
                         // R10: a refresh, from a member that is fresh, once half a lease has passed.
                         return new Action(stored, new Doc(stored.sequence(), stored.refresh() + 1, wall.millis(),
-                                issuer, stored.elements(), stored.tombstones()), look.passed(), false);
+                                issuer, stored.elements(), stored.tombstones()), look.fresh(), false);
                     }
                     return null;
                 }

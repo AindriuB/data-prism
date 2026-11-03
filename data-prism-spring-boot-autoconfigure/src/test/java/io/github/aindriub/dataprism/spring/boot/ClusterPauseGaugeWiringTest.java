@@ -73,7 +73,9 @@ class ClusterPauseGaugeWiringTest {
             assertThat(result.getBean(OversightState.class)).isInstanceOf(HazelcastOversightState.class);
             assertThat(REGISTRATIONS.get(Metric.CLUSTER_PAUSE_FRESH)).isNotNull().hasValue(1);
             assertThat(REGISTRATIONS.get(Metric.CLUSTER_PAUSE_AGE_SECONDS)).isNotNull().hasValue(1);
-            // A lone member writes the first document at its start: fresh, with an age.
+            // A lone member writes the first document at its start; the member that wrote it is made fresh by the
+            // next judgement, which the first read is: fresh, with an age.
+            assertThat(result.getBean(OversightState.class).allPaused()).isFalse();
             assertThat(GAUGES.get(Metric.CLUSTER_PAUSE_FRESH).getAsDouble()).isEqualTo(1.0);
             assertThat(GAUGES.get(Metric.CLUSTER_PAUSE_AGE_SECONDS).getAsDouble()).isGreaterThanOrEqualTo(0.0);
             result.getBean(OversightState.class).pauseAll();
