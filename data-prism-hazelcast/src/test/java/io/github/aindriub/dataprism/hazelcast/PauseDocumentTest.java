@@ -1963,6 +1963,24 @@ class PauseDocumentTest {
         assertThat(stored(cluster).sequence()).as("endScope").isEqualTo(s0 + 53);
     }
 
+    @Test
+    void anOperatorPauseByAMemberLapsedBeforeItsInLockJudgeRenewsAtTheWriteBecauseTheJudgeRenewedItFirst() {
+        solo();
+        StubPeers peers = StubPeers.withPeer();
+        Member m = member(peers);
+        m.pauseTool("a");
+        lapse(m);
+        peers.digests = Map.of();
+        m.doc.beforeCommit = () -> m.nanos.advance(LEASE.dividedBy(2));
+
+        m.pauseTool("b");
+
+        m.doc.beforeCommit = () -> { };
+        m.nanos.advance(LEASE.dividedBy(2).plusSeconds(1));
+        assertThat(m.fresh()).as("fresh when the write began, as it stood after the judge: renewed at the write")
+                .isTrue();
+    }
+
     // ---- A12: properties ------------------------------------------------------------------------------------
 
     private static Doc randomDoc(Random random, int pool) {
