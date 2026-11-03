@@ -8,12 +8,12 @@ import java.util.List;
 
 /**
  * The pause document (one sealed entry, task 228), the 0.7 fence map that keeps its fence entry for a 0.7 member, and
- * the member cards. None of them is ever evicted or expired by configuration.
+ * the member cards. None of them is ever evicted or expired by configuration. {@link #NAMES} lists the maps with sealed
+ * content and leaves the fence map out.
  */
 final class OversightMaps {
 
-    static final List<String> NAMES = List.of(PrivacyCluster.OVERSIGHT_MAP, PrivacyCluster.OVERSIGHT_FENCE_MAP,
-            PrivacyCluster.MEMBER_CARD_MAP);
+    static final List<String> NAMES = List.of(PrivacyCluster.OVERSIGHT_MAP, PrivacyCluster.MEMBER_CARD_MAP);
 
     private OversightMaps() {
     }
@@ -23,7 +23,8 @@ final class OversightMaps {
         // re-creates it. An evicted card or sentinel makes a verified member look unverified (cards carry their own
         // lease). The 0.7 map keeps the fence entry (all = TRUE) for a 0.7 member that joins; losing it reopens the
         // fence.
-        for (String name : NAMES) {
+        for (String name : List.of(PrivacyCluster.OVERSIGHT_MAP, PrivacyCluster.OVERSIGHT_FENCE_MAP,
+                PrivacyCluster.MEMBER_CARD_MAP)) {
             config.addMapConfig(neverEvicted(name));
         }
     }

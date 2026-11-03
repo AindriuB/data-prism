@@ -2624,7 +2624,7 @@ class MemberCardTest {
         cards.writeStage = stages::add;
         cards.publishNow();
         cards.writeStage = stage -> { };
-        assertThat(stages).containsExactly("flag", "digest", "checks", "build", "seal", "setAsync");
+        assertThat(stages).containsExactly("flag", "digest", "checks", "readings", "build", "seal", "setAsync");
     }
 
     @Test

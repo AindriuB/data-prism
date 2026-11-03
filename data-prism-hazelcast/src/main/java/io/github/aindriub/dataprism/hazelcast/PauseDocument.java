@@ -6,7 +6,9 @@ import com.hazelcast.core.LifecycleEvent;
 import com.hazelcast.map.IMap;
 import io.github.aindriub.dataprism.core.metrics.Metric;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
+import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
 import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
+import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 import io.github.aindriub.dataprism.hazelcast.seal.Opened;
 import io.github.aindriub.dataprism.hazelcast.seal.Sealer;
 import io.github.aindriub.dataprism.hazelcast.seal.ServingGate;
@@ -800,6 +802,7 @@ final class PauseDocument {
                     return new Look(Status.GATED, doc, freshLocked(), false, peerView);
                 }
                 held = doc;
+                landed(doc);
                 entry.merged = true;
                 entry.digest = doc.digest();
                 heldChanged(entry.digest, true, true);
@@ -832,6 +835,7 @@ final class PauseDocument {
                 boolean sequenceMoved = merged.sequence() != held.sequence();
                 boolean anyChange = merged != held;
                 held = merged;
+                landed(doc);
                 entry.merged = true;
                 if (grew) {
                     heldChanged(held.digest(), true, sequenceMoved);
@@ -1070,11 +1074,20 @@ final class PauseDocument {
         IMap<String, Object> map = map();
         // The lock is taken before the read, so writers queue for it instead of racing; correctness still rests on
         // the compare-and-set, which is what a writer that holds an expired lease, or a split-brain, falls back on.
-        if (deadlineNanos == 0L) {
-            ClusterLocks.acquire(map, key, deps.lockTimeout());
-        } else {
-            ClusterLocks.acquireUntil(map, key, deadlineNanos, deps.lockTimeout());
+        try {
+            if (deadlineNanos == 0L) {
+                ClusterLocks.acquire(map, key, deps.lockTimeout());
+            } else {
+                ClusterLocks.acquireUntil(map, key, deadlineNanos, deps.lockTimeout());
+            }
+        } catch (RuntimeException notTaken) {
+            // The write cannot start: the operator's pause is still held here (see holdLocally).
+            if (op == Op.PAUSE && transientFailure(notTaken)) {
+                holdLocally(target);
+            }
+            throw notTaken;
         }
+        boolean capRefused = false;
         try {
             Set<Id> observed = null;
             String issuer = issuer();
@@ -1133,6 +1146,7 @@ final class PauseDocument {
                     }
                 }
                 if (refusal != null) {
+                    capRefused = true;
                     throw refusal;
                 }
                 // Over UNREADABLE or GATED the exact stored bytes are replaced, with the gated content unioned in.
@@ -1146,10 +1160,68 @@ final class PauseDocument {
                             "the pause document write was refused: " + outcome));
                 }
             }
+        } catch (RuntimeException failed) {
+            // A write that cannot commit is no reason to forget the pause (a pause refused at the cap excepted).
+            if (op == Op.PAUSE && !capRefused && transientFailure(failed)) {
+                holdLocally(target);
+            }
+            throw failed;
         } finally {
             ClusterLocks.release(map, key);
         }
-        throw ClusterRefusals.refused(new IllegalStateException("the pause document write lost its race"));
+        if (op == Op.PAUSE) {
+            holdLocally(target);
+        }
+        throw ClusterRefusals.refused(new IllegalStateException(
+                "the pause document write lost its race and did not land; the pause is held on this member"));
+    }
+
+    /**
+     * Whether a failed operator pause may keep its element locally: only after a lock timeout, retries exhausted, or a
+     * Hazelcast failure. A refusal of a precondition, the cap or the commit guard keeps nothing.
+     */
+    private static boolean transientFailure(RuntimeException failed) {
+        return failed instanceof ClusterLockTimeoutException || !(failed instanceof PrivacyRefusedException);
+    }
+
+    /** The pause elements this member holds that no stored document it has accepted or written contains yet. */
+    private final Map<Target, Id> unlanded = new HashMap<>();
+
+    /** Under the monitor: a stored document this member accepted or wrote contains some unlanded elements. */
+    private void landed(Doc doc) {
+        if (!unlanded.isEmpty()) {
+            unlanded.values().removeIf(id -> doc.elements().containsKey(id));
+        }
+    }
+
+    /**
+     * An operator pause whose write could not commit (a transient failure, see {@link #transientFailure}) is still
+     * held here: the content only grows (F0). The change notice moves the card digest, so peers' Covered checks fail
+     * until they read a document that carries it, and the next tick's repair writes it. There is at most one
+     * unlanded element per target: a second failed pause for the same target reuses it. The cap still applies. A
+     * cold member (held is null) gets the Doc(1) of R3: sequence 1, issued now by this member, so a repair puts it
+     * at sequence 2 (R9). The call itself still fails.
+     */
+    private void holdLocally(Target target) {
+        synchronized (monitor) {
+            Id existing = unlanded.get(target);
+            if (existing != null && held != null && held.elements().containsKey(existing)) {
+                return;
+            }
+            int size = held == null ? 0 : held.elements().size();
+            int cap = target.kind() == Kind.ALL ? FORMAT_BOUND : PAUSE_CAP;
+            if (size + 1 > cap) {
+                return;
+            }
+            Id fresh = Id.random(random);
+            Map<Id, Target> elements = new HashMap<>(held == null ? Map.of() : held.elements());
+            elements.put(fresh, target);
+            Doc next = new Doc((held == null ? 0 : held.sequence()) + 1, 0, wall.millis(), issuer(), elements,
+                    held == null ? Set.of() : held.tombstones());
+            held = held == null ? next : held.merge(next);
+            unlanded.put(target, fresh);
+            heldChanged(held.digest(), true, true);
+        }
     }
 
     /** R13's preconditions, in R13's order and with its codes. Throws; returns only if all hold. */
@@ -1252,6 +1324,7 @@ final class PauseDocument {
             written.digest = next.digest();
             Doc before = held;
             held = held == null ? next : held.merge(next);
+            landed(next);
             memo.put(sealed, written);
             storedSealed = sealed;
             storedSeenSince = nanos.getAsLong();

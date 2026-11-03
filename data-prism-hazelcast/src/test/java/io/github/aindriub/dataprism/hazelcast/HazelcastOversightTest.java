@@ -1042,6 +1042,58 @@ class HazelcastOversightTest {
         }
     }
 
+    @Test
+    void anOperatorPauseWhoseWriteCannotCommitIsHeldLocallyMakesPeersLapseAndLandsOnTheNextRepairTick()
+            throws Exception {
+        try (Mesh m = startedMesh(3, 2)) {
+            java.util.concurrent.ExecutorService holder = java.util.concurrent.Executors.newSingleThreadExecutor();
+            try {
+                String key = m.documentKey(0);
+                holder.submit(() -> m.documentMap(0).lock(key)).get();
+
+                assertThatThrownBy(() -> m.state(0).pauseTool("p"))
+                        .isInstanceOf(io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException.class);
+
+                assertThat(m.states.get(0).document().accepted().pauses().tools()).as("A holds the pause").contains("p");
+                // Repeated failed pauses for the same target keep one local element, not one per attempt.
+                assertThatThrownBy(() -> m.state(0).pauseTool("p"))
+                        .isInstanceOf(io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException.class);
+                assertThatThrownBy(() -> m.state(0).pauseTool("p"))
+                        .isInstanceOf(io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException.class);
+                assertThat(m.states.get(0).document().accepted().elements().values().stream()
+                        .filter(PauseDocument.Target.tool("p")::equals).count()).as("one unlanded element").isEqualTo(1);
+                assertThat(m.tools(0)).as("A honours it").contains("p");
+                assertThat(m.storedSequence(0)).as("nothing was written").isLessThan(
+                        m.states.get(0).document().acceptedSequence());
+
+                // A's card now carries a digest B has never seen; B's gate cannot pass, and its lease runs out.
+                for (int step = 0; step < 6; step++) {
+                    m.advance(MESH_LEASE.dividedBy(4));
+                    m.wrappers.get(0).memberCards().orElseThrow().tick();
+                    m.tick(1);
+                }
+                assertThat(m.reads(1)).as("B lapses and refuses").isFalse();
+                assertThat(m.fresh(1)).as("B is past its lease").isFalse();
+                assertThat(m.reads(0)).as("A stays fresh and serves the pause").isTrue();
+                assertThat(m.fresh(0)).isTrue();
+                assertThat(m.tools(0)).contains("p");
+
+                holder.submit(() -> m.documentMap(0).unlock(key)).get();
+                m.run(2);
+
+                assertThat(m.storedSequence(0)).as("A's repair landed").isEqualTo(
+                        m.states.get(0).document().acceptedSequence());
+                assertThat(m.reads(1)).as("B recovers").isTrue();
+                assertThat(m.fresh(1)).isTrue();
+                assertThat(m.tools(1)).contains("p");
+                assertThat(m.states.get(0).document().accepted().elements().values().stream()
+                        .filter(PauseDocument.Target.tool("p")::equals).count()).as("still one element").isEqualTo(1);
+            } finally {
+                holder.shutdownNow();
+            }
+        }
+    }
+
     /** The quarter-lease step at which three members started together write the first document. */
     private static int stepOfTheFirstDocument() {
         try (Mesh m = startedMeshNoRun(3)) {

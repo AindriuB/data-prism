@@ -4,6 +4,7 @@ import com.hazelcast.config.Config;
 import com.hazelcast.map.IMap;
 import io.github.aindriub.dataprism.core.metrics.Metric;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
+import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
 import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
 import io.github.aindriub.dataprism.hazelcast.ClusterSecuritySettings.UnverifiedMemberAction;
 import io.github.aindriub.dataprism.hazelcast.MemberCardTest.Fixture;
@@ -494,6 +495,57 @@ class PauseDocumentTest {
         assertThat(counting.added.get()).as("the second retain starts again").isEqualTo(2);
         doc.release(deps);
         assertThat(counting.removed.get()).as("its release removes the one listener that was kept").isEqualTo(1);
+    }
+
+    /** Holds the oversight lock of the document from another thread until the returned runnable is called. */
+    private Runnable holdDocumentLock() throws Exception {
+        java.util.concurrent.ExecutorService holder = java.util.concurrent.Executors.newSingleThreadExecutor();
+        String lockKey = key(cluster);
+        holder.submit(() -> map(cluster).lock(lockKey)).get();
+        return () -> {
+            try {
+                holder.submit(() -> map(cluster).unlock(lockKey)).get();
+            } catch (Exception failed) {
+                throw new IllegalStateException(failed);
+            } finally {
+                holder.shutdownNow();
+            }
+        };
+    }
+
+    @Test
+    void failedPausesForOneTargetKeepOneLocalElementAMintedOneForAnotherTargetAndNothingAtTheCap() throws Exception {
+        solo();
+        Member one = member();
+        one.pauseTool("seed");
+        Runnable release = holdDocumentLock();
+        for (int i = 0; i < 3; i++) {
+            assertThatThrownBy(() -> one.pauseTool("x")).isInstanceOf(ClusterLockTimeoutException.class);
+        }
+        assertThatThrownBy(() -> one.pauseTool("y")).isInstanceOf(ClusterLockTimeoutException.class);
+        assertThat(one.held().live(Target.tool("x"))).as("one unlanded element for x").hasSize(1);
+        assertThat(one.held().live(Target.tool("y"))).hasSize(1);
+        release.run();
+
+        // Landed by the member's next successful pause, which always mints a fresh element.
+        one.pauseTool("x");
+        assertThat(one.held().live(Target.tool("x"))).hasSize(2);
+        Runnable again = holdDocumentLock();
+        assertThatThrownBy(() -> one.pauseTool("x")).isInstanceOf(ClusterLockTimeoutException.class);
+        assertThat(one.held().live(Target.tool("x"))).as("the landed ones are not reused").hasSize(3);
+        again.run();
+
+        // A pause refused at the cap keeps nothing, and a failed one at the cap adds nothing.
+        solo();
+        plant(cluster, docOfTools(1000, "t", PauseDocument.PAUSE_CAP));
+        Member full = member();
+        assertThat(full.tools()).hasSize(PauseDocument.PAUSE_CAP);
+        assertThatThrownBy(() -> full.pauseTool("over")).isInstanceOf(ClusterOperationRefusedException.class);
+        assertThat(full.held().elements()).hasSize(PauseDocument.PAUSE_CAP);
+        Runnable third = holdDocumentLock();
+        assertThatThrownBy(() -> full.pauseTool("over")).isInstanceOf(ClusterLockTimeoutException.class);
+        assertThat(full.held().elements()).as("a local add at the cap is refused").hasSize(PauseDocument.PAUSE_CAP);
+        third.run();
     }
 
     // ---- A1: deletion, replay, restart ---------------------------------------------------------------------
