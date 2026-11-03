@@ -32,6 +32,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -44,7 +45,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
-import java.util.List;
 
 /**
  * The pause state of the cluster as one sealed, observed-remove document under a freshness gate
@@ -437,12 +437,11 @@ final class PauseDocument {
      * What a look found.
      *
      * @param stored the authentic document read (merged, unless {@code GATED}), else null
-     * @param lacks  whether the stored document lacks an element or tombstone held
      * @param fresh  whether this member is fresh as the look leaves it, after the gate ran at it
      * @param passed whether the gate passed at this look
      * @param peers  the one snapshot of the peers this look and the decision that follows it read
      */
-    record Look(Status status, Doc stored, boolean lacks, boolean fresh, boolean passed, PeerView peers) {
+    record Look(Status status, Doc stored, boolean fresh, boolean passed, PeerView peers) {
     }
 
     /** What a commit did; the refusals are the guard clauses of the write. */
@@ -561,8 +560,14 @@ final class PauseDocument {
     private long storedSeenSince;
     /** The document held when a merge began. */
     private Doc mergeBase;
-    private long lastMismatchWarn = Long.MIN_VALUE;
-    private long lastRecoveryWarn = Long.MIN_VALUE;
+    private static final int WARN_MISMATCH = 0;
+    private static final int WARN_RECOVERY = 1;
+    private static final int WARN_MAINTENANCE = 2;
+    private static final int WARN_LAPSE = 3;
+    private static final int WARN_REGAIN = 4;
+    private final long[] lastWarn = {Long.MIN_VALUE, Long.MIN_VALUE, Long.MIN_VALUE, Long.MIN_VALUE, Long.MIN_VALUE};
+    /** Whether the member was fresh at the last judgement; null before the first. */
+    private Boolean lastFresh;
     private final Map<String, Memo> memo = new LinkedHashMap<>(MEMO_SIZE, 0.75f, true) {
         @Override
         protected boolean removeEldestEntry(Map.Entry<String, Memo> eldest) {
@@ -576,7 +581,7 @@ final class PauseDocument {
     private int users;
     private volatile Dependencies tickDependencies;
     /** The dependencies of every user still retained, oldest first; ticks use the latest of them. */
-    private final java.util.List<Dependencies> retained = new java.util.ArrayList<>();
+    private final List<Dependencies> retained = new ArrayList<>();
 
     /** Runs after a write has read the stored value and sealed its next one, before it commits; a test seam. */
     volatile Runnable beforeCommit = () -> { };
@@ -728,14 +733,43 @@ final class PauseDocument {
     }
 
     private Look look(Dependencies deps) {
-        return judge(map().get(key), deps, peers.snapshot());
+        Doc heldBefore = accepted();
+        return judge(map().get(key), deps, peers.snapshot(), heldBefore);
     }
 
     /**
      * Judges a stored value: merges what is authentic into what is held, then runs the gate (renewal point 1, R6).
      * {@code peerView} is the one snapshot of the peers this judgement reads; it was taken with no monitor held.
+     * {@code heldBefore} is what was held before the map was read: a conflict is judged against it, so a read that
+     * straddles an accepted write is not counted as one (R15).
      */
-    private Look judge(Object stored, Dependencies deps, PeerView peerView) {
+    private Look judge(Object stored, Dependencies deps, PeerView peerView, Doc heldBefore) {
+        Look look = judgeStored(stored, deps, peerView, heldBefore);
+        trackFreshness();
+        return look;
+    }
+
+    /** One WARN, rate-limited, whenever the member lapses or regains freshness; no pause content. */
+    private void trackFreshness() {
+        boolean lapsed = false;
+        boolean regained = false;
+        synchronized (monitor) {
+            boolean now = freshLocked();
+            if (lastFresh != null && lastFresh != now) {
+                lapsed = !now;
+                regained = now;
+            }
+            lastFresh = now;
+        }
+        if (lapsed && shouldWarn(WARN_LAPSE)) {
+            log.warn("PAUSE_DOCUMENT_LAPSED: the pause document is not fresh; reads refuse until the gate passes");
+        }
+        if (regained && shouldWarn(WARN_REGAIN)) {
+            log.warn("PAUSE_DOCUMENT_FRESH: the pause document is fresh again");
+        }
+    }
+
+    private Look judgeStored(Object stored, Dependencies deps, PeerView peerView, Doc heldBefore) {
         if (stored == null) {
             return noDocument(Status.ABSENT, peerView);
         }
@@ -756,35 +790,33 @@ final class PauseDocument {
             if (held == null) {
                 if (tooOldForColdStart(doc)) {
                     gate(peerView, false, null);
-                    return new Look(Status.GATED, doc, false, freshLocked(), false, peerView);
+                    return new Look(Status.GATED, doc, freshLocked(), false, peerView);
                 }
                 held = doc;
                 entry.merged = true;
                 entry.digest = doc.digest();
                 heldChanged(entry.digest, true, true);
                 boolean passed = gate(peerView, true, null);
-                return new Look(Status.AUTHENTIC, doc, false, freshLocked(), passed, peerView);
+                return new Look(Status.AUTHENTIC, doc, freshLocked(), passed, peerView);
             }
             if (!entry.merged && held.conflictsWith(doc)) {
                 mismatch = true;
-            } else {
-                int order = doc.compareOrder(held);
-                boolean lacks;
-                boolean brings;
-                if (entry.merged) {
-                    // Held only grows and already holds this document, so it differs only if it holds more.
-                    lacks = held.elements().size() != doc.elements().size()
-                            || held.tombstones().size() != doc.tombstones().size();
-                    brings = false;
-                } else {
-                    lacks = !doc.covers(held);
-                    brings = !held.covers(doc);
-                }
-                if ((lacks || (order <= 0 && brings)) && !entry.counted) {
+            } else if (entry.merged) {
+                // Held only grows and already holds this document: nothing to merge, so no containment work (R17).
+                if (heldBefore != null && !entry.counted && (heldBefore.elements().size() > doc.elements().size()
+                        || heldBefore.tombstones().size() > doc.tombstones().size())) {
                     entry.counted = true;
                     deps.metrics().increment(Metric.CLUSTER_PAUSE_CONFLICT);
                 }
-                boolean firstMerge = !entry.merged;
+                boolean passed = gate(peerView, true, null);
+                result = new Look(Status.AUTHENTIC, doc, freshLocked(), passed, peerView);
+            } else {
+                int order = doc.compareOrder(heldBefore == null ? held : heldBefore);
+                if (!entry.counted && heldBefore != null
+                        && (!doc.covers(heldBefore) || (order <= 0 && !heldBefore.covers(doc)))) {
+                    entry.counted = true;
+                    deps.metrics().increment(Metric.CLUSTER_PAUSE_CONFLICT);
+                }
                 Doc merged = held.merge(doc);
                 boolean grew = merged.elements().size() != held.elements().size()
                         || merged.tombstones().size() != held.tombstones().size();
@@ -797,14 +829,12 @@ final class PauseDocument {
                 } else if (anyChange) {
                     heldChanged(heldDigest, false, sequenceMoved);
                 }
-                if (firstMerge) {
-                    if (entry.digest == null) {
-                        entry.digest = doc.digest();
-                    }
-                    appendSeen(entry.digest);
+                if (entry.digest == null) {
+                    entry.digest = doc.digest();
                 }
+                appendSeen(entry.digest);
                 boolean passed = gate(peerView, true, null);
-                result = new Look(Status.AUTHENTIC, doc, !doc.covers(held), freshLocked(), passed, peerView);
+                result = new Look(Status.AUTHENTIC, doc, freshLocked(), passed, peerView);
             }
         }
         if (mismatch) {
@@ -818,7 +848,7 @@ final class PauseDocument {
     private Look noDocument(Status status, PeerView peerView) {
         synchronized (monitor) {
             gate(peerView, false, null);
-            return new Look(status, null, false, freshLocked(), false, peerView);
+            return new Look(status, null, freshLocked(), false, peerView);
         }
     }
 
@@ -1018,9 +1048,10 @@ final class PauseDocument {
             Set<Id> observed = null;
             String issuer = issuer();
             for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+                Doc heldBefore = accepted();
                 Object stored = map.get(key);
                 // The snapshot is taken under the oversight lock, as part of the decision it serves.
-                Look look = judge(stored, deps, peers.snapshot());
+                Look look = judge(stored, deps, peers.snapshot(), heldBefore);
                 if (op != Op.PAUSE) {
                     refuseUnless(look, deps);
                 }
@@ -1044,11 +1075,15 @@ final class PauseDocument {
                             refusal = ClusterRefusals.refused(new IllegalStateException(
                                     "the pause document is at its operating cap"));
                         }
-                        fresh = Id.random(random);
-                        Map<Id, Target> elements = new HashMap<>(base == null ? Map.of() : base.elements());
-                        elements.put(fresh, target);
-                        next = new Doc(top + 1, 0, wall.millis(), issuer, elements,
-                                base == null ? Set.of() : base.tombstones());
+                        if (refusal != null) {
+                            next = null;
+                        } else {
+                            fresh = Id.random(random);
+                            Map<Id, Target> elements = new HashMap<>(base == null ? Map.of() : base.elements());
+                            elements.put(fresh, target);
+                            next = new Doc(top + 1, 0, wall.millis(), issuer, elements,
+                                    base == null ? Set.of() : base.tombstones());
+                        }
                     } else {
                         base = held;
                         Set<Id> liveNow = base.live(target);
@@ -1094,7 +1129,7 @@ final class PauseDocument {
             }
         }
         if (!deps.status().get().serving()) {
-            throw new ClusterOperationRefusedException(new IllegalStateException("the member is not serving"));
+            throw ClusterRefusals.refused(new IllegalStateException("the member is not serving"));
         }
         PeerView peerView = look.peers();
         if (peerView.unverifiedCount() > 0) {
@@ -1232,7 +1267,7 @@ final class PauseDocument {
      * (R9), the first document (R8) and the refresh (R10). Never throws.
      */
     void tick(Dependencies deps) {
-        attempt(() -> maintain(deps));
+        attempt("tick", () -> maintain(deps));
     }
 
     private void maintain(Dependencies deps) {
@@ -1244,9 +1279,10 @@ final class PauseDocument {
         ClusterLocks.acquire(map, key, deps.lockTimeout());
         try {
             for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+                Doc heldBefore = accepted();
                 Object stored = map.get(key);
                 // R8 judges the member list under the lock, in the same decision as the write.
-                Look look = judge(stored, deps, peers.snapshot());
+                Look look = judge(stored, deps, peers.snapshot(), heldBefore);
                 Action action = decide(look);
                 if (action == null) {
                     return;
@@ -1339,7 +1375,7 @@ final class PauseDocument {
      * lacks something of it. A write is a post-write renewal point; no write leaves only the ordinary judgement.
      */
     void reconcileAfterMerge(Dependencies deps) {
-        attempt(() -> {
+        attempt("reconcile after a merge", () -> {
             Doc began;
             synchronized (monitor) {
                 began = mergeBase;
@@ -1350,8 +1386,9 @@ final class PauseDocument {
             try {
                 String issuer = issuer();
                 for (int tries = 0; tries < MAX_ATTEMPTS; tries++) {
+                    Doc heldBefore = accepted();
                     Object stored = map.get(key);
-                    Look look = judge(stored, deps, peers.snapshot());
+                    Look look = judge(stored, deps, peers.snapshot(), heldBefore);
                     if (look.status() == Status.UNREADABLE || look.status() == Status.GATED) {
                         return;
                     }
@@ -1387,47 +1424,49 @@ final class PauseDocument {
                 held = new Doc(held.sequence(), held.refresh(), held.issuedAtMillis(), held.issuer(), Map.of(),
                         Set.of());
                 pauses = held.pauses();
+                heldDigest = held.digest();
             }
         }
     }
 
     private void warnMismatch() {
-        if (shouldWarn(true)) {
+        if (shouldWarn(WARN_MISMATCH)) {
             log.warn("a pause document was refused: it names a held id as another target");
         }
     }
 
     private void warnRecovery() {
-        if (shouldWarn(false)) {
+        if (shouldWarn(WARN_RECOVERY)) {
             log.warn("a pause document was put back from the content this member holds");
         }
     }
 
-    private boolean shouldWarn(boolean mismatch) {
+    private boolean shouldWarn(int kind) {
         long now = nanos.getAsLong();
         synchronized (monitor) {
-            long last = mismatch ? lastMismatchWarn : lastRecoveryWarn;
+            long last = lastWarn[kind];
             if (last != Long.MIN_VALUE && now - last < lease.toNanos()) {
                 return false;
             }
-            if (mismatch) {
-                lastMismatchWarn = now;
-            } else {
-                lastRecoveryWarn = now;
-            }
+            lastWarn[kind] = now;
             return true;
         }
     }
 
-    private static void attempt(Runnable step) {
+    /**
+     * Runs one maintenance step and never throws: the next tick, or the next read, tries again, and meanwhile the
+     * document is judged by what was accepted. A failure is logged, rate-limited, by stable code and cause class only.
+     */
+    private void attempt(String step, Runnable body) {
         try {
-            step.run();
+            body.run();
         } catch (RuntimeException failed) {
-            // Never throws from maintenance: the next tick, or the next read, tries again, and meanwhile the
-            // document is judged by what was accepted.
+            if (shouldWarn(WARN_MAINTENANCE)) {
+                log.warn("PAUSE_DOCUMENT_MAINTENANCE_FAILED: the pause document {} did not complete; cause {}", step,
+                        failed.getClass().getSimpleName());
+            }
         }
     }
-
     // ---- lifecycle ------------------------------------------------------------------------------------
 
     /**
@@ -1436,6 +1475,7 @@ final class PauseDocument {
      * user releases; the document itself lives on, so a later user finds what it held.
      */
     void retain(Dependencies deps) {
+        ScheduledExecutorService started;
         synchronized (monitor) {
             users++;
             retained.add(deps);
@@ -1443,16 +1483,27 @@ final class PauseDocument {
             if (closed || executor != null) {
                 return;
             }
-            executor = Executors.newSingleThreadScheduledExecutor(task -> {
+            started = Executors.newSingleThreadScheduledExecutor(task -> {
                 Thread thread = new Thread(task, "dataprism-pause-document");
                 thread.setDaemon(true);
                 return thread;
             });
+            executor = started;
         }
+        try {
+            start(deps, started);
+        } catch (RuntimeException | Error failed) {
+            // Undo this user: a failed start leaves no ticker and no listener behind.
+            release(deps);
+            throw failed;
+        }
+    }
+
+    private void start(Dependencies deps, ScheduledExecutorService started) {
         tick(deps);
         // A first document written by the tick renews nobody (R8). The next judgement does, so make it now: a lone
         // member is then established before any other member joins.
-        attempt(() -> look(deps));
+        attempt("first judgement", () -> look(deps));
         HazelcastInstance instance = instances.get();
         UUID listener = instance.getLifecycleService().addLifecycleListener(event -> {
             if (event.getState() == LifecycleEvent.LifecycleState.MERGING) {
@@ -1463,9 +1514,22 @@ final class PauseDocument {
             }
         });
         ScheduledExecutorService running;
+        boolean superseded;
         synchronized (monitor) {
-            lifecycleListener = listener;
+            // A release may have stopped this executor while the listener was being added: do not keep the listener.
+            superseded = closed || executor != started;
+            if (!superseded) {
+                lifecycleListener = listener;
+            }
             running = executor;
+        }
+        if (superseded) {
+            try {
+                instance.getLifecycleService().removeLifecycleListener(listener);
+            } catch (RuntimeException gone) {
+                // The instance may already be shut down.
+            }
+            return;
         }
         if (running != null && tickInterval != null && !tickInterval.isZero() && !tickInterval.isNegative()) {
             long millis = tickInterval.toMillis();
