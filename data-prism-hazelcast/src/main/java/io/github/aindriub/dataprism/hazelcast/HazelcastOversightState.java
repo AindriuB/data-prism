@@ -100,8 +100,6 @@ public final class HazelcastOversightState implements OversightState, AutoClosea
         if (document != null) {
             cluster.memberCards().ifPresent(cards -> cards.reportPauseSequence(document::acceptedSequence));
             registerGauges(metrics, dependencies.metrics());
-            // The first decision reads the cards as they are now, not as they were at the member's last look.
-            cluster.memberCards().ifPresent(MemberCards::lookNow);
             document.retain(dependencies);
         }
     }
