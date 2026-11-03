@@ -19,6 +19,7 @@ import io.github.aindriub.dataprism.hazelcast.seal.ClusterKeys;
 import io.github.aindriub.dataprism.hazelcast.seal.Opened;
 import io.github.aindriub.dataprism.hazelcast.seal.Sealer;
 import io.github.aindriub.dataprism.hazelcast.seal.ServingGate;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -40,6 +41,7 @@ import java.util.function.LongSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 /**
  * The pause document under its freshness gate (docs/plan/design/cluster-security.md 2.3.3, OD-3, OD-4, OD-15; brief
@@ -306,7 +308,7 @@ class PauseDocumentTest {
         two.nanos.advance(Duration.ofNanos(1));
         assertThat(two.fresh()).isFalse();
         assertThat(two.reads()).isFalse();
-        assertThatThrownBy(two::allPaused).isInstanceOf(IllegalStateException.class);
+        assertUnavailable(two::allPaused);
     }
 
     @Test
@@ -701,8 +703,7 @@ class PauseDocumentTest {
                 map(cluster).delete(key(cluster));
             }
         };
-        assertThatThrownBy(() -> state.resumeTool("X")).isInstanceOf(IllegalStateException.class)
-                .isNotInstanceOf(ClusterOperationRefusedException.class);
+        assertUnavailable(() -> state.resumeTool("X"));
         assertThat(map(cluster).get(key(cluster))).as("no putIfAbsent").isNull();
         assertThat(state.held().live(Target.tool("X"))).hasSize(1);
 
@@ -716,8 +717,7 @@ class PauseDocumentTest {
                 map(cluster).put(key(cluster), "not an envelope");
             }
         };
-        assertThatThrownBy(() -> second.resumeTool("X")).isInstanceOf(IllegalStateException.class)
-                .isNotInstanceOf(ClusterOperationRefusedException.class);
+        assertUnavailable(() -> second.resumeTool("X"));
         assertThat(map(cluster).get(key(cluster))).isEqualTo("not an envelope");
     }
 
@@ -1192,8 +1192,7 @@ class PauseDocumentTest {
 
         assertThat(other.tools()).containsExactlyInAnyOrder("seed", "x");
         assertThat(uncovered.fresh()).as("an operator pause on an uncovered member does not renew it").isFalse();
-        assertThatThrownBy(() -> uncovered.resumeTool("x")).isInstanceOf(IllegalStateException.class)
-                .isNotInstanceOf(ClusterOperationRefusedException.class);
+        assertUnavailable(() -> uncovered.resumeTool("x"));
 
         // A covered member's operator pause does renew it.
         peers.digests = Map.of();
@@ -1543,8 +1542,7 @@ class PauseDocumentTest {
         Member m = member(peers);
         m.pauseTool("a");
         lapse(m);
-        assertThatThrownBy(() -> m.resumeTool("a")).isInstanceOf(IllegalStateException.class)
-                .isNotInstanceOf(ClusterOperationRefusedException.class);
+        assertUnavailable(() -> m.resumeTool("a"));
         peers.digests = Map.of();
         m.resumeTool("a");
         assertThat(m.tools()).isEmpty();
@@ -1558,11 +1556,10 @@ class PauseDocumentTest {
         assertThat(m.reads()).isTrue();
         map(cluster).delete(key(cluster));
         assertThat(m.fresh()).isTrue();
-        assertThatThrownBy(() -> m.resumeTool("a")).isInstanceOf(IllegalStateException.class)
-                .isNotInstanceOf(ClusterOperationRefusedException.class);
+        assertUnavailable(() -> m.resumeTool("a"));
         assertThat(map(cluster).get(key(cluster))).as("nothing written").isNull();
         map(cluster).put(key(cluster), "garbage");
-        assertThatThrownBy(() -> m.resumeTool("a")).isInstanceOf(IllegalStateException.class);
+        assertUnavailable(() -> m.resumeTool("a"));
         assertThat(map(cluster).get(key(cluster))).isEqualTo("garbage");
         assertThat(m.held().live(Target.tool("a"))).hasSize(1);
     }
@@ -1578,8 +1575,7 @@ class PauseDocumentTest {
         peers.shows(UNKNOWN);
         assertThat(m.fresh()).isTrue();
 
-        assertThatThrownBy(() -> m.resumeTool("a")).isInstanceOf(IllegalStateException.class)
-                .isNotInstanceOf(ClusterOperationRefusedException.class);
+        assertUnavailable(() -> m.resumeTool("a"));
         assertThat(stored(cluster).live(Target.tool("a"))).hasSize(1);
     }
 
@@ -1861,7 +1857,7 @@ class PauseDocumentTest {
     private enum Retry { DELETED, UNREADABLE, JOINED, UNVERIFIED }
 
     @Test
-    void anEndScopeRetryApplyesEveryPreconditionAndWritesNothingWhenItIsRefused() {
+    void anEndScopeRetryAppliesEveryPreconditionAndWritesNothingWhenItIsRefused() {
         for (Retry retry : Retry.values()) {
             solo();
             Member writer = member();
@@ -1885,15 +1881,15 @@ class PauseDocumentTest {
                     }
                 }
             };
-            Object before;
-            Throwable thrown = org.assertj.core.api.Assertions.catchThrowable(
+            Throwable thrown = catchThrowable(
                     () -> index.endScope("S", 0L, writer.deps));
             assertThat(thrown).as(retry.name()).isNotNull();
             if (retry == Retry.JOINED || retry == Retry.UNVERIFIED) {
                 assertThat(thrown).isInstanceOf(ClusterOperationRefusedException.class);
             } else {
-                assertThat(thrown).isInstanceOf(IllegalStateException.class)
-                        .isNotInstanceOf(ClusterOperationRefusedException.class);
+                assertUnavailable("unavailable", () -> {
+                    throw thrown;
+                });
             }
             assertThat(index.accepted().live(Target.scope("S"))).as(retry + ": the pause is kept").isNotEmpty();
             if (retry == Retry.DELETED) {
@@ -1999,9 +1995,8 @@ class PauseDocumentTest {
             }
             assertThat(bMember.fresh()).as(shape + ": still inside its lease").isTrue();
 
-            assertThatThrownBy(bMember::tools).as(shape).isInstanceOf(IllegalStateException.class)
-                    .isNotInstanceOf(ClusterOperationRefusedException.class);
-            assertThatThrownBy(bMember::allPaused).as(shape).isInstanceOf(IllegalStateException.class);
+            assertUnavailable(shape, bMember::tools);
+            assertUnavailable(shape, bMember::allPaused);
             cluster.close();
             cluster = null;
         }
@@ -2164,11 +2159,26 @@ class PauseDocumentTest {
             Inputs inputs = new Inputs(cluster.keyedNames(), null, "CASE-42", "subject-42", null, "synthetic", "ap-1",
                     "alice", null, "search");
 
-            org.assertj.core.api.Assertions.assertThatThrownBy(
+            assertThatThrownBy(
                             () -> new OversightMapsBoundary().check(PrivacyCluster.OVERSIGHT_MAP, contents, inputs))
                     .isInstanceOf(AssertionError.class);
         } finally {
             state.close();
         }
+    }
+
+    /**
+     * OVERSIGHT_UNAVAILABLE is exactly an IllegalStateException with the document's own message; not a refusal, not a
+     * subclass, not another IllegalStateException.
+     */
+    private static void assertUnavailable(ThrowingCallable call) {
+        assertUnavailable("unavailable", call);
+    }
+
+    private static void assertUnavailable(String description, ThrowingCallable call) {
+        Throwable thrown = catchThrowable(call);
+        assertThat(thrown).as(description).isNotNull();
+        assertThat(thrown.getClass()).as(description).isEqualTo(IllegalStateException.class);
+        assertThat(thrown).as(description).hasMessage(PauseDocument.unavailable().getMessage());
     }
 }
