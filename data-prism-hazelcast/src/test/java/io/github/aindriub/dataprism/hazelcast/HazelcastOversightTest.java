@@ -537,16 +537,21 @@ class HazelcastOversightTest {
         try {
             state.pauseTool("search");
             assertThat(state.toolPaused("search")).isTrue();
-            // Make the gate fail: the stored document is deleted, and the lease runs out.
-            a.instance().getMap(PrivacyCluster.OVERSIGHT_MAP).delete(
+            // The stored document stays authentic. The gate fails on freshness alone: a listed peer shows content this
+            // member never held, so no gate passes, and the lease runs out.
+            Object stored = a.instance().getMap(PrivacyCluster.OVERSIGHT_MAP).get(
                     a.keyedNames().mapKey(PrivacyCluster.OVERSIGHT_MAP, PauseDocument.CANONICAL));
             state.document().close();
+            state.document().peers = () -> new PauseDocument.PeerView(
+                    java.util.Map.of(java.util.UUID.randomUUID(), new PauseDocument.Digest(new byte[16])), 0, true, 0,
+                    -1, false, true);
             now[0] += ClusterSecuritySettings.DEFAULT_PAUSE_LEASE.toNanos() + 1;
 
-            assertThatThrownBy(() -> state.toolPaused("search")).isInstanceOf(IllegalStateException.class)
-                    .isNotInstanceOf(io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException.class);
-            assertThatThrownBy(() -> state.resumeTool("search")).isInstanceOf(IllegalStateException.class)
-                    .isNotInstanceOf(io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException.class);
+            PauseDocumentTest.assertUnavailable("a read", () -> state.toolPaused("search"));
+            PauseDocumentTest.assertUnavailable("a resume", () -> state.resumeTool("search"));
+            assertThat(a.instance().getMap(PrivacyCluster.OVERSIGHT_MAP).get(
+                    a.keyedNames().mapKey(PrivacyCluster.OVERSIGHT_MAP, PauseDocument.CANONICAL)))
+                    .as("the document is still there and untouched").isEqualTo(stored);
             assertThat(state.securityStatus().reason()).isEqualTo(ClusterSecurityStatus.Reason.PAUSE_NOT_FRESH);
             assertThat(a.securityStatus().serving()).isTrue();
         } finally {
