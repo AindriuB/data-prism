@@ -37,10 +37,10 @@ import java.util.function.LongSupplier;
  * adds a new element, so pausing a paused target twice is two pauses, and a resume lifts only the pauses it saw: a
  * pause that lands while the resume is built stays in force. A resume is refused while the member is not serving or a
  * member is unverified or peer state is unknown ({@code CLUSTER_OPERATION_REFUSED}), and while the document is
- * absent, unauthentic or the gate does not pass ({@code OVERSIGHT_UNAVAILABLE}). The document is reached through {@code instance()}, so the
- * serving gate does not stop it. A scope pause written by a 0.7 member after construction is still found, by its raw key, and keeps that
- * scope paused. Every write waits for the key's lock at most the lock timeout and then fails with
- * {@code CLUSTER_LOCK_TIMEOUT}.
+ * absent, unauthentic or the gate does not pass ({@code OVERSIGHT_UNAVAILABLE}). The document is reached through
+ * {@code instance()}, so the serving gate does not stop it. A scope pause written by a 0.7 member after construction
+ * is still found, by its raw key, and keeps that scope paused. Every write waits for the key's lock at most the lock
+ * timeout and then fails with {@code CLUSTER_LOCK_TIMEOUT}.
  *
  * <p>The shared document is ticked while at least one {@code HazelcastOversightState} of the instance is open;
  * the ticker stops with the last {@link #close()} or when the Hazelcast instance stops, and the document stays.

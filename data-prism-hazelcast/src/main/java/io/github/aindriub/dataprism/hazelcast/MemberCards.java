@@ -1118,6 +1118,7 @@ public final class MemberCards {
             for (MemberCards wrapper : declarations.live) {
                 readings.put(wrapper, wrapper.clock.instant());
             }
+            writeStage.accept("readings");
             long buildNanos = declarations.nanoNow();
             // The lease and the writer's stamp both use this wrapper's own reading from W2, not a second one.
             Instant build = readings.getOrDefault(this, clock.instant());

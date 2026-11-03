@@ -1027,6 +1027,21 @@ class HazelcastOversightTest {
         }
     }
 
+    @Test
+    void theIndexDocumentOfAMemberThatIsNotServingReportsR13sCodeInR13sOrderNotTheServingGatesRefusal() {
+        try (Mesh m = startedMesh(3, 2)) {
+            var index = new ScopeIdentityIndex(m.wrappers.get(0),
+                    io.github.aindriub.dataprism.core.metrics.PrivacyMetrics.none(), ClusterLocks.DEFAULT_TIMEOUT);
+            m.documentMap(0).delete(m.documentKey(0));
+            // This wrapper stops being live: the serving gate would refuse at once with CLUSTER_OPERATION_REFUSED.
+            // R13 asks first whether the index holds a document, and it holds none.
+            m.wrappers.get(0).close();
+
+            PauseDocumentTest.assertUnavailable("held == null comes before not serving",
+                    () -> index.pauseDocument().endScope("s", 0L, index.pauseDependencies));
+        }
+    }
+
     /** The quarter-lease step at which three members started together write the first document. */
     private static int stepOfTheFirstDocument() {
         try (Mesh m = startedMeshNoRun(3)) {

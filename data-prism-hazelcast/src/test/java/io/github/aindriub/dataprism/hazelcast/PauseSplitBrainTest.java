@@ -245,6 +245,8 @@ class PauseSplitBrainTest {
         member.document().beginMerge();
         // The in-memory view is lost between MERGING and MERGED: only the note taken at MERGING still holds "kept".
         member.document().forgetContentForTest();
+        assertThat(member.document().heldDigest()).as("the derived digest follows the emptied content")
+                .isEqualTo(new Doc(0, 0, 0, "", java.util.Map.of(), Set.of()).digest());
         copyDocument(other, side);
 
         member.document().reconcileAfterMerge();

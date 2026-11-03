@@ -2399,6 +2399,27 @@ class MemberCardTest {
 
     @Test
     @Timeout(240)
+    void aCardLeaseRunsFromTheWritersOwnReadingAtW2NotFromASecondReadingTakenLater() {
+        Pair pair = pair();
+        MemberCards cards = pair.a().memberCards().orElseThrow();
+        assertThat(Fixture.await(30, () -> !cards.writeOutstanding())).isTrue();
+        fixture.clock.advance(LEASE.dividedBy(2));
+        Instant reading = fixture.clock.instant();
+        cards.writeStage = at -> {
+            if (at.equals("readings")) {
+                fixture.clock.advance(Duration.ofSeconds(20));
+            }
+        };
+
+        cards.tick();
+        assertThat(Fixture.await(30, () -> !cards.writeOutstanding())).isTrue();
+
+        assertThat(cardOf(pair.a()).leaseEnd()).as("the lease runs from the reading taken at W2")
+                .isEqualTo(reading.plus(LEASE));
+    }
+
+    @Test
+    @Timeout(240)
     void aChangeNoticeWithNoLiveWrapperReturnsLeavesTheMarkAndTheNextStartWritesTheCard() {
         HazelcastInstance instance = instanceWithNano(new long[] {1_000_000_000L});
         PrivacyCluster first = wrapperOn(instance, fixture.clock);
