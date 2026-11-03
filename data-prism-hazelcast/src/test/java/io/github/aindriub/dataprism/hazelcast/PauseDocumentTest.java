@@ -1817,6 +1817,126 @@ class PauseDocumentTest {
         assertThat(repaired.tombstones()).isNotEmpty();
     }
 
+    // ---- 228: post-write renewal after a heal, the 197-11 read case, endScope retries, look age on one clock ---
+
+    @Test
+    void reconcileAfterMergeByALapsedMemberIsNotRenewedByItsOwnWriteAndTheNextReadMayRenewIt() {
+        solo();
+        StubPeers peers = StubPeers.withPeer();
+        Member m = member(peers);
+        m.pauseTool("a");
+        lapse(m);
+        m.doc.beginMerge();
+        plant(cluster, doc(50, 0, Map.of(id(900), Target.tool("b")), Set.of()));
+        Digest held = m.digest();
+        m.doc.beforeCommit = () -> peers.shows(held);
+
+        m.doc.reconcileAfterMerge();
+
+        assertThat(stored(cluster).pauses().tools()).containsExactlyInAnyOrder("a", "b");
+        assertThat(m.fresh()).as("a lapsed member's own write never renews it").isFalse();
+        m.doc.beforeCommit = () -> { };
+        assertThat(m.reads()).as("a later renewal point may renew it").isTrue();
+    }
+
+    @Test
+    void aLapsedMembersRepairLeavesItLapsedAndALaterReadRenewsItOnlyIfCoveredThen() {
+        solo();
+        StubPeers peers = StubPeers.withPeer();
+        Member m = member(peers);
+        m.pauseTool("a");
+        lapse(m);
+        plant(cluster, doc(1, 0, Map.of(), Set.of()));
+
+        m.tick();
+
+        assertThat(stored(cluster).pauses().tools()).containsExactly("a");
+        assertThat(m.fresh()).as("no read and no tick after the write: still lapsed").isFalse();
+        assertThat(m.reads()).as("a read with the peer's digest still outside Seen").isFalse();
+        peers.shows(m.digest());
+        assertThat(m.reads()).as("a look between shows the written document's digest").isTrue();
+    }
+
+    private enum Retry { DELETED, UNREADABLE, JOINED, UNVERIFIED }
+
+    @Test
+    void anEndScopeRetryApplyesEveryPreconditionAndWritesNothingWhenItIsRefused() {
+        for (Retry retry : Retry.values()) {
+            solo();
+            Member writer = member();
+            writer.pauseScope("S");
+            StubPeers peers = StubPeers.withPeer();
+            PauseDocument index = new PauseDocument(cluster, cluster::instance,
+                    new PauseDocument.Environment(new Nanos(), new Fixture.TestClock(), null), false, peers);
+            documents.add(index);
+            index.useDependencies(writer.deps);
+            assertThat(index.current(writer.deps).scopes()).containsExactly("S");
+            Member rival = member();
+            AtomicInteger hooks = new AtomicInteger();
+            index.beforeCommit = () -> {
+                if (hooks.incrementAndGet() == 1) {
+                    rival.pauseTool("rival");
+                    switch (retry) {
+                        case DELETED -> map(cluster).delete(key(cluster));
+                        case UNREADABLE -> map(cluster).put(key(cluster), "garbage");
+                        case JOINED -> peers.lookCompleted = false;
+                        case UNVERIFIED -> peers.unverified = 1;
+                    }
+                }
+            };
+            Object before;
+            Throwable thrown = org.assertj.core.api.Assertions.catchThrowable(
+                    () -> index.endScope("S", 0L, writer.deps));
+            assertThat(thrown).as(retry.name()).isNotNull();
+            if (retry == Retry.JOINED || retry == Retry.UNVERIFIED) {
+                assertThat(thrown).isInstanceOf(ClusterOperationRefusedException.class);
+            } else {
+                assertThat(thrown).isInstanceOf(IllegalStateException.class)
+                        .isNotInstanceOf(ClusterOperationRefusedException.class);
+            }
+            assertThat(index.accepted().live(Target.scope("S"))).as(retry + ": the pause is kept").isNotEmpty();
+            if (retry == Retry.DELETED) {
+                assertThat(map(cluster).get(key(cluster))).as("no putIfAbsent").isNull();
+            } else if (retry == Retry.UNREADABLE) {
+                assertThat(map(cluster).get(key(cluster))).isEqualTo("garbage");
+            }
+            index.close();
+            cluster.close();
+            cluster = null;
+        }
+    }
+
+    @Test
+    void theIndexDocumentOnItsOwnNanoClockNearLongMaxValueDecidesLookAgeLikeOneWithEqualClocks() {
+        solo();
+        for (long start : new long[] {1_000_000_000L, Long.MAX_VALUE - 100, Long.MIN_VALUE + 100}) {
+            StubPeers peers = StubPeers.withPeer();
+            Member main = new Member(new Nanos(), new Fixture.TestClock(), peers);
+            main.pauseTool("a");
+            assertThat(main.reads()).isTrue();
+            Nanos indexNanos = new Nanos(start);
+            PauseDocument index = new PauseDocument(cluster, cluster::instance,
+                    new PauseDocument.Environment(indexNanos, new Fixture.TestClock(), null), false, peers);
+            documents.add(index);
+            index.useDependencies(main.deps);
+            for (long age : new long[] {0, LEASE.toNanos(), LEASE.toNanos() + 1}) {
+                peers.lookAgeNanos = age;
+                indexNanos.advance(LEASE.plusSeconds(1));
+                main.nanos.advance(LEASE.plusSeconds(1));
+                boolean mainFresh = main.reads();
+                boolean indexFresh;
+                try {
+                    index.current(main.deps);
+                    indexFresh = true;
+                } catch (IllegalStateException refused) {
+                    indexFresh = false;
+                }
+                assertThat(indexFresh).as("start " + start + ", look age " + age).isEqualTo(mainFresh);
+                assertThat(mainFresh).isEqualTo(age <= LEASE.toNanos());
+            }
+        }
+    }
+
     // ---- A12: properties ------------------------------------------------------------------------------------
 
     private static Doc randomDoc(Random random, int pool) {

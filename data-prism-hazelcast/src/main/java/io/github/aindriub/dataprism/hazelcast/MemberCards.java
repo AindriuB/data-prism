@@ -239,6 +239,8 @@ public final class MemberCards {
         volatile PauseDocument.Digest reportedDigest;
         /** Runs in the stamping loop of a successful card write, for each wrapper; a test seam. */
         volatile Runnable stampingFault = () -> { };
+        /** Runs first inside the atomic step of a completion (X1, X2); a test seam for an Error inside it. */
+        volatile Runnable stepFault = () -> { };
 
         // ---- the card-write protocol, guarded by this monitor ----
         private long cardSequence;
@@ -407,6 +409,7 @@ public final class MemberCards {
         void failed(long sequence) {
             synchronized (this) {
                 try {
+                    stepFault.run();
                     mark = true;
                     if (flagOwner == sequence) {
                         flag = false;
@@ -425,6 +428,7 @@ public final class MemberCards {
                        Map<MemberCards, Instant> readings) {
             synchronized (this) {
                 try {
+                    stepFault.run();
                     if (reportedDigest != digestAtBuild || generation.get() != generationAtBuild) {
                         mark = true;
                     }
@@ -632,6 +636,11 @@ public final class MemberCards {
     volatile Logger log;
     /** Runs at the start of every look; a seam for tests. */
     volatile Runnable lookFault = () -> { };
+    /**
+     * Called with the name of each step of a card write that holds the flag ("flag", "digest", "checks", "build",
+     * "seal", "setAsync"), before the step runs; a seam for tests that throw at, or change something between, steps.
+     */
+    volatile java.util.function.Consumer<String> writeStage = stage -> { };
     /** Runs in a card write after the card is built and before it is written; a seam for tests. */
     volatile Runnable afterCardBuilt = () -> { };
 
@@ -679,6 +688,18 @@ public final class MemberCards {
     /** The first look of an instance judges the members already there: they get no grace. */
     private boolean firstLook = true;
     private final AtomicInteger writes = new AtomicInteger();
+
+    /** Whether this wrapper's executor is stopped (or was never made), for tests. */
+    boolean executorStoppedForTest() {
+        return executor == null || executor.isShutdown();
+    }
+
+    /** Whether this wrapper holds a membership listener, for tests. */
+    boolean listenerRegisteredForTest() {
+        synchronized (state) {
+            return listenerId != null;
+        }
+    }
 
     /** The reading of this wrapper's own clock at the card build it last relies on, for tests; null if none. */
     Instant lastPublishAtForTest() {
@@ -1083,8 +1104,11 @@ public final class MemberCards {
     private void writeCard(Declarations declarations, long sequence, Duration bound) {
         boolean attached = false;
         try {
+            writeStage.accept("flag");
             long generation = declarations.generation.get();
+            writeStage.accept("digest");
             PauseDocument.Digest digest = declarations.reportedDigest;
+            writeStage.accept("checks");
             Map<String, byte[]> checks = declarations.checks();
             if (checks.isEmpty()) {
                 // Not yet joined (a card written before start): at least this wrapper's own.
@@ -1099,10 +1123,13 @@ public final class MemberCards {
             UUID self = cluster.instance().getCluster().getLocalMember().getUuid();
             Card card = new Card(self, FORMAT_VERSION, keys.held().stream().map(ClusterKeys.Key::id).toList(),
                     checks, declarations.pause(), sequence, digest, build.plus(settings.pauseLease()));
+            writeStage.accept("build");
             afterCardBuilt.run();
             String key = keyOf(self);
+            writeStage.accept("seal");
             String sealed = sealer.seal(PrivacyCluster.MEMBER_CARD_MAP, key, card.encode());
             CompletableFuture<Void> finished = new CompletableFuture<>();
+            writeStage.accept("setAsync");
             CompletionStage<Void> write = map().setAsync(key, sealed, settings.pauseLease().toMillis(),
                     TimeUnit.MILLISECONDS);
             write.whenComplete((done, failure) -> {

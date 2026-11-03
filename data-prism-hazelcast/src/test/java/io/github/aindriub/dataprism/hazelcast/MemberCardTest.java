@@ -1909,6 +1909,7 @@ class MemberCardTest {
     @Timeout(240)
     void twoWrappersServeAcrossTwoLeasesBecauseEachCompletedWriteRefreshesEveryLiveWrappersStamp() {
         PrivacyCluster[] wrappers = twoWrappers();
+        int secondWrites = wrappers[1].memberCards().orElseThrow().writesStarted();
         for (int step = 0; step < 8; step++) {
             fixture.clock.advance(LEASE.dividedBy(4));
             wrappers[0].memberCards().orElseThrow().tick();
@@ -1916,6 +1917,9 @@ class MemberCardTest {
             assertThat(wrappers[0].memberCards().orElseThrow().status().serving()).as("first, step " + step).isTrue();
             assertThat(wrappers[1].memberCards().orElseThrow().status().serving()).as("second, step " + step).isTrue();
         }
+        assertThat(wrappers[1].memberCards().orElseThrow().writesStarted())
+                .as("the other wrapper never needed a write of its own: each write stamps every live wrapper")
+                .isEqualTo(secondWrites);
         wrappers[1].close();
         wrappers[0].close();
     }
@@ -2065,4 +2069,553 @@ class MemberCardTest {
         wrappers[0].close();
     }
 
+
+    // ---- 228: the remaining card-protocol, settings and tracker cases --------------------------------------------
+
+    private PrivacyCluster wrapperWith(HazelcastInstance instance, Clock clock, ClusterKeys keys,
+                                       ClusterSecuritySettings settings) {
+        var environment = new PrivacyCluster.Environment(clock, new Fixture.Metrics(),
+                new RecordingLogger().logger(), Duration.ofHours(1));
+        return PrivacyCluster.using(instance, false, Duration.ofMinutes(1), keys, settings, environment);
+    }
+
+    private static final ClusterSecuritySettings FIVE_SECONDS = new ClusterSecuritySettings(Duration.ofSeconds(5),
+            Duration.ofSeconds(1), UnverifiedMemberAction.REFUSE, Duration.ofSeconds(30), true);
+
+    @Test
+    @Timeout(240)
+    void aWrapperWhoseClusterKeyIdsDifferIsRefusedBefore228sCheckByThe227KeyRegistrationAndLeavesTheFirstUnchanged() {
+        HazelcastInstance instance = instanceWithNano(new long[] {1_000_000_000L});
+        PrivacyCluster first = wrapperOn(instance, fixture.clock);
+        ClusterKeys plusOne = new ClusterKeys("test-cluster-1", TestMembers.KEYS.current().material(), null, null,
+                "test-cluster-0", Fixture.filled('p'), TestMembers.KEYS.nameKeyId(),
+                TestMembers.KEYS.nameKeyMaterial());
+        String cardBefore = (String) instance.getMap(PrivacyCluster.MEMBER_CARD_MAP)
+                .get(first.memberCards().orElseThrow().keyForTest(Fixture.uuidOf(first)));
+
+        assertThatThrownBy(() -> wrapperWith(instance, fixture.clock, plusOne,
+                Fixture.settings(UnverifiedMemberAction.REFUSE))).as("227's SealedWrites.register refuses a different "
+                + "key set on one instance before the settings check can run, so CLUSTER_SETTINGS_MISMATCH is "
+                + "unreachable for key ids").isInstanceOf(IllegalStateException.class);
+        assertThat(instance.getMap(PrivacyCluster.MEMBER_CARD_MAP)
+                .get(first.memberCards().orElseThrow().keyForTest(Fixture.uuidOf(first)))).isEqualTo(cardBefore);
+        first.close();
+    }
+
+    @Test
+    @Timeout(240)
+    void aFirstWrapperRefusedForItsKeysDoesNotFixTheInstanceSettingsSoACorrectOneAndALaterOneStart() {
+        String name = TestMembers.uniqueName("refused-first");
+        int port = FreePorts.consecutive(2);
+        List<String> both = List.of("127.0.0.1:" + port, "127.0.0.1:" + (port + 1));
+        HazelcastInstance good = Hazelcast.newHazelcastInstance(PrivacyCluster.configure(
+                ClusterMembership.tcpIp(name, both).withPort(port).withInterface("127.0.0.1").toConfig()));
+        HazelcastInstance other = Hazelcast.newHazelcastInstance(PrivacyCluster.configure(
+                ClusterMembership.tcpIp(name, both).withPort(port + 1).withInterface("127.0.0.1").toConfig()));
+        PrivacyCluster sentinelWriter = wrapperOn(good, fixture.clock);
+        ClusterKeys foreign = new ClusterKeys("other-cluster-1", Fixture.filled('x'), null, null, null, null,
+                TestMembers.KEYS.nameKeyId(), TestMembers.KEYS.nameKeyMaterial());
+
+        assertThatThrownBy(() -> wrapperWith(other, fixture.clock, foreign,
+                Fixture.settings(UnverifiedMemberAction.REFUSE))).isInstanceOf(PrivacyClusterRefusal.class)
+                .satisfies(e -> assertThat(((PrivacyClusterRefusal) e).code())
+                        .isEqualTo(PrivacyClusterRefusal.Code.CLUSTER_KEY_MISMATCH));
+        assertThat(MemberCards.declarationsIfAny(other) == null || MemberCards.declarationsIfAny(other).clocks() == null)
+                .as("a refused wrapper fixes nothing").isTrue();
+        PrivacyCluster second = wrapperOn(other, fixture.clock);
+        PrivacyCluster third = wrapperOn(other, fixture.clock);
+        assertThat(third.securityStatus().serving()).isTrue();
+        third.close();
+        second.close();
+        sentinelWriter.close();
+    }
+
+    @Test
+    @Timeout(240)
+    void twoConcurrentStartsCompareAndRecordInOneStepAndARecordingStartThatThrowsClearsItsRecord() throws Exception {
+        for (String variant : List.of("equal", "different", "throws")) {
+            HazelcastInstance instance = instanceWithNano(new long[] {1_000_000_000L});
+            ClusterSecuritySettings other = new ClusterSecuritySettings(LEASE.plusSeconds(10),
+                    ClusterSecuritySettings.DEFAULT_CLOCK_SKEW_TOLERANCE, UnverifiedMemberAction.REFUSE, GRACE, true);
+            AtomicBoolean throwOnce = new AtomicBoolean("throws".equals(variant));
+            ClusterSentinel.afterWriteStarted = key -> {
+                if (!ClusterSentinel.KEY.equals(key) && throwOnce.compareAndSet(true, false)) {
+                    throw new AssertionError("injected in the recording start");
+                }
+            };
+            ScheduledExecutorService pool = Executors.newScheduledThreadPool(2);
+            CountDownLatch go = new CountDownLatch(1);
+            try {
+                var one = pool.submit(() -> {
+                    go.await();
+                    return wrapperOn(instance, fixture.clock);
+                });
+                var two = pool.submit(() -> {
+                    go.await();
+                    return "different".equals(variant) || "throws".equals(variant)
+                            ? wrapperWith(instance, fixture.clock, TestMembers.KEYS, other)
+                            : wrapperOn(instance, fixture.clock);
+                });
+                go.countDown();
+                int started = 0;
+                int mismatched = 0;
+                int errors = 0;
+                for (var future : List.of(one, two)) {
+                    try {
+                        future.get(120, TimeUnit.SECONDS).close();
+                        started++;
+                    } catch (java.util.concurrent.ExecutionException failed) {
+                        if (failed.getCause() instanceof PrivacyClusterRefusal refusal
+                                && refusal.code() == PrivacyClusterRefusal.Code.CLUSTER_SETTINGS_MISMATCH) {
+                            mismatched++;
+                        } else if (failed.getCause() instanceof AssertionError) {
+                            errors++;
+                        } else {
+                            throw failed;
+                        }
+                    }
+                }
+                switch (variant) {
+                    case "equal" -> assertThat(started).as(variant).isEqualTo(2);
+                    case "different" -> {
+                        assertThat(started).as(variant).isEqualTo(1);
+                        assertThat(mismatched).isEqualTo(1);
+                    }
+                    default -> {
+                        assertThat(errors).as(variant).isEqualTo(1);
+                        assertThat(mismatched).as("a record that never completed fixes nothing").isZero();
+                        assertThat(started).as("the other records its own and starts").isEqualTo(1);
+                    }
+                }
+            } finally {
+                ClusterSentinel.afterWriteStarted = key -> { };
+                pool.shutdownNow();
+            }
+        }
+    }
+
+    @Test
+    @Timeout(240)
+    void aWaiterOnATentativeRecordWaitsPastTheStartupBoundThrowsAtTheWholeBudgetWithNoCodeAndRetriesAgainstALateConfirm()
+            throws Exception {
+        HazelcastInstance instance = instanceWithNano(new long[] {1_000_000_000L});
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicBoolean armed = new AtomicBoolean(true);
+        AtomicBoolean entered = new AtomicBoolean();
+        ClusterSentinel.afterWriteStarted = key -> {
+            if (!ClusterSentinel.KEY.equals(key) && armed.compareAndSet(true, false)) {
+                entered.set(true);
+                try {
+                    release.await(120, TimeUnit.SECONDS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        };
+        ScheduledExecutorService pool = Executors.newScheduledThreadPool(3);
+        try {
+            var recorder = pool.submit(() -> wrapperWith(instance, fixture.clock, TestMembers.KEYS, FIVE_SECONDS));
+            assertThat(Fixture.await(60, entered::get)).as("the recording start is held after recording").isTrue();
+            var waiter = pool.submit(() -> wrapperWith(instance, fixture.clock, TestMembers.KEYS, FIVE_SECONDS));
+            Duration bound = Duration.ofSeconds(12);
+            assertThat(Fixture.await((int) bound.toSeconds() + 1, waiter::isDone))
+                    .as("still waiting after the startup write bound alone").isFalse();
+            assertThat(Fixture.await(40, waiter::isDone)).as("gives up at the whole budget").isTrue();
+            assertThatThrownBy(() -> waiter.get()).hasCauseInstanceOf(IllegalStateException.class)
+                    .satisfies(e -> assertThat(e.getCause()).isNotInstanceOf(PrivacyClusterRefusal.class));
+
+            release.countDown();
+            PrivacyCluster recorded = recorder.get(60, TimeUnit.SECONDS);
+            PrivacyCluster retry = wrapperWith(instance, fixture.clock, TestMembers.KEYS, FIVE_SECONDS);
+            assertThat(retry.securityStatus().serving()).as("the late recorder confirmed its record").isTrue();
+            retry.close();
+            recorded.close();
+        } finally {
+            release.countDown();
+            ClusterSentinel.afterWriteStarted = key -> { };
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void aTrackerLookThatReadItsMemberListBeforeTheLatestOneOnlyRecordsSightingsAndAMemberListChangeNeedsANewLook() {
+        Pair pair = pair();
+        MemberCards a = pair.a().memberCards().orElseThrow();
+        MemberCards.Declarations declarations = MemberCards.declarations(pair.a().instance());
+        UUID self = Fixture.uuidOf(pair.a());
+        UUID peer = UUID.randomUUID();
+        List<UUID> listed = List.of(self, peer);
+        long token = declarations.memberListReads.incrementAndGet() + 10;
+        Card first = new Card(peer, MemberCards.FORMAT_VERSION, List.of("test-cluster-1"), Map.of(), 0L, 5L, null,
+                fixture.clock.instant().plus(LEASE));
+        Card own = cardOf(pair.a());
+        // A counted look: the peer's card is valid and accepted, so the peer is tracked.
+        declarations.feedLook(a, self, listed, token, Map.of(peer, first, self, own));
+        assertThat(declarations.snapshot(self, listed).lookCompleted()).isTrue();
+        assertThat(declarations.snapshot(self, listed).unverifiedCount()).isZero();
+
+        // A look that read its list earlier: only sightings are recorded, for the peer's newer card.
+        Card newer = new Card(peer, MemberCards.FORMAT_VERSION, List.of("test-cluster-1"), Map.of(), 0L, 9L,
+                PauseDocument.Digest.EMPTY, fixture.clock.instant().plus(LEASE));
+        declarations.feedLook(a, self, listed, token - 5, Map.of(peer, newer, self, own));
+        assertThat(declarations.snapshot(self, listed).peerDigests()).as("an uncounted look changes no answer")
+                .doesNotContainKey(peer);
+        // At the next counted look the newer card, first sighted by the uncounted one, is accepted and tracked.
+        declarations.feedLook(a, self, listed, token + 1, Map.of(peer, newer, self, own));
+        assertThat(declarations.snapshot(self, listed).peerDigests()).containsEntry(peer,
+                PauseDocument.Digest.EMPTY);
+
+        // A member joins: no look has read that list, so the latest look does not count for it.
+        List<UUID> joined = List.of(self, peer, UUID.randomUUID());
+        assertThat(declarations.snapshot(self, joined).lookCompleted()).isFalse();
+        assertThat(declarations.snapshot(self, listed).lookCompleted()).as("a join undone by a leave").isTrue();
+        assertThat(declarations.snapshot(self, joined).isAlone()).isFalse();
+        assertThat(declarations.snapshot(self, List.of(self)).isAlone()).isTrue();
+    }
+
+    @Test
+    @Timeout(240)
+    void lookAgeAndTheCleanRunReadTheInstanceNanoClockAndAnEarlierLookAfterAJoinThenLeaveCountsAgain() {
+        long[] nanos = {Long.MAX_VALUE - 5_000_000_000L};
+        HazelcastInstance instance = instanceWithNano(nanos);
+        PrivacyCluster wrapper = wrapperOn(instance, fixture.clock);
+        PauseDocument.PeerView view = MemberCards.peers(wrapper).snapshot();
+        assertThat(view.lookAgeNanos()).isZero();
+        nanos[0] += 8_000_000_000L;
+        view = MemberCards.peers(wrapper).snapshot();
+        assertThat(view.lookAgeNanos()).as("across the wrap of the nano clock").isEqualTo(8_000_000_000L);
+        fixture.clock.advance(Duration.ofHours(1));
+        assertThat(MemberCards.peers(wrapper).snapshot().lookAgeNanos()).as("a wall clock jump changes nothing")
+                .isEqualTo(8_000_000_000L);
+        wrapper.close();
+    }
+
+    @Test
+    @Timeout(240)
+    void aChangeLandingBeforeOrAfterTheDigestReadIsPublishedBeforeTheHalfLeaseRefresh() {
+        for (String when : List.of("before", "after")) {
+            Pair pair = pair();
+            MemberCards cards = pair.a().memberCards().orElseThrow();
+            MemberCards.Declarations declarations = MemberCards.declarations(pair.a().instance());
+            PauseDocument.Digest d1 = cardDoc(1, "one").digest();
+            PauseDocument.Digest d2 = cardDoc(2, "one", "two").digest();
+            declarations.reportedDigest = d1;
+            declarations.markPending();
+            // The mark is set but its pass is not the schedule's: make the next tick write.
+            int before = cards.writesStarted();
+            cards.writeStage = stage -> {
+                if (stage.equals(when.equals("before") ? "digest" : "build")) {
+                    cards.writeStage = ignored -> { };
+                    declarations.report(d2);
+                }
+            };
+            cards.tick();
+            assertThat(Fixture.await(30, () -> !cards.writeOutstanding())).isTrue();
+            cards.tick();
+            assertThat(Fixture.await(30, () -> !cards.writeOutstanding())).isTrue();
+            assertThat(cardOf(pair.a()).pauseDigest()).as(when).isEqualTo(d2);
+            int writes = cards.writesStarted();
+            cards.tick();
+            assertThat(cards.writesStarted()).as("nothing more before the half-lease refresh, " + when)
+                    .isEqualTo(writes);
+            assertThat(writes - before).isBetween(1, 2);
+            cards.writeStage = stage -> { };
+            fixture.closeAll();
+        }
+    }
+
+    @Test
+    void aFailedWriteSetsTheMarkAndClearsTheFlagAndATimedOutWaitLeavesTheFlagToTheQueuedWrite() {
+        Pair pair = pair();
+        MemberCards.Declarations declarations = MemberCards.declarations(pair.a().instance());
+        long sequence = declarations.beginWrite();
+        assertThat(sequence).isPositive();
+        assertThat(declarations.beginWrite()).as("one write at a time").isEqualTo(-1);
+        declarations.failed(sequence);
+        assertThat(declarations.writeOutstanding()).isFalse();
+        assertThat(declarations.marked()).as("X2 sets the mark").isTrue();
+        // A late completion of an old write never clears the flag of a newer one.
+        long newer = declarations.beginWrite();
+        declarations.failed(sequence);
+        assertThat(declarations.writeOutstanding()).isTrue();
+        declarations.failed(newer);
+        assertThat(declarations.writeOutstanding()).isFalse();
+    }
+
+    @Test
+    @Timeout(240)
+    void aWriteWhoseCallersWaitTimedOutLaterCompletesAndMarksTheMovedDigestSoTheNextPassWritesIt() {
+        Pair pair = pair();
+        MemberCards cards = pair.a().memberCards().orElseThrow();
+        MemberCards.Declarations declarations = MemberCards.declarations(pair.a().instance());
+        String keyA = holdAWriteOfA(pair);
+        PauseDocument.Digest moved = cardDoc(4, "x", "y", "z").digest();
+        declarations.report(moved);
+        Fixture.cardMap(pair.b()).unlock(keyA);
+        assertThat(Fixture.await(30, () -> !cards.writeOutstanding())).isTrue();
+        assertThat(declarations.marked()).as("X1's atomic step saw the digest move").isTrue();
+        fixture.clock.advance(Duration.ofSeconds(1));
+        cards.tick();
+        assertThat(Fixture.await(30, () -> !cards.writeOutstanding())).isTrue();
+        assertThat(cardOf(pair.a()).pauseDigest()).isEqualTo(moved);
+    }
+
+    @Test
+    @Timeout(240)
+    void aChangeNoticeWithNoLiveWrapperReturnsLeavesTheMarkAndTheNextStartWritesTheCard() {
+        HazelcastInstance instance = instanceWithNano(new long[] {1_000_000_000L});
+        PrivacyCluster first = wrapperOn(instance, fixture.clock);
+        MemberCards.Declarations declarations = MemberCards.declarations(instance);
+        first.close();
+        PauseDocument.Digest digest = cardDoc(1, "q").digest();
+
+        declarations.report(digest);
+
+        assertThat(declarations.marked()).isTrue();
+        PrivacyCluster second = wrapperOn(instance, fixture.clock);
+        assertThat(Fixture.await(30, () -> !second.memberCards().orElseThrow().writeOutstanding())).isTrue();
+        assertThat(cardOf(second).pauseDigest()).as("the next start writes the card carrying the digest")
+                .isEqualTo(digest);
+        second.close();
+    }
+
+    @Test
+    @Timeout(240)
+    void aWriteAtEveryInjectionPointBeforeTheCardReachesHazelcastClearsTheFlagSetsTheMarkAndTheNextPassWrites() {
+        Pair pair = pair();
+        MemberCards cards = pair.a().memberCards().orElseThrow();
+        MemberCards.Declarations declarations = MemberCards.declarations(pair.a().instance());
+        for (String stage : List.of("digest", "checks", "build", "seal", "setAsync")) {
+            fixture.clock.advance(LEASE.dividedBy(2));
+            cards.writeStage = at -> {
+                if (at.equals(stage)) {
+                    throw new IllegalStateException("injected at " + stage);
+                }
+            };
+            cards.tick();
+            assertThat(cards.writeOutstanding()).as("the flag is clear after " + stage).isFalse();
+            assertThat(declarations.marked()).as("the mark is set after " + stage).isTrue();
+            cards.writeStage = at -> { };
+            int before = cards.writesStarted();
+            cards.tick();
+            assertThat(cards.writesStarted()).as("the next pass writes after " + stage).isEqualTo(before + 1);
+            assertThat(Fixture.await(30, () -> !cards.writeOutstanding())).isTrue();
+        }
+    }
+
+    @Test
+    @Timeout(240)
+    void publishNowOverTwoBackToBackWritesWaitsUnderOneDeadlineNotOnePerRound() throws Exception {
+        Pair pair = pair();
+        MemberCards.Declarations declarations = MemberCards.declarations(pair.a().instance());
+        long first = declarations.beginWrite();
+        long start = System.nanoTime();
+        AtomicBoolean threw = new AtomicBoolean();
+        Thread waiter = new Thread(() -> {
+            try {
+                declarations.beginWriteWaiting(Duration.ofMillis(1500));
+            } catch (IllegalStateException timedOut) {
+                threw.set(true);
+            }
+        });
+        waiter.start();
+        assertThat(Fixture.await(1, () -> false) || waiter.isAlive()).isTrue();
+        synchronized (declarations) {
+            // The first write ends and a second takes the flag before the waiter can wake: a second round.
+            declarations.failed(first);
+            assertThat(declarations.beginWrite()).isPositive();
+        }
+        waiter.join(10_000);
+        long elapsedMillis = (System.nanoTime() - start) / 1_000_000;
+        assertThat(threw.get()).as("it throws at its one deadline").isTrue();
+        assertThat(elapsedMillis).as("not a fresh deadline for the second round").isLessThan(2_300);
+    }
+
+    @Test
+    @Timeout(240)
+    void aTickOnEitherOfTwoWrappersWritesOnlyWhenTheInstanceNanoClockOrItsOwnClockPassesHalfALease() {
+        long[] nanos = {1_000_000_000L};
+        HazelcastInstance instance = instanceWithNano(nanos);
+        Fixture.TestClock clockOne = new Fixture.TestClock();
+        Fixture.TestClock clockTwo = new Fixture.TestClock();
+        PrivacyCluster one = wrapperOn(instance, clockOne);
+        PrivacyCluster two = wrapperOn(instance, clockTwo);
+        MemberCards first = one.memberCards().orElseThrow();
+        MemberCards second = two.memberCards().orElseThrow();
+        first.publishNow();
+        int a = first.writesStarted();
+        int b = second.writesStarted();
+        first.tick();
+        second.tick();
+        assertThat(first.writesStarted() + second.writesStarted()).as("neither writes before L/2")
+                .isEqualTo(a + b);
+
+        nanos[0] += LEASE.dividedBy(2).toNanos();
+        second.tick();
+        assertThat(second.writesStarted()).as("only the instance nano clock passed L/2").isEqualTo(b + 1);
+        assertThat(Fixture.await(30, () -> !second.writeOutstanding())).isTrue();
+
+        clockTwo.advance(LEASE.dividedBy(2));
+        int c = second.writesStarted();
+        second.tick();
+        assertThat(second.writesStarted()).as("only its own clock passed L/2").isEqualTo(c + 1);
+        two.close();
+        one.close();
+    }
+
+    @Test
+    void aMemberThatLeavesTheListIsForgottenByTheTrackerAndAGapOverHalfALeaseMakesALookOffending() {
+        long[] nanos = {1_000_000_000L};
+        HazelcastInstance instance = instanceWithNano(nanos);
+        PrivacyCluster wrapper = wrapperOn(instance, fixture.clock);
+        MemberCards cards = wrapper.memberCards().orElseThrow();
+        MemberCards.Declarations declarations = MemberCards.declarations(instance);
+        UUID self = Fixture.uuidOf(wrapper);
+        UUID peer = UUID.randomUUID();
+        Card own = cardOf(wrapper);
+        Card peerCard = new Card(peer, MemberCards.FORMAT_VERSION, List.of("test-cluster-1"), Map.of(), 0L, 3L,
+                PauseDocument.Digest.EMPTY, fixture.clock.instant().plus(LEASE));
+        long token = declarations.memberListReads.incrementAndGet() + 100;
+        declarations.feedLook(cards, self, List.of(self, peer), token, Map.of(self, own, peer, peerCard));
+        assertThat(declarations.snapshot(self, List.of(self, peer)).peerDigests()).containsKey(peer);
+
+        declarations.feedLook(cards, self, List.of(self), token + 1, Map.of(self, own));
+        assertThat(declarations.snapshot(self, List.of(self, peer)).peerDigests())
+                .as("a peer that leaves the list is dropped").doesNotContainKey(peer);
+
+        // Looks more than L/2 apart: the later one is offending.
+        nanos[0] += LEASE.dividedBy(2).plusSeconds(1).toNanos();
+        declarations.feedLook(cards, self, List.of(self), token + 2, Map.of(self, own));
+        assertThat(declarations.snapshot(self, List.of(self)).cleanRunAgeNanos()).as("offending: no clean run")
+                .isEqualTo(-1);
+        nanos[0] += Duration.ofSeconds(1).toNanos();
+        declarations.feedLook(cards, self, List.of(self), token + 3, Map.of(self, own));
+        assertThat(declarations.snapshot(self, List.of(self)).cleanRunAgeNanos()).isZero();
+        wrapper.close();
+    }
+
+    @Test
+    void aLookByAWrapperThatIsNotLiveFeedsNothingToTheTracker() {
+        Pair pair = pair();
+        MemberCards a = pair.a().memberCards().orElseThrow();
+        MemberCards.Declarations declarations = MemberCards.declarations(pair.a().instance());
+        UUID self = Fixture.uuidOf(pair.a());
+        UUID peer = UUID.randomUUID();
+        Card peerCard = new Card(peer, MemberCards.FORMAT_VERSION, List.of("test-cluster-1"), Map.of(), 0L, 3L,
+                PauseDocument.Digest.EMPTY, fixture.clock.instant().plus(LEASE));
+        List<UUID> listed = List.of(self, peer);
+        declarations.live.remove(a);
+        try {
+            declarations.feedLook(a, self, listed, declarations.memberListReads.incrementAndGet() + 100,
+                    Map.of(self, cardOf(pair.a()), peer, peerCard));
+            assertThat(declarations.snapshot(self, listed).peerDigests()).doesNotContainKey(peer);
+        } finally {
+            declarations.live.add(a);
+        }
+    }
+
+    @Test
+    void anOldCompletionNeverMovesTheLastSuccessfulBuildBackwardsAndAnErrorInTheAtomicStepLeavesTheFlagClear() {
+        long[] nanos = {1_000_000_000L};
+        HazelcastInstance instance = instanceWithNano(nanos);
+        PrivacyCluster wrapper = wrapperOn(instance, fixture.clock);
+        MemberCards.Declarations declarations = MemberCards.declarations(instance);
+        long now = nanos[0];
+        long first = declarations.beginWrite();
+        assertThat(first).isGreaterThan(0);
+        declarations.succeeded(first, 0, null, now + 1_000_000L, Map.of());
+        long second = declarations.beginWrite();
+        declarations.succeeded(second, 0, null, now + 500_000L, Map.of());
+        assertThat(declarations.buildAgeNanos()).as("the older build does not replace the newer")
+                .isEqualTo(-1_000_000L);
+
+        for (String completion : List.of("succeeded", "failed")) {
+            long sequence = declarations.beginWrite();
+            declarations.stepFault = () -> {
+                throw new AssertionError("injected in the atomic step");
+            };
+            try {
+                assertThatThrownBy(() -> {
+                    if (completion.equals("succeeded")) {
+                        declarations.succeeded(sequence, 0, null, now, Map.of());
+                    } else {
+                        declarations.failed(sequence);
+                    }
+                }).isInstanceOf(AssertionError.class);
+            } finally {
+                declarations.stepFault = () -> { };
+            }
+            assertThat(declarations.writeOutstanding()).as(completion + ": the flag is clear").isFalse();
+            assertThat(declarations.marked()).as(completion + ": the mark is set").isTrue();
+        }
+        wrapper.close();
+    }
+
+    @Test
+    void aNormalCardWriteCallsExactlyTheNamedStagesSoNothingThatCanThrowRunsBetweenSetAsyncAndItsCompletionHook() {
+        Pair pair = pair();
+        MemberCards cards = pair.a().memberCards().orElseThrow();
+        List<String> stages = new java.util.concurrent.CopyOnWriteArrayList<>();
+        cards.writeStage = stages::add;
+        cards.publishNow();
+        cards.writeStage = stage -> { };
+        assertThat(stages).containsExactly("flag", "digest", "checks", "build", "seal", "setAsync");
+    }
+
+    @Test
+    @Timeout(240)
+    void aStartThatEndsWithAnErrorAfterTheListenerWasRegisteredStopsItsExecutorAndRemovesItsListener() {
+        HazelcastInstance instance = instanceWithNano(new long[] {1_000_000_000L});
+        java.util.concurrent.atomic.AtomicReference<MemberCards> failing = new java.util.concurrent.atomic.AtomicReference<>();
+        var throwing = new io.github.aindriub.dataprism.core.metrics.PrivacyMetrics() {
+            @Override
+            public void record(Metric metric, String tag, Duration elapsed) { }
+
+            @Override
+            public void increment(Metric metric, String tag) { }
+
+            @Override
+            public void increment(Metric metric) { }
+
+            @Override
+            public void gauge(Metric metric, java.util.function.DoubleSupplier supplier) {
+                MemberCards.declarationsIfAny(instance).live.stream().findFirst().ifPresent(failing::set);
+                throw new AssertionError("injected after the listener was registered");
+            }
+        };
+        var environment = new PrivacyCluster.Environment(fixture.clock, throwing, new RecordingLogger().logger(),
+                Duration.ofHours(1));
+        assertThatThrownBy(() -> PrivacyCluster.using(instance, false, Duration.ofMinutes(1), TestMembers.KEYS,
+                Fixture.settings(UnverifiedMemberAction.REFUSE), environment)).isInstanceOf(AssertionError.class);
+
+        assertThat(failing.get()).isNotNull();
+        assertThat(failing.get().executorStoppedForTest()).isTrue();
+        assertThat(failing.get().listenerRegisteredForTest()).as("the listener was removed and its id cleared")
+                .isFalse();
+        assertThat(MemberCards.declarationsIfAny(instance).live).isEmpty();
+        assertThat(MemberCards.declarationsIfAny(instance).clocks()).as("the unconfirmed record is cleared").isNull();
+    }
+
+    @Test
+    @Timeout(240)
+    void aPauseCommittingWhileACardWriteIsHeldReturnsAtOnceAndOneWriteFollowsCarryingTheLatestDigest() {
+        Pair pair = pair();
+        HazelcastOversightState state = new HazelcastOversightState(pair.a());
+        try {
+            String keyA = holdAWriteOfA(pair);
+            long started = System.nanoTime();
+            state.pauseTool("held-write");
+            assertThat(Duration.ofNanos(System.nanoTime() - started)).as("the change notice never waits for a write")
+                    .isLessThan(Duration.ofSeconds(3));
+            Fixture.cardMap(pair.b()).unlock(keyA);
+            MemberCards cards = pair.a().memberCards().orElseThrow();
+            assertThat(Fixture.await(30, () -> !cards.writeOutstanding())).isTrue();
+            fixture.clock.advance(Duration.ofSeconds(1));
+            cards.tick();
+            assertThat(Fixture.await(30, () -> !cards.writeOutstanding()
+                    && state.document().heldDigest().equals(cardOf(pair.a()).pauseDigest()))).isTrue();
+        } finally {
+            state.close();
+        }
+    }
 }

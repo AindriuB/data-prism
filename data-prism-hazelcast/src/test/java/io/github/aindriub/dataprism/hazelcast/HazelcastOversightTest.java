@@ -553,4 +553,765 @@ class HazelcastOversightTest {
             state.close();
         }
     }
+
+    // ---- 228: real clusters of host-managed members, driven by injected clocks --------------------------------
+
+    private static final Duration MESH_LEASE = MemberCardTest.LEASE;
+
+    /**
+     * Keyed members of one cluster whose wall clock and monotonic clock a test moves. Nothing ticks by itself: a test
+     * calls {@link #tick}, {@link #round} and {@link #advance}.
+     */
+    private static final class Mesh implements AutoCloseable {
+        final String name = TestMembers.uniqueName("mesh");
+        final int capacity;
+        final int base;
+        final ClusterSecuritySettings settings;
+        final MemberCardTest.Fixture.Metrics metrics = new MemberCardTest.Fixture.Metrics();
+        final java.util.List<com.hazelcast.core.HazelcastInstance> instances = new java.util.ArrayList<>();
+        final java.util.List<long[]> nanos = new java.util.ArrayList<>();
+        final java.util.List<MemberCardTest.Fixture.TestClock> clocks = new java.util.ArrayList<>();
+        final java.util.List<PrivacyCluster> wrappers = new java.util.ArrayList<>();
+        final java.util.List<HazelcastOversightState> states = new java.util.ArrayList<>();
+        final java.util.List<com.hazelcast.core.HazelcastInstance> intruders = new java.util.ArrayList<>();
+        long nowNanos = 1_000_000_000_000L;
+        int nextPort;
+
+        Mesh(int capacity, ClusterSecuritySettings settings) {
+            this.capacity = capacity;
+            this.settings = settings;
+            this.base = FreePorts.consecutive(capacity + 2);
+            this.nextPort = base;
+        }
+
+        Mesh(int capacity) {
+            this(capacity, MemberCardTest.Fixture.settings(
+                    ClusterSecuritySettings.UnverifiedMemberAction.REFUSE));
+        }
+
+        private java.util.List<String> addresses() {
+            java.util.List<String> all = new java.util.ArrayList<>();
+            for (int i = 0; i < capacity + 2; i++) {
+                all.add("127.0.0.1:" + (base + i));
+            }
+            return all;
+        }
+
+        PrivacyCluster wrapperOn(com.hazelcast.core.HazelcastInstance instance, MemberCardTest.Fixture.TestClock clock) {
+            var environment = new PrivacyCluster.Environment(clock, metrics, new RecordingLogger().logger(),
+                    Duration.ofHours(1));
+            return PrivacyCluster.using(instance, false, Duration.ofMinutes(1), TestMembers.KEYS, settings,
+                    environment);
+        }
+
+        /** Adds a keyed member (instance and wrapper); returns its index. */
+        int addMember() {
+            long[] clock = {nowNanos};
+            Config config = PrivacyCluster.configure(ClusterMembership.tcpIp(name, addresses()).withPort(nextPort++)
+                    .withInterface("127.0.0.1").toConfig());
+            config.getUserContext().put(MemberCards.NANO_CLOCK_CONTEXT_KEY,
+                    (java.util.function.LongSupplier) () -> clock[0]);
+            var instance = Hazelcast.newHazelcastInstance(config);
+            MemberCardTest.Fixture.TestClock wall = new MemberCardTest.Fixture.TestClock();
+            wall.advance(wallOffset);
+            instances.add(instance);
+            nanos.add(clock);
+            clocks.add(wall);
+            wrappers.add(wrapperOn(instance, wall));
+            states.add(null);
+            return instances.size() - 1;
+        }
+
+        Duration wallOffset = Duration.ZERO;
+
+        /** Adds a member without keys, an outsider that has no card. */
+        void addIntruder() {
+            intruders.add(MemberCardTest.Fixture.plain(name, nextPort++, addresses()));
+        }
+
+        HazelcastOversightState state(int i) {
+            if (states.get(i) == null) {
+                states.set(i, new HazelcastOversightState(wrappers.get(i), ClusterLocks.DEFAULT_TIMEOUT,
+                        io.github.aindriub.dataprism.core.metrics.PrivacyMetrics.none(),
+                        new PauseDocument.Environment(() -> nanos.get(i)[0], clocks.get(i), null)));
+            }
+            return states.get(i);
+        }
+
+        void advance(Duration by) {
+            nowNanos += by.toNanos();
+            for (long[] n : nanos) {
+                n[0] += by.toNanos();
+            }
+            for (var c : clocks) {
+                c.advance(by);
+            }
+        }
+
+        void tick(int i) {
+            if (wrappers.get(i) != null) {
+                wrappers.get(i).memberCards().orElseThrow().tick();
+            }
+            if (states.get(i) != null) {
+                states.get(i).document().tick();
+            }
+        }
+
+        void round() {
+            for (int i = 0; i < instances.size(); i++) {
+                if (instances.get(i).getLifecycleService().isRunning() && wrappers.get(i) != null) {
+                    tick(i);
+                }
+            }
+        }
+
+        /** Advances in steps of a quarter lease, ticking every member after each, for {@code leases} leases. */
+        void run(double leases) {
+            int steps = (int) Math.round(leases * 4);
+            for (int s = 0; s < steps; s++) {
+                advance(MESH_LEASE.dividedBy(4));
+                round();
+            }
+        }
+
+        boolean fresh(int i) {
+            return states.get(i).document().fresh();
+        }
+
+        boolean reads(int i) {
+            try {
+                states.get(i).snapshot();
+                return true;
+            } catch (IllegalStateException refused) {
+                return false;
+            }
+        }
+
+        java.util.Set<String> tools(int i) {
+            return states.get(i).snapshot().pausedTools();
+        }
+
+        PauseDocument.PeerView peers(int i) {
+            return MemberCards.peers(wrappers.get(i)).snapshot();
+        }
+
+        String documentKey(int i) {
+            return wrappers.get(i).keyedNames().mapKey(PrivacyCluster.OVERSIGHT_MAP, PauseDocument.CANONICAL);
+        }
+
+        com.hazelcast.map.IMap<String, Object> documentMap(int i) {
+            return instances.get(i).getMap(PrivacyCluster.OVERSIGHT_MAP);
+        }
+
+        com.hazelcast.map.IMap<String, Object> cardMap(int i) {
+            return instances.get(i).getMap(PrivacyCluster.MEMBER_CARD_MAP);
+        }
+
+        String cardKey(int viewer, int member) {
+            return wrappers.get(viewer).memberCards().orElseThrow()
+                    .keyForTest(instances.get(member).getCluster().getLocalMember().getUuid());
+        }
+
+        /** The sequence of the stored document, or -1 if there is none or it does not open. */
+        long storedSequence(int viewer) {
+            Object raw = documentMap(viewer).get(documentKey(viewer));
+            if (!(raw instanceof String sealed)) {
+                return -1;
+            }
+            var opened = IdentityMaps.sealerFor(wrappers.get(viewer), io.github.aindriub.dataprism.core.metrics
+                    .PrivacyMetrics.none(), io.github.aindriub.dataprism.hazelcast.seal.ServingGate.open())
+                    .open(PrivacyCluster.OVERSIGHT_MAP, documentKey(viewer), sealed);
+            var doc = PauseDocument.Doc.decode(opened.plaintext());
+            return doc == null ? -1 : doc.sequence();
+        }
+
+        /** Shuts member i down the way a leaving member does. */
+        void leave(int i) {
+            if (states.get(i) != null) {
+                states.get(i).close();
+            }
+            wrappers.get(i).close();
+            instances.get(i).shutdown();
+            wrappers.set(i, null);
+        }
+
+        @Override
+        public void close() {
+            for (int i = 0; i < wrappers.size(); i++) {
+                if (states.get(i) != null) {
+                    states.get(i).close();
+                }
+                if (wrappers.get(i) != null) {
+                    try {
+                        wrappers.get(i).close();
+                    } catch (RuntimeException alreadyDown) {
+                        // closed by the test
+                    }
+                }
+            }
+            for (var instance : instances) {
+                try {
+                    instance.getLifecycleService().terminate();
+                } catch (RuntimeException alreadyDown) {
+                    // ditto
+                }
+            }
+            for (var instance : intruders) {
+                try {
+                    instance.getLifecycleService().terminate();
+                } catch (RuntimeException alreadyDown) {
+                    // ditto
+                }
+            }
+        }
+    }
+
+    @Test
+    void threeMembersStartedTogetherWriteExactlyOneFirstDocumentAndEveryReadWorks() {
+        try (Mesh mesh = new Mesh(3)) {
+            for (int i = 0; i < 3; i++) {
+                mesh.addMember();
+            }
+            for (int i = 0; i < 3; i++) {
+                mesh.state(i);
+            }
+            mesh.run(4);
+            assertThat(mesh.storedSequence(0)).as("exactly one first document").isEqualTo(1);
+            for (int i = 0; i < 3; i++) {
+                assertThat(mesh.reads(i)).as("member " + i).isTrue();
+            }
+            assertThat(mesh.metrics.count(io.github.aindriub.dataprism.core.metrics.Metric.CLUSTER_PAUSE_CONFLICT))
+                    .isZero();
+        }
+    }
+
+    @Test
+    void aFullClusterRestartWritesExactlyOneFirstDocument() {
+        for (int restart = 0; restart < 2; restart++) {
+            try (Mesh mesh = new Mesh(3)) {
+                for (int i = 0; i < 3; i++) {
+                    mesh.addMember();
+                }
+                for (int i = 0; i < 3; i++) {
+                    mesh.state(i);
+                }
+                mesh.run(4);
+                assertThat(mesh.storedSequence(0)).as("restart " + restart).isEqualTo(1);
+                mesh.state(0).pauseTool("kept");
+                mesh.run(1);
+                assertThat(mesh.reads(2)).isTrue();
+            }
+        }
+    }
+
+    @Test
+    void aLoneColdMemberLosesADepartedMembersPause_theNamedResidual() {
+        try (Mesh mesh = new Mesh(2)) {
+            int a = mesh.addMember();
+            int b = mesh.addMember();
+            mesh.state(a);
+            mesh.state(b);
+            mesh.run(4);
+            mesh.state(a).pauseTool("p");
+            mesh.run(1);
+            assertThat(mesh.tools(b)).contains("p");
+            mesh.leave(a);
+            mesh.documentMap(b).delete(mesh.documentKey(b));
+            mesh.leave(b);
+        }
+        try (Mesh restarted = new Mesh(1)) {
+            int b = restarted.addMember();
+            restarted.state(b).document().tick();
+            restarted.advance(Duration.ofSeconds(1));
+            restarted.tick(b);
+            assertThat(restarted.storedSequence(b)).as("alone, so at once and with no wait").isEqualTo(1);
+            assertThat(restarted.tools(b)).as("the departed member's pause is lost").doesNotContain("p");
+        }
+    }
+
+    private static Mesh startedMesh(int capacity, int members) {
+        Mesh mesh = new Mesh(capacity);
+        for (int i = 0; i < members; i++) {
+            mesh.addMember();
+        }
+        for (int i = 0; i < members; i++) {
+            mesh.state(i);
+        }
+        mesh.run(4);
+        return mesh;
+    }
+
+    private static final io.github.aindriub.dataprism.hazelcast.PauseDocument.Target TOOL_P =
+            PauseDocument.Target.tool("p");
+
+    /** Three members with a pause of p held by all, and the early cards of the first two, taken before the pause. */
+    private record Holders(Mesh mesh, String earlyCardOfA, String earlyCardOfB) implements AutoCloseable {
+        @Override
+        public void close() {
+            mesh.close();
+        }
+    }
+
+    private static Holders holdersWithPause() {
+        Mesh mesh = startedMesh(4, 3);
+        String a = (String) mesh.cardMap(0).get(mesh.cardKey(0, 0));
+        String b = (String) mesh.cardMap(0).get(mesh.cardKey(0, 1));
+        mesh.state(0).pauseTool("p");
+        mesh.round();
+        mesh.round();
+        return new Holders(mesh, a, b);
+    }
+
+    private void restartCAndLetItWait(Holders h, String variant) {
+        Mesh m = h.mesh();
+        m.leave(2);
+        m.documentMap(0).delete(m.documentKey(0));
+        int c = m.addMember();
+        m.state(c);
+        if (variant.equals("cardsDeleted")) {
+            m.cardMap(0).delete(m.cardKey(0, 0));
+            m.cardMap(0).delete(m.cardKey(0, 1));
+        }
+        if (variant.equals("replayedCards")) {
+            m.cardMap(0).put(m.cardKey(0, 0), h.earlyCardOfA());
+            m.cardMap(0).put(m.cardKey(0, 1), h.earlyCardOfB());
+        }
+        int steps = variant.equals("replayedCards") ? 2 : 12;
+        for (int s = 0; s < steps; s++) {
+            m.advance(MESH_LEASE.dividedBy(4));
+            m.tick(c);
+        }
+        assertThat(m.storedSequence(0)).as(variant + ": no first document is written").isEqualTo(-1);
+        assertThat(m.reads(c)).as(variant + ": reads refuse until a holder restores").isFalse();
+    }
+
+    @Test
+    void attackerShapesNeverWriteTheFirstDocumentRefuseReadsUntilAHolderRestoresAndKeepThePause() {
+        for (String variant : java.util.List.of("deleted", "cardsDeleted", "replayedCards")) {
+            try (Holders h = holdersWithPause()) {
+                Mesh m = h.mesh();
+                restartCAndLetItWait(h, variant);
+                int c = m.instances.size() - 1;
+                // A and B tick: their real cards and the restore of what they hold.
+                m.tick(0);
+                m.tick(1);
+                m.run(2);
+                assertThat(m.storedSequence(0)).as(variant).isGreaterThan(1);
+                assertThat(m.reads(c)).as(variant).isTrue();
+                assertThat(m.tools(c)).as(variant + ": the pause survives").contains("p");
+                assertThat(m.tools(0)).contains("p");
+            }
+        }
+    }
+
+    private void offendingLook(Duration step, int stepsPerLease) {
+        try (Mesh m = startedMeshNoRun(3)) {
+            int e = 2;
+            Long written = null;
+            for (int s = 1; s <= e + stepsPerLease + 8 && written == null; s++) {
+                m.advance(step);
+                if (s == e) {
+                    String saved = (String) m.cardMap(0).get(m.cardKey(0, 1));
+                    m.cardMap(0).delete(m.cardKey(0, 1));
+                    m.wrappers.get(0).memberCards().orElseThrow().tick();
+                    m.cardMap(0).put(m.cardKey(0, 1), saved);
+                    m.tick(1);
+                    m.tick(2);
+                    m.states.get(0).document().tick();
+                } else {
+                    m.round();
+                }
+                if (m.storedSequence(0) == 1) {
+                    written = (long) s;
+                }
+            }
+            assertThat(written).as("the first document is written in the end").isNotNull();
+            // The restart look is the first completed look after the offending one (step e), at step e + 1; a full
+            // lease of clean looks must follow it.
+            assertThat(written).isGreaterThanOrEqualTo(e + 1 + stepsPerLease);
+            assertThat(written).isLessThanOrEqualTo(e + 1 + stepsPerLease + 3);
+        }
+    }
+
+    private static Mesh startedMeshNoRun(int members) {
+        Mesh mesh = new Mesh(members + 1);
+        for (int i = 0; i < members; i++) {
+            mesh.addMember();
+        }
+        for (int i = 0; i < members; i++) {
+            mesh.state(i);
+        }
+        return mesh;
+    }
+
+    @Test
+    void aMemberUnverifiedAtAPastLookRestartsTheFirstStartWaitFromTheNextLook() {
+        offendingLook(MESH_LEASE.dividedBy(4), 4);
+    }
+
+    @Test
+    void anOffendingLookOlderThanALeaseIsNeverForgottenWhenLooksAreHalfALeaseApart() {
+        offendingLook(MESH_LEASE.dividedBy(2), 2);
+    }
+
+    @Test
+    void aRealCardOfAHolderArrivingInsideTheLeaseStopsTheFirstDocumentAfterEmptyDigestCardsWereReplayed() {
+        try (Holders h = holdersWithPause()) {
+            Mesh m = h.mesh();
+            restartCAndLetItWait(h, "replayedCards");
+            int c = m.instances.size() - 1;
+            m.tick(0);
+            m.tick(1);
+            m.advance(MESH_LEASE.dividedBy(4));
+            m.round();
+            m.run(1);
+            assertThat(m.storedSequence(0)).as("a Doc(1) would have lifted the pause").isGreaterThan(1);
+            assertThat(m.tools(c)).contains("p");
+            // A Doc(1) forced in through beforeCommit is merged, and the pause is still in force.
+            m.states.get(c).document().beforeCommit = () -> { };
+            assertThat(m.tools(1)).contains("p");
+        }
+    }
+
+    @Test
+    void aRestartedMemberThatHoldsNothingNeverMakesTheEstablishedMembersStaleAndBecomesFreshOnceCovered() {
+        try (Mesh m = startedMesh(4, 3)) {
+            m.state(0).pauseTool("p");
+            m.run(1);
+            for (int i = 0; i < 3; i++) {
+                assertThat(m.fresh(i)).as("member " + i).isTrue();
+            }
+            m.leave(2);
+            int c = m.addMember();
+            m.state(c);
+            for (int s = 0; s < 6; s++) {
+                m.advance(MESH_LEASE.dividedBy(4));
+                m.round();
+                assertThat(m.fresh(0)).as("A, step " + s).isTrue();
+                assertThat(m.fresh(1)).as("B, step " + s).isTrue();
+            }
+            assertThat(m.fresh(c)).isTrue();
+            assertThat(m.tools(c)).contains("p");
+        }
+    }
+
+    @Test
+    void everyMemberLapsingAndSomeRestartingCold_theClusterRecoversWithNoOperatorWrite() {
+        try (Mesh m = startedMesh(4, 3)) {
+            m.state(0).pauseTool("p");
+            m.run(1);
+            m.advance(MESH_LEASE.multipliedBy(2));
+            assertThat(m.fresh(0) || m.fresh(1) || m.fresh(2)).as("everyone lapsed").isFalse();
+            m.leave(2);
+            int c = m.addMember();
+            m.state(c);
+            int elements = m.states.get(0).document().accepted().elements().size();
+            m.run(3);
+            assertThat(m.fresh(0)).isTrue();
+            assertThat(m.fresh(1)).isTrue();
+            assertThat(m.fresh(c)).isTrue();
+            assertThat(m.tools(c)).contains("p");
+            assertThat(m.states.get(0).document().accepted().elements()).as("no operator write").hasSize(elements);
+        }
+    }
+
+    @Test
+    void aKeylessIntruderThatJoinsBeforeACookMembersFirstGateKeepsItNotFreshUntilALookAfterTheIntruderLeaves()
+            throws Exception {
+        try (Mesh m = new Mesh(3)) {
+            int a = m.addMember();
+            m.state(a);
+            int b = m.addMember();
+            m.round();
+            m.round();
+            m.addIntruder();
+            assertThat(MemberCardTest.Fixture.await(30, () -> m.instances.get(b).getCluster().getMembers().size() == 3))
+                    .isTrue();
+            m.state(b);
+            assertThat(m.fresh(b)).as("no look has read the member list with the intruder").isFalse();
+            assertThat(m.states.get(b).document().established()).isFalse();
+            m.tick(b);
+            assertThat(m.peers(b).unverifiedCount()).isEqualTo(1);
+            assertThat(m.fresh(b)).as("a look that sees the intruder").isFalse();
+            m.intruders.get(0).shutdown();
+            assertThat(MemberCardTest.Fixture.await(30, () -> m.instances.get(b).getCluster().getMembers().size() == 2))
+                    .isTrue();
+            // The membership event starts a look of its own; once one has completed after the leave, B is fresh.
+            m.tick(b);
+            assertThat(MemberCardTest.Fixture.await(30, () -> m.reads(b))).isTrue();
+            assertThat(m.states.get(b).document().established()).isTrue();
+        }
+    }
+
+    @Test
+    void anEstablishedMemberBesideAKeylessIntruderStaysFreshAcrossLeasesWhileAColdOneIsNot() throws Exception {
+        try (Mesh m = new Mesh(3)) {
+            int a = m.addMember();
+            m.state(a);
+            m.round();
+            m.addIntruder();
+            m.run(3);
+            assertThat(m.peers(a).unverifiedCount()).isEqualTo(1);
+            assertThat(m.peers(a).lookCompleted()).isTrue();
+            assertThat(m.fresh(a)).isTrue();
+            int b = m.addMember();
+            m.state(b);
+            m.run(2);
+            assertThat(m.fresh(b)).as("a cold member counts the intruder as unverified").isFalse();
+            m.intruders.get(0).shutdown();
+            assertThat(MemberCardTest.Fixture.await(30, () -> m.instances.get(b).getCluster().getMembers().size() == 2))
+                    .isTrue();
+            m.run(1);
+            assertThat(m.fresh(b)).isTrue();
+        }
+    }
+
+    @Test
+    void alertAndRefuseInsideAGraceKeepEstablishedMembersFreshAndServing_andRefuseAfterTheGraceStopsServingNotPauseFresh()
+            throws Exception {
+        for (var action : ClusterSecuritySettings.UnverifiedMemberAction.values()) {
+            var settings = new ClusterSecuritySettings(MESH_LEASE, ClusterSecuritySettings.DEFAULT_CLOCK_SKEW_TOLERANCE,
+                    action, Duration.ofMinutes(10), true);
+            try (Mesh m = new Mesh(5, settings)) {
+                for (int i = 0; i < 3; i++) {
+                    m.addMember();
+                }
+                for (int i = 0; i < 3; i++) {
+                    m.state(i);
+                }
+                m.run(4);
+                m.addIntruder();
+                m.run(2);
+                for (int i = 0; i < 3; i++) {
+                    assertThat(m.fresh(i)).as(action + " in the grace").isTrue();
+                    assertThat(m.wrappers.get(i).securityStatus().serving()).isTrue();
+                }
+                for (int s = 0; s < 22; s++) {
+                    m.advance(MESH_LEASE.dividedBy(2));
+                    m.round();
+                }
+                for (int i = 0; i < 3; i++) {
+                    assertThat(m.fresh(i)).as("pause.fresh is independent of the action, " + action).isTrue();
+                    assertThat(m.wrappers.get(i).securityStatus().serving())
+                            .as(action + " after the grace").isEqualTo(
+                                    action == ClusterSecuritySettings.UnverifiedMemberAction.ALERT);
+                }
+                int cold = m.addMember();
+                m.state(cold);
+                m.run(1);
+                assertThat(m.fresh(cold)).as("a cold member while the intruder is present").isFalse();
+                m.intruders.get(0).shutdown();
+                assertThat(MemberCardTest.Fixture.await(30,
+                        () -> m.instances.get(cold).getCluster().getMembers().size() == 4)).isTrue();
+                m.run(1);
+                assertThat(m.fresh(cold)).as("fresh once it leaves").isTrue();
+            }
+        }
+    }
+
+    @Test
+    void aWallClockMovedBackChangesNothingAndMovedForwardMakesEveryPeerCardReadAsExpired() {
+        try (Mesh m = startedMesh(3, 2)) {
+            m.state(1).pauseTool("p");
+            m.run(1);
+            var uuidB = m.instances.get(1).getCluster().getLocalMember().getUuid();
+            var before = m.peers(0).peerDigests();
+            assertThat(before).containsKey(uuidB);
+            m.clocks.get(0).advance(MESH_LEASE.multipliedBy(-2));
+            m.round();
+            assertThat(m.peers(0).peerDigests()).isEqualTo(m.peers(0).peerDigests());
+            assertThat(m.peers(0).peerDigests().get(uuidB)).isNotEqualTo(PauseDocument.Digest.NONE);
+            assertThat(m.fresh(0)).isTrue();
+            m.clocks.get(0).advance(MESH_LEASE.multipliedBy(5));
+            m.tick(0);
+            assertThat(m.peers(0).peerDigests().get(uuidB)).as("the card reads as expired")
+                    .isEqualTo(PauseDocument.Digest.NONE);
+            m.nanos.get(0)[0] += MESH_LEASE.plusSeconds(1).toNanos();
+            m.tick(0);
+            assertThat(m.fresh(0)).as("no gate passes once the lease passes by the nano clock").isFalse();
+        }
+    }
+
+    @Test
+    void aReaderWhoseWallClockJumpsBackStillStopsCountingAPeersCardOneLeaseAfterItWasFirstSeen() {
+        try (Mesh m = startedMesh(3, 2)) {
+            m.state(1).pauseTool("p");
+            m.run(1);
+            var uuidB = m.instances.get(1).getCluster().getLocalMember().getUuid();
+            // A has looked at the latest card of B (B wrote after A's last look of the final round).
+            m.wrappers.get(0).memberCards().orElseThrow().tick();
+            m.clocks.get(0).advance(MESH_LEASE.multipliedBy(-2));
+            m.nanos.get(0)[0] += MESH_LEASE.plusSeconds(1).toNanos();
+            m.wrappers.get(0).memberCards().orElseThrow().tick();
+            assertThat(m.peers(0).peerDigests().get(uuidB)).isEqualTo(PauseDocument.Digest.NONE);
+        }
+    }
+
+    @Test
+    void afterClosingAWrapperOfALapsedMemberTheOtherWrapperStillSeesTheTrackedPeerAsUncovered() {
+        try (Mesh m = startedMesh(3, 2)) {
+            m.state(1).pauseTool("y");
+            m.run(1);
+            assertThat(m.tools(0)).contains("y");
+            m.cardMap(0).delete(m.cardKey(0, 1));
+            var second = m.wrapperOn(m.instances.get(0), m.clocks.get(0));
+            m.wrappers.get(0).close();
+            m.wrappers.set(0, second);
+            for (int s = 0; s < 3; s++) {
+                m.advance(MESH_LEASE.dividedBy(2));
+                second.memberCards().orElseThrow().tick();
+                m.states.get(0).document().tick();
+            }
+            var uuidP = m.instances.get(1).getCluster().getLocalMember().getUuid();
+            assertThat(MemberCards.peers(second).snapshot().peerDigests().get(uuidP))
+                    .isEqualTo(PauseDocument.Digest.NONE);
+            assertThat(m.fresh(0)).as("M lapsed").isFalse();
+            assertThat(m.states.get(0).document().accepted().live(PauseDocument.Target.tool("y"))).isNotEmpty();
+            // Both wrappers closed, a third created: the same holds under it.
+            var third = m.wrapperOn(m.instances.get(0), m.clocks.get(0));
+            second.close();
+            m.wrappers.set(0, third);
+            m.advance(MESH_LEASE.dividedBy(2));
+            third.memberCards().orElseThrow().tick();
+            m.states.get(0).document().tick();
+            assertThat(MemberCards.peers(third).snapshot().peerDigests().get(uuidP))
+                    .isEqualTo(PauseDocument.Digest.NONE);
+            assertThat(m.fresh(0)).isFalse();
+        }
+    }
+
+    // ---- 228: keyless members and the close-then-rewrap case ----------------------------------------------------
+
+    @Test
+    void aKeylessSoloMemberTakesItsClocksFromItsStateReadsAtOnceWritesTheFirstDocumentWithoutAWaitAndStaysFresh() {
+        single();
+        long[] nanos = {1_000_000_000L};
+        try (var state = new HazelcastOversightState(a, ClusterLocks.DEFAULT_TIMEOUT,
+                io.github.aindriub.dataprism.core.metrics.PrivacyMetrics.none(), java.time.Clock.systemUTC(),
+                () -> nanos[0])) {
+            PauseDocument.PeerView view = state.document().peers.snapshot();
+            assertThat(view.isAlone()).isTrue();
+            assertThat(view.isOldest()).isTrue();
+            assertThat(view.unverifiedCount()).isZero();
+            assertThat(state.snapshot().pausedTools()).as("reads work at once").isEmpty();
+            assertThat(state.document().acceptedSequence()).as("Doc(1), no wait").isEqualTo(1);
+            for (int i = 0; i < 4; i++) {
+                nanos[0] += ClusterSecuritySettings.DEFAULT_PAUSE_LEASE.toNanos();
+                state.document().tick();
+                assertThat(state.document().fresh()).as("fresh on every tick").isTrue();
+            }
+        }
+    }
+
+    /** Forwards to {@code target}; Hazelcast's own joiner check turns away a real joiner, so a join is announced by hand. */
+    private static Object forward(Object target, java.lang.reflect.Method method, Object[] args) throws Throwable {
+        try {
+            return method.invoke(target, args);
+        } catch (java.lang.reflect.InvocationTargetException failed) {
+            throw failed.getCause();
+        }
+    }
+
+    private static com.hazelcast.core.HazelcastInstance capturing(com.hazelcast.core.HazelcastInstance real,
+            List<com.hazelcast.cluster.MembershipListener> listeners) {
+        ClassLoader loader = HazelcastOversightTest.class.getClassLoader();
+        com.hazelcast.cluster.Cluster cluster = (com.hazelcast.cluster.Cluster) java.lang.reflect.Proxy
+                .newProxyInstance(loader, new Class<?>[] {com.hazelcast.cluster.Cluster.class}, (p, m, a) -> {
+                    if (m.getName().equals("addMembershipListener")) {
+                        listeners.add((com.hazelcast.cluster.MembershipListener) a[0]);
+                    }
+                    return forward(real.getCluster(), m, a);
+                });
+        return (com.hazelcast.core.HazelcastInstance) java.lang.reflect.Proxy.newProxyInstance(loader,
+                new Class<?>[] {com.hazelcast.core.HazelcastInstance.class},
+                (p, m, a) -> m.getName().equals("getCluster") ? cluster : forward(real, m, a));
+    }
+
+    @Test
+    void aKeylessMemberThatSawAnotherMemberStaysNeitherAloneNorFreshEvenAfterTheJoinerLeavesAndItIsWrappedAgain() {
+        String name = "dataprism-keyless-" + System.nanoTime();
+        int port = FreePorts.consecutive(1);
+        Config config = PrivacyCluster.configure(ClusterMembership.none(name).withPort(port).toConfig());
+        var real = Hazelcast.newHazelcastInstance(config);
+        List<com.hazelcast.cluster.MembershipListener> listeners = new java.util.ArrayList<>();
+        long[] nanos = {1_000_000_000L};
+        a = PrivacyCluster.using(capturing(real, listeners), false);
+        var state = new HazelcastOversightState(a, ClusterLocks.DEFAULT_TIMEOUT,
+                io.github.aindriub.dataprism.core.metrics.PrivacyMetrics.none(), java.time.Clock.systemUTC(),
+                () -> nanos[0]);
+        state.pauseTool("seed");
+        assertThat(state.snapshot().pausedTools()).containsExactly("seed");
+        assertThat(state.document().peers.snapshot().isAlone()).isTrue();
+
+        // A second member is announced to every listener, the wrapper's and the document's.
+        var local = real.getCluster().getLocalMember();
+        var event = new com.hazelcast.cluster.MembershipEvent(real.getCluster(), local,
+                com.hazelcast.cluster.MembershipEvent.MEMBER_ADDED, java.util.Set.of(local));
+        listeners.forEach(listener -> listener.memberAdded(event));
+
+        PauseDocument.PeerView view = state.document().peers.snapshot();
+        assertThat(view.isAlone()).isFalse();
+        assertThat(view.isOldest()).isFalse();
+        assertThat(view.lookCompleted()).as("peer state is unknown").isFalse();
+        nanos[0] += ClusterSecuritySettings.DEFAULT_PAUSE_LEASE.toNanos() + 1;
+        state.document().tick();
+        assertThat(state.document().fresh()).as("the gate does not pass").isFalse();
+        assertThatThrownBy(() -> state.resumeTool("seed")).isInstanceOf(RuntimeException.class);
+
+        // The joiner is gone and the instance is wrapped again: the mark lives as long as the instance.
+        b = PrivacyCluster.using(real, false);
+        try (var again = new HazelcastOversightState(b, ClusterLocks.DEFAULT_TIMEOUT,
+                io.github.aindriub.dataprism.core.metrics.PrivacyMetrics.none(), java.time.Clock.systemUTC(),
+                () -> nanos[0])) {
+            PauseDocument.PeerView later = again.document().peers.snapshot();
+            assertThat(later.isAlone()).as("refused for the life of the instance").isFalse();
+            assertThat(later.lookCompleted()).isFalse();
+            again.document().tick();
+            assertThat(again.document().fresh()).isFalse();
+            assertThatThrownBy(() -> again.resumeTool("seed")).isInstanceOf(RuntimeException.class);
+        }
+    }
+
+    @Test
+    void afterTheFirstWrapperClosesBeforeItsRepairTickASecondOneRepairsTheStoredDocumentAndUsesItsOwnDependencies()
+            throws Exception {
+        try (Mesh m = startedMesh(4, 2)) {
+            String early = (String) m.documentMap(0).get(m.documentKey(0));
+            m.state(0).pauseTool("p");
+            m.documentMap(0).put(m.documentKey(0), early);
+            m.states.get(0).close();
+            m.wrappers.get(0).close();
+            var second = m.wrapperOn(m.instances.get(0), m.clocks.get(0));
+            m.wrappers.set(0, second);
+            var secondMetrics = new MemberCardTest.Fixture.Metrics();
+            var state2 = new HazelcastOversightState(second, Duration.ofMillis(300), secondMetrics,
+                    new PauseDocument.Environment(() -> m.nanos.get(0)[0], m.clocks.get(0), null));
+            m.states.set(0, state2);
+            assertThat(state2.document().accepted().live(TOOL_P)).as("the main document kept what wrapper 1 held")
+                    .isNotEmpty();
+            m.run(2);
+            assertThat(m.storedSequence(0)).isGreaterThan(1);
+            assertThat(m.tools(1)).as("the peer becomes covered once it merges the repair").contains("p");
+            assertThat(m.fresh(0)).isTrue();
+
+            // Wrapper 2's gate closes: an unverified intruder past the grace.
+            m.addIntruder();
+            assertThat(MemberCardTest.Fixture.await(30, () -> m.instances.get(0).getCluster().getMembers().size() == 3))
+                    .isTrue();
+            m.advance(MemberCardTest.GRACE.plusSeconds(1));
+            second.memberCards().orElseThrow().tick();
+            second.memberCards().orElseThrow().tick();
+            assertThat(second.securityStatus().serving()).isFalse();
+            assertThatThrownBy(() -> state2.resumeTool("p"))
+                    .isInstanceOf(io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException.class);
+
+            // Gate open again, wrapper 2 fresh and covered: it succeeds, within wrapper 2's lock timeout.
+            m.intruders.get(0).shutdown();
+            assertThat(MemberCardTest.Fixture.await(30, () -> m.instances.get(0).getCluster().getMembers().size() == 2))
+                    .isTrue();
+            m.run(1);
+            state2.resumeTool("p");
+            assertThat(state2.snapshot().pausedTools()).doesNotContain("p");
+        }
+    }
 }

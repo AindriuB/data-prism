@@ -372,6 +372,26 @@ class PauseSplitBrainTest {
     }
 
     @Test
+    void theReviewersShapeWithAMemberWhoseCardsLookIsOldKeepsEveryPause() {
+        Shape shape = shape(Rollback.ROLL_BACK, false);
+        shape.c().peers.alone = false;
+        shape.c().peers.lookCompleted = true;
+        shape.c().peers.lookAgeNanos = ClusterSecuritySettings.DEFAULT_PAUSE_LEASE.multipliedBy(3).toNanos();
+
+        cPausesXThreeTimes(shape);
+        shape.a().tick();
+        shape.b().tick();
+        shape.c().tick();
+
+        Doc healed = stored(lone);
+        assertThat(healed.live(Target.tool("p"))).hasSize(1);
+        assertThat(healed.live(Target.tool("q"))).hasSize(1);
+        assertThat(healed.live(Target.tool("x"))).hasSize(3);
+        assertThat(healed.tombstones()).isEmpty();
+        assertThat(shape.c().doc.accepted().pauses().tools()).contains("p", "q", "x");
+    }
+
+    @Test
     void theSameShapeWithTheRollbackTakenAfterAResumeOfPKeepsPLiftedOnAAndBAndOnCOnceItMerges() {
         solo();
         var a = node();
