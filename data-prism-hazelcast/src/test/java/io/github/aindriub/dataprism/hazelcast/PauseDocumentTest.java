@@ -83,6 +83,7 @@ class PauseDocumentTest {
         volatile long cleanRunAgeNanos = -1;
         volatile boolean oldest = true;
         volatile boolean alone;
+        volatile boolean failing;
 
         /** A member with no peers. */
         static StubPeers lone() {
@@ -108,6 +109,9 @@ class PauseDocumentTest {
 
         @Override
         public PauseDocument.PeerView snapshot() {
+            if (failing) {
+                throw new IllegalStateException("the cards cannot be read");
+            }
             return new PauseDocument.PeerView(digests, unverified, lookCompleted, lookAgeNanos, cleanRunAgeNanos,
                     alone, oldest);
         }
@@ -284,6 +288,108 @@ class PauseDocumentTest {
         Map<Id, Target> more = new HashMap<>(elements);
         more.put(id, target);
         return more;
+    }
+
+    /** A logger that records the formatted WARN lines. */
+    private static org.slf4j.Logger recording(List<String> warnings) {
+        return (org.slf4j.Logger) java.lang.reflect.Proxy.newProxyInstance(
+                PauseDocumentTest.class.getClassLoader(), new Class<?>[]{org.slf4j.Logger.class},
+                (proxy, method, args) -> {
+                    if (method.getName().equals("warn") && args != null && args[0] instanceof String format) {
+                        String line = format;
+                        for (int i = 1; args.length > 1 && i < args.length; i++) {
+                            Object[] more = args[i] instanceof Object[] array ? array : new Object[]{args[i]};
+                            for (Object value : more) {
+                                line = line.replaceFirst("\\{}", java.util.regex.Matcher.quoteReplacement(
+                                        String.valueOf(value)));
+                            }
+                        }
+                        warnings.add(line);
+                    }
+                    return method.getReturnType() == boolean.class ? Boolean.FALSE : null;
+                });
+    }
+
+    // ---- external review round 1: reads, logs --------------------------------------------------------------
+
+    @Test
+    void aReadThatBeganBeforeAnAcceptedWriteCountsNoConflictForTheWriteItStraddles() {
+        solo();
+        Member one = member();
+        one.pauseTool("a");
+        Object beforeTheWrite = map(cluster).get(key(cluster));
+        Doc heldBeforeTheWrite = one.held();
+        one.pauseTool("b");
+        assertThat(one.held().elements()).hasSize(2);
+
+        one.doc.judgeStraddlingReadForTest(beforeTheWrite, heldBeforeTheWrite, one.deps);
+        assertThat(metrics.count(Metric.CLUSTER_PAUSE_CONFLICT)).as("the write began after the read").isZero();
+
+        // The same stored value judged against a document that already held more is a real replay.
+        one.doc.judgeStraddlingReadForTest(beforeTheWrite, one.held(), one.deps);
+        assertThat(metrics.count(Metric.CLUSTER_PAUSE_CONFLICT)).isEqualTo(1);
+    }
+
+    @Test
+    void aFailedMaintenanceStepIsLoggedOnceUnderOneStableCodeWithTheCauseClassAndNoMessage() {
+        solo();
+        StubPeers peers = StubPeers.lone();
+        Member one = member(peers);
+        List<String> warnings = new ArrayList<>();
+        one.doc.log = recording(warnings);
+        peers.failing = true;
+        one.tick();
+        one.tick();
+        assertThat(warnings).hasSize(1);
+        assertThat(warnings.get(0)).startsWith("PAUSE_DOCUMENT_MAINTENANCE_FAILED").contains("IllegalStateException")
+                .doesNotContain("the cards cannot be read");
+        one.nanos.advance(LEASE.plusSeconds(1));
+        one.tick();
+        assertThat(warnings).as("again after a lease").hasSize(2);
+    }
+
+    @Test
+    void lapsingAndRegainingFreshnessEachLogOneWarning() {
+        solo();
+        StubPeers peers = StubPeers.withPeer();
+        Member one = member(peers);
+        one.pauseTool("secret-tool");
+        peers.shows(one.digest());
+        assertThat(one.reads()).isTrue();
+        List<String> warnings = new ArrayList<>();
+        one.doc.log = recording(warnings);
+        peers.shows(Digest.NONE);
+        assertThat(one.reads()).as("a peer outside Seen holds the gate shut").isTrue();
+        one.nanos.advance(LEASE.plusSeconds(1));
+        assertThat(one.reads()).isFalse();
+        assertThat(one.reads()).isFalse();
+        assertThat(warnings).filteredOn(line -> line.startsWith("PAUSE_DOCUMENT_LAPSED")).hasSize(1);
+        peers.shows(one.digest());
+        assertThat(one.reads()).isTrue();
+        assertThat(warnings).filteredOn(line -> line.startsWith("PAUSE_DOCUMENT_FRESH")).hasSize(1);
+        assertThat(warnings).allSatisfy(line -> assertThat(line).doesNotContain("secret-tool"));
+    }
+
+    @Test
+    void aRejectedValueThatStaysInTheMapIsReopenedOnEveryReadButCountedOncePerValue() {
+        solo();
+        Member one = member();
+        one.pauseTool("a");
+        Object good = map(cluster).get(key(cluster));
+        map(cluster).put(key(cluster), 5);
+        for (int i = 0; i < 3; i++) {
+            assertThat(one.reads()).as("a non-string value is unavailable on every read").isFalse();
+        }
+        assertThat(metrics.count(Metric.CLUSTER_SEAL_TAMPER)).isEqualTo(1);
+        map(cluster).put(key(cluster), 6);
+        assertThat(one.reads()).isFalse();
+        assertThat(metrics.count(Metric.CLUSTER_SEAL_TAMPER)).as("another value counts again").isEqualTo(2);
+        map(cluster).put(key(cluster), good);
+        assertThat(one.reads()).as("the authentic document reads again, nothing is remembered as bad").isTrue();
+        map(cluster).put(key(cluster), 6);
+        assertThat(one.reads()).isFalse();
+        assertThat(metrics.count(Metric.CLUSTER_SEAL_TAMPER)).as("after an authentic read it counts again")
+                .isEqualTo(3);
     }
 
     // ---- A1: deletion, replay, restart ---------------------------------------------------------------------

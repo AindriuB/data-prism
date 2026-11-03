@@ -642,6 +642,11 @@ final class PauseDocument {
         tick(tickDependencies);
     }
 
+    /** For tests: judges a stored value read earlier, with the document held when that read began. */
+    void judgeStraddlingReadForTest(Object stored, Doc heldBefore, Dependencies deps) {
+        judge(stored, deps, peers.snapshot(), heldBefore);
+    }
+
     /** For tests: reconciles with the dependencies of the latest user. */
     void reconcileAfterMerge() {
         reconcileAfterMerge(tickDependencies);
