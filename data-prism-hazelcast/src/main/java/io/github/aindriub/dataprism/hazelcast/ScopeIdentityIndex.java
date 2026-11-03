@@ -41,7 +41,8 @@ public final class ScopeIdentityIndex {
     private final Object pauseLock = new Object();
     /** The index's own, never-started view of the pause document, made on first use. */
     private PauseDocument pauseDocument;
-    private final PauseDocument.Dependencies pauseDependencies;
+    /** The dependencies of the index's own document; package-private so a test can read through it. */
+    final PauseDocument.Dependencies pauseDependencies;
     /** The clocks of the index's own document, null for the system clocks; a seam for tests, set before first use. */
     PauseDocument.Environment pauseEnvironment;
     /** Resolves a map by name; a seam for tests. */

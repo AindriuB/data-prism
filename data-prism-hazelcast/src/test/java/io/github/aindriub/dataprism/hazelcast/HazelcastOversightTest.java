@@ -829,6 +829,54 @@ class HazelcastOversightTest {
         }
     }
 
+    @Test
+    void theIndexDocumentOnItsOwnNanoClockDecidesLookAgeLikeTheMainDocumentOnTheInstanceClock() {
+        for (long start : new long[] {1_000_000_000L, Long.MAX_VALUE - 100, Long.MIN_VALUE + 100}) {
+            try (Mesh m = startedMesh(3, 2)) {
+                m.state(0).pauseTool("p");
+                m.run(1);
+                assertThat(m.reads(0)).as("before").isTrue();
+                long[] own = {start};
+                var index = new ScopeIdentityIndex(m.wrappers.get(0),
+                        io.github.aindriub.dataprism.core.metrics.PrivacyMetrics.none(), ClusterLocks.DEFAULT_TIMEOUT);
+                index.pauseEnvironment = new PauseDocument.Environment(() -> own[0], m.clocks.get(0), null);
+                PauseDocument indexDocument = index.pauseDocument();
+                boolean sawFresh = false;
+                boolean sawLapsed = false;
+                // Four quarter leases of fresh cards; then this member's wall clock runs ahead, so every peer card reads
+                // as expired and the gate cannot pass; then the peers catch up and the gate passes again.
+                for (int step = 0; step < 12; step++) {
+                    m.advance(MESH_LEASE.dividedBy(4));
+                    own[0] += MESH_LEASE.dividedBy(4).toNanos();
+                    if (step == 4) {
+                        m.clocks.get(0).advance(MESH_LEASE.multipliedBy(5));
+                    }
+                    if (step == 9) {
+                        m.clocks.get(1).advance(MESH_LEASE.multipliedBy(5));
+                    }
+                    if (step < 4 || step >= 9) {
+                        m.round();
+                    } else {
+                        m.tick(0);
+                    }
+                    boolean main = m.reads(0);
+                    boolean indexReads;
+                    try {
+                        indexDocument.current(index.pauseDependencies);
+                        indexReads = true;
+                    } catch (IllegalStateException refused) {
+                        indexReads = false;
+                    }
+                    assertThat(indexReads).as("start " + start + ", step " + step).isEqualTo(main);
+                    sawFresh |= main;
+                    sawLapsed |= !main;
+                }
+                assertThat(sawFresh).isTrue();
+                assertThat(sawLapsed).as("the run really lapsed").isTrue();
+            }
+        }
+    }
+
     private static Mesh startedMesh(int capacity, int members) {
         Mesh mesh = new Mesh(capacity);
         for (int i = 0; i < members; i++) {
