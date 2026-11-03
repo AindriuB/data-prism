@@ -566,6 +566,8 @@ final class PauseDocument {
     private static final int WARN_LAPSE = 3;
     private static final int WARN_REGAIN = 4;
     private final long[] lastWarn = {Long.MIN_VALUE, Long.MIN_VALUE, Long.MIN_VALUE, Long.MIN_VALUE, Long.MIN_VALUE};
+    /** The rejected value last counted as tamper by this document, or null. */
+    private Object lastRejected;
     /** Whether the member was fresh at the last judgement; null before the first. */
     private Boolean lastFresh;
     private final Map<String, Memo> memo = new LinkedHashMap<>(MEMO_SIZE, 0.75f, true) {
@@ -796,6 +798,7 @@ final class PauseDocument {
                 entry.merged = true;
                 entry.digest = doc.digest();
                 heldChanged(entry.digest, true, true);
+                lastRejected = null;
                 boolean passed = gate(peerView, true, null);
                 return new Look(Status.AUTHENTIC, doc, freshLocked(), passed, peerView);
             }
@@ -808,6 +811,7 @@ final class PauseDocument {
                     entry.counted = true;
                     deps.metrics().increment(Metric.CLUSTER_PAUSE_CONFLICT);
                 }
+                lastRejected = null;
                 boolean passed = gate(peerView, true, null);
                 result = new Look(Status.AUTHENTIC, doc, freshLocked(), passed, peerView);
             } else {
@@ -833,12 +837,15 @@ final class PauseDocument {
                     entry.digest = doc.digest();
                 }
                 appendSeen(entry.digest);
+                lastRejected = null;
                 boolean passed = gate(peerView, true, null);
                 result = new Look(Status.AUTHENTIC, doc, freshLocked(), passed, peerView);
             }
         }
         if (mismatch) {
-            deps.metrics().increment(Metric.CLUSTER_SEAL_TAMPER);
+            if (firstSighting(stored)) {
+                deps.metrics().increment(Metric.CLUSTER_SEAL_TAMPER);
+            }
             warnMismatch();
             return noDocument(Status.UNREADABLE, peerView);
         }
@@ -969,10 +976,27 @@ final class PauseDocument {
         return !peerView.lookCompleted() || peerView.lookAgeNanos() > lease.toNanos();
     }
 
+    /**
+     * Whether this rejected value is not the one last counted, so a value that stays in the map is counted once and
+     * not on every read. Every read still reopens it (nothing is remembered as good or bad), and a different value,
+     * or the same one after an authentic read, counts again. The sealer counts its own rejections itself.
+     */
+    private boolean firstSighting(Object rejected) {
+        synchronized (monitor) {
+            if (Objects.equals(rejected, lastRejected)) {
+                return false;
+            }
+            lastRejected = rejected;
+            return true;
+        }
+    }
+
     /** The document in a stored value, memoised by its exact text, or null (counted) if it is not authentic. */
     private Memo open(Object stored, Dependencies deps) {
         if (!(stored instanceof String envelope)) {
-            deps.metrics().increment(Metric.CLUSTER_SEAL_TAMPER);
+            if (firstSighting(stored)) {
+                deps.metrics().increment(Metric.CLUSTER_SEAL_TAMPER);
+            }
             return null;
         }
         synchronized (monitor) {
@@ -988,10 +1012,13 @@ final class PauseDocument {
         }
         Doc doc = decoder.apply(opened.plaintext());
         if (doc == null) {
-            deps.metrics().increment(Metric.CLUSTER_SEAL_TAMPER);
+            if (firstSighting(envelope)) {
+                deps.metrics().increment(Metric.CLUSTER_SEAL_TAMPER);
+            }
             return null;
         }
         synchronized (monitor) {
+            lastRejected = null;
             Memo known = memo.get(envelope);
             if (known != null) {
                 return known;
