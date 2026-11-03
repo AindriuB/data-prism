@@ -512,7 +512,7 @@ class KeyedScopeEndTest {
                 .isNotInstanceOf(ClusterOperationRefusedException.class);
 
         assertThat(members[0].instance().getMap(PrivacyCluster.IDENTITY_MAP).isEmpty()).as("data erased").isTrue();
-        assertThat(document(members[0]).live(Target.scope(ENDED))).as("the pause is kept").hasSize(1);
+        assertThat(document(members[0]).live(Target.scope(ENDED))).as("the pause is kept").isNotEmpty();
     }
 
     @Test

@@ -51,7 +51,10 @@ import java.util.function.LongSupplier;
  *
  * <p>Every member that holds the cluster key publishes a card in {@code dataprism.membercard.s1}: its UUID, a format
  * version, the cluster key ids it accepts, a key check value for each configured purpose key, the highest pause
- * sequence it has accepted and a lease end. The card is a standard {@code dps1} envelope under the cluster key, bound
+ * sequence it has accepted, a per-instance card sequence, the digest of the pause document it holds (or a marker for
+ * no document) and a lease end. A card is written when that digest changes and at half a lease, never two at once
+ * for an instance; the instance tracker in {@link Declarations} reads the cards of the other members for the pause
+ * document's freshness gate. The card is a standard {@code dps1} envelope under the cluster key, bound
  * to its member by the map key (the keyed name of the member UUID), so a reader needs only the live member UUID to
  * find and open it, and a card moved to another member's key does not open. The reader enforces the lease after
  * opening. A card is refreshed once half its lease has been spent.
