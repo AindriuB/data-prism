@@ -12,6 +12,9 @@ import io.github.aindriub.dataprism.oversight.OversightSnapshot;
 import io.github.aindriub.dataprism.oversight.OversightState;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 
 import java.lang.reflect.Field;
@@ -40,6 +43,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * package-private {@code beforeCommit} seam reflectively, so the document's answer and the controller's
  * {@code stillPaused} field are linked.
  */
+@ExtendWith(OutputCaptureExtension.class)
 class ResumeEffectTest {
 
     private static final Clock CLOCK = Clock.fixed(Instant.parse("2030-01-01T00:00:00Z"), ZoneOffset.UTC);
@@ -143,14 +147,18 @@ class ResumeEffectTest {
     }
 
     @Test
-    void aSnapshotThatThrowsAfterTheResumeReportsStillPausedAndWritesNoFurtherAudit() {
+    void aSnapshotThatThrowsAfterTheResumeReportsStillPausedAndWritesNoFurtherAudit(CapturedOutput output) {
         real.pauseTool(TOOL);
         afterResume = () -> snapshotThrows = true;
 
         Map<String, Object> response = controller.resume(tool());
+        real.pauseTool(TOOL);
+        controller.resume(tool());
 
         assertThat(response).isEqualTo(Map.of("status", "RESUMED", "target", "TOOL", "stillPaused", true));
-        assertThat(events).extracting(AuditEvent::policyDecision).containsExactly("ALLOW:RESUMED");
+        assertThat(events).extracting(AuditEvent::policyDecision).containsExactly("ALLOW:RESUMED", "ALLOW:RESUMED");
+        assertThat(output.getAll()).as("the stable code is logged once, with no message of the failure")
+                .containsOnlyOnce("OVERSIGHT_UNAVAILABLE").doesNotContain("the pause document is not fresh");
     }
 
     @Test
