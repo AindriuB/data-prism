@@ -167,7 +167,7 @@ class CachingSyntheticValueSourceTest {
         caching.syntheticValue("s-1", PrivacyNamespace.PERSON_NAME, scope("CASE-KEEP"));
         budget.tryRead("CASE-A", "s-1", 5);
 
-        establishPauseDocument(cluster);
+        MemberCardTest.establishPauseDocument(cluster);
         index.endScope("CASE-A");
 
         assertThat(index.subjectFor("CASE-A", PrivacyNamespace.PERSON_NAME, synthetic)).isEmpty();
@@ -175,19 +175,5 @@ class CachingSyntheticValueSourceTest {
         // An investigation ending must not disturb one still running.
         assertThat(cluster.instance().getMap(PrivacyCluster.IDENTITY_MAP).size())
                 .as("the other scope's identities are untouched").isPositive();
-    }
-
-    /**
-     * Setup for the contract of task 228: ending a scope needs a pause document, so make one, and wait (bounded) for a
-     * completed cards look that verifies every listed member.
-     */
-    private static void establishPauseDocument(PrivacyCluster cluster) {
-        HazelcastOversightState state = new HazelcastOversightState(cluster);
-        state.pauseTool("setup-tool");
-        MemberCardTest.Fixture.await(30, () -> {
-            var view = MemberCards.peers(cluster).snapshot();
-            return view.lookCompleted() && view.unverifiedCount() == 0;
-        });
-        state.snapshot();
     }
 }

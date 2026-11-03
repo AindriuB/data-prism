@@ -105,7 +105,7 @@ class ApprovalCapAtomicityTest {
     @Test
     void endingTheScopeThroughTheIdentityIndexFreesTheSlot() {
         store.create(pending("p-1", "scope-a"), 1);
-        establishPauseDocument(cluster);
+        MemberCardTest.establishPauseDocument(cluster);
         new ScopeIdentityIndex(cluster).endScope("scope-a");
         store.create(pending("p-2", "scope-b"), 1);
     }
@@ -143,19 +143,5 @@ class ApprovalCapAtomicityTest {
             assertThatThrownBy(() -> accepted.create(pending("lease-1", "scope-b"), 5))
                     .isExactlyInstanceOf(IllegalArgumentException.class).hasMessage("duplicate approval id");
         }
-    }
-
-    /**
-     * Setup for the contract of task 228: ending a scope needs a pause document, so make one, and wait (bounded) for a
-     * completed cards look that verifies every listed member.
-     */
-    private static void establishPauseDocument(PrivacyCluster cluster) {
-        HazelcastOversightState state = new HazelcastOversightState(cluster);
-        state.pauseTool("setup-tool");
-        MemberCardTest.Fixture.await(30, () -> {
-            var view = MemberCards.peers(cluster).snapshot();
-            return view.lookCompleted() && view.unverifiedCount() == 0;
-        });
-        state.snapshot();
     }
 }

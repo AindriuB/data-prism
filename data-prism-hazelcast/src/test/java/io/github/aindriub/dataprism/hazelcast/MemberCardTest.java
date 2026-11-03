@@ -225,6 +225,27 @@ class MemberCardTest {
         }
     }
 
+    /**
+     * Setup for the contract of task 228: ending a scope needs a pause document, so make one and wait for a completed
+     * cards look that verifies every listed member. A keyless cluster has no cards and no look to wait for. The wait is
+     * asserted, and the state that made the document is closed; the document stays in the map.
+     */
+    static void establishPauseDocument(PrivacyCluster cluster) {
+        HazelcastOversightState state = new HazelcastOversightState(cluster);
+        try {
+            state.pauseTool("setup-tool");
+            if (cluster.memberCards().isPresent()) {
+                assertThat(Fixture.await(30, () -> {
+                    var view = MemberCards.peers(cluster).snapshot();
+                    return view.lookCompleted() && view.unverifiedCount() == 0;
+                })).as("a completed cards look verifies every listed member").isTrue();
+            }
+            state.snapshot();
+        } finally {
+            state.close();
+        }
+    }
+
     /** Two keyed members on one clock, each with its own recorded signals. */
     private record Pair(PrivacyCluster a, PrivacyCluster b, Fixture.Metrics metricsA, Fixture.Metrics metricsB,
                         RecordingLogger logA) {

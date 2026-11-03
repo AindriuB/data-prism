@@ -161,7 +161,7 @@ class ReidentificationSealingTest {
     @Test
     void endScopeStillRemovesTheScopesSealedEntries() {
         String synthetic = issue();
-        establishPauseDocument(cluster);
+        MemberCardTest.establishPauseDocument(cluster);
         new ScopeIdentityIndex(cluster, metrics).endScope(SCOPE);
         assertThat(index().isEmpty()).isTrue();
         assertThat(cluster.instance().getMap(PrivacyCluster.IDENTITY_MAP).isEmpty()).isTrue();
@@ -256,19 +256,5 @@ class ReidentificationSealingTest {
         ScopeIdentitySealer(PrivacyCluster cluster) {
             this.sealer = (Sealer) cluster.instance().getUserContext().get("dataprism.cluster.sealer");
         }
-    }
-
-    /**
-     * Setup for the contract of task 228: ending a scope needs a pause document, so make one, and wait (bounded) for a
-     * completed cards look that verifies every listed member.
-     */
-    private static void establishPauseDocument(PrivacyCluster cluster) {
-        HazelcastOversightState state = new HazelcastOversightState(cluster);
-        state.pauseTool("setup-tool");
-        MemberCardTest.Fixture.await(30, () -> {
-            var view = MemberCards.peers(cluster).snapshot();
-            return view.lookCompleted() && view.unverifiedCount() == 0;
-        });
-        state.snapshot();
     }
 }
