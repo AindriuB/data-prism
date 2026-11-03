@@ -224,6 +224,7 @@ class ApprovalBoundedCleanupTest {
             release.countDown();
         }
         // Once the lock is free the scope can be ended.
+        establishPauseDocument(members[0]);
         new ScopeIdentityIndex(members[0], metrics, TIMEOUT).endScope("scope-f");
         assertThat(store.find("f-1")).isEmpty();
     }
@@ -601,5 +602,19 @@ class ApprovalBoundedCleanupTest {
         assertThatThrownBy(() -> faulty.approve("p-1", "bob", NOW.plusSeconds(1)))
                 .isInstanceOf(SplitBrainProtectionException.class);
         assertThat(store.find("p-1").orElseThrow().status()).isEqualTo(Status.PENDING);
+    }
+
+    /**
+     * Setup for the contract of task 228: ending a scope needs a pause document, so make one, and wait (bounded) for a
+     * completed cards look that verifies every listed member.
+     */
+    private static void establishPauseDocument(PrivacyCluster cluster) {
+        HazelcastOversightState state = new HazelcastOversightState(cluster);
+        state.pauseTool("setup-tool");
+        MemberCardTest.Fixture.await(30, () -> {
+            var view = MemberCards.peers(cluster).snapshot();
+            return view.lookCompleted() && view.unverifiedCount() == 0;
+        });
+        state.snapshot();
     }
 }
