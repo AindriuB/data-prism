@@ -2,7 +2,10 @@ package io.github.aindriub.dataprism.server.operator;
 
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
+import com.hazelcast.config.Config;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
+import io.github.aindriub.dataprism.hazelcast.HazelcastOversightState;
+import io.github.aindriub.dataprism.hazelcast.PrivacyCluster;
 import io.github.aindriub.dataprism.oversight.InMemoryApprovalStore;
 import io.github.aindriub.dataprism.oversight.InMemoryOversightState;
 import io.github.aindriub.dataprism.oversight.OversightSnapshot;
@@ -11,6 +14,8 @@ import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -19,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -29,8 +35,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>The state under the controller here is a stub that can land a pause between the resume and the snapshot, which
  * is what a pause the resume did not observe looks like to the controller. The race inside the Hazelcast document
- * itself (a pause committed between the resume's read and its commit) is pinned in {@code PauseDocumentTest}, where
- * the package-private {@code beforeCommit} seam is reachable.
+ * itself (a pause committed between the resume's read and its commit) is pinned in {@code PauseDocumentTest}; the
+ * last test here drives the same race through the controller, over a real Hazelcast state, by reaching the
+ * package-private {@code beforeCommit} seam reflectively, so the document's answer and the controller's
+ * {@code stillPaused} field are linked.
  */
 class ResumeEffectTest {
 
@@ -143,5 +151,45 @@ class ResumeEffectTest {
 
         assertThat(response).isEqualTo(Map.of("status", "RESUMED", "target", "TOOL", "stillPaused", true));
         assertThat(events).extracting(AuditEvent::policyDecision).containsExactly("ALLOW:RESUMED");
+    }
+
+    @Test
+    void aPauseLandingInsideAHazelcastResumeBeforeItCommitsKeepsTheTargetPausedAndTheResponseSaysSo()
+            throws Exception {
+        Config config = new Config();
+        config.setClusterName("resume-effect-" + System.nanoTime());
+        config.getJetConfig().setEnabled(false);
+        config.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
+        config.getNetworkConfig().getJoin().getTcpIpConfig().setEnabled(false);
+        PrivacyCluster cluster = PrivacyCluster.embedded(config, false);
+        try (HazelcastOversightState hazelcast = new HazelcastOversightState(cluster)) {
+            OversightOperatorController overHazelcast = new OversightOperatorController(
+                    () -> Optional.of(OPERATOR),
+                    new OperatorAudit(new AuditRecorder(events::add, CLOCK, "operator-test")), hazelcast,
+                    new InMemoryApprovalStore(), CLOCK, beans.getBeanProvider(PrivacyMetrics.class));
+            hazelcast.pauseTool(TOOL);
+
+            Method document = HazelcastOversightState.class.getDeclaredMethod("document");
+            document.setAccessible(true);
+            Object pauseDocument = document.invoke(hazelcast);
+            Field beforeCommit = pauseDocument.getClass().getDeclaredField("beforeCommit");
+            beforeCommit.setAccessible(true);
+            AtomicInteger runs = new AtomicInteger();
+            beforeCommit.set(pauseDocument, (Runnable) () -> {
+                if (runs.incrementAndGet() == 1) {
+                    hazelcast.pauseTool(TOOL);
+                }
+            });
+
+            assertThat(overHazelcast.resume(tool())).as("a pause landed after the resume read, before it committed")
+                    .containsEntry("stillPaused", true);
+            assertThat(hazelcast.toolPaused(TOOL)).isTrue();
+
+            beforeCommit.set(pauseDocument, (Runnable) () -> { });
+            assertThat(overHazelcast.resume(tool())).containsEntry("stillPaused", false);
+            assertThat(hazelcast.toolPaused(TOOL)).isFalse();
+        } finally {
+            cluster.close();
+        }
     }
 }
