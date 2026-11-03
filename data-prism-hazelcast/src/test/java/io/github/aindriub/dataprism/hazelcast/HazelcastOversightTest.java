@@ -1176,7 +1176,9 @@ class HazelcastOversightTest {
             assertThat(m.storedSequence(0)).as("card-less member present").isEqualTo(-1);
             assertThat(m.peers(0).unverifiedCount()).isPositive();
             m.intruders.get(0).getLifecycleService().terminate();
-            m.run(2);
+            assertThat(MemberCardTest.Fixture.await(30, () -> m.instances.get(0).getCluster().getMembers().size() == 3))
+                    .as("the member list no longer names the intruder").isTrue();
+            m.run(4);
             assertThat(m.storedSequence(0)).as("once it is gone").isEqualTo(1);
         }
         // A version-1 card: the layout without a card sequence and a digest.
