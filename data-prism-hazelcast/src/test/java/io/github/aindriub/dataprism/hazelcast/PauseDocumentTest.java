@@ -1531,7 +1531,7 @@ class PauseDocumentTest {
 
         assertThat(stored(cluster).pauses().tools()).containsExactlyInAnyOrder("p", "q");
         m.doc.beforeCommit = () -> { };
-        m.nanos.advance(LEASE.dividedBy(2).minusSeconds(1));
+        m.nanos.advance(LEASE.dividedBy(2).plusSeconds(1));
         assertThat(m.fresh()).as("renewed at the write: tj + L + epsilon is still fresh").isTrue();
     }
 
@@ -1935,6 +1935,32 @@ class PauseDocumentTest {
                 assertThat(mainFresh).isEqualTo(age <= LEASE.toNanos());
             }
         }
+    }
+
+    @Test
+    void noSequenceHasATermDerivedFromAPeer_pauseResumePushHeldAndReconcileAllWriteAtMaxPlusOne() {
+        solo();
+        StubPeers peers = StubPeers.withPeer();
+        Member m = member(peers);
+        m.pauseTool("a");
+        assertThat(m.reads()).isTrue();
+        peers.shows(Map.of(PEER, m.digest(), OTHER, m.digest()));
+        long s0 = stored(cluster).sequence();
+
+        m.pauseTool("b");
+        assertThat(stored(cluster).sequence()).as("pause").isEqualTo(s0 + 1);
+        m.resumeTool("b");
+        assertThat(stored(cluster).sequence()).as("resume").isEqualTo(s0 + 2);
+        plant(cluster, doc(1, 0, Map.of(), Set.of()));
+        m.tick();
+        assertThat(stored(cluster).sequence()).as("pushHeld").isEqualTo(s0 + 3);
+        m.doc.beginMerge();
+        plant(cluster, doc(s0 + 50, 0, Map.of(id(900), Target.tool("z")), Set.of()));
+        m.doc.reconcileAfterMerge();
+        assertThat(stored(cluster).sequence()).as("reconcileAfterMerge").isEqualTo(s0 + 51);
+        m.pauseScope("S");
+        m.doc.endScope("S", 0L, m.deps);
+        assertThat(stored(cluster).sequence()).as("endScope").isEqualTo(s0 + 53);
     }
 
     // ---- A12: properties ------------------------------------------------------------------------------------

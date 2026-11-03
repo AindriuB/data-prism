@@ -1717,6 +1717,11 @@ class MemberCardTest {
             assertThat(first.toolPaused("p")).isTrue();
             assertThat(Fixture.await(30, () -> cardOf(wrappers[0]).pauseDigest() != null
                     && !wrappers[0].memberCards().orElseThrow().writeOutstanding())).isTrue();
+            for (int i = 0; i < 3; i++) {
+                first.pauseTool("w" + i);
+                assertThat(Fixture.await(30, () -> first.document().heldDigest().equals(cardOf(wrappers[0]).pauseDigest())
+                        && !wrappers[0].memberCards().orElseThrow().writeOutstanding())).isTrue();
+            }
             long sequence = cardOf(wrappers[0]).cardSequence();
             PauseDocument.Digest withP = first.document().heldDigest();
 
@@ -2244,29 +2249,31 @@ class MemberCardTest {
         MemberCards.Declarations declarations = MemberCards.declarations(pair.a().instance());
         UUID self = Fixture.uuidOf(pair.a());
         UUID peer = UUID.randomUUID();
-        List<UUID> listed = List.of(self, peer);
+        UUID late = UUID.randomUUID();
+        List<UUID> listed = List.of(self, peer, late);
         long token = declarations.memberListReads.incrementAndGet() + 10;
         Card first = new Card(peer, MemberCards.FORMAT_VERSION, List.of("test-cluster-1"), Map.of(), 0L, 5L, null,
                 fixture.clock.instant().plus(LEASE));
         Card own = cardOf(pair.a());
-        // A counted look: the peer's card is valid and accepted, so the peer is tracked.
+        // A counted look: the first peer's card is valid and accepted; the second listed member has no card yet.
         declarations.feedLook(a, self, listed, token, Map.of(peer, first, self, own));
         assertThat(declarations.snapshot(self, listed).lookCompleted()).isTrue();
+        assertThat(declarations.snapshot(self, listed).unverifiedCount()).isEqualTo(1);
+
+        // A look that read its list earlier: only sightings are recorded, for the second member's new card.
+        Card sighted = new Card(late, MemberCards.FORMAT_VERSION, List.of("test-cluster-1"), Map.of(), 0L, 9L,
+                PauseDocument.Digest.EMPTY, fixture.clock.instant().plus(LEASE));
+        declarations.feedLook(a, self, listed, token - 5, Map.of(peer, first, late, sighted, self, own));
+        assertThat(declarations.snapshot(self, listed).peerDigests()).as("an uncounted look changes no answer")
+                .doesNotContainKey(late);
+        assertThat(declarations.snapshot(self, listed).unverifiedCount()).isEqualTo(1);
+        // At the next counted look the card, first sighted by the uncounted one, is accepted and tracked.
+        declarations.feedLook(a, self, listed, token + 1, Map.of(peer, first, late, sighted, self, own));
+        assertThat(declarations.snapshot(self, listed).peerDigests()).containsEntry(late, PauseDocument.Digest.EMPTY);
         assertThat(declarations.snapshot(self, listed).unverifiedCount()).isZero();
 
-        // A look that read its list earlier: only sightings are recorded, for the peer's newer card.
-        Card newer = new Card(peer, MemberCards.FORMAT_VERSION, List.of("test-cluster-1"), Map.of(), 0L, 9L,
-                PauseDocument.Digest.EMPTY, fixture.clock.instant().plus(LEASE));
-        declarations.feedLook(a, self, listed, token - 5, Map.of(peer, newer, self, own));
-        assertThat(declarations.snapshot(self, listed).peerDigests()).as("an uncounted look changes no answer")
-                .doesNotContainKey(peer);
-        // At the next counted look the newer card, first sighted by the uncounted one, is accepted and tracked.
-        declarations.feedLook(a, self, listed, token + 1, Map.of(peer, newer, self, own));
-        assertThat(declarations.snapshot(self, listed).peerDigests()).containsEntry(peer,
-                PauseDocument.Digest.EMPTY);
-
         // A member joins: no look has read that list, so the latest look does not count for it.
-        List<UUID> joined = List.of(self, peer, UUID.randomUUID());
+        List<UUID> joined = List.of(self, peer, late, UUID.randomUUID());
         assertThat(declarations.snapshot(self, joined).lookCompleted()).isFalse();
         assertThat(declarations.snapshot(self, listed).lookCompleted()).as("a join undone by a leave").isTrue();
         assertThat(declarations.snapshot(self, joined).isAlone()).isFalse();
@@ -2616,6 +2623,78 @@ class MemberCardTest {
                     && state.document().heldDigest().equals(cardOf(pair.a()).pauseDigest()))).isTrue();
         } finally {
             state.close();
+        }
+    }
+
+    @Test
+    void theDigestChangesWhenOnlyTheIdsDifferAtEqualCounts() {
+        PauseDocument.Id one = new PauseDocument.Id(0, 1);
+        PauseDocument.Id two = new PauseDocument.Id(0, 2);
+        PauseDocument.Doc elementOne = new PauseDocument.Doc(1, 0, 0, "i", Map.of(one, PauseDocument.Target.tool("a")),
+                java.util.Set.of());
+        PauseDocument.Doc elementTwo = new PauseDocument.Doc(1, 0, 0, "i", Map.of(two, PauseDocument.Target.tool("a")),
+                java.util.Set.of());
+        assertThat(elementOne.digest()).as("elements").isNotEqualTo(elementTwo.digest());
+        PauseDocument.Doc tombstoneOne = new PauseDocument.Doc(1, 0, 0, "i", Map.of(), java.util.Set.of(one));
+        PauseDocument.Doc tombstoneTwo = new PauseDocument.Doc(1, 0, 0, "i", Map.of(), java.util.Set.of(two));
+        assertThat(tombstoneOne.digest()).as("tombstones").isNotEqualTo(tombstoneTwo.digest());
+    }
+
+    @Test
+    @Timeout(240)
+    void closingAWrapperWhileACardWriteIsHeldSetsNoMarkButTheCompletionSetsOneBecauseTheGenerationMoved() {
+        PrivacyCluster[] wrappers = twoWrappers();
+        MemberCards first = wrappers[0].memberCards().orElseThrow();
+        MemberCards.Declarations declarations = MemberCards.declarations(wrappers[0].instance());
+        String keyA = first.keyForTest(Fixture.uuidOf(wrappers[0]));
+        holdKey(wrappers[0].instance(), keyA);
+        try {
+            fixture.clock.advance(LEASE.dividedBy(2));
+            first.tick();
+            assertThat(first.writeOutstanding()).isTrue();
+            wrappers[1].close();
+            assertThat(declarations.marked()).as("T7 sets no mark").isFalse();
+        } finally {
+            releaseKey(wrappers[0].instance(), keyA);
+        }
+        assertThat(Fixture.await(30, () -> !first.writeOutstanding())).isTrue();
+        assertThat(declarations.marked()).as("X1: the generation moved while the write was held").isTrue();
+        wrappers[0].close();
+    }
+
+    @Test
+    @Timeout(240)
+    void aWaiterOnATentativeRecordWakesAtOnceWhenTheRecordingStartThrows() throws Exception {
+        HazelcastInstance instance = instanceWithNano(new long[] {1_000_000_000L});
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicBoolean armed = new AtomicBoolean(true);
+        AtomicBoolean entered = new AtomicBoolean();
+        ClusterSentinel.afterWriteStarted = key -> {
+            if (!ClusterSentinel.KEY.equals(key) && armed.compareAndSet(true, false)) {
+                entered.set(true);
+                try {
+                    release.await(60, TimeUnit.SECONDS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
+                throw new AssertionError("injected in the recording start");
+            }
+        };
+        ScheduledExecutorService pool = Executors.newScheduledThreadPool(2);
+        try {
+            var recorder = pool.submit(() -> wrapperWith(instance, fixture.clock, TestMembers.KEYS, FIVE_SECONDS));
+            assertThat(Fixture.await(60, entered::get)).isTrue();
+            var waiter = pool.submit(() -> wrapperWith(instance, fixture.clock, TestMembers.KEYS, FIVE_SECONDS));
+            assertThat(Fixture.await(2, waiter::isDone)).as("it waits on the tentative record").isFalse();
+            release.countDown();
+            PrivacyCluster started = waiter.get(10, TimeUnit.SECONDS);
+            assertThat(started.securityStatus().serving()).as("woken at once, not at the budget").isTrue();
+            assertThatThrownBy(() -> recorder.get()).hasCauseInstanceOf(AssertionError.class);
+            started.close();
+        } finally {
+            release.countDown();
+            ClusterSentinel.afterWriteStarted = key -> { };
+            pool.shutdownNow();
         }
     }
 }

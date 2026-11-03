@@ -1258,7 +1258,12 @@ class HazelcastOversightTest {
         assertThat(state.document().fresh()).as("the gate does not pass").isFalse();
         assertThatThrownBy(() -> state.resumeTool("seed")).isInstanceOf(RuntimeException.class);
 
-        // The joiner is gone and the instance is wrapped again: the mark lives as long as the instance.
+        // The joiner leaves: announced to every listener too. The mark is not cleared.
+        var gone = new com.hazelcast.cluster.MembershipEvent(real.getCluster(), local,
+                com.hazelcast.cluster.MembershipEvent.MEMBER_REMOVED, java.util.Set.of());
+        listeners.forEach(listener -> listener.memberRemoved(gone));
+        assertThat(state.document().peers.snapshot().isAlone()).as("still refused after the joiner left").isFalse();
+        // The instance is wrapped again: the mark lives as long as the instance.
         b = PrivacyCluster.using(real, false);
         try (var again = new HazelcastOversightState(b, ClusterLocks.DEFAULT_TIMEOUT,
                 io.github.aindriub.dataprism.core.metrics.PrivacyMetrics.none(), java.time.Clock.systemUTC(),
