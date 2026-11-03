@@ -143,12 +143,14 @@ public final class HazelcastOversightState implements OversightState, AutoClosea
     }
 
     /**
-     * The instance without the serving gate, for the scope index's own pause document: R13's preconditions, in
-     * R13's order, decide whether a scope may end, so the gate must not pre-empt them. This class is allowed to call
-     * {@code PrivacyCluster.instance()}; the index goes through it.
+     * The scope index's own, never-started pause document. It reaches the instance without the serving gate, so that
+     * R13's preconditions, in R13's order, decide whether a scope may end. The instance stays in this class, which is
+     * allowed to call {@code PrivacyCluster.instance()}: the index receives only the document.
      */
-    static HazelcastInstance ungatedInstance(PrivacyCluster cluster) {
-        return cluster.instance();
+    static PauseDocument indexDocument(PrivacyCluster cluster, PauseDocument.Environment clocks) {
+        PauseDocument.Peers peers = cluster.memberCards().isPresent() ? MemberCards.peers(cluster)
+                : lonePeersReadOnly(cluster, cluster.instance());
+        return new PauseDocument(cluster, cluster::instance, clocks, false, peers);
     }
 
     /**

@@ -41,6 +41,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
@@ -546,6 +547,117 @@ class PauseDocumentTest {
         assertThatThrownBy(() -> full.pauseTool("over")).isInstanceOf(ClusterLockTimeoutException.class);
         assertThat(full.held().elements()).as("a local add at the cap is refused").hasSize(PauseDocument.PAUSE_CAP);
         third.run();
+    }
+
+    /** An operator pause whose write did not land: exactly OVERSIGHT_UNAVAILABLE, with the message that says so. */
+    private static void assertDidNotLand(ThrowingCallable call) {
+        Throwable thrown = catchThrowable(call);
+        assertThat(thrown).isNotNull();
+        assertThat(thrown.getClass()).isEqualTo(IllegalStateException.class);
+        assertThat(thrown).hasMessageContaining("did not land");
+    }
+
+    @Test
+    void aPauseThatLosesTheRaceInEveryAttemptEndsInUnavailableSaysItDidNotLandAndIsHeldLocally() {
+        solo();
+        Member one = member();
+        Member rival = member();
+        one.pauseTool("seed");
+        AtomicInteger hooks = new AtomicInteger();
+        one.doc.beforeCommit = () -> rival.pauseTool("rival" + hooks.incrementAndGet());
+
+        assertDidNotLand(() -> one.pauseTool("x"));
+
+        assertThat(hooks.get()).as("a rival write in each of the attempts").isEqualTo(PauseDocument.MAX_ATTEMPTS);
+        assertThat(one.held().live(Target.tool("x"))).as("held locally").hasSize(1);
+    }
+
+    @Test
+    void aHazelcastFailureDuringAPauseIsWrappedAsUnavailableAndTheLockTimeoutKeepsItsOwnType() throws Exception {
+        solo();
+        StubPeers peers = StubPeers.lone();
+        Member one = member(peers);
+        one.pauseTool("seed");
+        peers.failing = true;
+        assertDidNotLand(() -> one.pauseTool("x"));
+        assertThat(one.held().live(Target.tool("x"))).hasSize(1);
+        peers.failing = false;
+
+        Runnable release = holdDocumentLock();
+        assertThatThrownBy(() -> one.pauseTool("y")).isInstanceOf(ClusterLockTimeoutException.class);
+        release.run();
+        assertThat(one.held().live(Target.tool("y"))).hasSize(1);
+    }
+
+    @Test
+    void aColdMemberKeepsNoGatedReplayJustBecauseAFailedPauseSetHeld() throws Exception {
+        solo();
+        Doc replay = new Doc(5, 0, new Fixture.TestClock().millis() - LEASE.plus(SKEW).plusSeconds(1).toMillis(),
+                "test-issuer", Map.of(id(1), Target.tool("p")), Set.of());
+        plant(cluster, replay);
+        Member cold = member();
+        assertThat(cold.reads()).as("too old for a cold start").isFalse();
+
+        Runnable release = holdDocumentLock();
+        assertThatThrownBy(() -> cold.pauseTool("x")).isInstanceOf(ClusterLockTimeoutException.class);
+        release.run();
+
+        assertThat(cold.held().pauses().tools()).as("the local pause").containsExactly("x");
+        assertThat(cold.reads()).as("the next read still refuses: nothing was accepted").isFalse();
+        assertThat(cold.held().pauses().tools()).as("the replay is not merged").containsExactly("x");
+
+        // R9: an operator pause over GATED writes held (the local x), the gated content and the change.
+        cold.pauseTool("y");
+        assertThat(stored(cluster).pauses().tools()).containsExactlyInAnyOrder("p", "x", "y");
+    }
+
+    @Test
+    void aLocalPauseKeepsHeldsOrderOrStartsDoc0AndTheRepairWritesItAtSequence1() throws Exception {
+        solo();
+        Member warm = member();
+        warm.pauseTool("seed");
+        Doc before = warm.held();
+        Runnable release = holdDocumentLock();
+        assertThatThrownBy(() -> warm.pauseTool("x")).isInstanceOf(ClusterLockTimeoutException.class);
+        release.run();
+        Doc after = warm.held();
+        assertThat(after.sequence()).isEqualTo(before.sequence());
+        assertThat(after.refresh()).isEqualTo(before.refresh());
+        assertThat(after.issuedAtMillis()).isEqualTo(before.issuedAtMillis());
+        assertThat(after.issuer()).isEqualTo(before.issuer());
+
+        solo();
+        Member cold = member();
+        Runnable again = holdDocumentLock();
+        assertThatThrownBy(() -> cold.pauseTool("x")).isInstanceOf(ClusterLockTimeoutException.class);
+        again.run();
+        assertThat(cold.held().sequence()).as("Doc(0, 0, now, self)").isZero();
+        cold.tick();
+        assertThat(stored(cluster).sequence()).as("putIfAbsent(held) at sequence 1").isEqualTo(1);
+        assertThat(stored(cluster).pauses().tools()).containsExactly("x");
+    }
+
+    @Test
+    void theIndexDocumentLogsNoLapseOrRegainWarning() {
+        solo();
+        StubPeers peers = StubPeers.withPeer();
+        Member main = member(peers);
+        main.pauseTool("secret-tool");
+        peers.shows(main.digest());
+        Nanos nanos = new Nanos();
+        PauseDocument index = new PauseDocument(cluster, cluster::instance,
+                new PauseDocument.Environment(nanos, new Fixture.TestClock(), null), false, peers);
+        documents.add(index);
+        List<String> warnings = new ArrayList<>();
+        index.log = recording(warnings);
+        assertThatCode(() -> index.current(main.deps)).doesNotThrowAnyException();
+        peers.shows(Digest.NONE);
+        nanos.advance(LEASE.plusSeconds(1));
+        assertThatThrownBy(() -> index.current(main.deps)).isInstanceOf(IllegalStateException.class);
+        peers.shows(main.digest());
+        assertThatCode(() -> index.current(main.deps)).doesNotThrowAnyException();
+
+        assertThat(warnings).filteredOn(line -> line.startsWith("PAUSE_DOCUMENT_")).isEmpty();
     }
 
     // ---- A1: deletion, replay, restart ---------------------------------------------------------------------

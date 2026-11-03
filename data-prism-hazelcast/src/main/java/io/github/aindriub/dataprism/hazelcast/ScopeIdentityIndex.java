@@ -176,21 +176,13 @@ public final class ScopeIdentityIndex {
             if (pauseDocument == null) {
                 // It never publishes a card digest and is never started: it judges with its own Seen and its own
                 // nano clock, and reads look age only as a duration through the Peers of the instance. It reaches
-                // the instance through the ungated accessor, so refuseUnless orders the refusals (R13).
+                // the instance without the serving gate, inside HazelcastOversightState, so refuseUnless orders
+                // the refusals (R13).
                 PauseDocument.Environment clocks = pauseEnvironment != null ? pauseEnvironment
                         : PauseDocument.Environment.system(cluster.securitySettings().pauseLease());
-                pauseDocument = new PauseDocument(cluster, () -> HazelcastOversightState.ungatedInstance(cluster), clocks, false,
-                        peers());
+                pauseDocument = HazelcastOversightState.indexDocument(cluster, clocks);
             }
             return pauseDocument;
         }
-    }
-
-    private PauseDocument.Peers peers() {
-        if (cluster.memberCards().isPresent()) {
-            return MemberCards.peers(cluster);
-        }
-        return HazelcastOversightState.lonePeersReadOnly(cluster,
-                HazelcastOversightState.ungatedInstance(cluster));
     }
 }

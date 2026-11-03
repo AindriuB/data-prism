@@ -567,7 +567,9 @@ final class PauseDocument {
     private static final int WARN_MAINTENANCE = 2;
     private static final int WARN_LAPSE = 3;
     private static final int WARN_REGAIN = 4;
-    private final long[] lastWarn = {Long.MIN_VALUE, Long.MIN_VALUE, Long.MIN_VALUE, Long.MIN_VALUE, Long.MIN_VALUE};
+    private static final int WARN_NOT_LANDED = 5;
+    private final long[] lastWarn = {Long.MIN_VALUE, Long.MIN_VALUE, Long.MIN_VALUE, Long.MIN_VALUE, Long.MIN_VALUE,
+        Long.MIN_VALUE};
     /** The rejected value last counted as tamper by this document, or null. */
     private Object lastRejected;
     /** Whether the member was fresh at the last judgement; null before the first. */
@@ -760,6 +762,9 @@ final class PauseDocument {
 
     /** One WARN, rate-limited, whenever the member lapses or regains freshness; no pause content. */
     private void trackFreshness() {
+        if (!main) {
+            return;
+        }
         boolean lapsed = false;
         boolean regained = false;
         synchronized (monitor) {
@@ -796,11 +801,12 @@ final class PauseDocument {
                 storedSealed = sealed;
                 storedSeenSince = now;
             }
+            if (!storedAccepted && tooOldForColdStart(doc)) {
+                gate(peerView, false, null);
+                return new Look(Status.GATED, doc, freshLocked(), false, peerView);
+            }
             if (held == null) {
-                if (tooOldForColdStart(doc)) {
-                    gate(peerView, false, null);
-                    return new Look(Status.GATED, doc, freshLocked(), false, peerView);
-                }
+                storedAccepted = true;
                 held = doc;
                 landed(doc);
                 entry.merged = true;
@@ -835,6 +841,7 @@ final class PauseDocument {
                 boolean sequenceMoved = merged.sequence() != held.sequence();
                 boolean anyChange = merged != held;
                 held = merged;
+                storedAccepted = true;
                 landed(doc);
                 entry.merged = true;
                 if (grew) {
@@ -1084,6 +1091,10 @@ final class PauseDocument {
             // The write cannot start: the operator's pause is still held here (see holdLocally).
             if (op == Op.PAUSE && transientFailure(notTaken)) {
                 holdLocally(target);
+                warnNotLanded();
+                if (!(notTaken instanceof ClusterLockTimeoutException)) {
+                    throw writeDidNotLand(notTaken);
+                }
             }
             throw notTaken;
         }
@@ -1164,6 +1175,10 @@ final class PauseDocument {
             // A write that cannot commit is no reason to forget the pause (a pause refused at the cap excepted).
             if (op == Op.PAUSE && !capRefused && transientFailure(failed)) {
                 holdLocally(target);
+                warnNotLanded();
+                if (!(failed instanceof ClusterLockTimeoutException)) {
+                    throw writeDidNotLand(failed);
+                }
             }
             throw failed;
         } finally {
@@ -1171,9 +1186,27 @@ final class PauseDocument {
         }
         if (op == Op.PAUSE) {
             holdLocally(target);
+            warnNotLanded();
+            throw writeDidNotLand(null);
         }
-        throw ClusterRefusals.refused(new IllegalStateException(
-                "the pause document write lost its race and did not land; the pause is held on this member"));
+        throw ClusterRefusals.refused(new IllegalStateException("the pause document write lost its race"));
+    }
+
+    /**
+     * OVERSIGHT_UNAVAILABLE for an operator pause whose write did not land after a transient failure (R3 v2.42): an
+     * {@code IllegalStateException} whose message says so. The pause is held on this member and the next tick's
+     * repair writes it. The cause class is chained for a debugger and never put in the message.
+     */
+    static IllegalStateException writeDidNotLand(Throwable cause) {
+        return new IllegalStateException("the pause document write did not land; the pause is held on this member",
+                cause);
+    }
+
+    /** A lock timeout keeps its own exception, whose text is fixed; this line says the write did not land. */
+    private void warnNotLanded() {
+        if (shouldWarn(WARN_NOT_LANDED)) {
+            log.warn("PAUSE_DOCUMENT_WRITE_DID_NOT_LAND: an operator pause was not written; it is held on this member");
+        }
     }
 
     /**
@@ -1187,6 +1220,12 @@ final class PauseDocument {
     /** The pause elements this member holds that no stored document it has accepted or written contains yet. */
     private final Map<Target, Id> unlanded = new HashMap<>();
 
+    /**
+     * Whether this member has accepted a stored document or written one. Only that ends the cold-start gate: a pause
+     * kept locally after a failed write sets held but never this flag.
+     */
+    private boolean storedAccepted;
+
     /** Under the monitor: a stored document this member accepted or wrote contains some unlanded elements. */
     private void landed(Doc doc) {
         if (!unlanded.isEmpty()) {
@@ -1199,8 +1238,8 @@ final class PauseDocument {
      * held here: the content only grows (F0). The change notice moves the card digest, so peers' Covered checks fail
      * until they read a document that carries it, and the next tick's repair writes it. There is at most one
      * unlanded element per target: a second failed pause for the same target reuses it. The cap still applies. A
-     * cold member (held is null) gets the Doc(1) of R3: sequence 1, issued now by this member, so a repair puts it
-     * at sequence 2 (R9). The call itself still fails.
+     * cold member (held is null) gets Doc(0, 0, now, self, {fresh}), so that a repair's putIfAbsent(held) writes it at
+     * sequence 1 (R3, R9); a member that holds a document keeps that document's order, issuedAt and issuer. The call itself still fails.
      */
     private void holdLocally(Target target) {
         synchronized (monitor) {
@@ -1216,9 +1255,11 @@ final class PauseDocument {
             Id fresh = Id.random(random);
             Map<Id, Target> elements = new HashMap<>(held == null ? Map.of() : held.elements());
             elements.put(fresh, target);
-            Doc next = new Doc((held == null ? 0 : held.sequence()) + 1, 0, wall.millis(), issuer(), elements,
-                    held == null ? Set.of() : held.tombstones());
-            held = held == null ? next : held.merge(next);
+            // Held keeps its own order, issuedAt and issuer; a cold member starts Doc(0, 0, now, self), so that R9's
+            // putIfAbsent(held) writes it at sequence 1.
+            held = held == null ? new Doc(0, 0, wall.millis(), issuer(), elements, Set.of())
+                    : new Doc(held.sequence(), held.refresh(), held.issuedAtMillis(), held.issuer(), elements,
+                            held.tombstones());
             unlanded.put(target, fresh);
             heldChanged(held.digest(), true, true);
         }
@@ -1324,6 +1365,7 @@ final class PauseDocument {
             written.digest = next.digest();
             Doc before = held;
             held = held == null ? next : held.merge(next);
+            storedAccepted = true;
             landed(next);
             memo.put(sealed, written);
             storedSealed = sealed;
