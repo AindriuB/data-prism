@@ -1026,6 +1026,16 @@ public final class MemberCards {
     }
 
     /**
+     * Looks at the cluster now, outside the schedule: a pause document that is made reads the cards as they are, not
+     * as they were at the last look. Does nothing before the start or after the close.
+     */
+    void lookNow() {
+        if (running && !closed) {
+            look(clock.instant());
+        }
+    }
+
+    /**
      * Writes this member's card now, whatever its age. For tests that move the clock. If a card write is outstanding
      * it waits, under one deadline of the write timeout, for the flag to clear, then writes (T6); either deadline
      * throws.

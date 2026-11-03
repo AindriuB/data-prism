@@ -99,7 +99,9 @@ public final class HazelcastOversightState implements OversightState, AutoClosea
         this.document = mainDocument(cluster, environment);
         if (document != null) {
             cluster.memberCards().ifPresent(cards -> cards.reportPauseSequence(document::acceptedSequence));
-            registerGauges(metrics);
+            registerGauges(metrics, dependencies.metrics());
+            // The first decision reads the cards as they are now, not as they were at the member's last look.
+            cluster.memberCards().ifPresent(MemberCards::lookNow);
             document.retain(dependencies);
         }
     }
@@ -181,8 +183,8 @@ public final class HazelcastOversightState implements OversightState, AutoClosea
      * real registry. The slot is claimed atomically; nothing is ever unregistered, and the suppliers read the document
      * through the slot, never through a state.
      */
-    private void registerGauges(PrivacyMetrics metrics) {
-        if (metrics.getClass() == PrivacyMetrics.none().getClass()) {
+    private void registerGauges(PrivacyMetrics supplied, PrivacyMetrics metrics) {
+        if (supplied.getClass() == PrivacyMetrics.none().getClass()) {
             return;
         }
         HazelcastInstance instance = cluster.instance();

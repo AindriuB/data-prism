@@ -174,7 +174,7 @@ public final class ScopeIdentityIndex {
                 pauseDependencies = PauseDocument.Dependencies.of(cluster, metrics, lockTimeout);
                 pauseDocument = new PauseDocument(cluster, cluster::servingInstance,
                         PauseDocument.Environment.system(cluster.securitySettings().pauseLease()), false,
-                        cluster.memberCards().isPresent() ? MemberCards.peers(cluster) : HazelcastOversightState.lonePeers(cluster, cluster.instance()));
+                        cluster.memberCards().isPresent() ? MemberCards.peers(cluster) : HazelcastOversightState.lonePeers(cluster, cluster.servingInstance()));
             }
             return pauseDocument;
         }

@@ -1441,6 +1441,9 @@ final class PauseDocument {
             });
         }
         tick(deps);
+        // A first document written by the tick renews nobody (R8). The next judgement does, so make it now: a lone
+        // member is then established before any other member joins.
+        attempt(() -> look(deps));
         HazelcastInstance instance = instances.get();
         UUID listener = instance.getLifecycleService().addLifecycleListener(event -> {
             if (event.getState() == LifecycleEvent.LifecycleState.MERGING) {
