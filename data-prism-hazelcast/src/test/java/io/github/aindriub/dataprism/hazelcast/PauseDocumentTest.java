@@ -601,8 +601,13 @@ class PauseDocumentTest {
         AtomicInteger hooks = new AtomicInteger();
         one.doc.beforeCommit = () -> rival.pauseTool("rival" + hooks.incrementAndGet());
 
+        List<String> warnings = new ArrayList<>();
+        one.doc.log = recording(warnings);
+
         assertDidNotLand(() -> one.pauseTool("x"));
 
+        assertThat(warnings).as("the WARN says the write did not land")
+                .anyMatch(line -> line.startsWith("PAUSE_DOCUMENT_WRITE_DID_NOT_LAND"));
         assertThat(hooks.get()).as("a rival write in each of the attempts").isEqualTo(PauseDocument.MAX_ATTEMPTS);
         assertThat(one.held().live(Target.tool("x"))).as("held locally").hasSize(1);
     }
@@ -613,13 +618,21 @@ class PauseDocumentTest {
         StubPeers peers = StubPeers.lone();
         Member one = member(peers);
         one.pauseTool("seed");
+        List<String> warnings = new ArrayList<>();
+        one.doc.log = recording(warnings);
         peers.failing = true;
         assertDidNotLand(() -> one.pauseTool("x"));
         assertThat(one.held().live(Target.tool("x"))).hasSize(1);
+        assertThat(warnings).anyMatch(line -> line.startsWith("PAUSE_DOCUMENT_WRITE_DID_NOT_LAND"));
         peers.failing = false;
 
+        // The lock timeout keeps core's own exception and its fixed message; the WARN says the write did not land.
+        one.nanos.advance(LEASE.plusSeconds(1));
+        warnings.clear();
         Runnable release = holdDocumentLock();
-        assertThatThrownBy(() -> one.pauseTool("y")).isInstanceOf(ClusterLockTimeoutException.class);
+        assertThatThrownBy(() -> one.pauseTool("y")).isInstanceOf(ClusterLockTimeoutException.class)
+                .hasMessage(new ClusterLockTimeoutException().getMessage());
+        assertThat(warnings).anyMatch(line -> line.startsWith("PAUSE_DOCUMENT_WRITE_DID_NOT_LAND"));
         release.run();
         assertThat(one.held().live(Target.tool("y"))).hasSize(1);
     }
@@ -693,6 +706,73 @@ class PauseDocumentTest {
         assertThatCode(() -> index.current(main.deps)).doesNotThrowAnyException();
 
         assertThat(warnings).filteredOn(line -> line.startsWith("PAUSE_DOCUMENT_")).isEmpty();
+    }
+
+    @Test
+    void aHazelcastFailureFromTheMapIsWrappedAsUnavailableLoggedAndKept() {
+        solo();
+        Member one = member();
+        one.pauseTool("seed");
+        List<String> warnings = new ArrayList<>();
+        one.doc.log = recording(warnings);
+        AtomicInteger runs = new AtomicInteger();
+        one.doc.beforeCommit = () -> {
+            if (runs.incrementAndGet() == 1) {
+                throw new com.hazelcast.core.HazelcastException("the map call failed");
+            }
+        };
+
+        assertDidNotLand(() -> one.pauseTool("x"));
+
+        assertThat(warnings).anyMatch(line -> line.startsWith("PAUSE_DOCUMENT_WRITE_DID_NOT_LAND"));
+        assertThat(one.held().live(Target.tool("x"))).as("kept").hasSize(1);
+    }
+
+    @Test
+    void aReusedElementIsExemptFromTheCapCheckWhileANewTargetAtTheCapIsRefused() throws Exception {
+        solo();
+        plant(cluster, docOfTools(1000, "t", PauseDocument.PAUSE_CAP - 1));
+        Member one = member();
+        assertThat(one.tools()).hasSize(PauseDocument.PAUSE_CAP - 1);
+        Runnable release = holdDocumentLock();
+        assertThatThrownBy(() -> one.pauseTool("x")).isInstanceOf(ClusterLockTimeoutException.class);
+        assertThat(one.held().elements()).as("x filled the last slot").hasSize(PauseDocument.PAUSE_CAP);
+        Digest atCap = one.digest();
+
+        assertThatThrownBy(() -> one.pauseTool("x")).as("reused: no cap check")
+                .isInstanceOf(ClusterLockTimeoutException.class);
+        assertThat(one.held().elements()).hasSize(PauseDocument.PAUSE_CAP);
+        assertThat(one.digest()).isEqualTo(atCap);
+
+        assertThatThrownBy(() -> one.pauseTool("y")).as("a new target is over the cap")
+                .isInstanceOf(ClusterOperationRefusedException.class)
+                .hasRootCauseMessage("the pause document is at its operating cap");
+        assertThat(one.held().elements()).hasSize(PauseDocument.PAUSE_CAP);
+        assertThat(one.digest()).isEqualTo(atCap);
+        release.run();
+    }
+
+    @Test
+    void aCommitGuardRefusalOfAPauseKeepsNothing() {
+        solo();
+        Set<Id> first = new HashSet<>();
+        Set<Id> second = new HashSet<>();
+        for (int i = 0; i < 65_536; i++) {
+            first.add(new Id(1, i));
+            second.add(new Id(2, i));
+        }
+        plant(cluster, doc(10, 0, Map.of(), first));
+        Member one = member();
+        assertThat(one.reads()).isTrue();
+        plant(cluster, doc(11, 0, Map.of(), second));
+        assertThat(one.reads()).as("both tombstone sets are held, over the format bound").isTrue();
+        int elements = one.held().elements().size();
+        Digest before = one.digest();
+
+        assertThatThrownBy(() -> one.pauseTool("x")).isInstanceOf(ClusterOperationRefusedException.class);
+
+        assertThat(one.held().elements()).as("the guard's refusal keeps nothing").hasSize(elements);
+        assertThat(one.digest()).isEqualTo(before);
     }
 
     // ---- A1: deletion, replay, restart ---------------------------------------------------------------------

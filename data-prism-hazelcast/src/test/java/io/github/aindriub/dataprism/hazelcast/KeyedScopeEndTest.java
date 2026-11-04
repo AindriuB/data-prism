@@ -403,6 +403,8 @@ class KeyedScopeEndTest {
         state.resumeScope(ENDED);
 
         assertThat(state.scopePaused(ENDED)).isTrue();
+        assertThat(cluster.instance().getMap(PrivacyCluster.OVERSIGHT_MAP).containsKey(ENDED + "\0paused"))
+                .as("the legacy key is still in the oversight map after endScope").isTrue();
     }
 
     // ---- the pause step of ending a scope (task 228, amendment 5) ------------------------------------------
