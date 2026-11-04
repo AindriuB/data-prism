@@ -100,7 +100,7 @@ class KeyedScopeEndTest {
      * Ending a scope on a member needs the member's view of every peer to cover the document it reads (R6): a peer
      * whose card still shows an earlier digest, because its card write lags, is not covered and the pause step refuses
      * with OVERSIGHT_UNAVAILABLE. The cards are asynchronous and real, so wait on that state, bounded and asserted:
-     * the cards of every member are ticked until the ender's completed look shows every peer at the stored digest.
+     * the main document and the cards of every member are ticked until the ender's completed look shows every peer at the stored digest.
      */
     private void awaitEveryPeerCardCoversTheStoredDocument(PrivacyCluster ender) {
         if (members.length < 2) {
@@ -109,6 +109,12 @@ class KeyedScopeEndTest {
         PauseDocument.Digest stored = document(ender).digest();
         assertThat(MemberCardTest.Fixture.await(30, () -> {
             for (int i = 0; i < members.length; i++) {
+                // The member's main document merges what is stored (its tick), then its card reports the digest.
+                Object main = members[i].instance().getUserContext()
+                        .get(HazelcastOversightState.MAIN_DOCUMENT_CONTEXT_KEY);
+                if (main instanceof PauseDocument document) {
+                    document.tick();
+                }
                 HazelcastOversightTest.tickCardsAndWait(members[i], "member " + i);
             }
             PauseDocument.PeerView view = MemberCards.peers(ender).snapshot();
@@ -140,6 +146,8 @@ class KeyedScopeEndTest {
         awaitEveryPeerCardCoversTheStoredDocument(ender);
         new ScopeIdentityIndex(ender, io.github.aindriub.dataprism.core.metrics.PrivacyMetrics.none(), TIMEOUT)
                 .endScope(ENDED);
+        // The new state below is cold, so it needs the same of the document the index just wrote.
+        awaitEveryPeerCardCoversTheStoredDocument(ender);
 
         assertThat(new HazelcastOversightState(ender, TIMEOUT).scopePaused(ENDED)).isFalse();
         assertThat(new HazelcastOversightState(ender, TIMEOUT).scopePaused(KEPT)).isTrue();
