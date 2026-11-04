@@ -628,8 +628,8 @@ class KeyedScopeEndTest {
             outsider = MemberCardTest.Fixture.plain(name, first + 2, all);
             assertThat(MemberCardTest.Fixture.awaitMembers(a, 3)).isTrue();
             assertThat(MemberCardTest.Fixture.awaitMembers(b, 3)).isTrue();
-            a.memberCards().orElseThrow().tick();
-            b.memberCards().orElseThrow().tick();
+            HazelcastOversightTest.tickCardsAndWait(a, "a");
+            HazelcastOversightTest.tickCardsAndWait(b, "b");
             assertThat(a.securityStatus().serving()).isTrue();
             assertThat(a.securityStatus().unverifiedCount()).isEqualTo(1);
             var state = new HazelcastOversightState(a, TIMEOUT);

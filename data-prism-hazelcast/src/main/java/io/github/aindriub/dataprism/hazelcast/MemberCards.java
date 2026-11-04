@@ -389,6 +389,11 @@ public final class MemberCards {
             return mark;
         }
 
+        /** The latest card sequence taken by a write of this instance, for tests. */
+        synchronized long cardSequenceForTest() {
+            return cardSequence;
+        }
+
         synchronized boolean writeOutstanding() {
             return flag;
         }

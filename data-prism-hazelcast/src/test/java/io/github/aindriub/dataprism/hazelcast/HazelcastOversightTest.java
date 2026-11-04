@@ -567,6 +567,63 @@ class HazelcastOversightTest {
      * Keyed members of one cluster whose wall clock and monotonic clock a test moves. Nothing ticks by itself: a test
      * calls {@link #tick}, {@link #round} and {@link #advance}.
      */
+    private static final java.util.concurrent.atomic.AtomicInteger NO_WRITE_NOTES =
+            new java.util.concurrent.atomic.AtomicInteger();
+
+    /**
+     * Ticks the cards of a wrapper and waits, on the write and not on time, until it has completed. A card write is
+     * asynchronous and real while the clocks are injected, so a later tick must not read a card that is a step behind.
+     * Afterwards the stored card must carry the latest {@code cardSequence} taken, which names a write that did not land
+     * if one ever fails. A tick that is not due, or whose failure the tick swallows, writes nothing, and a write that
+     * failed sets the mark: both are noted on stderr, at most twenty times per JVM.
+     */
+    static void tickCardsAndWait(PrivacyCluster wrapper, String who) {
+        MemberCards cards = wrapper.memberCards().orElseThrow();
+        int started = cards.writesStarted();
+        cards.tick();
+        assertThat(MemberCardTest.Fixture.await(30, () -> !cards.writeOutstanding()))
+                .as("the card write of " + who + " completed").isTrue();
+        // With no write outstanding and the mark clear, the stored card carries the latest sequence any write of this
+        // instance took. That holds whichever thread started the write (a pause notice can start one too).
+        MemberCards.Declarations declarations = MemberCards.declarations(wrapper.instance());
+        long latest = declarations.cardSequenceForTest();
+        long stored = storedCardSequence(wrapper, cards);
+        if (stored < latest) {
+            if (declarations.marked()) {
+                note("the card write of " + who + " failed (swallowed by the tick; the mark is set, the next pass retries)");
+            } else {
+                assertThat(stored).as("the card write of " + who + " landed: the stored cardSequence is the latest taken")
+                        .isEqualTo(latest);
+            }
+        }
+        if (cards.writesStarted() <= started) {
+            note("the card tick of " + who + " started no write (not due, or a failure the tick swallows)");
+        }
+    }
+
+    private static void note(String line) {
+        if (NO_WRITE_NOTES.incrementAndGet() <= 20) {
+            System.err.println("mesh: " + line);
+        }
+    }
+
+    private static long storedCardSequence(PrivacyCluster wrapper, MemberCards cards) {
+        var self = wrapper.instance().getCluster().getLocalMember().getUuid();
+        String key = cards.keyForTest(self);
+        Object stored = wrapper.instance().getMap(PrivacyCluster.MEMBER_CARD_MAP).get(key);
+        if (!(stored instanceof String sealed)) {
+            return -1;
+        }
+        var opened = io.github.aindriub.dataprism.hazelcast.seal.Sealer
+                .builder(TestMembers.KEYS, io.github.aindriub.dataprism.core.metrics.PrivacyMetrics.none()).build()
+                .open(PrivacyCluster.MEMBER_CARD_MAP, key, sealed);
+        if (opened.outcome() != io.github.aindriub.dataprism.hazelcast.seal.Opened.Outcome.AUTHENTIC) {
+            return -1;
+        }
+        var card = MemberCards.Card.decode(opened.plaintext());
+        return card == null ? -1 : card.cardSequence();
+    }
+
     private static final class Mesh implements AutoCloseable {
         final String name = TestMembers.uniqueName("mesh");
         final int capacity;
@@ -653,15 +710,15 @@ class HazelcastOversightTest {
             }
         }
 
-        void tick(int i) {
+        /** Ticks the cards of member i and waits on the write; see {@link #tickCardsAndWait}. */
+        void tickCards(int i) {
             if (wrappers.get(i) != null) {
-                MemberCards cards = wrappers.get(i).memberCards().orElseThrow();
-                cards.tick();
-                // The card write is asynchronous and real; the clocks are injected. Wait on the write, not on time, so
-                // that no later tick of the same round reads a card that is a step behind.
-                assertThat(MemberCardTest.Fixture.await(30, () -> !cards.writeOutstanding()))
-                        .as("the card write of member " + i + " completed").isTrue();
+                tickCardsAndWait(wrappers.get(i), "member " + i);
             }
+        }
+
+        void tick(int i) {
+            tickCards(i);
             if (states.get(i) != null) {
                 states.get(i).document().tick();
             }
@@ -976,7 +1033,7 @@ class HazelcastOversightTest {
                 if (s == e) {
                     String saved = (String) m.cardMap(0).get(m.cardKey(0, 1));
                     m.cardMap(0).delete(m.cardKey(0, 1));
-                    m.wrappers.get(0).memberCards().orElseThrow().tick();
+                    m.tickCards(0);
                     m.cardMap(0).put(m.cardKey(0, 1), saved);
                     m.tick(1);
                     m.tick(2);
@@ -1014,8 +1071,8 @@ class HazelcastOversightTest {
             for (int i = 0; i < 4; i++) {
                 m.state(1).pauseTool("b" + i);
             }
-            m.wrappers.get(1).memberCards().orElseThrow().tick();
-            m.wrappers.get(0).memberCards().orElseThrow().tick();
+            m.tickCards(1);
+            m.tickCards(0);
             long reported = m.wrappers.get(0).memberCards().orElseThrow().highestReportedPauseSequence();
             assertThat(reported).as("A's look shows B's high sequence").isGreaterThanOrEqualTo(5);
 
@@ -1074,7 +1131,7 @@ class HazelcastOversightTest {
                 // A's card now carries a digest B has never seen; B's gate cannot pass, and its lease runs out.
                 for (int step = 0; step < 6; step++) {
                     m.advance(MESH_LEASE.dividedBy(4));
-                    m.wrappers.get(0).memberCards().orElseThrow().tick();
+                    m.tickCards(0);
                     m.tick(1);
                 }
                 assertThat(m.reads(1)).as("B lapses and refuses").isFalse();
@@ -1147,7 +1204,7 @@ class HazelcastOversightTest {
             m.state(1).pauseTool("p");
             m.advance(MESH_LEASE.dividedBy(4));
             for (int i = 0; i < 3; i++) {
-                m.wrappers.get(i).memberCards().orElseThrow().tick();
+                m.tickCards(i);
             }
             m.documentMap(0).delete(m.documentKey(0));
             // The oldest has never read a document; its peers' real cards report a non-empty digest.
@@ -1155,8 +1212,8 @@ class HazelcastOversightTest {
             for (int step = 0; step < 12; step++) {
                 m.advance(MESH_LEASE.dividedBy(4));
                 m.tick(0);
-                m.wrappers.get(1).memberCards().orElseThrow().tick();
-                m.wrappers.get(2).memberCards().orElseThrow().tick();
+                m.tickCards(1);
+                m.tickCards(2);
             }
             assertThat(m.peers(0).peerDigests().values()).anyMatch(digest -> !digest.equals(
                     PauseDocument.Digest.NONE));
@@ -1367,6 +1424,9 @@ class HazelcastOversightTest {
                 }
                 m.run(4);
                 m.addIntruder();
+                assertThat(MemberCardTest.Fixture.await(30,
+                        () -> m.instances.get(0).getCluster().getMembers().size() == 4))
+                        .as("the intruder is listed").isTrue();
                 m.run(2);
                 for (int i = 0; i < 3; i++) {
                     assertThat(m.fresh(i)).as(action + " in the grace").isTrue();
@@ -1425,10 +1485,10 @@ class HazelcastOversightTest {
             m.run(1);
             var uuidB = m.instances.get(1).getCluster().getLocalMember().getUuid();
             // A has looked at the latest card of B (B wrote after A's last look of the final round).
-            m.wrappers.get(0).memberCards().orElseThrow().tick();
+            m.tickCards(0);
             m.clocks.get(0).advance(MESH_LEASE.multipliedBy(-2));
             m.nanos.get(0)[0] += MESH_LEASE.plusSeconds(1).toNanos();
-            m.wrappers.get(0).memberCards().orElseThrow().tick();
+            m.tickCards(0);
             assertThat(m.peers(0).peerDigests().get(uuidB)).isEqualTo(PauseDocument.Digest.NONE);
         }
     }
@@ -1445,7 +1505,7 @@ class HazelcastOversightTest {
             m.wrappers.set(0, second);
             for (int s = 0; s < 3; s++) {
                 m.advance(MESH_LEASE.dividedBy(2));
-                second.memberCards().orElseThrow().tick();
+                tickCardsAndWait(second, "second");
                 m.states.get(0).document().tick();
             }
             var uuidP = m.instances.get(1).getCluster().getLocalMember().getUuid();
@@ -1458,7 +1518,7 @@ class HazelcastOversightTest {
             second.close();
             m.wrappers.set(0, third);
             m.advance(MESH_LEASE.dividedBy(2));
-            third.memberCards().orElseThrow().tick();
+            tickCardsAndWait(third, "third");
             m.states.get(0).document().tick();
             assertThat(MemberCards.peers(third).snapshot().peerDigests().get(uuidP))
                     .isEqualTo(PauseDocument.Digest.NONE);
@@ -1596,8 +1656,8 @@ class HazelcastOversightTest {
             assertThat(MemberCardTest.Fixture.await(30, () -> m.instances.get(0).getCluster().getMembers().size() == 3))
                     .isTrue();
             m.advance(MemberCardTest.GRACE.plusSeconds(1));
-            second.memberCards().orElseThrow().tick();
-            second.memberCards().orElseThrow().tick();
+            tickCardsAndWait(second, "second");
+            tickCardsAndWait(second, "second");
             assertThat(second.securityStatus().serving()).isFalse();
             assertThatThrownBy(() -> state2.resumeTool("p"))
                     .isInstanceOf(io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException.class);
