@@ -3,7 +3,7 @@
 # MkDocs and Material are both reported to be in maintenance mode (task 82),
 # and Zensical is the documented later migration path.
 mkdocs==1.6.1
-mkdocs-material==9.7.7
+mkdocs-material==9.8.0
 mkdocs-include-markdown-plugin==7.3.0
-mkdocs-llmstxt==0.5.0
-pymdown-extensions==12.1
+mkdocs-llmstxt==0.5.1
+pymdown-extensions==12.3
