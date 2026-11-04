@@ -96,6 +96,27 @@ class KeyedScopeEndTest {
                 TestMembers.request("approval-" + scopeId, scopeId, Status.PENDING));
     }
 
+    /**
+     * Ending a scope on a member needs the member's view of every peer to cover the document it reads (R6): a peer
+     * whose card still shows an earlier digest, because its card write lags, is not covered and the pause step refuses
+     * with OVERSIGHT_UNAVAILABLE. The cards are asynchronous and real, so wait on that state, bounded and asserted:
+     * the cards of every member are ticked until the ender's completed look shows every peer at the stored digest.
+     */
+    private void awaitEveryPeerCardCoversTheStoredDocument(PrivacyCluster ender) {
+        if (members.length < 2) {
+            return;
+        }
+        PauseDocument.Digest stored = document(ender).digest();
+        assertThat(MemberCardTest.Fixture.await(30, () -> {
+            for (int i = 0; i < members.length; i++) {
+                HazelcastOversightTest.tickCardsAndWait(members[i], "member " + i);
+            }
+            PauseDocument.PeerView view = MemberCards.peers(ender).snapshot();
+            return view.lookCompleted() && view.unverifiedCount() == 0 && !view.peerDigests().isEmpty()
+                    && view.peerDigests().values().stream().allMatch(stored::equals);
+        })).as("every peer card of the ender shows the stored document's digest").isTrue();
+    }
+
     private int total() {
         PrivacyCluster any = members[members.length - 1];
         return any.instance().getMap(PrivacyCluster.IDENTITY_MAP).size()
@@ -116,6 +137,7 @@ class KeyedScopeEndTest {
         assertThat(two).as("the second scope adds entries to every map but the pending set").isGreaterThan(one);
 
         PrivacyCluster ender = members[members.length - 1];
+        awaitEveryPeerCardCoversTheStoredDocument(ender);
         new ScopeIdentityIndex(ender, io.github.aindriub.dataprism.core.metrics.PrivacyMetrics.none(), TIMEOUT)
                 .endScope(ENDED);
 
