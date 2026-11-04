@@ -563,38 +563,31 @@ class HazelcastOversightTest {
 
     private static final Duration MESH_LEASE = MemberCardTest.LEASE;
 
-    /**
-     * Keyed members of one cluster whose wall clock and monotonic clock a test moves. Nothing ticks by itself: a test
-     * calls {@link #tick}, {@link #round} and {@link #advance}.
-     */
     private static final java.util.concurrent.atomic.AtomicInteger NO_WRITE_NOTES =
             new java.util.concurrent.atomic.AtomicInteger();
 
     /**
      * Ticks the cards of a wrapper and waits, on the write and not on time, until it has completed. A card write is
      * asynchronous and real while the clocks are injected, so a later tick must not read a card that is a step behind.
-     * Afterwards the stored card must carry the latest {@code cardSequence} taken, which names a write that did not land
-     * if one ever fails. A tick that is not due, or whose failure the tick swallows, writes nothing, and a write that
-     * failed sets the mark: both are noted on stderr, at most twenty times per JVM.
+     * Afterwards the stored card must carry the latest {@code cardSequence} taken, which names a write that did not
+     * land if one ever fails. A tick that is not due, or whose failure the tick swallows, writes nothing, and a write
+     * that failed sets the mark: both are noted on stderr, at most twenty times per JVM.
      */
     static void tickCardsAndWait(PrivacyCluster wrapper, String who) {
         MemberCards cards = wrapper.memberCards().orElseThrow();
+        MemberCards.Declarations declarations = MemberCards.declarations(wrapper.instance());
         int started = cards.writesStarted();
         cards.tick();
-        assertThat(MemberCardTest.Fixture.await(30, () -> !cards.writeOutstanding()))
-                .as("the card write of " + who + " completed").isTrue();
-        // With no write outstanding and the mark clear, the stored card carries the latest sequence any write of this
-        // instance took. That holds whichever thread started the write (a pause notice can start one too).
-        MemberCards.Declarations declarations = MemberCards.declarations(wrapper.instance());
-        long latest = declarations.cardSequenceForTest();
-        long stored = storedCardSequence(wrapper, cards);
-        if (stored < latest) {
-            if (declarations.marked()) {
-                note("the card write of " + who + " failed (swallowed by the tick; the mark is set, the next pass retries)");
-            } else {
-                assertThat(stored).as("the card write of " + who + " landed: the stored cardSequence is the latest taken")
-                        .isEqualTo(latest);
-            }
+        // One state is judged, so a write that a pause notice starts on the executor between two reads cannot fail the
+        // check: no write is outstanding, and the stored card carries the latest sequence any write of this instance
+        // took, or a failed write has set the mark (the tick swallows it and the next pass retries).
+        assertThat(MemberCardTest.Fixture.await(30, () -> !cards.writeOutstanding()
+                && (storedCardSequence(wrapper, cards) >= declarations.cardSequenceForTest()
+                        || declarations.marked())))
+                .as("the card write of " + who + " completed and landed: the stored cardSequence is the latest taken")
+                .isTrue();
+        if (storedCardSequence(wrapper, cards) < declarations.cardSequenceForTest() && declarations.marked()) {
+            note("the card write of " + who + " failed (swallowed by the tick; the mark is set, the next pass retries)");
         }
         if (cards.writesStarted() <= started) {
             note("the card tick of " + who + " started no write (not due, or a failure the tick swallows)");
@@ -624,6 +617,10 @@ class HazelcastOversightTest {
         return card == null ? -1 : card.cardSequence();
     }
 
+    /**
+     * Keyed members of one cluster whose wall clock and monotonic clock a test moves. Nothing ticks by itself: a test
+     * calls {@link #tick}, {@link #round} and {@link #advance}.
+     */
     private static final class Mesh implements AutoCloseable {
         final String name = TestMembers.uniqueName("mesh");
         final int capacity;
