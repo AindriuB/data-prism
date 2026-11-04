@@ -307,3 +307,10 @@ Otherwise: Every test runs in plain mode and in keyed mode (`AuditChainMode.keye
 - The `AuditSink` and `FileAuditSink` write path, and making a torn write impossible.
 - `docs/audit.md` (213), `docs/configuration.md` (211 owns the `dataprism.audit` rows in wave 7), and Spring wiring (`AuditWiring`, `AuditMaintenance`, metrics).
 - 207's segment discovery, ordering and per-day deletion, other than the refusal boundary described here.
+
+## Outcome (2026-10-30, 0.8; PR #192)
+`AuditRetention` no longer reads raw lines. Anchors, `firstUnanchoredStart`, the partial-day path and the refusal boundary come only from records the verifier hashed, through `AuditChainVerifier.verifySegmentsHashed`. A complete record that was not hashed refuses its day (rule 4); each writer's next record must link to the day's last hashed record, with the `SHUTDOWN` stop (rule 6); a record dated after its file's day refuses the day (rule 7). `AuditCheckpointSink.shutdownCheckpoints()` is new (default empty).
+
+Changed expectations, authorised outside the Owns by the owner on 2026-10-29 (option (a)): `AuditRetentionBreakParityTest.purgeStopsAtAndKeepsASegmentWithAFieldCountMismatch` now expects 03-01, 03-02 and 03-03 to remain (it expected 03-02 and 03-03), because rule 6 is applied literally. `AuditRetentionSizeCapTest.aTamperedUnterminatedLastRecordInAPartlyDeletedPrefixIsRefusedAndKept` also requires 03-01 to remain, and its "known gap" comment is replaced. This brief's rule 6(b), the `SHUTDOWN` stop (line 109), is therefore stricter than the behaviour the first test pinned before.
+
+Cost of the boundary scan, 180 retained daily segments: a clean restart reads none (8 ms); a crash with no `SHUTDOWN` reads all 180 (18 ms). Not fixed, filed in PLAN.md: `AuditRecorder` should refuse `record()` after `close()`, and the verifier should report any record after its instance's `SHUTDOWN` (OD-292-5).

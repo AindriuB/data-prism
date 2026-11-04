@@ -34,3 +34,6 @@ Two small validation follow-ups. Task 194 made both leak validators scan propert
 - `RefusalPaths` and the orchestrator.
 - Recognisers and `FREE_TEXT` (208).
 - The mutation-survivor work in `SensitiveDataScanner` (`ibanChecksumValid`, `luhnValid`), a separate candidate task.
+
+## Outcome (2026-10-30, 0.8; PR #193)
+Each leak validator redacts, in its own violation paths, every property name either validator flags, so the guarantee no longer rests on `RefusalPaths.redact` alone. `PatternValidatorWiringTest` and `ConfiguredJsonSourcesPatternValidatorTest` assert that the first violation is `SENSITIVE_PATTERN`. The PR body records no out-of-Owns edit and no follow-up.

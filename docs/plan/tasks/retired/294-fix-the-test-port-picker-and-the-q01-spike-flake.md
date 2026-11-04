@@ -123,3 +123,10 @@ The same pattern has four copies:
   - `ClusterConfigurationTest:355` (run 40076025709);
   - `SourceCircuitBreakerTrialTest` in orchestration (runs 40760329935 and 40741459588).
 - Deleting the lock files in `java.io.tmpdir/dataprism-test-ports` (PLAN note (o)).
+
+## Outcome (2026-10-30, 0.8; PR #196)
+Test code only. The port pickers (`FreePorts`, `SpikePorts`, `ClusterConfigurationTest`, `OperatorHarness`) scan from a random start for a run this JVM has not claimed and open no socket; only a failed probe bind or a lock held by another JVM uses one of the three attempts. The Q01 spike takes the primary-route address, then the first interface address that passes a wildcard self-connect, else skips. `TestMembers.pair` returns only when both members list two members and report `isClusterSafe()`, within 30 s; `MemberCardTest` and `ApprovalStoreContractTest` share the helper. The `MemberCardTest` fixture uses the 5 s card-write bound; two tests that relied on 1 s now use a 300 ms environment.
+
+Evidence: `./mvnw -B verify` passed; `-pl data-prism-hazelcast -am verify` three times with 697 tests each, no port, lock-timeout or card-write failure. An earlier batch of five single-core `MemberCardTest` runs hit "no free loopback ports" while sibling agents ran on the machine; a clean rerun passed.
+
+Follow-ups, none done: add settle waits to the `HazelcastOversightTest` `pair()` and `UnverifiedMemberTest` multi-member set-ups after 228; `ClusterKeyMismatchTest` :117-170 and `ClusterCutoverTest` only if they flake; the `Spike.configs` users only if one flakes. Other flakes seen in CI and not fixed: `ApprovalCreationTokenTest.start:45`, the serialisation-filter reject in `MemberCardTest`, `ApprovalSplitBrainHealTest:72`, `HazelcastReservationTest:510`, `ClusterConfigurationTest:355`, `SourceCircuitBreakerTrialTest`.

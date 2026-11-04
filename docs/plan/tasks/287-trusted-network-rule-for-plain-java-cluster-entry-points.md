@@ -61,3 +61,6 @@ Every entry point that starts or wraps a member that joins, or already has, othe
 - Addresses come from the private or documentation blocks only.
 - No Hazelcast Enterprise feature (D-0.4.1-A). No new dependency.
 - No sleeps.
+
+## Note from the wave-7 record (2026-11-04)
+`PrivacyClusterRefusal.java` is no longer only 227's: task 228 (merged, PR #191) inserted `CLUSTER_SETTINGS_MISMATCH`. Read the Depends-on line's "227 owns `PrivacyClusterRefusal.java`" as "227 and 228". This task's insertions (`PUBLIC_MEMBER_INTERFACE`, `MISSING_TRUSTED_NETWORK`, `INVALID_TRUSTED_RANGE`) go in beside it; rebase on `main` before editing.

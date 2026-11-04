@@ -58,3 +58,14 @@ Make a source's label one decision per request: a real name only when the scope 
 - Binding `dataprism.catalog.*` from configuration (254).
 - Per-source role authorisation (0.9, D-RM-11).
 - `docs/audit.md` and `docs/tools.md` (261).
+
+## Outcome (2026-10-30, 0.8; PR #189, then PR #195)
+A source's label is one decision per request: the scope pattern in `dataprism.catalog.real-names-scopes` AND `EXPOSE_SOURCE_NAMES`. `get_entity_context` and `compare_entity_sources` take `targetSources`. A selection that does not resolve is refused as `SOURCE_NOT_AVAILABLE` and one over `maxSources` as `SOURCE_SELECTION_TOO_LARGE`; an unselected call over the limit (default 8) is refused as `SOURCE_SELECTION_REQUIRED`. The audit key `names` records the effective setting. `OrchestrationOptions` is the last constructor argument.
+
+For the 0.8 migration notes (261): `EXPOSE_SOURCE_NAMES` alone no longer shows real names while `real-names-scopes` is empty, which is the default.
+
+Label length (PR #195, `ToolCalls.MAX_TARGET_LABEL_CODE_POINTS`): the acceptance said "items of length 1 to 64". The limit is 128 code points in 0.8 and 64 from 0.9, when `INVALID_SOURCE_NAME` refuses a longer name (OD-200-4; catalog OD-C18 (c)). PR #189 shipped 64 UTF-16 units, so a valid legacy source name between 65 and 128 could not be targeted. #195 sets 128 in both schemas and both parsers, counted in code points as JSON Schema counts them.
+
+Edits outside the Owns, accepted: `McpHttpEndToEndTest` (the real-name test is renamed `callerWithExposeCapabilityStillSeesAliasesWhileRealNamesScopesIsEmpty` and asserts aliases; 254 restores the real-name assertion when it binds `real-names-scopes`), `SourceAliasingTest` (`@SuppressWarnings("removal")` on two tests), `ToolCalls.java` (the shared label cap), the tool call sites, `UndeclaredKeyFixture` and `PerSourceBudgetChargeTest` (constructor calls). `TargetSourcesToolTest` was in the Owns.
+
+Follow-up: `LinkLayout.MAX_LABEL` is 64 UTF-8 bytes and bounds the `list_sources` paging cursor `lastLabel`, so a legacy name over 64 bytes may not be pageable. For task 250.
