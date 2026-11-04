@@ -1090,7 +1090,9 @@ final class PauseDocument {
         } catch (RuntimeException notTaken) {
             // The write cannot start: the operator's pause is still held here (see holdLocally).
             if (op == Op.PAUSE && transientFailure(notTaken)) {
-                holdLocally(target);
+                if (!holdLocally(target)) {
+                    throw capRefusal();
+                }
                 warnNotLanded();
                 if (!(notTaken instanceof ClusterLockTimeoutException)) {
                     throw writeDidNotLand(notTaken);
@@ -1127,8 +1129,7 @@ final class PauseDocument {
                         int size = base == null ? 0 : base.elements().size();
                         int cap = target.kind() == Kind.ALL ? FORMAT_BOUND : PAUSE_CAP;
                         if (size + 1 > cap) {
-                            refusal = ClusterRefusals.refused(new IllegalStateException(
-                                    "the pause document is at its operating cap"));
+                            refusal = capRefusal();
                         }
                         if (refusal != null) {
                             next = null;
@@ -1174,7 +1175,9 @@ final class PauseDocument {
         } catch (RuntimeException failed) {
             // A write that cannot commit is no reason to forget the pause (a pause refused at the cap excepted).
             if (op == Op.PAUSE && !capRefused && transientFailure(failed)) {
-                holdLocally(target);
+                if (!holdLocally(target)) {
+                    throw capRefusal();
+                }
                 warnNotLanded();
                 if (!(failed instanceof ClusterLockTimeoutException)) {
                     throw writeDidNotLand(failed);
@@ -1185,7 +1188,9 @@ final class PauseDocument {
             ClusterLocks.release(map, key);
         }
         if (op == Op.PAUSE) {
-            holdLocally(target);
+            if (!holdLocally(target)) {
+                throw capRefusal();
+            }
             warnNotLanded();
             throw writeDidNotLand(null);
         }
@@ -1237,20 +1242,20 @@ final class PauseDocument {
      * An operator pause whose write could not commit (a transient failure, see {@link #transientFailure}) is still
      * held here: the content only grows (F0). The change notice moves the card digest, so peers' Covered checks fail
      * until they read a document that carries it, and the next tick's repair writes it. There is at most one
-     * unlanded element per target: a second failed pause for the same target reuses it. The cap still applies. A
+     * unlanded element per target: a second failed pause for the same target reuses it. At the cap nothing is kept and the call fails with the cap's own refusal. A
      * cold member (held is null) gets Doc(0, 0, now, self, {fresh}), so that a repair's putIfAbsent(held) writes it at
      * sequence 1 (R3, R9); a member that holds a document keeps that document's order, issuedAt and issuer. The call itself still fails.
      */
-    private void holdLocally(Target target) {
+    private boolean holdLocally(Target target) {
         synchronized (monitor) {
             Id existing = unlanded.get(target);
             if (existing != null && held != null && held.elements().containsKey(existing)) {
-                return;
+                return true;
             }
             int size = held == null ? 0 : held.elements().size();
             int cap = target.kind() == Kind.ALL ? FORMAT_BOUND : PAUSE_CAP;
             if (size + 1 > cap) {
-                return;
+                return false;
             }
             Id fresh = Id.random(random);
             Map<Id, Target> elements = new HashMap<>(held == null ? Map.of() : held.elements());
@@ -1262,7 +1267,13 @@ final class PauseDocument {
                             held.tombstones());
             unlanded.put(target, fresh);
             heldChanged(held.digest(), true, true);
+            return true;
         }
+    }
+
+    /** The refusal of a pause that would pass the cap (R5); a failed write at the cap fails with it too. */
+    private static ClusterOperationRefusedException capRefusal() {
+        return ClusterRefusals.refused(new IllegalStateException("the pause document is at its operating cap"));
     }
 
     /** R13's preconditions, in R13's order and with its codes. Throws; returns only if all hold. */

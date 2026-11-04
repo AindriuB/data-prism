@@ -573,9 +573,14 @@ class PauseDocumentTest {
         assertThat(full.tools()).hasSize(PauseDocument.PAUSE_CAP);
         assertThatThrownBy(() -> full.pauseTool("over")).isInstanceOf(ClusterOperationRefusedException.class);
         assertThat(full.held().elements()).hasSize(PauseDocument.PAUSE_CAP);
+        Digest digestAtCap = full.digest();
         Runnable third = holdDocumentLock();
-        assertThatThrownBy(() -> full.pauseTool("over")).isInstanceOf(ClusterLockTimeoutException.class);
-        assertThat(full.held().elements()).as("a local add at the cap is refused").hasSize(PauseDocument.PAUSE_CAP);
+        assertThatThrownBy(() -> full.pauseTool("over")).isInstanceOf(ClusterOperationRefusedException.class)
+                .hasRootCauseMessage("the pause document is at its operating cap")
+                .satisfies(refusal -> assertThat(((ClusterOperationRefusedException) refusal).code())
+                        .isEqualTo("CLUSTER_OPERATION_REFUSED"));
+        assertThat(full.held().elements()).as("nothing is kept locally at the cap").hasSize(PauseDocument.PAUSE_CAP);
+        assertThat(full.digest()).as("the digest did not move").isEqualTo(digestAtCap);
         third.run();
     }
 
