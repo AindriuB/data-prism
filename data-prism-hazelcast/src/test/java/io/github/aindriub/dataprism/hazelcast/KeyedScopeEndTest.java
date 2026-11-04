@@ -1,10 +1,16 @@
 package io.github.aindriub.dataprism.hazelcast;
 
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.model.PrivacyContext;
 import io.github.aindriub.dataprism.core.model.PrivacyScopeType;
 import io.github.aindriub.dataprism.core.model.PseudonymisationVersion;
 import io.github.aindriub.dataprism.core.spi.SyntheticValueSource;
+import io.github.aindriub.dataprism.hazelcast.PauseDocument.Doc;
+import io.github.aindriub.dataprism.hazelcast.PauseDocument.Id;
+import io.github.aindriub.dataprism.hazelcast.PauseDocument.Target;
+import io.github.aindriub.dataprism.hazelcast.seal.Opened;
+import io.github.aindriub.dataprism.hazelcast.seal.ServingGate;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest.Status;
 import com.hazelcast.map.IMap;
 import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
@@ -15,7 +21,11 @@ import org.junit.jupiter.api.Test;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
 import java.util.OptionalInt;
+import java.util.Set;
 
 import static io.github.aindriub.dataprism.hazelcast.TestMembers.NOW;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -53,6 +63,20 @@ class KeyedScopeEndTest {
         members = TestMembers.pair(TestMembers.uniqueName("scope-end-2"), OptionalInt.empty());
     }
 
+    /** The authentic pause document now stored by the cluster of {@code on}. */
+    private static Doc document(PrivacyCluster on) {
+        String key = on.keyedNames().mapKey(PrivacyCluster.OVERSIGHT_MAP, PauseDocument.CANONICAL);
+        Object stored = on.instance().getMap(PrivacyCluster.OVERSIGHT_MAP).get(key);
+        Opened opened = IdentityMaps.sealerFor(on, PrivacyMetrics.none(), ServingGate.open())
+                .open(PrivacyCluster.OVERSIGHT_MAP, key, (String) stored);
+        assertThat(opened.outcome()).isEqualTo(Opened.Outcome.AUTHENTIC);
+        return Doc.decode(opened.plaintext());
+    }
+
+    private static ScopeIdentityIndex index(PrivacyCluster on) {
+        return new ScopeIdentityIndex(on, PrivacyMetrics.none(), TIMEOUT);
+    }
+
     private static PrivacyContext scope(String scopeId) {
         return new PrivacyContext(scopeId, PrivacyScopeType.CASE, "DEFAULT", "test",
                 Instant.now().plus(1, ChronoUnit.HOURS), PseudonymisationVersion.HMAC_SHA256_V1);
@@ -70,6 +94,33 @@ class KeyedScopeEndTest {
         new HazelcastOversightState(writer, TIMEOUT).pauseScope(scopeId);
         new HazelcastApprovalStore(writer, TIMEOUT).create(
                 TestMembers.request("approval-" + scopeId, scopeId, Status.PENDING));
+    }
+
+    /**
+     * Ending a scope on a member needs the member's view of every peer to cover the document it reads (R6): a peer
+     * whose card still shows an earlier digest, because its card write lags, is not covered and the pause step refuses
+     * with OVERSIGHT_UNAVAILABLE. The cards are asynchronous and real, so wait on that state, bounded and asserted:
+     * the main document and the cards of every member are ticked until the ender's completed look shows every peer at the stored digest.
+     */
+    private void awaitEveryPeerCardCoversTheStoredDocument(PrivacyCluster ender) {
+        if (members.length < 2) {
+            return;
+        }
+        PauseDocument.Digest stored = document(ender).digest();
+        assertThat(MemberCardTest.Fixture.await(30, () -> {
+            for (int i = 0; i < members.length; i++) {
+                // The member's main document merges what is stored (its tick), then its card reports the digest.
+                Object main = members[i].instance().getUserContext()
+                        .get(HazelcastOversightState.MAIN_DOCUMENT_CONTEXT_KEY);
+                if (main instanceof PauseDocument document) {
+                    document.tick();
+                }
+                HazelcastOversightTest.tickCardsAndWait(members[i], "member " + i);
+            }
+            PauseDocument.PeerView view = MemberCards.peers(ender).snapshot();
+            return view.lookCompleted() && view.unverifiedCount() == 0 && !view.peerDigests().isEmpty()
+                    && view.peerDigests().values().stream().allMatch(stored::equals);
+        })).as("every peer card of the ender shows the stored document's digest").isTrue();
     }
 
     private int total() {
@@ -92,11 +143,20 @@ class KeyedScopeEndTest {
         assertThat(two).as("the second scope adds entries to every map but the pending set").isGreaterThan(one);
 
         PrivacyCluster ender = members[members.length - 1];
+        awaitEveryPeerCardCoversTheStoredDocument(ender);
         new ScopeIdentityIndex(ender, io.github.aindriub.dataprism.core.metrics.PrivacyMetrics.none(), TIMEOUT)
                 .endScope(ENDED);
+        // The new state below is cold, so it needs the same of the document the index just wrote.
+        awaitEveryPeerCardCoversTheStoredDocument(ender);
 
         assertThat(new HazelcastOversightState(ender, TIMEOUT).scopePaused(ENDED)).isFalse();
         assertThat(new HazelcastOversightState(ender, TIMEOUT).scopePaused(KEPT)).isTrue();
+        // In the document the ended scope's element is tombstoned, not deleted, and the other scope's is live.
+        Doc paused = document(ender);
+        assertThat(paused.live(Target.scope(ENDED))).isEmpty();
+        assertThat(paused.live(Target.scope(KEPT))).hasSize(1);
+        assertThat(paused.elements().values().stream().filter(Target.scope(ENDED)::equals)).hasSize(1);
+        assertThat(paused.tombstones()).hasSize(1);
         assertThat(new HazelcastScopeBudget(ender, TIMEOUT).reads(ENDED, "subject-1")).isZero();
         assertThat(new HazelcastScopeBudget(ender, TIMEOUT).reads(KEPT, "subject-1")).isEqualTo(1);
         var approvals = new HazelcastApprovalStore(ender, TIMEOUT);
@@ -106,7 +166,8 @@ class KeyedScopeEndTest {
         assertThat(ender.instance().getMap(PrivacyCluster.APPROVAL_ID_MAP).size()).isEqualTo(1);
         assertThat(ender.instance().getMap(PrivacyCluster.REIDENTIFICATION_MAP).size()).isZero();
         assertThat(ender.instance().getMap(PrivacyCluster.BUDGET_MAP).size()).isEqualTo(1);
-        assertThat(ender.instance().getMap(PrivacyCluster.OVERSIGHT_MAP).size()).isEqualTo(1);
+        assertThat(ender.instance().getMap(PrivacyCluster.OVERSIGHT_MAP).size())
+                .as("the pause document is one entry whoever ends a scope").isEqualTo(1);
         assertThat(ender.instance().getMap(PrivacyCluster.APPROVAL_MAP).size()).isEqualTo(1);
         // Both scopes' requester is the same, so the pending set is shared; only the kept scope's id is left in it.
         String pendingKey = TestMembers.SCOPE_KEYS.pending(
@@ -196,6 +257,11 @@ class KeyedScopeEndTest {
         assertThat(state.toolPaused("search")).isTrue();
         assertThat(state.scopePaused(ENDED)).isFalse();
         assertThat(state.snapshot().pausedScopes()).isEmpty();
+        Doc paused = document(members[0]);
+        assertThat(paused.live(Target.ALL)).hasSize(1);
+        assertThat(paused.live(Target.tool("search"))).hasSize(1);
+        assertThat(paused.live(Target.scope(ENDED))).isEmpty();
+        assertThat(paused.tombstones()).hasSize(1);
     }
 
     @Test
@@ -229,7 +295,7 @@ class KeyedScopeEndTest {
         assertThat(cluster.instance().getMap(PrivacyCluster.IDENTITY_MAP).size()).as("refused map").isPositive();
         assertThat(cluster.instance().getMap(PrivacyCluster.REIDENTIFICATION_MAP).size()).isZero();
         assertThat(cluster.instance().getMap(PrivacyCluster.BUDGET_MAP).size()).isZero();
-        assertThat(cluster.instance().getMap(PrivacyCluster.OVERSIGHT_MAP).size()).isZero();
+        assertThat(document(cluster).live(Target.scope(ENDED))).as("a sweep failure keeps the pause").hasSize(1);
         assertThat(cluster.instance().getMap(PrivacyCluster.APPROVAL_MAP).size()).as("forgetScope ran").isZero();
     }
 
@@ -358,6 +424,8 @@ class KeyedScopeEndTest {
         singleMember();
         PrivacyCluster cluster = members[0];
         var state = new HazelcastOversightState(cluster, TIMEOUT);
+        // A first document, so that this member has a pause document to resume against.
+        state.pauseTool("search");
         cluster.instance().getMap(PrivacyCluster.OVERSIGHT_MAP).put(ENDED + "\0paused", Boolean.TRUE);
 
         new ScopeIdentityIndex(cluster, io.github.aindriub.dataprism.core.metrics.PrivacyMetrics.none(), TIMEOUT)
@@ -365,5 +433,320 @@ class KeyedScopeEndTest {
         state.resumeScope(ENDED);
 
         assertThat(state.scopePaused(ENDED)).isTrue();
+        assertThat(cluster.instance().getMap(PrivacyCluster.OVERSIGHT_MAP).containsKey(ENDED + "\0paused"))
+                .as("the legacy key is still in the oversight map after endScope").isTrue();
+    }
+
+    // ---- the pause step of ending a scope (task 228, amendment 5) ------------------------------------------
+
+    @Test
+    void aToolPausedUnderTheNameOfTheEndedScopeAndTheScopesOfOthersSurviveWhileTheScopesElementIsTombstoned() {
+        singleMember();
+        var state = new HazelcastOversightState(members[0], TIMEOUT);
+        state.pauseScope(ENDED);
+        state.pauseTool(ENDED);
+        state.pauseScope(KEPT);
+        state.pauseAll();
+
+        index(members[0]).endScope(ENDED);
+
+        Doc paused = document(members[0]);
+        assertThat(paused.live(Target.scope(ENDED))).isEmpty();
+        assertThat(paused.live(Target.tool(ENDED))).as("a tool of the same name is another target").hasSize(1);
+        assertThat(paused.live(Target.scope(KEPT))).hasSize(1);
+        assertThat(paused.live(Target.ALL)).hasSize(1);
+        assertThat(paused.elements()).hasSize(4);
+        assertThat(paused.tombstones()).hasSize(1);
+        assertThat(new HazelcastOversightState(members[0], TIMEOUT).scopePaused(ENDED)).isFalse();
+    }
+
+    @Test
+    void everyPauseOfTheScopeIsTombstonedWhenItWasPausedMoreThanOnce() {
+        singleMember();
+        var state = new HazelcastOversightState(members[0], TIMEOUT);
+        state.pauseScope(ENDED);
+        state.pauseScope(ENDED);
+        state.pauseScope(ENDED);
+
+        index(members[0]).endScope(ENDED);
+
+        assertThat(document(members[0]).live(Target.scope(ENDED))).isEmpty();
+        assertThat(document(members[0]).tombstones()).hasSize(3);
+    }
+
+    @Test
+    void endingAScopeWhileNoPauseDocumentExistsErasesTheDataWritesNothingAndThrowsUnavailable() {
+        singleMember();
+        populate(KEPT, "subject-1");
+        members[0].instance().getMap(PrivacyCluster.OVERSIGHT_MAP).clear();
+
+        assertThatThrownBy(() -> index(members[0]).endScope(KEPT)).isInstanceOf(IllegalStateException.class)
+                .isNotInstanceOf(ClusterOperationRefusedException.class)
+                .isNotInstanceOf(ClusterLockTimeoutException.class);
+
+        assertThat(members[0].instance().getMap(PrivacyCluster.OVERSIGHT_MAP).isEmpty()).as("still absent").isTrue();
+        assertThat(members[0].instance().getMap(PrivacyCluster.IDENTITY_MAP).isEmpty()).as("data erased").isTrue();
+    }
+
+    @Test
+    void aScopeWithNoLivePauseWritesNothing() {
+        singleMember();
+        var state = new HazelcastOversightState(members[0], TIMEOUT);
+        state.pauseTool("search");
+        Object raw = members[0].instance().getMap(PrivacyCluster.OVERSIGHT_MAP)
+                .get(members[0].keyedNames().mapKey(PrivacyCluster.OVERSIGHT_MAP, PauseDocument.CANONICAL));
+
+        index(members[0]).endScope(ENDED);
+
+        assertThat(members[0].instance().getMap(PrivacyCluster.OVERSIGHT_MAP)
+                .get(members[0].keyedNames().mapKey(PrivacyCluster.OVERSIGHT_MAP, PauseDocument.CANONICAL)))
+                .isEqualTo(raw);
+    }
+
+    /** A document whose first look is gated: older than the cold-start gate, so a cold index holds nothing. */
+    private static Doc oldDocumentPausing(String scopeId) {
+        Map<Id, Target> elements = new HashMap<>();
+        elements.put(new Id(1, 1), Target.scope(scopeId));
+        return new Doc(7, 0, Instant.parse("2020-01-01T00:00:00Z").toEpochMilli(), "old", elements, Set.of());
+    }
+
+    @Test
+    void whenNoDocumentWasAcceptedTheDataIsErasedThePauseIsKeptAndTheCallThrowsUnavailable() {
+        singleMember();
+        populate(ENDED, "subject-1");
+        PauseDocumentTest.plant(members[0], oldDocumentPausing(ENDED));
+        Doc before = document(members[0]);
+
+        assertThatThrownBy(() -> index(members[0]).endScope(ENDED)).isInstanceOf(IllegalStateException.class)
+                .isNotInstanceOf(ClusterOperationRefusedException.class)
+                .isNotInstanceOf(ClusterLockTimeoutException.class);
+
+        assertThat(members[0].instance().getMap(PrivacyCluster.IDENTITY_MAP).isEmpty()).as("data erased").isTrue();
+        assertThat(members[0].instance().getMap(PrivacyCluster.BUDGET_MAP).isEmpty()).isTrue();
+        assertThat(new HazelcastApprovalStore(members[0], TIMEOUT).find("approval-" + ENDED)).isEmpty();
+        assertThat(document(members[0])).as("the pause is kept").isEqualTo(before);
+    }
+
+    @Test
+    void aDocumentThatIsNotFreshKeepsThePauseErasesTheDataAndThrowsUnavailable() {
+        singleMember();
+        var state = new HazelcastOversightState(members[0], TIMEOUT);
+        state.pauseScope(ENDED);
+        var index = index(members[0]);
+        index.endScope("another-scope");
+        populate(ENDED, "subject-1");
+        // A listed peer shows content the index document never held: its gate fails, so it is not fresh.
+        index.pauseDocument().peers = () -> new PauseDocument.PeerView(
+                Map.of(java.util.UUID.randomUUID(), new PauseDocument.Digest(new byte[16])), 0, true, 0, -1, false,
+                true);
+
+        assertThatThrownBy(() -> index.endScope(ENDED)).isInstanceOf(IllegalStateException.class)
+                .isNotInstanceOf(ClusterOperationRefusedException.class);
+
+        assertThat(members[0].instance().getMap(PrivacyCluster.IDENTITY_MAP).isEmpty()).as("data erased").isTrue();
+        assertThat(document(members[0]).live(Target.scope(ENDED))).as("the pause is kept").isNotEmpty();
+    }
+
+    @Test
+    void oneLongLivedIndexRefusesAnUncoveredAnAbsentAndANotServingMemberAndEndsTheScopeOnceTheCauseIsGone() {
+        singleMember();
+        PrivacyCluster cluster = members[0];
+        var state = new HazelcastOversightState(cluster, TIMEOUT);
+        String uncovered = "scope-uncovered";
+        String absent = "scope-absent";
+        String stopped = "scope-not-serving";
+        populate(uncovered, "subject-1");
+        state.pauseScope(absent);
+        state.pauseScope(stopped);
+        var index = index(cluster);
+        index.endScope("scope-warm-up");
+        String key = cluster.keyedNames().mapKey(PrivacyCluster.OVERSIGHT_MAP, PauseDocument.CANONICAL);
+        IMap<String, Object> map = cluster.instance().getMap(PrivacyCluster.OVERSIGHT_MAP);
+
+        // The index is not covered: a listed peer shows content it never held. Nothing is written; once covered,
+        // the same index ends the scope.
+        PauseDocument.Peers covered = index.pauseDocument().peers;
+        index.pauseDocument().peers = () -> new PauseDocument.PeerView(
+                Map.of(java.util.UUID.randomUUID(), new PauseDocument.Digest(new byte[16])), 0, true, 0, -1, false,
+                true);
+        Object rawBefore = map.get(key);
+        PauseDocumentTest.assertUnavailable("index not covered", () -> index.endScope(uncovered));
+        assertThat(map.get(key)).as("nothing written").isEqualTo(rawBefore);
+        assertThat(document(cluster).live(Target.scope(uncovered))).as("the pause is kept").isNotEmpty();
+        index.pauseDocument().peers = covered;
+        index.endScope(uncovered);
+        assertThat(document(cluster).live(Target.scope(uncovered))).isEmpty();
+
+        // The document goes absent after the index held it: unavailable, and no putIfAbsent. Restored, it ends.
+        Object saved = map.get(key);
+        map.delete(key);
+        PauseDocumentTest.assertUnavailable("absent with held", () -> index.endScope(absent));
+        assertThat(map.get(key)).as("still absent").isNull();
+        map.put(key, saved);
+        index.endScope(absent);
+        assertThat(document(cluster).live(Target.scope(absent))).isEmpty();
+
+        // The member stops serving (closing it shuts the embedded instance down): CLUSTER_OPERATION_REFUSED.
+        cluster.close();
+        assertThatThrownBy(() -> index.endScope(stopped)).isInstanceOf(ClusterOperationRefusedException.class)
+                .satisfies(refusal -> assertThat(((ClusterOperationRefusedException) refusal).code())
+                        .isEqualTo("CLUSTER_OPERATION_REFUSED"));
+        state.close();
+    }
+
+    @Test
+    void aSweepFailureKeepsThePauseAndThrowsTheSweepsRefusal() {
+        singleMember();
+        populate(ENDED, "subject-1");
+        PrivacyCluster cluster = members[0];
+        var index = index(cluster);
+        index.maps = name -> {
+            if (!PrivacyCluster.BUDGET_MAP.equals(name)) {
+                return cluster.instance().getMap(name);
+            }
+            return (IMap<String, ?>) java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
+                    new Class<?>[] {IMap.class}, (proxy, method, args) -> {
+                        if (method.getName().equals("tryLock")) {
+                            throw new IllegalArgumentException("lease too long");
+                        }
+                        return invokeOn(method, cluster.instance().getMap(name), args);
+                    });
+        };
+
+        assertThatThrownBy(() -> index.endScope(ENDED)).isInstanceOf(ClusterOperationRefusedException.class);
+
+        assertThat(document(cluster).live(Target.scope(ENDED))).hasSize(1);
+        assertThat(cluster.instance().getMap(PrivacyCluster.IDENTITY_MAP).isEmpty()).isTrue();
+    }
+
+    @Test
+    void aReplayedOlderDocumentAtAColdIndexDoesNotLiftOtherScopesAndEndScopeTombstonesOnlyTheEndedScopesIds() {
+        singleMember();
+        Map<Id, Target> elements = new HashMap<>();
+        elements.put(new Id(1, 1), Target.scope(ENDED));
+        elements.put(new Id(1, 2), Target.scope(KEPT));
+        elements.put(new Id(1, 3), Target.tool("search"));
+        elements.put(new Id(1, 4), Target.ALL);
+        PauseDocumentTest.plant(members[0], new Doc(3, 0, System.currentTimeMillis(), "replay", elements,
+                Set.of(new Id(1, 4))));
+
+        index(members[0]).endScope(ENDED);
+
+        Doc paused = document(members[0]);
+        assertThat(paused.live(Target.scope(ENDED))).isEmpty();
+        assertThat(paused.live(Target.scope(KEPT))).hasSize(1);
+        assertThat(paused.live(Target.tool("search"))).hasSize(1);
+        assertThat(paused.live(Target.ALL)).as("tombstoned in the replay, stays so").isEmpty();
+        assertThat(paused.tombstones()).containsExactlyInAnyOrder(new Id(1, 1), new Id(1, 4));
+    }
+
+    @Test
+    void anUnverifiedMemberKeepsThePauseAndTheCallThrowsTheClusterCodeAfterTheDataIsErased() {
+        // Two keyed members and a third that holds no key: inside the grace the cluster still serves, with one unverified.
+        String name = TestMembers.uniqueName("scope-end-unverified");
+        int first = FreePorts.consecutive(3);
+        java.util.List<String> all = java.util.List.of("127.0.0.1:" + first, "127.0.0.1:" + (first + 1),
+                "127.0.0.1:" + (first + 2));
+        var fixture = new MemberCardTest.Fixture();
+        com.hazelcast.core.HazelcastInstance outsider = null;
+        try {
+            var settings = MemberCardTest.Fixture.settings(ClusterSecuritySettings.UnverifiedMemberAction.REFUSE);
+            PrivacyCluster a = fixture.keyed(name, first, all, TestMembers.KEYS, settings,
+                    new MemberCardTest.Fixture.Metrics(), new RecordingLogger(), false);
+            PrivacyCluster b = fixture.keyed(name, first + 1, all, TestMembers.KEYS, settings,
+                    new MemberCardTest.Fixture.Metrics(), new RecordingLogger(), false);
+            outsider = MemberCardTest.Fixture.plain(name, first + 2, all);
+            assertThat(MemberCardTest.Fixture.awaitMembers(a, 3)).isTrue();
+            assertThat(MemberCardTest.Fixture.awaitMembers(b, 3)).isTrue();
+            HazelcastOversightTest.tickCardsAndWait(a, "a");
+            HazelcastOversightTest.tickCardsAndWait(b, "b");
+            assertThat(a.securityStatus().serving()).isTrue();
+            assertThat(a.securityStatus().unverifiedCount()).isEqualTo(1);
+            var state = new HazelcastOversightState(a, TIMEOUT);
+            state.pauseScope(ENDED);
+            new HazelcastScopeBudget(a, TIMEOUT).tryRead(ENDED, "subject-1", 5);
+
+            assertThatThrownBy(() -> index(a).endScope(ENDED)).isInstanceOf(ClusterOperationRefusedException.class)
+                    .satisfies(refusal -> assertThat(((ClusterOperationRefusedException) refusal).code())
+                            .isEqualTo("CLUSTER_OPERATION_REFUSED"));
+
+            assertThat(a.instance().getMap(PrivacyCluster.BUDGET_MAP).isEmpty()).as("data erased").isTrue();
+            assertThat(document(a).live(Target.scope(ENDED))).as("the pause is kept").hasSize(1);
+            state.close();
+        } finally {
+            if (outsider != null) {
+                outsider.shutdown();
+            }
+            fixture.closeAll();
+        }
+    }
+
+    @Test
+    void aLockHeldOnTheDocumentExhaustsTheDeadlineKeepsThePauseAndThrowsTheLockTimeout() throws Exception {
+        singleMember();
+        Duration timeout = Duration.ofSeconds(1);
+        var state = new HazelcastOversightState(members[0], timeout);
+        state.pauseScope(ENDED);
+        populate(ENDED, "subject-1");
+        PrivacyCluster cluster = members[0];
+        IMap<String, Object> pauses = cluster.instance().getMap(PrivacyCluster.OVERSIGHT_MAP);
+        String key = cluster.keyedNames().mapKey(PrivacyCluster.OVERSIGHT_MAP, PauseDocument.CANONICAL);
+        java.util.concurrent.CountDownLatch locked = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        Thread holder = new Thread(() -> {
+            pauses.lock(key);
+            locked.countDown();
+            try {
+                release.await();
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        holder.start();
+        assertThat(locked.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        try {
+            var index = new ScopeIdentityIndex(cluster, PrivacyMetrics.none(), timeout);
+            long start = System.nanoTime();
+            assertThatThrownBy(() -> index.endScope(ENDED)).isInstanceOf(ClusterLockTimeoutException.class);
+            long elapsed = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+            assertThat(elapsed).as("one shared deadline, the pause step included").isLessThan(1700);
+        } finally {
+            pauses.forceUnlock(key);
+            release.countDown();
+            holder.join();
+        }
+
+        assertThat(cluster.instance().getMap(PrivacyCluster.IDENTITY_MAP).isEmpty()).as("data erased").isTrue();
+        assertThat(document(cluster).live(Target.scope(ENDED))).as("the pause is kept").isNotEmpty();
+    }
+
+    @Test
+    void underTheHundredMillisecondFloorThePauseStepIsSkippedAndCountedAsALockTimeout() {
+        singleMember();
+        var state = new HazelcastOversightState(members[0], TIMEOUT);
+        state.pauseScope(ENDED);
+
+        assertThatThrownBy(() -> new ScopeIdentityIndex(members[0], PrivacyMetrics.none(), Duration.ofMillis(100))
+                .endScope(ENDED)).isInstanceOf(ClusterLockTimeoutException.class);
+
+        assertThat(document(members[0]).live(Target.scope(ENDED))).hasSize(1);
+    }
+
+    @Test
+    void anOversizeEncodeIsRefusedAndThePauseIsKept() {
+        singleMember();
+        Map<Id, Target> elements = new HashMap<>();
+        elements.put(new Id(1, 1), Target.scope(ENDED));
+        Set<Id> tombstones = new HashSet<>();
+        for (int i = 0; i < PauseDocument.FORMAT_BOUND; i++) {
+            tombstones.add(new Id(2, i));
+        }
+        PauseDocumentTest.plant(members[0], new Doc(3, 0, System.currentTimeMillis(), "full", elements, tombstones));
+        Doc before = document(members[0]);
+
+        assertThatThrownBy(() -> index(members[0]).endScope(ENDED)).isInstanceOf(ClusterOperationRefusedException.class);
+
+        assertThat(document(members[0])).isEqualTo(before);
+        assertThat(document(members[0]).live(Target.scope(ENDED))).hasSize(1);
     }
 }

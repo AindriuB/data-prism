@@ -167,6 +167,7 @@ class CachingSyntheticValueSourceTest {
         caching.syntheticValue("s-1", PrivacyNamespace.PERSON_NAME, scope("CASE-KEEP"));
         budget.tryRead("CASE-A", "s-1", 5);
 
+        MemberCardTest.establishPauseDocument(cluster);
         index.endScope("CASE-A");
 
         assertThat(index.subjectFor("CASE-A", PrivacyNamespace.PERSON_NAME, synthetic)).isEmpty();

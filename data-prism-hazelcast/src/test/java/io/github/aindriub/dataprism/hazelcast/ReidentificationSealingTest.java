@@ -161,6 +161,7 @@ class ReidentificationSealingTest {
     @Test
     void endScopeStillRemovesTheScopesSealedEntries() {
         String synthetic = issue();
+        MemberCardTest.establishPauseDocument(cluster);
         new ScopeIdentityIndex(cluster, metrics).endScope(SCOPE);
         assertThat(index().isEmpty()).isTrue();
         assertThat(cluster.instance().getMap(PrivacyCluster.IDENTITY_MAP).isEmpty()).isTrue();

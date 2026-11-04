@@ -224,6 +224,7 @@ class ApprovalBoundedCleanupTest {
             release.countDown();
         }
         // Once the lock is free the scope can be ended.
+        MemberCardTest.establishPauseDocument(members[0]);
         new ScopeIdentityIndex(members[0], metrics, TIMEOUT).endScope("scope-f");
         assertThat(store.find("f-1")).isEmpty();
     }

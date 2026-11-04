@@ -12,6 +12,8 @@ import io.github.aindriub.dataprism.oversight.ApprovalStore;
 import io.github.aindriub.dataprism.oversight.OversightSnapshot;
 import io.github.aindriub.dataprism.oversight.OversightState;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
@@ -27,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Kill switch, per-tool and per-scope pause, and tool-call approvals. Served only on the operator
@@ -46,6 +49,10 @@ final class OversightOperatorController {
 
     private static final int MAX_NAME = 256;
 
+    private static final Logger LOG = LoggerFactory.getLogger(OversightOperatorController.class);
+
+    /** Whether the unreadable-snapshot code has been logged; once, so a failing store cannot flood the log. */
+    private final AtomicBoolean loggedUnreadable = new AtomicBoolean();
     private final OperatorCallers callers;
     private final OperatorAudit audit;
     private final OversightState state;
@@ -129,7 +136,29 @@ final class OversightOperatorController {
             }
             throw new OperatorException(HttpStatus.SERVICE_UNAVAILABLE, code);
         }
-        return Map.of("status", "RESUMED", "target", target.type().name());
+        return Map.of("status", "RESUMED", "target", target.type().name(), "stillPaused", stillPaused(target));
+    }
+
+    /**
+     * Whether the resumed target is still paused, read from a snapshot taken after the resume. A global pause still
+     * refuses calls to a tool or scope, so it keeps those targets paused. Fails closed: a snapshot that cannot be
+     * read reports paused, since a lift cannot be confirmed. The resume has already applied and been audited.
+     */
+    private boolean stillPaused(Target target) {
+        try {
+            OversightSnapshot snapshot = state.snapshot();
+            return switch (target.type()) {
+                case ALL -> snapshot.allPaused();
+                case TOOL -> snapshot.pausedTools().contains(target.name()) || snapshot.allPaused();
+                case SCOPE -> snapshot.pausedScopes().contains(target.name()) || snapshot.allPaused();
+            };
+        } catch (RuntimeException unreadable) {
+            if (loggedUnreadable.compareAndSet(false, true)) {
+                LOG.warn("{}: the state after a resume could not be read, so the target is reported still paused",
+                        unavailableCode(unreadable));
+            }
+            return true;
+        }
     }
 
     @GetMapping("/operator/state")

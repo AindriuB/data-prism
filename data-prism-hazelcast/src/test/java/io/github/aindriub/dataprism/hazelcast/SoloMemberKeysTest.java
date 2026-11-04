@@ -102,8 +102,9 @@ class SoloMemberKeysTest {
                     expected.mapKey(PrivacyCluster.APPROVAL_PENDING_MAP, "TOOL_CALL" + NUL + "=" + PRINCIPAL));
             assertThat(keysOf(cluster, PrivacyCluster.CALLER_RATE_MAP)).containsExactly(
                     expected.mapKey(PrivacyCluster.CALLER_RATE_MAP, PRINCIPAL));
+            // The oversight map holds the one pause document, under the keyed name of its fixed canonical string.
             assertThat(keysOf(cluster, PrivacyCluster.OVERSIGHT_MAP)).containsExactly(
-                    expected.scoped(PrivacyCluster.OVERSIGHT_MAP, SCOPE, SCOPE + NUL + "paused"));
+                    expected.mapKey(PrivacyCluster.OVERSIGHT_MAP, PauseDocument.CANONICAL));
 
             // The lock key is the keyed name too: a lock held on the recomputed budget key stops the read.
             assertThat(cluster.keyedNames().mapKey(PrivacyCluster.CALLER_RATE_MAP, PRINCIPAL))

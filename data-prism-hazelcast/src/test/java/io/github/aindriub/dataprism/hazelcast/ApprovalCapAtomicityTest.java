@@ -105,6 +105,7 @@ class ApprovalCapAtomicityTest {
     @Test
     void endingTheScopeThroughTheIdentityIndexFreesTheSlot() {
         store.create(pending("p-1", "scope-a"), 1);
+        MemberCardTest.establishPauseDocument(cluster);
         new ScopeIdentityIndex(cluster).endScope("scope-a");
         store.create(pending("p-2", "scope-b"), 1);
     }

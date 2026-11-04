@@ -152,7 +152,8 @@ class ResumeAuditOrderingTest {
     void aResumeThatAppliesWritesOnlyTheAllow() {
         pauseEverything();
         resumeThrows = false;
-        assertThat(controller.resume(TARGETS.get(0))).isEqualTo(Map.of("status", "RESUMED", "target", "ALL"));
+        assertThat(controller.resume(TARGETS.get(0))).isEqualTo(Map.of("status", "RESUMED", "target", "ALL",
+                "stillPaused", false));
         assertThat(events).extracting(AuditEvent::policyDecision).containsExactly("ALLOW:RESUMED");
         assertThat(real.allPaused()).isFalse();
     }
