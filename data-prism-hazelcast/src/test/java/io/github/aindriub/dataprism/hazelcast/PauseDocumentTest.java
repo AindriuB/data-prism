@@ -480,6 +480,36 @@ class PauseDocumentTest {
     }
 
     @Test
+    void aRetainThatLandsBetweenAReleasesLastUserDecisionAndItsStopKeepsItsOwnMaintenance() {
+        solo();
+        CountingInstance counting = new CountingInstance(cluster.instance());
+        PauseDocument.Dependencies first = PauseDocument.Dependencies.of(cluster, metrics, TIMEOUT);
+        PauseDocument.Dependencies second = PauseDocument.Dependencies.of(cluster, metrics, TIMEOUT);
+        PauseDocument doc = new PauseDocument(cluster, () -> counting.instance,
+                new PauseDocument.Environment(new Nanos(), new Fixture.TestClock(), Duration.ofMillis(100)), true,
+                StubPeers.lone());
+        documents.add(doc);
+        doc.retain(first);
+        doc.pause(Target.tool("t"), first);
+        assertThat(counting.added.get()).isEqualTo(1);
+        // A second state opens exactly in the gap: after the release decided it was the last user, before it stops.
+        doc.betweenReleaseAndStop = () -> {
+            doc.betweenReleaseAndStop = () -> { };
+            doc.retain(second);
+        };
+
+        doc.release(first);
+
+        assertThat(counting.added.get()).as("the new state registered its own listener").isEqualTo(2);
+        assertThat(counting.removed.get()).as("only the released user's listener was removed").isEqualTo(1);
+        map(cluster).delete(key(cluster));
+        assertThat(Fixture.await(20, () -> map(cluster).get(key(cluster)) != null))
+                .as("the new state still ticks: the deleted document is repaired").isTrue();
+        doc.release(second);
+        assertThat(counting.removed.get()).isEqualTo(2);
+    }
+
+    @Test
     void aStartThatFailsUndoesTheUserAndALaterRetainStartsAgain() {
         solo();
         CountingInstance counting = new CountingInstance(cluster.instance());

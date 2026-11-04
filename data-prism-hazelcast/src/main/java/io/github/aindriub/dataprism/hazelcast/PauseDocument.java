@@ -1689,21 +1689,41 @@ final class PauseDocument {
 
     /** A user is done: the last release stops the ticker and the merge listener. The document stays. */
     void release(Dependencies deps) {
-        boolean last;
+        Maintenance detached = null;
         synchronized (monitor) {
             retained.remove(deps);
             if (users > 0) {
                 users--;
             }
-            last = users == 0;
             if (!retained.isEmpty()) {
                 // Hand the ticks to a user that is still live, not the one that has just gone.
                 tickDependencies = retained.get(retained.size() - 1);
             }
+            if (users == 0) {
+                // Detached in the same step as the transition to zero users: a retain that follows sees no executor
+                // and starts a fresh one, and what is stopped below can no longer be a newer user's.
+                detached = detachMaintenance();
+            }
         }
-        if (last) {
-            stopTicking();
+        betweenReleaseAndStop.run();
+        if (detached != null) {
+            stop(detached);
         }
+    }
+
+    /** For tests: runs after a release has detached its maintenance and before it stops it. */
+    volatile Runnable betweenReleaseAndStop = () -> { };
+
+    /** The executor and the lifecycle listener of the maintenance, taken away from the document. */
+    private record Maintenance(ScheduledExecutorService executor, UUID listener) {
+    }
+
+    /** Under the monitor: takes the maintenance resources away from the document. */
+    private Maintenance detachMaintenance() {
+        Maintenance detached = new Maintenance(executor, lifecycleListener);
+        executor = null;
+        lifecycleListener = null;
+        return detached;
     }
 
     private void tickWhileRunning() {
@@ -1748,20 +1768,21 @@ final class PauseDocument {
     }
 
     private void stopTicking() {
-        ScheduledExecutorService stopping;
-        UUID listener;
+        Maintenance detached;
         synchronized (monitor) {
-            stopping = executor;
-            executor = null;
-            listener = lifecycleListener;
-            lifecycleListener = null;
+            detached = detachMaintenance();
         }
-        if (stopping != null) {
-            stopping.shutdownNow();
+        stop(detached);
+    }
+
+    /** Outside the monitor: stops what was detached. */
+    private void stop(Maintenance detached) {
+        if (detached.executor() != null) {
+            detached.executor().shutdownNow();
         }
-        if (listener != null) {
+        if (detached.listener() != null) {
             try {
-                instances.get().getLifecycleService().removeLifecycleListener(listener);
+                instances.get().getLifecycleService().removeLifecycleListener(detached.listener());
             } catch (RuntimeException gone) {
                 // The instance may already be shut down.
             }
