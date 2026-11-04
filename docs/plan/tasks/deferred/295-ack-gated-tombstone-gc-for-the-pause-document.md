@@ -85,3 +85,6 @@ A tombstone and the element it covers are pruned together, once every verified m
 - Neutral, invented scope and tool names. Keys are generated test bytes.
 - No Hazelcast Enterprise feature (D-0.4.1-A). No new dependency.
 - No sleeps. Both clocks are injected; waits are on events or polled state with a bound.
+
+## Deferred past 0.8.0 (wave-7 record, 2026-11-04)
+Moved here from `tasks/` when 228 merged at contract version 2.45. This brief must be reissued against F1 to F5 of 228's contract before anyone picks it up. Its text relies on 228's version 1 (lapsed-lease recovery, sequence-based freshness), neither of which exists. Its reissue must also say how pruning a tombstone interacts with `Digest(held)`, with Seen and with peers' card digests, add `Peers.verifiedMembers()` and use the hooks 228's R7 lists instead of `Peers.highestReportedSequence()`. See "Ownership and ordering" in `tasks/retired/228-signed-leased-pause-document.md`. Without it, a cluster at 228's cap of 8,176 non-`all` elements can only `pause all`, up to the 65,536 format bound.

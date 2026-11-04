@@ -38,3 +38,6 @@ The public surface freezes at 0.9.0, and most of it is not pinned today (registe
 - Documenting the codes (261) or deciding anything the register left open.
 - Pinning configuration keys (`PropertyNamesFrozenTest` already does).
 - The 0.9 surface (batch, bulk, `describe_entity_model`).
+
+## Note from the wave-7 record (2026-11-04)
+When this task lists the sources of `PrivacyClusterRefusal` codes, include task 228's insertion, `CLUSTER_SETTINGS_MISMATCH` (merged in PR #191), alongside 227's and 287's.

@@ -268,12 +268,14 @@ Lock key: the pending key.
 | | |
 |---|---|
 | Key | Keyed hash of the member UUID (2.3.2). One reserved key, the literal `sentinel`, holds the sentinel (4.7): it cannot be the keyed hash of a UUID, because those keys are 43 characters of URL-safe base64 and `sentinel` is eight. Card readers skip the reserved key |
-| Value | Sealed card: member UUID, accepted cluster key ids, format version, lease (2.4, d2) |
+| Value | Sealed card (format version 2, task 228): member UUID, accepted cluster key ids, key check values, a per-instance `cardSequence`, the `pauseDigest` of the instance's main pause document (or a distinct no-document marker), and the lease end (2.4, d2). The digest is the first 16 bytes of SHA-256 over the count-prefixed sorted element ids, then the count-prefixed sorted tombstone ids. A version-1 card is rejected |
 | Lifetime | A card: the lease (`pause-lease`), refreshed by its member. The sentinel: none; it is never evicted and has no TTL |
 | **Read** | Without the key: member count and card sizes only |
 | **Write** | Without the key: cannot forge a card (AEAD; associated data binds the map key, which is the keyed hash of the member UUID). Garbage is a tamper count |
 | **Delete / replay** | Make a member unverified, or hide an accepted key, until the next refresh: fail-closed effects only (2.4, 4.6) |
 | Recoverable | Yes. Each member re-writes its own card |
+
+The card is published on change and at half a lease, with one write in flight per instance. A reader keeps, per listed member, the latest accepted `cardSequence`, the highest sighted one, its first-sighting time and whether it was inside its lease then. A card is valid only by the member-card checks of task 227, the highest sighted sequence, a first sighting inside its lease, and the first-sighting time plus one lease. A card replayed with a lower `cardSequence` is no valid card.
 
 ---
 
@@ -395,21 +397,27 @@ serves both.
 #### 2.3.3 Oversight (pauses) need a different design
 
 Sealing a `Boolean` does nothing for the dangerous attack, which is a **delete**.
-Recommended design (OD-3):
+Recommended design (OD-3), as built by task 228 (contract version 2.45; the
+brief and its Outcome are in `docs/plan/tasks/retired/`):
 
-- Pause state is **one sealed document** under a fixed, keyed name: the full set of pauses, a **sequence** number, a **refresh** counter, an **issued-at** time and the issuing member. Pause and resume write a new document with `sequence + 1` and `refresh = 0`. A lease refresh re-seals the same pauses with `refresh + 1`. Documents are ordered by (sequence, refresh), compared lexicographically.
-- **Writes are compare-and-set.** Every write is `IMap.replace(name, oldSealedValue, newSealedValue)` (replace-if-equal on the exact sealed string the writer read), or `putIfAbsent` when it believes the document is absent. A lost race is re-read and retried, never overwritten, so two members cannot silently clobber each other's pause or resume. Each instance keeps the highest (sequence, refresh) it has accepted in memory and **never accepts a lower one**. A deleted entry cannot un-pause an instance that has already seen the pause. A replayed older document is rejected by every instance that saw a newer one.
+- Pause state is **one sealed document** under a fixed, keyed name: an **observed-remove set** of pause elements and tombstones. A pause adds an element; a resume adds tombstones for the elements its member has observed for that target. Content only ever **grows by union**, so a deleted, forged or replayed entry cannot lift a pause. Each document still carries a sequence and a refresh counter, but acceptance is decided by the union and the freshness gate below, not by order: no sequence condition applies to a restore, and refresh writes are not evidence.
+- **Writes are lock, read and compute from `held ⊔ stored`**, then compare-and-set under a commit guard. A lost race is re-read and retried, never overwritten, so two members cannot silently clobber each other's pause or resume. The cap is **8,176 non-`all` elements**; the format bound is 65,536 elements and 65,536 tombstones (OD-17).
 - **Bounded writes (coordinator decision 2026-10-21; spike 219 answer 10).** `IMap.replace(key, old, new)`, `remove(key, value)`, `set`, `put`, `putIfAbsent` and `delete` wait without bound on a key another owner has locked. So every compare-and-set or removal on a key that can be locked (the pause document, the sweeper's re-seals, the sentinel and the id claims) runs only while holding that key's lock, taken by the bounded `tryLock` of `ClusterLocks.acquire`, or through a timed variant (`tryPut`, `tryRemove`) with the lock timeout. A timeout fails closed in the store's existing way (`CLUSTER_LOCK_TIMEOUT`). Correctness still rests on the compare-and-set, never on the lock.
-- **Equal (sequence, refresh) with different content** can only come from a split-brain merge or from a key holder behaving badly. The rule is fail closed: the instance adopts the **union** of the two pause sets, counts `pause.conflict`, and writes the union at `max(sequence) + 1` by compare-and-set. This is the safe direction for a pause; the cost is that a resume made on one side of a partition can be undone by the merge, and the operator has to resume again (OD-14).
-- **Split-brain merge.** The map's Hazelcast merge policy cannot merge sealed payloads, so the application reconciles. Reconciliation runs **only** when the member's `LifecycleEvent` reports `MERGED` (the member's side rejoined a healed cluster), not on a timer or on every read. On that event each instance compares its in-memory highest document with the cluster document. If the instance holds a pause the cluster document lacks, or the two documents have the same order but different content, it writes the **union** by compare-and-set at `max(sequence of the documents involved) + 1` with `refresh = 0`; when the orders differ the higher sequence still gets the union written one above it, so the result is never lower than either side. "Highest sequence wins" is the alternative and is unsafe, because a pause issued on the smaller side is dropped (OD-14).
-- The document has a **lease**. Any member refreshes it (`refresh + 1`) when half of it is spent. Freshness is measured from the instance's **local monotonic receipt time**: an instance records `System.nanoTime()` when it accepts a document with a higher (sequence, refresh) than it held, and treats the document as fresh for one lease from then. The wall clock is used only to gate a **cold start**: an instance with no memory rejects a document whose `issued-at` is older than the lease plus `clock-skew-tolerance`, so a replayed old document is not accepted as fresh on a restart; after that first acceptance the wall clock is not consulted, so skew between members cannot make a healthy document look stale. An instance treats a document that is **absent, unauthentic or not fresh as "everything paused"**, and refuses to serve; the caller is refused with `OVERSIGHT_UNAVAILABLE` (4.4). A delete therefore becomes a denial of service, which is the safe direction, and it is visible (`dataprism.cluster.pause.fresh`).
-- **Missing document.** Whether a member re-writes a document it finds absent from its own memory is OD-15. Proposed: a member may do so only with `putIfAbsent`, only from a document it accepted within the last lease, and only if no verified member reports a higher sequence. Without that rule a member that missed a pause (partitioned) could re-write an older state and lift a pause that others hold.
-- First start of a cluster: a member that finds no document and no other member writes the first one by `putIfAbsent`. A member that finds no document while other verified members exist stays not-ready until one appears, or the OD-15 rule restores it, or it is the only member.
+- **A failed operator pause is still held locally.** When a pause cannot commit within its bound (lock timeout, CAS retries exhausted, or a Hazelcast failure), the member adds the element to its own held content anyway, so its card digest moves, its peers lapse until a document covers it, and its tick repair writes the element once the lock is free. At most one unlanded local element is kept per target. The operator call still fails with its existing code.
+- **Split-brain merge.** The map's Hazelcast merge policy cannot merge sealed payloads, so the application reconciles. Every read and every heal merges the stored authentic document into what is held, by union. A restore is a union with no sequence condition, and refresh writes are not evidence. A resume on one side of a partition tombstones only what that side observed (OD-14).
+- **Freshness is one gate**, judged on what the member holds, its peers' card digests (1.9) and its own clock, and a member is fresh only for one lease (`pause-lease`, default `PT30S`) after the gate last passed. The gate requires authentic stored content to be held; that the member is **Covered** over its tracked peers; that Seen includes every authentic stored document the member has merged; the cold-start clause; and that peer state is known (no completed look, a stale look, or a change of member set makes it unknown). The brief bounds the worst-case staleness window at three leases plus `clock-skew-tolerance` (default `PT5S`). A document that is **absent, unauthentic or not fresh means "everything paused"**: the caller is refused with `OVERSIGHT_UNAVAILABLE` (4.4). A delete therefore becomes a denial of service, which is the safe direction, and it is visible (`dataprism.cluster.pause.fresh`).
+- **Cold start.** The wall clock gates only a cold start: a member with no memory accepts a document whose `issued-at` is within the lease plus `clock-skew-tolerance`, so a replayed old document is not accepted as fresh on a restart.
+- **Missing document and first start.** Whether a member re-writes an absent document is OD-15. First start needs a member with nothing held over an ABSENT document that is either alone in the member list (no uptime wait) or the oldest member with one lease of uptime, every member verified at the decision, a clean run of looks spanning a full lease, the latest look at most half a lease old, and known peer state. Any other member waits.
+- **Resume and `endScope` refuse more often than pause.** Both are refused with `CLUSTER_OPERATION_REFUSED` when any live wrapper of the instance is not serving, when a member is unverified, or while peer state is unknown; and with `OVERSIGHT_UNAVAILABLE` when there is no held document, when the stored one is ABSENT, UNREADABLE or gated, or when the gate fails at the call's own check. `resume` answers `stillPaused`.
 
-Residual, stated plainly: a captured pre-pause document, replayed to an instance
-that has not yet seen the pause (a fresh start) and not older than the cold-start
-gate, lifts the pause for at most the lease. The default lease is the knob that
-sets that window.
+Residuals, stated plainly (the full list is in the Residuals section of task 228's retired brief):
+
+- A captured pre-pause document, replayed to a lone member that restarts and has not yet seen the pause, and not older than the cold-start gate, lifts the pause for at most that window. The lease is the knob that sets it. A future-dated authentic document widens the window by however far its writer's clock ran ahead; a member with peers is still bounded by Covered.
+- **Cold members can refuse for about one tick interval after a peer's write**, until the peers republish their cards. A member that has just started or rejoined is the cold case. **Warm members stay covered** and keep serving.
+- Deleting or blocking a peer's cards makes every member that judges that peer lapse within one lease, and membership churn keeps peer state unknown. Both are denials of service that fail closed.
+- A pause held only by members that have left the member list can be lost, and a cold member partitioned off alone first-starts and serves without its peers' pauses until the split heals; the merge on healing restores them.
+- A pause refused with `OVERSIGHT_UNAVAILABLE` or `CLUSTER_LOCK_TIMEOUT` may still be held locally and enforced through coverage, while the audit records a denial. A pause held only locally is lost if that member restarts before its repair lands.
+- With no tombstone garbage collection (OD-17), every non-`all` pause keeps its element slot after it is resumed.
 
 #### 2.3.4 Approvals and replay
 
@@ -668,9 +676,9 @@ a scope or a map entry (boundary 7).
 | `dataprism.cluster.seal.unsupported_format` | `CLUSTER_SEAL_UNSUPPORTED_FORMAT` | counter | An envelope with a format version or key id this member cannot read |
 | `dataprism.cluster.seal.salt_rejected` | `CLUSTER_SEAL_SALT_REJECTED` | counter | Salt-cache admissions refused under a spray of distinct salts |
 | `dataprism.cluster.members.unverified` | `CLUSTER_MEMBERS_UNVERIFIED` | gauge | Joined members without a valid member card |
-| `dataprism.cluster.pause.fresh` | `CLUSTER_PAUSE_FRESH` | gauge | 1 when the pause document is present, authentic and inside its lease; else 0 |
-| `dataprism.cluster.pause.age_seconds` | `CLUSTER_PAUSE_AGE_SECONDS` | gauge | Age of the accepted document, from local monotonic receipt |
-| `dataprism.cluster.pause.conflict` | `CLUSTER_PAUSE_CONFLICT` | counter | Equal-order documents with different content were merged by union (2.3.3) |
+| `dataprism.cluster.pause.fresh` | `CLUSTER_PAUSE_FRESH` | gauge | 1 when the freshness gate of 2.3.3 has passed within the last lease; else 0 |
+| `dataprism.cluster.pause.age_seconds` | `CLUSTER_PAUSE_AGE_SECONDS` | gauge | Time since the gate of 2.3.3 last passed, on the local monotonic clock |
+| `dataprism.cluster.pause.conflict` | `CLUSTER_PAUSE_CONFLICT` | counter | A stored authentic document that is not a superset of what the member holds, or one not newer than held that brings an element or tombstone held lacks, was merged by union (2.3.3). Each distinct sealed value counts at most once |
 | `dataprism.cluster.rotation.accepting_next` | `CLUSTER_ROTATION_ACCEPTING_NEXT` | gauge | Verified members whose card lists the `next` key (phase 1 gate) |
 | `dataprism.cluster.rotation.blocked` | `CLUSTER_ROTATION_BLOCKED` | counter | A write was refused because no held key is accepted by all verified members |
 | `dataprism.cluster.rotation.behind` | `CLUSTER_ROTATION_BEHIND` | gauge | 1 while this member runs with a `current` key older than the sentinel's, holding the sentinel's key only as `next`; 0 otherwise. It can read, and writes under the write-key rule |
@@ -701,7 +709,7 @@ only learns that the request was refused.
 | This member is not serving: an unverified member is present and the action is `refuse` after the grace, or the sentinel or a key check value failed | `CLUSTER_OPERATION_REFUSED` | Every path in register 3.2: admission, read budget, re-identification, operator reads and the resume write. The pause write is allowed (below) |
 | `rotation.blocked`: a write was refused because no held key is accepted by all verified members (4.6) | `CLUSTER_OPERATION_REFUSED` | The same paths |
 
-**Operator writes while the document is not fresh or the member is not serving (OD-215-16 (a)).** A pause is allowed; a resume is refused until the member serves again, because pausing is the safe direction and resuming while the cluster is in doubt is not. The serving gate never blocks the pause-document map (or the member-card map), so an operator can still pause, and a pause by `putIfAbsent` is the operator's way to re-create an absent document (2.3.3).
+**Operator writes while the document is not fresh or the member is not serving (OD-215-16 (a)).** A pause is allowed; a resume is refused until the member serves again, because pausing is the safe direction and resuming while the cluster is in doubt is not. The serving gate never blocks the pause-document map (or the member-card map), so an operator can still pause, and a pause by `putIfAbsent` is the operator's way to re-create an absent document (2.3.3). `endScope` is refused like a resume. After a full cluster start it is refused with `OVERSIGHT_UNAVAILABLE` until the first pause document exists, about one lease after first start.
 
 `CLUSTER_NOT_SERVING` and `PAUSE_STATE_STALE` are not added: a new core refusal
 class would need new catch sites in the `security`, `reidentification` and
@@ -929,7 +937,7 @@ owner chooses otherwise, the unsealed rows fall away and the isolation rows stay
 | T1 | **A member without the cluster key cannot forge an approval.** A second embedded member (and separately a Hazelcast client) with the cluster name but no key writes a plausible plaintext entry, a legacy-format entry, and random ciphertext into `dataprism.approval`; `consumeApproved`, `approve`, `find` and `pending` never return it as usable, and `seal.tamper` increments. Also with a member holding a *different* key |
 | T2 | Splice tests: a valid ciphertext copied to another key, another map, another scope or another salt, and after expiry, is rejected. A flipped bit in any of the five envelope fields, including the one that carries `expiresAt` inside the ciphertext, is rejected; so are truncation, a missing nonce field, a key id with a `.`, an unknown format and an unknown key id |
 | T3 | Identity poisoning: arbitrary data written into `dataprism.identity` never changes a returned value; output equals the generator (boundary 6) |
-| T4 | Pause: deleting the document makes every instance refuse and sets `pause.fresh` to 0; an older document is rejected by an instance that saw a newer one; an instance that restarts accepts a replayed older document **only inside the lease and the cold-start gate**, and a test asserts the window equals the configured lease; two concurrent writers, one `replace` loses and retries, neither pause is lost; equal-order documents with different content merge by union (OD-14); a member with a skewed wall clock does not make a healthy document stale |
+| T4 | Pause: deleting the document makes every instance refuse and sets `pause.fresh` to 0; an older document cannot remove an element or tombstone an instance holds, because content only grows by union; an instance that restarts accepts a replayed older document **only inside the lease and the cold-start gate**, and a test asserts the window equals the configured lease; two concurrent writers, one `replace` loses and retries, neither pause is lost; documents with different content merge by union (OD-14); a member with a skewed wall clock does not make a healthy document stale |
 | T5 | Approval replay: the tombstone and the in-memory consumed set bound reuse as stated in 2.3.4; the residual is asserted, not hidden |
 | T6 | Budget and rate limit: delete and replay of shared counts never allow more than the local floor permits per instance |
 | T7 | **`HazelcastStoredValueBoundaryTest` extended:** no key in any map contains a scope id, subject id, principal id, approval id, case id or pseudonym; every stored string matches the envelope grammar; unknown maps are still rejected; the test holds the key, opens every envelope and still recomputes allowed state from the decrypted canonical key parts and still rejects the distinctive raw-value fixture |
@@ -998,10 +1006,10 @@ On 2026-10-09 the owner delegated every decision below to the recommendation ("i
 
 **OD-3. How are pauses protected against deletion?**
 **Decided (owner delegated, 2026-10-09): option (i), the recommended one.**
-- (i) The signed, sequenced, leased document in 2.3.3, with fail-closed on absence.
+- (i) The sealed, observed-remove, leased document in 2.3.3, with fail-closed on absence.
 - (ii) Seal each flag only. A delete still lifts a pause; documented as a known limit.
 - (iii) Keep plaintext flags and rely on isolation.
-- **Recommend (i)**, with the compare-and-set, equal-order and monotonic-freshness rules in 2.3.3 (the merge and rewrite choices are OD-14 and OD-15). A pause is a safety control, and a delete that silently lifts it is the worst result in the inventory. The cost is a design with a lease, a clock-skew tolerance and a bootstrap rule. Consequence to accept: while the cluster is unreachable beyond the lease, an instance refuses everything, which is consistent with how budget already fails closed.
+- **Recommend (i)**, with the union-merge, compare-and-set and freshness-gate rules in 2.3.3 (the merge and rewrite choices are OD-14 and OD-15). A pause is a safety control, and a delete that silently lifts it is the worst result in the inventory. The cost is a design with a lease, a clock-skew tolerance and a bootstrap rule. Consequence to accept: while the cluster is unreachable beyond the lease, an instance refuses everything, which is consistent with how budget already fails closed.
 
 **OD-4. What should an instance do when the pause document is stale or absent?**
 **Decided (owner delegated, 2026-10-09): option (i), the recommended one.**
@@ -1034,6 +1042,7 @@ On 2026-10-09 the owner delegated every decision below to the recommendation ("i
 **Decided (owner delegated, 2026-10-09): option (i), the recommended one.**
 - (i) `refuse`: health `DOWN` and the instance stops serving after the grace.
 - (ii) `alert`: health stays up; metric, a rate-bounded WARN line and a health detail only (no audit event, coordinator decision 2026-10-21).
+- Note (task 228): `alert` and the unverified grace affect only the member-card serving status, never `pause.fresh`. The pause gate's cold-start clause uses its own count of members without a valid card (1.9), not task 227's count.
 - **Recommend (i)**, with `alert` as an explicit choice, for the same fail-closed reason. Consequence: an attacker who can join can take every instance out of service. They could do worse anyway (deletion, locks), and the alternative is silence.
 
 **OD-9. One key or several?**
@@ -1070,19 +1079,19 @@ D-RM-1 as recorded in `PLAN.md` says only that 1.0 supports multiple instances, 
 - (iii) "Multiple instances are supported; secure them with network controls" with no application-level claim (the OD-1 (ii) position).
 - **Recommend (i).** It states exactly what is enforced and what is not, in the same terms as 2.3.7, so a reader can check the claim against the tests in section 5. It requires the roadmap line "supported and secured" to be reworded by the owner.
 
-**OD-14. Pause document: split-brain merge and equal-order rule.**
+**OD-14. Pause document: split-brain merge.**
 **Decided (owner delegated, 2026-10-09): option (i), the recommended one.**
-- (i) Union of the pause sets on any conflict or merge (2.3.3). Fails closed; a resume on one side of a partition may be undone and must be repeated.
-- (ii) Highest (sequence, refresh) wins. Simpler; a pause issued on the smaller side of a partition is silently dropped, which lifts a pause.
+- (i) Union of the pause content on any conflict or merge (2.3.3): an observed-remove set whose content only grows. Fails closed; a pause added on one side survives the merge, and a resume tombstones only what its member had observed, so a resume may need repeating.
+- (ii) Highest document wins (the earlier sequence-and-refresh design, not built). Simpler; a pause issued on the smaller side of a partition is silently dropped, which lifts a pause.
 - (iii) Refuse everything until an operator re-issues the state.
 - **Recommend (i).** Rule 2: when the state is in doubt, the safe direction for a pause is paused.
 
 **OD-15. May a member re-write a missing pause document from its own memory?**
 **Decided (owner delegated, 2026-10-09): option (i), the recommended one.**
-- (i) Yes, with `putIfAbsent`, only from a document accepted within the last lease, and only if no verified member reports a higher sequence (2.3.3).
+- (i) Yes, as a union of what the member holds with what it reads, written under the commit guard. There is no sequence condition, and the restorer's freshness comes from the gate of 2.3.3. Because a restore is a union, it cannot lift a pause (as built, task 228).
 - (ii) No. An absent document stays a global pause until an operator issues a pause or resume, which writes a new one.
 - (iii) Yes, unconditionally.
-- **Recommend (i).** It heals a deletion without operator action, and the conditions prevent a partitioned member from re-writing an older state. (ii) is the more conservative choice; choose it if self-healing after a hostile delete is judged less valuable than having no automatic writer. (iii) is rejected because it lifts pauses.
+- **Recommend (i).** It heals a deletion without operator action, and the union prevents a partitioned member from re-writing an older state over a pause. (ii) is the more conservative choice; choose it if self-healing after a hostile delete is judged less valuable than having no automatic writer. (iii) is rejected because it lifts pauses.
 
 **OD-16. What does `PrivacyCluster.using(instance)` do about settings it cannot change?**
 **Decided (owner delegated, 2026-10-09): option (i), the recommended one.**
@@ -1091,3 +1100,10 @@ D-RM-1 as recorded in `PLAN.md` says only that 1.0 supports multiple instances, 
 - (ii) Accept, log a warning and report `clusterSecurity` health as degraded.
 - (iii) Accept only with an explicit acknowledgement property naming the unmet settings.
 - **Recommend (i) for a joining member.** An unfiltered member protocol is a code-execution surface that sealing does not address, and the integrator can set the filter on their own `Config` with one block. (iii) is the fallback if the owner wants the break softened.
+
+**OD-17. How large may the pause document grow, and when is its garbage collected?**
+**Decided (owner, 2026-11-03): option (a), as recorded in task 228.**
+- (a) No tombstone garbage collection in 0.8.0. Non-`all` pauses are refused with `CLUSTER_OPERATION_REFUSED` once the document holds 8,176 non-`all` elements. `pause all` is accepted up to the format bound of 65,536 elements and 65,536 tombstones. A union above the bound is refused as unencodable, and a stored document above it decodes as tamper, which fails closed.
+- (b) Ship acknowledgement-gated tombstone GC (task 295) in 0.8.0. Not taken: pruning a tombstone changes the digest that Covered compares, so GC needs its own design against the gate.
+- (c) Raise the cap. Not taken.
+- **Consequence.** Each pause keeps an element slot after it is resumed, so frequent scripted pause and resume of the same target uses up the cap. The recovery is a planned full cluster restart; a cluster at the cap can still `pause all`. Task 295 is deferred past 0.8.0 and must be reissued against the gate before pickup.

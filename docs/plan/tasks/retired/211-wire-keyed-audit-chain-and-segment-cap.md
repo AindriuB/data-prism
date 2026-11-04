@@ -63,3 +63,10 @@ be able to verify segments written under a retired key, or it would stop purging
 - The JSON projection's segments.
 - Security, free-text and cluster wiring (tasks 210, 209, 222, 284 and 286; 230 is deferred past 1.0 and 212 is retired, superseded by the sealed-cluster tasks).
 - `docs/audit.md` and every `docs/` file other than `docs/configuration.md` (task 213).
+
+## Outcome (2026-10-29, 0.8; PR #188)
+`dataprism.audit.hmac-key` (`key-id` with `environment-variable` or `provider-reference`), `dataprism.audit.retired-hmac-keys.<key-id>` and `dataprism.audit.segment-max-size` bind and are validated at startup. The keyed chain stays opt-in and resists a writer without the key, not the operator. Retention verifies with the current and retired keys and `allowUnkeyedWriters=false`; retired keys never reach the recorder. `ClusterKeyResolution` also compares the cluster keys and the name key against the audit keys, current and retired, so `CLUSTER_KEY_SHARED` and `NAME_KEY_SHARED` cover them.
+
+New codes beyond the brief's list: `MISSING_AUDIT_HMAC_KEY_REFERENCE` and `AUDIT_RETIRED_KEYS_REQUIRE_HMAC_KEY`. The brief's other codes shipped as named.
+
+Edits outside the Owns, accepted: the `AutoConfiguredBeanInventoryTest` expected count (one line, for the one added bean) and the `docs/plan/design/contract-register.md` rows for the new codes and properties. Follow-up kept in PLAN.md: with only `--allow-unkeyed-writers`, a broken writer is still counted as "unkeyed allowed" (Low). The PR thread carries no other written-down Low.
