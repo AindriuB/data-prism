@@ -502,7 +502,7 @@ final class PauseDocument {
 
         static Dependencies of(PrivacyCluster cluster, PrivacyMetrics metrics, Duration lockTimeout) {
             PrivacyMetrics safe = FailSafeMetrics.wrap(Objects.requireNonNull(metrics, "metrics"));
-            return new Dependencies(safe, ClusterLocks.checked(lockTimeout), cluster::securityStatus,
+            return new Dependencies(safe, ClusterLocks.checked(lockTimeout), () -> MemberCards.instanceStatus(cluster),
                     IdentityMaps.sealerFor(cluster, safe, ServingGate.open()));
         }
     }

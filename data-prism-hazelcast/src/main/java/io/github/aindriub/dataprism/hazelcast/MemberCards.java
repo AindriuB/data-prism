@@ -607,6 +607,29 @@ public final class MemberCards {
         return (Declarations) instance.getUserContext().get(DECLARATIONS_CONTEXT_KEY);
     }
 
+    /**
+     * Whether the member serves, as the instance sees it: the first live wrapper that does not serve decides, and no
+     * live wrapper is not serving. The live set is copied first and each status is read with no monitor held, so
+     * {@link Declarations} stays a leaf lock. A cluster without cards is keyless and answers for itself.
+     */
+    static ClusterSecurityStatus instanceStatus(PrivacyCluster cluster) {
+        if (cluster.memberCards().isEmpty()) {
+            return cluster.securityStatus();
+        }
+        Declarations declarations = declarationsIfAny(cluster.instance());
+        List<MemberCards> wrappers = declarations == null ? List.of() : List.copyOf(declarations.live);
+        ClusterSecurityStatus last = null;
+        for (MemberCards wrapper : wrappers) {
+            ClusterSecurityStatus status = wrapper.status();
+            if (!status.serving()) {
+                return status;
+            }
+            last = status;
+        }
+        return last != null ? last
+                : ClusterSecurityStatus.notServing(ClusterSecurityStatus.Reason.CARDS_UNAVAILABLE, 0, 0);
+    }
+
     private Declarations declarations() {
         return declarations(cluster.instance());
     }

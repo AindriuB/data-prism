@@ -37,6 +37,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.OptionalInt;
 import java.util.UUID;
@@ -677,6 +678,51 @@ class MemberCardTest {
 
     private static Sealer registeredSealer(PrivacyCluster wrapper) {
         return (Sealer) wrapper.instance().getUserContext().get("dataprism.cluster.sealer");
+    }
+
+    private static Map<String, Object> oversightEntries(PrivacyCluster wrapper) {
+        return new HashMap<>(wrapper.instance().<String, Object>getMap(PrivacyCluster.OVERSIGHT_MAP));
+    }
+
+    /** The serving precondition of a resume is the instance's verdict, not the calling wrapper's alone. */
+    @Test
+    @Timeout(120)
+    void aResumeOrEndScopeThroughAServingWrapperIsRefusedWhileAnotherWrapperOfTheInstanceDoesNotServe() {
+        PrivacyCluster[] wrappers = twoWrappers();
+        MemberCards faulty = wrappers[0].memberCards().orElseThrow();
+        for (PrivacyCluster wrapper : wrappers) {
+            wrapper.memberCards().orElseThrow().tick();
+        }
+        var state = new HazelcastOversightState(wrappers[1]);
+        state.pauseTool("search");
+        state.pauseScope("CASE-A");
+        state.pauseAll();
+        var index = new ScopeIdentityIndex(wrappers[1], PrivacyMetrics.none(), Duration.ofSeconds(10));
+
+        faulty.lookFault = () -> {
+            throw new IllegalStateException("the cluster could not be read");
+        };
+        faulty.tick();
+        assertThat(wrappers[0].securityStatus().serving()).isFalse();
+        assertThat(wrappers[1].securityStatus().serving()).as("the calling wrapper alone would serve").isTrue();
+        Map<String, Object> before = oversightEntries(wrappers[1]);
+
+        assertThatThrownBy(() -> state.resumeTool("search")).isInstanceOf(ClusterOperationRefusedException.class);
+        assertThatThrownBy(() -> state.resumeScope("CASE-A")).isInstanceOf(ClusterOperationRefusedException.class);
+        assertThatThrownBy(state::resumeAll).isInstanceOf(ClusterOperationRefusedException.class);
+        assertThatThrownBy(() -> index.endScope("CASE-A")).isInstanceOf(ClusterOperationRefusedException.class);
+        assertThat(oversightEntries(wrappers[1])).as("nothing was written").isEqualTo(before);
+
+        faulty.lookFault = () -> { };
+        faulty.tick();
+        wrappers[1].memberCards().orElseThrow().tick();
+        assertThat(wrappers[0].securityStatus().serving()).isTrue();
+        assertThat(wrappers[1].securityStatus().serving()).isTrue();
+        state.resumeTool("search");
+        assertThat(state.toolPaused("search")).as("both serve, so the resume goes through").isFalse();
+        assertThat(state.scopePaused("CASE-A")).isTrue();
+        wrappers[1].close();
+        wrappers[0].close();
     }
 
     @Test
