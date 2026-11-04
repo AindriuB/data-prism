@@ -655,7 +655,12 @@ class HazelcastOversightTest {
 
         void tick(int i) {
             if (wrappers.get(i) != null) {
-                wrappers.get(i).memberCards().orElseThrow().tick();
+                MemberCards cards = wrappers.get(i).memberCards().orElseThrow();
+                cards.tick();
+                // The card write is asynchronous and real; the clocks are injected. Wait on the write, not on time, so
+                // that no later tick of the same round reads a card that is a step behind.
+                assertThat(MemberCardTest.Fixture.await(30, () -> !cards.writeOutstanding()))
+                        .as("the card write of member " + i + " completed").isTrue();
             }
             if (states.get(i) != null) {
                 states.get(i).document().tick();
