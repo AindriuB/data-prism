@@ -1049,6 +1049,7 @@ class HazelcastOversightTest {
             java.util.concurrent.ExecutorService holder = java.util.concurrent.Executors.newSingleThreadExecutor();
             try {
                 String key = m.documentKey(0);
+                Object storedBefore = m.documentMap(0).get(key);
                 holder.submit(() -> m.documentMap(0).lock(key)).get();
 
                 assertThatThrownBy(() -> m.state(0).pauseTool("p"))
@@ -1063,8 +1064,7 @@ class HazelcastOversightTest {
                 assertThat(m.states.get(0).document().accepted().elements().values().stream()
                         .filter(PauseDocument.Target.tool("p")::equals).count()).as("one unlanded element").isEqualTo(1);
                 assertThat(m.tools(0)).as("A honours it").contains("p");
-                assertThat(m.storedSequence(0)).as("nothing was written").isLessThan(
-                        m.states.get(0).document().acceptedSequence());
+                assertThat(m.documentMap(0).get(key)).as("nothing was written").isEqualTo(storedBefore);
 
                 // A's card now carries a digest B has never seen; B's gate cannot pass, and its lease runs out.
                 for (int step = 0; step < 6; step++) {
