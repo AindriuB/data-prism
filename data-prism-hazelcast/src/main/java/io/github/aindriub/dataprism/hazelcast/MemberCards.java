@@ -616,6 +616,11 @@ public final class MemberCards {
         if (cluster.memberCards().isEmpty()) {
             return cluster.securityStatus();
         }
+        // A wrapper that is closed or has not started refuses whatever the others say.
+        ClusterSecurityStatus own = cluster.securityStatus();
+        if (!own.serving()) {
+            return own;
+        }
         Declarations declarations = declarationsIfAny(cluster.instance());
         List<MemberCards> wrappers = declarations == null ? List.of() : List.copyOf(declarations.live);
         ClusterSecurityStatus last = null;

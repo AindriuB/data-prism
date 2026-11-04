@@ -36,8 +36,8 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.OptionalInt;
 import java.util.UUID;
@@ -723,6 +723,28 @@ class MemberCardTest {
         assertThat(state.scopePaused("CASE-A")).isTrue();
         wrappers[1].close();
         wrappers[0].close();
+    }
+
+    /** A closed wrapper refuses whatever its serving siblings say. */
+    @Test
+    @Timeout(120)
+    void aResumeThroughAClosedWrapperIsRefusedWhileASiblingServes() {
+        PrivacyCluster[] wrappers = twoWrappers();
+        for (PrivacyCluster wrapper : wrappers) {
+            wrapper.memberCards().orElseThrow().tick();
+        }
+        var closedState = new HazelcastOversightState(wrappers[0]);
+        var servingState = new HazelcastOversightState(wrappers[1]);
+        servingState.pauseTool("search");
+        wrappers[0].close();
+        wrappers[1].memberCards().orElseThrow().tick();
+        assertThat(wrappers[1].securityStatus().serving()).isTrue();
+        Map<String, Object> before = oversightEntries(wrappers[1]);
+
+        assertThatThrownBy(() -> closedState.resumeTool("search")).isInstanceOf(ClusterOperationRefusedException.class);
+        assertThat(oversightEntries(wrappers[1])).as("nothing was written").isEqualTo(before);
+        assertThat(servingState.toolPaused("search")).isTrue();
+        wrappers[1].close();
     }
 
     @Test
