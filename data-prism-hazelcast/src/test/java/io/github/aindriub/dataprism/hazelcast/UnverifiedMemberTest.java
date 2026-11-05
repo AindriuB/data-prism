@@ -65,6 +65,8 @@ class UnverifiedMemberTest {
         outsider = Fixture.plain(name, first + 2, all);
         assertThat(Fixture.awaitMembers(a, 3)).isTrue();
         assertThat(Fixture.awaitMembers(b, 3)).isTrue();
+        assertThat(Fixture.awaitSafe(a)).as("partitions settled after the third member joined").isTrue();
+        assertThat(Fixture.awaitSafe(b)).isTrue();
     }
 
     private void look() {
@@ -156,6 +158,7 @@ class UnverifiedMemberTest {
         PrivacyCluster late = fixture.keyed(name, first + 1, all, TestMembers.KEYS, settings, new Fixture.Metrics(),
                 new RecordingLogger(), true);
         assertThat(Fixture.awaitMembers(late, 3)).isTrue();
+        assertThat(Fixture.awaitSafe(late)).as("partitions settled after the late member joined").isTrue();
         late.memberCards().orElseThrow().tick();
         assertThat(late.securityStatus().serving()).as("no grace for a member that was there first").isFalse();
         assertThat(late.securityStatus().reason()).isEqualTo(ClusterSecurityStatus.Reason.UNVERIFIED_MEMBER);
@@ -351,7 +354,7 @@ class UnverifiedMemberTest {
 
     /** A look that fails changes neither clock. */
     @Test
-    void aFailedLookLeavesTheGraceClockWhereItWas() {
+    void aFailedLookLeavesTheGraceClockWhereItWas() throws InterruptedException {
         int port = FreePorts.consecutive(2);
         List<String> everyone = peers(port, 1);
         PrivacyCluster serving = solo(port, everyone);
@@ -359,17 +362,18 @@ class UnverifiedMemberTest {
 
         HazelcastInstance outsider = arrives(serving, port + 1, everyone, 2);
         fixture.clock.advance(Duration.ofSeconds(29));
-        cards.lookFault = () -> {
+        // On the executor: the outsider's arrival queues a membership look there, and a hand-called tick could be
+        // overtaken by it.
+        MemberCardTest.passOnExecutor(cards, () -> {
             throw new IllegalStateException("the cluster could not be read");
-        };
-        cards.tick();
+        });
+        assertThat(Fixture.await(30, () -> !serving.securityStatus().serving())).isTrue();
         assertThat(serving.securityStatus().serving()).isFalse();
-        cards.lookFault = () -> { };
         fixture.clock.advance(Duration.ofSeconds(2));
-        cards.tick();
-
-        assertThat(serving.securityStatus().reason()).as("31 s since the outsider arrived")
-                .isEqualTo(ClusterSecurityStatus.Reason.UNVERIFIED_MEMBER);
+        MemberCardTest.passOnExecutor(cards, () -> { });
+        assertThat(Fixture.await(30,
+                () -> serving.securityStatus().reason() == ClusterSecurityStatus.Reason.UNVERIFIED_MEMBER))
+                .as("31 s since the outsider arrived").isTrue();
         outsider.shutdown();
     }
 

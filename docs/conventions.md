@@ -371,12 +371,12 @@ test and produce a result indistinguishable from a real privacy defect. See
 
 ## Background tasks in subagent turns *(kit)*
 
-Subagents do not receive background-task completion notifications. An implementer
-that starts a long build or test run in the background and ends its turn saying
-"waiting for job X" is never woken — it stalls rather than resumes. Run long
-commands in the foreground and block, or poll within the same turn; never yield a
-turn expecting to be resumed later. This has also retrospectively explained
-stalled runs previously written off as environment hangs.
+A subagent is woken when its own background task ends (tested 2026-11-04). An
+implementer that starts a long build or test run with `run_in_background` may
+therefore end its turn and wait for the wake-up; it does not poll. Before it ends
+a turn to wait, it pushes its work with a commit message that ends `PARTIAL: <what
+is done and what is left>`, so that a run that is never resumed loses nothing.
+Run short commands in the foreground and block.
 
 ## Verification environment *(kit)*
 
