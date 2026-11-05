@@ -68,14 +68,17 @@ public final class ConfiguredJsonSourcesInitializer
     }
 
     /**
-     * The configured locations: one value, a comma-separated value or an indexed list, in the order
-     * given. Blank entries are ignored, so a blank property counts as unset.
+     * The configured locations: one value or an indexed list, in the order given. A single value is
+     * never split at commas (a comma is legal in a path and in user-info, and splitting would show a
+     * fragment of a credential, past {@link #describe}'s rule). Blank entries are ignored, so a blank
+     * property counts as unset.
      */
     static List<String> locations(Environment environment) {
-        return Binder.get(environment)
-                .bind(ConfiguredJsonSourcesAutoConfiguration.CONFIG_LOCATION_PROPERTY,
-                        Bindable.listOf(String.class))
-                .orElse(List.of()).stream()
+        Binder binder = Binder.get(environment);
+        String property = ConfiguredJsonSourcesAutoConfiguration.CONFIG_LOCATION_PROPERTY;
+        List<String> configured = binder.bind(property, String.class).map(List::of)
+                .orElseGet(() -> binder.bind(property, Bindable.listOf(String.class)).orElse(List.of()));
+        return configured.stream()
                 .filter(location -> location != null && !location.isBlank())
                 .map(String::trim)
                 .toList();
@@ -84,7 +87,8 @@ public final class ConfiguredJsonSourcesInitializer
     /**
      * Reads and parses every location, each strictly, and joins them. A source name declared in two
      * files refuses startup with {@code DUPLICATE_JSON_SOURCE}, naming the source and neither location.
-     * The sources come back sorted by name, so the file order decides nothing.
+     * The returned map is unordered ({@code Map.copyOf}); {@link #initialize} sorts by name when it
+     * registers the beans, so the file order decides nothing.
      */
     static ConfiguredJsonSourcesConfig loadConfig(Environment environment) {
         List<String> locations = locations(environment);

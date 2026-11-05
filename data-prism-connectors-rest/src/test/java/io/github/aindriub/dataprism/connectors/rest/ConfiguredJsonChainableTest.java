@@ -1,9 +1,26 @@
 package io.github.aindriub.dataprism.connectors.rest;
 
 import io.github.aindriub.dataprism.core.engine.ChainableField;
+import io.github.aindriub.dataprism.core.model.PrivacyContext;
+import io.github.aindriub.dataprism.core.model.PrivacyScopeType;
+import io.github.aindriub.dataprism.core.model.PseudonymisationVersion;
+import io.github.aindriub.dataprism.core.model.ScrubResult;
+import io.github.aindriub.dataprism.core.policy.PrivacyProfiles;
+import io.github.aindriub.dataprism.core.policy.ProfilePrivacyPolicyResolver;
 import io.github.aindriub.dataprism.core.spi.KeyNamespace;
+import io.github.aindriub.dataprism.pseudonymisation.HmacSyntheticGenerator;
+import io.github.aindriub.dataprism.pseudonymisation.HmacValueTokenSource;
+import io.github.aindriub.dataprism.pseudonymisation.StaticSecretKeyProvider;
+import io.github.aindriub.dataprism.pseudonymisation.vocabulary.Vocabulary;
+import io.github.aindriub.dataprism.pseudonymisation.vocabulary.VocabularyRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
+
+import java.io.IOException;
+import java.time.Instant;
+import java.util.Map;
 
 import static io.github.aindriub.dataprism.connectors.rest.ConfiguredJsonDescriptionTest.HEAD;
 import static io.github.aindriub.dataprism.connectors.rest.ConfiguredJsonDescriptionTest.parse;
@@ -73,5 +90,37 @@ class ConfiguredJsonChainableTest {
         assertThatThrownBy(() -> parse(yaml))
                 .hasMessageStartingWith("INVALID_CHAINABLE_FIELD:")
                 .hasMessageContaining("place");
+    }
+
+    private static ScrubResult scrub(String parcel, String state) throws IOException {
+        ConfiguredJsonSource source = parse(fields(parcel, state));
+        Vocabulary vocabulary = VocabularyRegistry.withBuiltIns().resolve("und");
+        StaticSecretKeyProvider keys =
+                StaticSecretKeyProvider.of("task-249-chainable-parity-key-not-for-any-real-data-32bytes");
+        ProfilePrivacyPolicyResolver policy;
+        try (var in = ConfiguredJsonChainableTest.class.getResourceAsStream("/privacy-profiles-default.yaml")) {
+            policy = new ProfilePrivacyPolicyResolver(PrivacyProfiles.fromYaml(in));
+        }
+        var engine = new ConfiguredJsonScrubbingEngine((o, c) -> {
+            throw new AssertionError("java-first delegate must not be reached");
+        }, Map.of("parcel-service", source), policy, new HmacSyntheticGenerator(keys, vocabulary),
+                new HmacValueTokenSource(keys));
+        PrivacyContext context = new PrivacyContext("SCOPE-1", PrivacyScopeType.INVESTIGATION, "DEFAULT",
+                "investigation", Instant.parse("2030-01-01T00:00:00Z"),
+                PseudonymisationVersion.HMAC_SHA256_V1.withKey("v1").withVocabulary(vocabulary.id()));
+        ObjectNode body = (ObjectNode) JsonMapper.builder().build()
+                .readTree("{\"parcel\":\"P-1\",\"state\":\"ACTIVE\"}");
+        return engine.scrub(new ConfiguredJsonPayload("parcel-service", body), context);
+    }
+
+    @Test
+    @DisplayName("scrubbed output and dispositions are equal with the chainable flag on and off")
+    void chainableChangesNothingInTheScrub() throws IOException {
+        ScrubResult on = scrub(ID + CHAIN, INERT);
+        ScrubResult off = scrub(ID, INERT);
+
+        assertThat(on.tree()).isEqualTo(off.tree());
+        assertThat(on.dispositions()).isEqualTo(off.dispositions());
+        assertThat(on.dispositions()).isNotEmpty();
     }
 }

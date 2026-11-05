@@ -262,6 +262,8 @@ public final class ConfiguredJsonSources {
      * The optional {@code description:} block. Messages name the source and the key, never a value:
      * description text is operator prose and must not reach a log through a parser message.
      */
+    private static final String INVALID_DESCRIPTION = "INVALID_SOURCE_DESCRIPTION";
+
     private static SourceDescription description(String sourceName, Map<String, Object> body) {
         if (!body.containsKey("description")) {
             return SourceDescription.undeclared();
@@ -278,7 +280,10 @@ public final class ConfiguredJsonSources {
         List<Object> types = StrictYaml.optionalList(block, "entity-types", where);
         if (types != null) {
             for (Object type : types) {
-                entityTypes.add(StrictYaml.text(type, where + ".entity-types"));
+                if (!entityTypes.add(StrictYaml.text(type, where + ".entity-types"))) {
+                    throw new IllegalArgumentException(INVALID_DESCRIPTION + ": " + where
+                            + ".entity-types has a duplicate entry");
+                }
             }
         }
         List<KeyNamespace> inputKeys = new ArrayList<>();
@@ -287,9 +292,18 @@ public final class ConfiguredJsonSources {
             for (Object key : keys) {
                 String text = StrictYaml.text(key, where + ".input-keys");
                 try {
-                    inputKeys.add(new KeyNamespace(text));
+                    KeyNamespace namespace = new KeyNamespace(text);
+                    if (inputKeys.contains(namespace)) {
+                        throw new IllegalArgumentException(INVALID_DESCRIPTION + ": " + where
+                                + ".input-keys has a duplicate entry");
+                    }
+                    inputKeys.add(namespace);
                 } catch (IllegalArgumentException e) {
-                    throw new IllegalArgumentException(where + ".input-keys has an entry that is not a key namespace");
+                    if (e.getMessage() != null && e.getMessage().startsWith(INVALID_DESCRIPTION)) {
+                        throw e;
+                    }
+                    throw new IllegalArgumentException(INVALID_DESCRIPTION + ": " + where
+                            + ".input-keys has an entry that is not a key namespace");
                 }
             }
         }
@@ -301,7 +315,7 @@ public final class ConfiguredJsonSources {
             return new SourceDescription(entityTypes, alias, real, inputKeys, cost, freshness);
         } catch (IllegalArgumentException e) {
             // SourceDescription's messages carry no value; this one adds only where.
-            throw new IllegalArgumentException(where + " is not valid: " + e.getMessage());
+            throw new IllegalArgumentException(INVALID_DESCRIPTION + ": " + where + " is not valid: " + e.getMessage());
         }
     }
 

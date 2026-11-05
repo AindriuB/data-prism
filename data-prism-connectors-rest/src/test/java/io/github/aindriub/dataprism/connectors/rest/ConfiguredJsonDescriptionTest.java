@@ -112,4 +112,23 @@ class ConfiguredJsonDescriptionTest {
     void baseUrlHost() {
         assertThat(parse(HEAD + FIELDS).baseUrlHost()).isEqualTo("parcel.example.internal");
     }
+
+    @Test
+    @DisplayName("a duplicate entity type, a duplicate input key and a malformed input key refuse with INVALID_SOURCE_DESCRIPTION")
+    void catalogRuleFourIsOwnedByTheParser() {
+        String[] bad = {
+                "entity-types: [PARCEL, PARCEL]\n",
+                "input-keys: [parcel-ref, parcel-ref]\n",
+                "input-keys: [\"Bad Key\"]\n",
+                "entity-types: [\"bad type\"]\n",
+        };
+        for (String block : bad) {
+            assertThatThrownBy(() -> parse(withDescription(block)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageStartingWith("INVALID_SOURCE_DESCRIPTION:")
+                    .hasMessageContaining("parcel-service")
+                    .hasMessageNotContaining("Bad Key")
+                    .hasMessageNotContaining("bad type");
+        }
+    }
 }

@@ -59,6 +59,8 @@ final class ConfiguredJsonNestedLeafShapeGuard {
             Class<?> token = descendType(md, value.isArray());
             Map<String, FieldMetadata> nestedFields = token == null ? null : resolver.nestedFields(token);
             if (nestedFields == null) {
+                // A root leaf: described as a scalar, so a structure there is the same schema drift.
+                checkLeaf(sourceName, value, "$." + field, "catalogue");
                 continue;
             }
             if (value.isObject()) {
@@ -93,19 +95,22 @@ final class ConfiguredJsonNestedLeafShapeGuard {
             if (leafValue == null || leafValue.isNull()) {
                 continue;
             }
-            if (leafValue.isObject()) {
-                throw new PrivacyRefusedException(CODE, sourceName + path + "." + leafField,
-                        "nested catalogue leaf field is declared scalar/classified but the response"
+            checkLeaf(sourceName, leafValue, path + "." + leafField, "nested catalogue");
+        }
+    }
+
+    private static void checkLeaf(String sourceName, JsonNode leafValue, String leafPath, String kind) {
+        if (leafValue.isObject()) {
+            throw new PrivacyRefusedException(CODE, sourceName + leafPath,
+                    kind + " leaf field is declared scalar/classified but the response"
+                            + " carries a structure there; the catalogue is stale against the wire shape");
+        }
+        if (leafValue.isArray()) {
+            int objectIndex = firstObjectIndex(leafValue);
+            if (objectIndex >= 0) {
+                throw new PrivacyRefusedException(CODE, sourceName + leafPath + "[" + objectIndex + "]",
+                        kind + " leaf field is declared scalar/classified but the response"
                                 + " carries a structure there; the catalogue is stale against the wire shape");
-            }
-            if (leafValue.isArray()) {
-                int objectIndex = firstObjectIndex(leafValue);
-                if (objectIndex >= 0) {
-                    throw new PrivacyRefusedException(CODE,
-                            sourceName + path + "." + leafField + "[" + objectIndex + "]",
-                            "nested catalogue leaf field is declared scalar/classified but the response"
-                                    + " carries a structure there; the catalogue is stale against the wire shape");
-                }
             }
         }
     }
