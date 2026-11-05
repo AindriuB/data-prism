@@ -9,10 +9,10 @@ import io.github.aindriub.dataprism.orchestration.catalog.SourceLabels;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 
@@ -21,7 +21,7 @@ import java.util.Set;
  * called and no adapter is read. A source accepts the key directly when its declared input namespace is equal
  * to the field's (exact comparison: no case folding, no trimming), or through exactly one declared resolver.
  * A direct match wins over a translated one for the same target (key-resolvers.md section 7), and a target is
- * listed once.
+ * listed once per target namespace.
  */
 public final class LinkTargets {
 
@@ -63,7 +63,8 @@ public final class LinkTargets {
             for (SourceCatalog.Entry entry : permitted.values()) {
                 if (!entry.name().equals(originName) && !direct.contains(entry.name())
                         && entry.description().inputKeys().contains(to)) {
-                    byName.putIfAbsent(entry.name() + '\0' + to.value(), target(LinkRelation.TRANSLATED, entry, labels, to, resolver.name()));
+                    byName.putIfAbsent(entry.name() + '\0' + to.value(),
+                            target(LinkRelation.TRANSLATED, entry, labels, to, resolver.name()));
                 }
             }
         }

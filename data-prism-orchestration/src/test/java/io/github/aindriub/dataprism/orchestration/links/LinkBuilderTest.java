@@ -512,9 +512,10 @@ public class LinkBuilderTest {
     }
 
     @Test
-    void aRecordValueThatLooksLikeASecretStillWithholdsItsSourceWhileLinksAreIssued() {
+    void aRecordValueThatLooksLikeASecretStillWithholdsItsSourceWhileOtherSourcesKeepTheirLinks() {
         Rig rig = withRealValidators()
-                .source("origin-api", new Parcel("P-1", List.of(), List.of(), SECRET_SHAPED))
+                .source("bad-api", new Parcel("P-1", List.of(), List.of(), SECRET_SHAPED))
+                .source("good-api", new Parcel("P-2", List.of(), List.of(), "ok"))
                 .source("parcel-api", new Plain("a"), "parcel-ref");
 
         ContextResponse response = rig.run();
@@ -522,7 +523,32 @@ public class LinkBuilderTest {
         // The call's own tokens are exempt, but a record cannot pre-supply one: it cannot know this call's
         // random tokens, and its own secret-shaped value is not among them.
         assertThat(response.sources().values()).extracting(SourceResult::status).contains("REFUSED");
-        assertThat(response.sources().values()).allMatch(s -> s.links().isEmpty());
+        assertThat(response.sources().values()).filteredOn(s -> !"REFUSED".equals(s.status()))
+                .anyMatch(s -> !s.links().isEmpty());
+        assertThat(response.sources().values()).filteredOn(s -> "REFUSED".equals(s.status()))
+                .allMatch(s -> s.links().isEmpty());
+    }
+
+    @Test
+    void theFinalValidationPassSeesEveryIssuedTokenAmongTheEmittedValues() {
+        List<Set<String>> emittedPerPass = new ArrayList<>();
+        List<String> treePerPass = new ArrayList<>();
+        LlmResponseValidator recorder = (tree, prohibited, emitted, ctx) -> {
+            emittedPerPass.add(Set.copyOf(emitted));
+            treePerPass.add(tree.toString());
+            return io.github.aindriub.dataprism.validation.ValidationResult.ok();
+        };
+        Rig rig = withRealValidators().validator(recorder).source("origin-api", parcel())
+                .source("parcel-api", new Plain("a"), "parcel-ref");
+
+        List<IssuedLink> links = originOf(rig.run()).links();
+
+        assertThat(links).isNotEmpty();
+        int last = emittedPerPass.size() - 1;
+        for (IssuedLink link : links) {
+            assertThat(treePerPass.get(last)).contains(link.link());
+            assertThat(emittedPerPass.get(last)).contains(link.link());
+        }
     }
 
     @Test

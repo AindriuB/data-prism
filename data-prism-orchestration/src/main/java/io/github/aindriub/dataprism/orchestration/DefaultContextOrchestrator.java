@@ -378,7 +378,6 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                     origins.add(new LinkBuilder.Origin(name, label, record));
                 }
             }
-            OrchestrationOptions.LinkIssuing issuing = options.links().orElseThrow();
             Instant scopeExpiry = context.expiresAt();
             if (scopeExpiry == null) {
                 return LinkBuilder.Result.NONE; // fail closed: a link with no known end is not issued
