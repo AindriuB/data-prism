@@ -16,6 +16,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ApprovalIdLockTest {
     private static final Duration TIMEOUT = Duration.ofMillis(300);
+    /**
+     * The paused caller's own timeout. Every lock it takes has a lease of five times this, in real time, and the
+     * test must reach its first assertion while that lease still runs. With the 300 ms of {@link #TIMEOUT} the
+     * window was 1.5 s, and a slow runner could spend it before the second member's create began, which then
+     * took the lock instead of being refused ("Expecting code to raise a throwable"). Five seconds of lease is
+     * still well inside the 10 s each {@code awaitFree} waits.
+     */
+    private static final Duration PAUSED_TIMEOUT = Duration.ofSeconds(1);
 
     @Test void uncappedCreationLosesItsClaimToATakeoverAfterItsLeaseExpires() throws Exception {
         pausedCreationCannotDuplicateId(false);
@@ -30,7 +38,7 @@ class ApprovalIdLockTest {
         StalledInsert stall = new StalledInsert();
         try (var caller = Executors.newSingleThreadExecutor()) {
             IMap<String, String> map = members[0].instance().getMap(PrivacyCluster.APPROVAL_MAP);
-            var delayed = new HazelcastApprovalStore(stall.over(members[0]), TIMEOUT);
+            var delayed = new HazelcastApprovalStore(stall.over(members[0]), PAUSED_TIMEOUT);
             var other = new HazelcastApprovalStore(members[1], TIMEOUT);
             ApprovalRequest a = TestMembers.request("shared-id", "scope-a", ApprovalRequest.Status.PENDING);
             ApprovalRequest b = TestMembers.request("shared-id", "scope-b", ApprovalRequest.Status.PENDING);
