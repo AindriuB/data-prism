@@ -9,6 +9,7 @@ import io.github.aindriub.dataprism.hazelcast.HazelcastApprovalStore;
 import io.github.aindriub.dataprism.hazelcast.HazelcastCallerRateLimiter;
 import io.github.aindriub.dataprism.hazelcast.HazelcastOversightState;
 import io.github.aindriub.dataprism.hazelcast.HazelcastScopeBudget;
+import io.github.aindriub.dataprism.hazelcast.ClusterSecuritySettings;
 import io.github.aindriub.dataprism.hazelcast.PrivacyCluster;
 import io.github.aindriub.dataprism.hazelcast.PrivacyClusterRefusal;
 import io.github.aindriub.dataprism.hazelcast.seal.ClusterKeys;
@@ -63,7 +64,10 @@ class ClusterBackedState {
                     h.getMember().getPort() == null ? ClusterMembership.DEFAULT_PORT : h.getMember().getPort(),
                     h.getMember().getInterface());
             PrivacyCluster cluster = PrivacyCluster.embedded(membership, h.isReidentificationEnabled(),
-                    approvalMinimum(h, properties), h.getApprovalSweepInterval(), keys);
+                    approvalMinimum(h, properties), h.getApprovalSweepInterval(), keys,
+                    // The validator has already logged the assertion once.
+                    ClusterSecuritySettings.defaults().withTrustedNetwork(h.isTrustedNetwork(),
+                            h.getMember().getTrustedRanges(), true));
             try {
                 metrics.getIfAvailable(PrivacyMetrics::none).gauge(Metric.CLUSTER_LEGACY_ENTRIES,
                         cluster::legacyEntries);

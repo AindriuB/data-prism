@@ -629,6 +629,61 @@ public final class PrivacyCluster implements AutoCloseable {
         }
     }
 
+    /**
+     * The one trusted-network rule for a member that joins others, applied by every plain-Java entry point: the
+     * interface list must be enabled, {@link TrustedNetwork#evaluate} must find everything the member listens on and
+     * advertises private or in the declared ranges, and the declaration must be made. The ranges count only when the
+     * network is declared trusted. No message names an interface, an address or a range.
+     *
+     * @param bound the addresses a running instance is really bound to, or {@code null} before a member starts
+     */
+    private static void refuseUnlessTrusted(Config config, Set<InetAddress> bound, ClusterSecuritySettings settings,
+                                            Logger log) {
+        var interfaces = config.getNetworkConfig().getInterfaces();
+        if (!interfaces.isEnabled() || interfaces.getInterfaces().isEmpty()) {
+            throw new PrivacyClusterRefusal(Code.MISSING_MEMBER_INTERFACE,
+                    "a member that joins others needs member.interface");
+        }
+        List<String> ranges = settings.trustedNetwork() ? settings.trustedRanges() : List.of();
+        TrustedNetwork.Verdict verdict = TrustedNetwork.evaluate(config, ranges);
+        if (verdict == TrustedNetwork.Verdict.TRUSTED && bound != null) {
+            // The same rule on the addresses the sockets are really bound to, whatever the config says.
+            if (bound.isEmpty()) {
+                verdict = TrustedNetwork.Verdict.PUBLIC_MEMBER_INTERFACE;
+            } else {
+                // Bind-any is judged on the instance's own config above; this config only carries the addresses.
+                Config probe = new Config().setProperty("hazelcast.socket.bind.any", "false")
+                        .setProperty("hazelcast.socket.server.bind.any", "false");
+                probe.getNetworkConfig().getInterfaces().setEnabled(true);
+                bound.forEach(a -> probe.getNetworkConfig().getInterfaces().addInterface(a.getHostAddress()));
+                verdict = TrustedNetwork.evaluate(probe, ranges);
+            }
+        }
+        switch (verdict) {
+            case INVALID_TRUSTED_RANGE -> throw new PrivacyClusterRefusal(Code.INVALID_TRUSTED_RANGE,
+                    "a trusted range must be an IPv4 CIDR block inside 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 "
+                            + "or 127.0.0.0/8, or /24 or longer");
+            case PUBLIC_MEMBER_INTERFACE -> throw new PrivacyClusterRefusal(Code.PUBLIC_MEMBER_INTERFACE,
+                    "the member interface, an advertised address (hazelcast.local.localAddress, "
+                            + "hazelcast.local.publicAddress, the public address), a bind-any setting "
+                            + "(hazelcast.socket.bind.any, hazelcast.socket.server.bind.any) or the bound address "
+                            + "reaches beyond the private blocks; narrow it or name the block in the trusted ranges");
+            case TRUSTED -> {
+            }
+        }
+        if (!settings.trustedNetwork()) {
+            throw new PrivacyClusterRefusal(Code.MISSING_TRUSTED_NETWORK,
+                    "the trusted-network declaration must be made to join other members. It asserts that only Data "
+                            + "Prism members can reach the member port; approvals and counters on that port are "
+                            + "unsealed, so anyone else who can reach it can read and forge them");
+        }
+        if (!settings.trustedNetworkAnnounced()) {
+            log.info("trusted-network is declared: this member asserts that only Data Prism members can reach member "
+                    + "port {}; approvals and counters on that port are unsealed",
+                    config.getNetworkConfig().getPort());
+        }
+    }
+
     /** Whether the config names any way of finding other members. */
     private static boolean joins(Config config) {
         var join = config.getNetworkConfig().getJoin();
@@ -875,6 +930,9 @@ public final class PrivacyCluster implements AutoCloseable {
         Config hardened = configure(config, approvalMinimumMembers);
         if (isolate) {
             ClusterMembership.isolate(hardened);
+        } else if (joins(hardened)) {
+            // Before any member starts: a refusal leaves nothing running.
+            refuseUnlessTrusted(hardened, null, settings, environment.log());
         }
         HazelcastInstance started = Hazelcast.newHazelcastInstance(hardened);
         try {
@@ -1054,6 +1112,10 @@ public final class PrivacyCluster implements AutoCloseable {
                     "auto-detection and multicast must be disabled on the supplied instance");
         }
         checkInstanceSettings(config);
+        if (joins(config) || instance.getCluster().getMembers().size() > 1) {
+            // The instance is not ours to stop: a refusal leaves it running.
+            refuseUnlessTrusted(config, listeningAddresses(instance), settings, environment.log());
+        }
         ClusterMembership.refuseUnsealedState(instance, true);
         PrivacyCluster wrapped = new PrivacyCluster(instance, reidentificationEnabled, approvalSweepInterval, keys,
                 false, settings, environment);
