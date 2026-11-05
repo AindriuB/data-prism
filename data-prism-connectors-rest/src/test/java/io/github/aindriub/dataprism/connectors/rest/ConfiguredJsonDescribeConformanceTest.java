@@ -78,6 +78,28 @@ class ConfiguredJsonDescribeConformanceTest {
             {"parcel":"P-1","recipientName":"Alice Example","note":"call first","state":"IN_TRANSIT",
              "stops":[{"place":"North","contact":"a@e.example","holder":"Bob Example"}]}""";
 
+    private static final String SHARED = ConfiguredJsonDescriptionTest.HEAD + """
+                nested-catalogues:
+                  address:
+                    line:
+                      classifications: [PII]
+                      namespace: ADDRESS
+                      action: REDACT
+                    city:
+                      nonSensitive: "Municipality name, no free text"
+                fields:
+                  parcel:
+                    identifier: true
+                  billing:
+                    nested: address
+                  shipping:
+                    nested: address
+            """;
+
+    private static final String SHARED_BODY = """
+            {"parcel":"P-1","billing":{"line":"1 Main St","city":"North"},
+             "shipping":[{"line":"2 Side St","city":"South"}]}""";
+
     private static final String CUSTOMER_BODY =
             "{\"id\":\"C1\",\"name\":\"Alice Example\",\"email\":\"a@e.example\",\"status\":\"ACTIVE\"}";
 
@@ -228,5 +250,19 @@ class ConfiguredJsonDescribeConformanceTest {
         ConfiguredJsonScrubbingEngine engine = engine(Map.of("parcel-service", source));
         assertThat(engine.describe("elsewhere", context("DEFAULT"), true)).isEqualTo(Optional.empty());
         assertThat(engine.describe(ConfiguredJsonPayload.class, context("DEFAULT"), true)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("two fields sharing one nested catalogue are both described, and conform to the scrubber")
+    void sharedNestedCatalogue() throws IOException {
+        ConfiguredJsonSource source = ConfiguredJsonDescriptionTest.parse(SHARED);
+        ConfiguredJsonScrubbingEngine engine = engine(Map.of("parcel-service", source));
+        ModelDescription description = engine.describe("parcel-service", context("DEFAULT"), false).orElseThrow();
+        assertThat(description.fields()).extracting(FieldProtection::path)
+                .contains("billing.line", "billing[].line", "billing.city",
+                        "shipping.line", "shipping[].line", "shipping.city");
+        for (String profile : new String[] {"DEFAULT", "STRICT"}) {
+            assertConforms(engine, source, SHARED_BODY, profile);
+        }
     }
 }

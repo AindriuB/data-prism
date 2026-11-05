@@ -130,14 +130,15 @@ public final class ConfiguredJsonScrubbingEngine implements ScrubbingEngine {
         if (source == null) {
             return Optional.empty();
         }
-        Map<String, FieldMetadata> nestedPointers = new LinkedHashMap<>();
+        // One entry per pointing field: several fields may share a catalogue, and each is described.
+        List<FieldMetadata> nestedPointers = new ArrayList<>();
         List<FieldMetadata> own = new ArrayList<>();
         for (FieldMetadata md : source.fields().values()) {
             String catalogue = nestedCatalogueName(md);
             if (catalogue == null) {
                 own.add(md);
             } else {
-                nestedPointers.put(catalogue, md);
+                nestedPointers.add(md);
             }
         }
 
@@ -152,7 +153,7 @@ public final class ConfiguredJsonScrubbingEngine implements ScrubbingEngine {
         root.get().fields().forEach(f -> found.put(f.path(), f));
         rootAsList.get().fields().forEach(f -> found.put(f.path(), f));
 
-        for (FieldMetadata pointer : nestedPointers.values()) {
+        for (FieldMetadata pointer : nestedPointers) {
             String catalogue = nestedCatalogueName(pointer);
             EffectivePrivacyPolicy field = this.policy.resolve(pointer, context);
             if (!field.allowed()) {
