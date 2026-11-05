@@ -64,8 +64,10 @@ class HazelcastOversightTest {
     private void pair() {
         String name = "dataprism-oversight-pair-" + System.nanoTime();
         int port = FreePorts.consecutive(2);
-        a = PrivacyCluster.using(Hazelcast.newHazelcastInstance(member(name, port, port)), false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
-        b = PrivacyCluster.using(Hazelcast.newHazelcastInstance(member(name, port + 1, port)), false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
+        a = PrivacyCluster.using(Hazelcast.newHazelcastInstance(member(name, port, port)), false,
+                PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
+        b = PrivacyCluster.using(Hazelcast.newHazelcastInstance(member(name, port + 1, port)), false,
+                PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
         assertThat(TestMembers.settled(30, a, b)).as("both members list each other and their partitions are safe")
                 .isTrue();
     }
@@ -414,8 +416,10 @@ class HazelcastOversightTest {
         String name = "dataprism-gauges-" + System.nanoTime();
         int port = FreePorts.consecutive(1);
         var instance = Hazelcast.newHazelcastInstance(member(name, port, port));
-        a = PrivacyCluster.using(instance, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
-        b = PrivacyCluster.using(instance, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
+        a = PrivacyCluster.using(instance, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS,
+                TestMembers.TRUSTED);
+        b = PrivacyCluster.using(instance, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS,
+                TestMembers.TRUSTED);
         Gauges gauges = new Gauges();
         try (var first = new HazelcastOversightState(a, ClusterLocks.DEFAULT_TIMEOUT, gauges);
              var second = new HazelcastOversightState(b, ClusterLocks.DEFAULT_TIMEOUT, gauges)) {

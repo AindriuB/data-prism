@@ -363,7 +363,8 @@ class KeyedScopeEndTest {
                                         return invokeOn(call, target, callArgs);
                                     });
                         });
-        PrivacyCluster faulty = PrivacyCluster.using(wrapped, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
+        PrivacyCluster faulty = PrivacyCluster.using(wrapped, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS,
+                TestMembers.TRUSTED);
 
         assertThatThrownBy(() -> new ScopeIdentityIndex(faulty,
                 io.github.aindriub.dataprism.core.metrics.PrivacyMetrics.none(), TIMEOUT).endScope(ENDED))

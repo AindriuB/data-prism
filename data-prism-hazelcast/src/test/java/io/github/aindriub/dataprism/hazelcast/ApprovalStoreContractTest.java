@@ -326,8 +326,10 @@ class ApprovalStoreContractTest {
     void concurrentCreatesFromTwoMembersNeverExceedTheCap() throws Exception {
         String name = "dataprism-approval-cap-" + System.nanoTime();
         int port = FreePorts.consecutive(2);
-        cluster = PrivacyCluster.using(Hazelcast.newHazelcastInstance(member(name, port, port)), false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
-        second = PrivacyCluster.using(Hazelcast.newHazelcastInstance(member(name, port + 1, port)), false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
+        cluster = PrivacyCluster.using(Hazelcast.newHazelcastInstance(member(name, port, port)), false,
+                PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
+        second = PrivacyCluster.using(Hazelcast.newHazelcastInstance(member(name, port + 1, port)), false,
+                PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
         assertThat(cluster.instance().getCluster().getMembers()).hasSize(2);
         assertThat(TestMembers.settled(30, cluster, second)).as("the members did not settle").isTrue();
         ApprovalStore viaA = new HazelcastApprovalStore(cluster);

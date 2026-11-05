@@ -56,7 +56,8 @@ class ClusterCutoverTest {
     private PrivacyCluster startNewMember() {
         return PrivacyCluster.embedded(ClusterMembership
                 .tcpIp(cluster, List.of("127.0.0.1:" + oldPort, "127.0.0.1:" + newPort)).withPort(newPort)
-                .withInterface("127.0.0.1"), false, OptionalInt.empty(), PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
+                .withInterface("127.0.0.1"), false, OptionalInt.empty(), PendingSweeper.DEFAULT_INTERVAL,
+                        TestMembers.KEYS, TestMembers.TRUSTED);
     }
 
     private void clearOldMaps() {
@@ -131,7 +132,8 @@ class ClusterCutoverTest {
                 .withInterface("127.0.0.1").toConfig());
         HazelcastInstance supplied = Hazelcast.newHazelcastInstance(config);
         try {
-            Throwable refused = catchThrowable(() -> PrivacyCluster.using(supplied, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED));
+            Throwable refused = catchThrowable(() -> PrivacyCluster.using(supplied, false,
+                    PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED));
             assertThat(refused).isInstanceOf(PrivacyClusterRefusal.class);
             assertThat(((PrivacyClusterRefusal) refused).code()).isEqualTo(Code.UNSEALED_CLUSTER_STATE);
             assertThat(supplied.getLifecycleService().isRunning()).isTrue();
@@ -262,7 +264,8 @@ class ClusterCutoverTest {
         HazelcastInstance supplied = suppliedSolo();
         try {
             supplied.getMap(map).put(key, value);
-            Throwable refused = catchThrowable(() -> PrivacyCluster.using(supplied, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED));
+            Throwable refused = catchThrowable(() -> PrivacyCluster.using(supplied, false,
+                    PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED));
             assertThat(refused).as(map).isInstanceOf(PrivacyClusterRefusal.class);
             assertThat(((PrivacyClusterRefusal) refused).code()).as(map).isEqualTo(Code.UNSEALED_CLUSTER_STATE);
             assertThat(supplied.getLifecycleService().isRunning()).isTrue();
@@ -287,7 +290,8 @@ class ClusterCutoverTest {
         HazelcastInstance supplied = suppliedSolo();
         try {
             supplied.getMap("dataprism.oversight").put("all", Boolean.TRUE);
-            assertThat(PrivacyCluster.using(supplied, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED).instance()).isSameAs(supplied);
+            assertThat(PrivacyCluster.using(supplied, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS,
+                    TestMembers.TRUSTED).instance()).isSameAs(supplied);
         } finally {
             supplied.getLifecycleService().terminate();
         }
@@ -298,7 +302,8 @@ class ClusterCutoverTest {
         HazelcastInstance supplied = suppliedSolo();
         try {
             supplied.getMap(PrivacyCluster.BUDGET_MAP).put("k", 1);
-            assertThat(PrivacyCluster.using(supplied, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED).instance()).isSameAs(supplied);
+            assertThat(PrivacyCluster.using(supplied, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS,
+                    TestMembers.TRUSTED).instance()).isSameAs(supplied);
             assertThat(supplied.getDistributedObjects().stream().map(o -> o.getName()))
                     .doesNotContainAnyElementsOf(PrivacyCluster.PRE_0_8_MAPS);
         } finally {

@@ -92,7 +92,8 @@ class HazelcastHardeningTest {
         int port = FreePorts.consecutive(1);
         PrivacyCluster cluster = PrivacyCluster.embedded(ClusterMembership
                 .tcpIp(TestMembers.uniqueName("hardening-m"), List.of("127.0.0.1:" + port)).withPort(port)
-                .withInterface("127.0.0.1"), false, OptionalInt.empty(), PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
+                .withInterface("127.0.0.1"), false, OptionalInt.empty(), PendingSweeper.DEFAULT_INTERVAL,
+                        TestMembers.KEYS, TestMembers.TRUSTED);
         clusters.add(cluster);
         return cluster;
     }
@@ -115,7 +116,8 @@ class HazelcastHardeningTest {
 
     private PrivacyCluster configMember() {
         int port = FreePorts.consecutive(1);
-        PrivacyCluster cluster = PrivacyCluster.embedded(suppliedConfig(TestMembers.uniqueName("hardening-c"), port), false, OptionalInt.empty(), PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
+        PrivacyCluster cluster = PrivacyCluster.embedded(suppliedConfig(TestMembers.uniqueName("hardening-c"), port),
+                false, OptionalInt.empty(), PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
         clusters.add(cluster);
         return cluster;
     }
@@ -230,13 +232,15 @@ class HazelcastHardeningTest {
     @Test
     void usingAcceptsAnInstanceThatPassesEveryCheck() {
         HazelcastInstance good = rawMember(config -> { });
-        PrivacyCluster wrapped = PrivacyCluster.using(good, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
+        PrivacyCluster wrapped = PrivacyCluster.using(good, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS,
+                TestMembers.TRUSTED);
         assertThat(wrapped.instance()).isSameAs(good);
     }
 
     private void usingRefusesAndLeavesRunning(String what, Consumer<Config> breakOneThing) {
         HazelcastInstance unsafe = rawMember(breakOneThing);
-        Throwable refused = catchThrowable(() -> PrivacyCluster.using(unsafe, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED));
+        Throwable refused = catchThrowable(() -> PrivacyCluster.using(unsafe, false, PendingSweeper.DEFAULT_INTERVAL,
+                TestMembers.KEYS, TestMembers.TRUSTED));
         assertThat(refused).as(what).isInstanceOf(PrivacyClusterRefusal.class);
         assertThat(((PrivacyClusterRefusal) refused).code()).as(what).isEqualTo(Code.UNSAFE_HAZELCAST_SERIALIZATION);
         assertThat(unsafe.getLifecycleService().isRunning()).as(what + " is left running").isTrue();
@@ -490,7 +494,8 @@ class HazelcastHardeningTest {
                     }
                     throw new UnsupportedOperationException(method.getName());
                 });
-        Throwable refused = catchThrowable(() -> PrivacyCluster.using(stand, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED));
+        Throwable refused = catchThrowable(() -> PrivacyCluster.using(stand, false, PendingSweeper.DEFAULT_INTERVAL,
+                TestMembers.KEYS, TestMembers.TRUSTED));
         assertThat(refused).as(what).isInstanceOf(PrivacyClusterRefusal.class);
         assertThat(((PrivacyClusterRefusal) refused).code()).as(what).isEqualTo(Code.UNSAFE_HAZELCAST_SERIALIZATION);
     }
@@ -509,7 +514,8 @@ class HazelcastHardeningTest {
     void usingAcceptsRestWithOnlyTheHealthCheckGroup() {
         HazelcastInstance healthOnly = rawMember(config -> config.getNetworkConfig().getRestApiConfig()
                 .setEnabled(true).disableAllGroups().enableGroups(com.hazelcast.config.RestEndpointGroup.HEALTH_CHECK));
-        assertThat(PrivacyCluster.using(healthOnly, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED).instance()).isSameAs(healthOnly);
+        assertThat(PrivacyCluster.using(healthOnly, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS,
+                TestMembers.TRUSTED).instance()).isSameAs(healthOnly);
     }
 
     @Test
@@ -527,7 +533,8 @@ class HazelcastHardeningTest {
     void aNonEmptyTrustedListOnASuppliedInstanceIsTheIntegratorsToJudge() {
         HazelcastInstance own = rawMember(config -> config.getManagementCenterConfig()
                 .setTrustedInterfaces(Set.of("10.9.9.9")));
-        assertThat(PrivacyCluster.using(own, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED).instance()).isSameAs(own);
+        assertThat(PrivacyCluster.using(own, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS,
+                TestMembers.TRUSTED).instance()).isSameAs(own);
     }
 
     @Test
@@ -550,7 +557,8 @@ class HazelcastHardeningTest {
                 .getJavaSerializationFilterConfig().getWhitelist().addPackages("com.example.other"));
         HazelcastInstance shared = rawMember(config -> config.getSerializationConfig()
                 .getJavaSerializationFilterConfig().getWhitelist().addClasses("com.example.other.Own"));
-        assertThat(PrivacyCluster.using(shared, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED).instance()).isSameAs(shared);
+        assertThat(PrivacyCluster.using(shared, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS,
+                TestMembers.TRUSTED).instance()).isSameAs(shared);
     }
 
     @Test
@@ -575,7 +583,8 @@ class HazelcastHardeningTest {
     void usingAcceptsABlacklistThatTouchesNothingRequired() {
         HazelcastInstance own = rawMember(config -> blacklist(config).addClasses("com.example.Bad")
                 .addPrefixes("com.evil.").addPackages("org.gadget"));
-        assertThat(PrivacyCluster.using(own, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED).instance()).isSameAs(own);
+        assertThat(PrivacyCluster.using(own, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS,
+                TestMembers.TRUSTED).instance()).isSameAs(own);
     }
 
     @Test

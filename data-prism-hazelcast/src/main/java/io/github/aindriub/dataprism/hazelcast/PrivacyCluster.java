@@ -630,25 +630,27 @@ public final class PrivacyCluster implements AutoCloseable {
     }
 
     /**
-     * The one trusted-network rule for a member that joins others, applied by every plain-Java entry point: the
-     * interface list must be enabled, {@link TrustedNetwork#evaluate} must find everything the member listens on and
-     * advertises private or in the declared ranges, and the declaration must be made. The ranges count only when the
-     * network is declared trusted. No message names an interface, an address or a range.
+     * The one trusted-network rule for a member reachable beyond this host,
+     * applied by every plain-Java entry point: the interface list must be enabled, {@link TrustedNetwork#evaluate}
+     * must find everything the member listens on and advertises private or in the declared ranges, and the
+     * declaration must be made. The ranges count only when the network is declared trusted. No message names an
+     * interface, an address or a range.
      *
      * @param bound the addresses a running instance is really bound to, or {@code null} before a member starts
      */
-    private static void refuseUnlessTrusted(Config config, Set<InetAddress> bound, ClusterSecuritySettings settings,
-                                            Logger log) {
+    static void refuseUnlessTrusted(Config config, Set<InetAddress> bound, ClusterSecuritySettings settings,
+                                    Logger log) {
         var interfaces = config.getNetworkConfig().getInterfaces();
         if (!interfaces.isEnabled() || interfaces.getInterfaces().isEmpty()) {
             throw new PrivacyClusterRefusal(Code.MISSING_MEMBER_INTERFACE,
-                    "a member that joins others needs member.interface");
+                    "a member reachable beyond this host needs member.interface");
         }
         List<String> ranges = settings.trustedNetwork() ? settings.trustedRanges() : List.of();
         TrustedNetwork.Verdict verdict = TrustedNetwork.evaluate(config, ranges);
         if (verdict == TrustedNetwork.Verdict.TRUSTED && bound != null) {
             // The same rule on the addresses the sockets are really bound to, whatever the config says.
-            if (bound.isEmpty()) {
+            if (bound.isEmpty() || bound.stream().anyMatch(InetAddress::isAnyLocalAddress)) {
+                // A wildcard socket listens on every interface, so no declared range describes it.
                 verdict = TrustedNetwork.Verdict.PUBLIC_MEMBER_INTERFACE;
             } else {
                 // Bind-any is judged on the instance's own config above; this config only carries the addresses.
@@ -673,9 +675,10 @@ public final class PrivacyCluster implements AutoCloseable {
         }
         if (!settings.trustedNetwork()) {
             throw new PrivacyClusterRefusal(Code.MISSING_TRUSTED_NETWORK,
-                    "the trusted-network declaration must be made to join other members. It asserts that only Data "
-                            + "Prism members can reach the member port; approvals and counters on that port are "
-                            + "unsealed, so anyone else who can reach it can read and forge them");
+                    "the trusted-network declaration must be made for a member reachable beyond this host. It "
+                            + "asserts that only Data Prism members can reach the member port; approvals and "
+                            + "counters on that port are unsealed, so anyone else who can reach it can read and "
+                            + "forge them");
         }
         if (!settings.trustedNetworkAnnounced()) {
             log.info("trusted-network is declared: this member asserts that only Data Prism members can reach member "
@@ -930,7 +933,7 @@ public final class PrivacyCluster implements AutoCloseable {
         Config hardened = configure(config, approvalMinimumMembers);
         if (isolate) {
             ClusterMembership.isolate(hardened);
-        } else if (joins(hardened)) {
+        } else if (joins(hardened) || !ClusterMembership.reachableOnlyFromThisHost(hardened)) {
             // Before any member starts: a refusal leaves nothing running.
             refuseUnlessTrusted(hardened, null, settings, environment.log());
         }
@@ -1112,7 +1115,8 @@ public final class PrivacyCluster implements AutoCloseable {
                     "auto-detection and multicast must be disabled on the supplied instance");
         }
         checkInstanceSettings(config);
-        if (joins(config) || instance.getCluster().getMembers().size() > 1) {
+        if (joins(config) || instance.getCluster().getMembers().size() > 1
+                || !boundToLoopback(instance, config)) {
             // The instance is not ours to stop: a refusal leaves it running.
             refuseUnlessTrusted(config, listeningAddresses(instance), settings, environment.log());
         }

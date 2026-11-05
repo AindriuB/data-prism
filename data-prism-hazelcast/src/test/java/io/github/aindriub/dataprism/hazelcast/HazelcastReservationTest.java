@@ -753,7 +753,8 @@ class HazelcastReservationTest {
                 new Class<?>[]{HazelcastInstance.class}, (proxy, method, args) ->
                         method.getName().equals("getMap") && PrivacyCluster.BUDGET_MAP.equals(args[0])
                                 ? map : invoke(method, instance, args));
-        var budget = new HazelcastScopeBudget(PrivacyCluster.using(wrapped, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED), LONG);
+        var budget = new HazelcastScopeBudget(PrivacyCluster.using(wrapped, false, PendingSweeper.DEFAULT_INTERVAL,
+                TestMembers.KEYS, TestMembers.TRUSTED), LONG);
         assertThatThrownBy(() -> budget.reserve(SCOPE, "b", 1, 10, 100))
                 .isInstanceOf(ClusterOperationRefusedException.class);
         assertThat(real.get(total)).as("still the marker").isEqualTo(-1);
@@ -849,7 +850,8 @@ class HazelcastReservationTest {
         var config = ClusterMembership.tcpIp(TestMembers.uniqueName("reservation-refused"),
                 List.of("127.0.0.1:" + port)).withPort(port).withInterface("127.0.0.1").toConfig();
         config.setProperty("hazelcast.lock.max.lease.time.seconds", "1");
-        PrivacyCluster solo = PrivacyCluster.embedded(config, false, OptionalInt.empty(), PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
+        PrivacyCluster solo = PrivacyCluster.embedded(config, false, OptionalInt.empty(),
+                PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
         try {
             var budget = new HazelcastScopeBudget(solo, Duration.ofSeconds(2));
             assertThatThrownBy(() -> budget.reserve(SCOPE, "s-1", 1, 5, 5))
@@ -906,7 +908,8 @@ class HazelcastReservationTest {
                 new Class<?>[]{HazelcastInstance.class}, (proxy, method, args) ->
                         method.getName().equals("getMap") && PrivacyCluster.BUDGET_MAP.equals(args[0])
                                 ? map : invoke(method, real, args));
-        return PrivacyCluster.using(instance, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
+        return PrivacyCluster.using(instance, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS,
+                TestMembers.TRUSTED);
     }
 
     /** As {@link #failingOn}, but a matching {@code executeOnKey} runs first and then throws. */
@@ -924,7 +927,8 @@ class HazelcastReservationTest {
                 new Class<?>[]{HazelcastInstance.class}, (proxy, method, args) ->
                         method.getName().equals("getMap") && PrivacyCluster.BUDGET_MAP.equals(args[0])
                                 ? map : invoke(method, real, args));
-        return PrivacyCluster.using(instance, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
+        return PrivacyCluster.using(instance, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS,
+                TestMembers.TRUSTED);
     }
 
     /** As {@link #failingOn}, but a matching {@code executeOnKey} announces itself and waits for the gate. */
@@ -943,7 +947,8 @@ class HazelcastReservationTest {
                 new Class<?>[]{HazelcastInstance.class}, (proxy, method, args) ->
                         method.getName().equals("getMap") && PrivacyCluster.BUDGET_MAP.equals(args[0])
                                 ? map : invoke(method, real, args));
-        return PrivacyCluster.using(instance, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
+        return PrivacyCluster.using(instance, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS,
+                TestMembers.TRUSTED);
     }
 
     /** As {@link #pausingOn}, but a matching {@code putIfAbsent} also announces itself and waits for the gate. */
@@ -963,7 +968,8 @@ class HazelcastReservationTest {
                 new Class<?>[]{HazelcastInstance.class}, (proxy, method, args) ->
                         method.getName().equals("getMap") && PrivacyCluster.BUDGET_MAP.equals(args[0])
                                 ? map : invoke(method, real, args));
-        return PrivacyCluster.using(instance, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
+        return PrivacyCluster.using(instance, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS,
+                TestMembers.TRUSTED);
     }
 
     private static Object invoke(Method method, Object target, Object[] args) throws Throwable {
