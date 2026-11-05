@@ -38,7 +38,7 @@ class ClusterOperationRefusalTest {
                 .withPort(port).withInterface("127.0.0.1").toConfig();
         // Below the 10 s lease of a two-second timeout; above the 500 ms lease of 100 ms.
         config.setProperty("hazelcast.lock.max.lease.time.seconds", "1");
-        cluster = PrivacyCluster.embedded(config, false, OptionalInt.empty(), TestMembers.KEYS);
+        cluster = PrivacyCluster.embedded(config, false, OptionalInt.empty(), PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
         refusing = new HazelcastApprovalStore(cluster, Duration.ofSeconds(2));
         accepting = new HazelcastApprovalStore(cluster, Duration.ofMillis(100));
     }

@@ -326,8 +326,8 @@ class ApprovalStoreContractTest {
     void concurrentCreatesFromTwoMembersNeverExceedTheCap() throws Exception {
         String name = "dataprism-approval-cap-" + System.nanoTime();
         int port = FreePorts.consecutive(2);
-        cluster = PrivacyCluster.using(Hazelcast.newHazelcastInstance(member(name, port, port)), false, TestMembers.KEYS);
-        second = PrivacyCluster.using(Hazelcast.newHazelcastInstance(member(name, port + 1, port)), false, TestMembers.KEYS);
+        cluster = PrivacyCluster.using(Hazelcast.newHazelcastInstance(member(name, port, port)), false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
+        second = PrivacyCluster.using(Hazelcast.newHazelcastInstance(member(name, port + 1, port)), false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
         assertThat(cluster.instance().getCluster().getMembers()).hasSize(2);
         assertThat(TestMembers.settled(30, cluster, second)).as("the members did not settle").isTrue();
         ApprovalStore viaA = new HazelcastApprovalStore(cluster);
@@ -407,6 +407,8 @@ class ApprovalStoreContractTest {
         config.getNetworkConfig().getJoin().getTcpIpConfig().setEnabled(true)
                 .addMember("127.0.0.1:" + base).addMember("127.0.0.1:" + (base + 1));
         config.getNetworkConfig().getInterfaces().setEnabled(true).addInterface("127.0.0.1");
+        config.setProperty("hazelcast.socket.bind.any", "false");
+        config.setProperty("hazelcast.socket.server.bind.any", "false");
         return config;
     }
 }

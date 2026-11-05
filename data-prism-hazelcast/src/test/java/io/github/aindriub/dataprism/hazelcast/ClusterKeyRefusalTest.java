@@ -71,7 +71,7 @@ class ClusterKeyRefusalTest {
         HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
         refusedAsMissing(catchThrowable(() -> PrivacyCluster.using(instance, false)));
         assertThat(instance.getLifecycleService().isRunning()).isTrue();
-        try (PrivacyCluster wrapped = PrivacyCluster.using(instance, false, TestMembers.KEYS)) {
+        try (PrivacyCluster wrapped = PrivacyCluster.using(instance, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED)) {
             assertThat(wrapped.keys()).containsSame(TestMembers.KEYS);
         }
     }
@@ -87,8 +87,7 @@ class ClusterKeyRefusalTest {
     @Test
     void aSoloMemberHoldsTheKeysItIsGiven() {
         try (PrivacyCluster solo = PrivacyCluster.embedded(ClusterMembership.none(TestMembers.uniqueName("keys"))
-                .withPort(FreePorts.consecutive(1)), false, OptionalInt.empty(),
-                java.time.Duration.ofMinutes(1), TestMembers.KEYS)) {
+                .withPort(FreePorts.consecutive(1)), false, OptionalInt.empty(), java.time.Duration.ofMinutes(1), TestMembers.KEYS, TestMembers.TRUSTED)) {
             assertThat(solo.keys()).containsSame(TestMembers.KEYS);
         }
     }
@@ -98,8 +97,7 @@ class ClusterKeyRefusalTest {
         int port = FreePorts.consecutive(1);
         try (PrivacyCluster member = PrivacyCluster.embedded(ClusterMembership.tcpIp(
                         TestMembers.uniqueName("keys"), List.of("127.0.0.1:" + port)).withPort(port)
-                .withInterface("127.0.0.1"), false, OptionalInt.of(1), java.time.Duration.ofMinutes(1),
-                TestMembers.KEYS)) {
+                .withInterface("127.0.0.1"), false, OptionalInt.of(1), java.time.Duration.ofMinutes(1), TestMembers.KEYS, TestMembers.TRUSTED)) {
             assertThat(member.keys()).containsSame(TestMembers.KEYS);
         }
     }

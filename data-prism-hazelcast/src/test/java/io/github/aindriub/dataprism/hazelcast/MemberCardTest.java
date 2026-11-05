@@ -141,7 +141,8 @@ class MemberCardTest {
 
         static ClusterSecuritySettings settings(UnverifiedMemberAction action) {
             return new ClusterSecuritySettings(LEASE, ClusterSecuritySettings.DEFAULT_CLOCK_SKEW_TOLERANCE, action,
-                    GRACE, true);
+                    GRACE, true)
+                    .withTrustedNetwork(true, List.of(), true);
         }
 
         /** Looks at the cluster only when a test says so: the schedule is an hour. */

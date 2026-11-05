@@ -54,8 +54,8 @@ class IdentityMetricsTest {
         config.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
         config.getNetworkConfig().getJoin().getTcpIpConfig().setEnabled(false);
         // Both wrappers share one instance, so they must hold the same keys.
-        notReidentifying = PrivacyCluster.embedded(config, false, java.util.OptionalInt.empty(), TestMembers.KEYS);
-        reidentifying = PrivacyCluster.using(notReidentifying.instance(), true, TestMembers.KEYS);
+        notReidentifying = PrivacyCluster.embedded(config, false, java.util.OptionalInt.empty(), PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
+        reidentifying = PrivacyCluster.using(notReidentifying.instance(), true, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
     }
 
     @AfterAll

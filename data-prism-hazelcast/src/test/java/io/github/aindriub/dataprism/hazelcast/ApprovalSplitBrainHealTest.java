@@ -42,11 +42,9 @@ class ApprovalSplitBrainHealTest {
         // The first member lists the second, but starts alone, so it forms a cluster of one. The second lists
         // only itself. Each is a cluster of one with the same name, and the first keeps looking for the second.
         first = PrivacyCluster.embedded(shortMergeDelays(ClusterMembership.tcpIp(name, List.of(a, b))
-                .withPort(port).withInterface("127.0.0.1").toConfig()), false, OptionalInt.empty(),
-                TestMembers.KEYS);
+                .withPort(port).withInterface("127.0.0.1").toConfig()), false, OptionalInt.empty(), PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
         second = PrivacyCluster.embedded(shortMergeDelays(ClusterMembership.tcpIp(name, List.of(b))
-                .withPort(port + 1).withInterface("127.0.0.1").toConfig()), false, OptionalInt.empty(),
-                TestMembers.KEYS);
+                .withPort(port + 1).withInterface("127.0.0.1").toConfig()), false, OptionalInt.empty(), PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
         assertThat(first.instance().getCluster().getMembers()).hasSize(1);
         assertThat(second.instance().getCluster().getMembers()).hasSize(1);
 
