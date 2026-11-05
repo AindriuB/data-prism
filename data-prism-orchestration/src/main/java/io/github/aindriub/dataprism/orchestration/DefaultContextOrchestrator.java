@@ -42,8 +42,12 @@ import org.slf4j.LoggerFactory;
 import io.github.aindriub.dataprism.orchestration.catalog.SourceCatalog;
 import io.github.aindriub.dataprism.orchestration.catalog.SourceLabels;
 import io.github.aindriub.dataprism.orchestration.catalog.SourceSelection;
+import io.github.aindriub.dataprism.orchestration.links.IssuedLink;
+import io.github.aindriub.dataprism.orchestration.links.LinkBuilder;
+import io.github.aindriub.dataprism.core.link.LinkBinding;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -95,6 +99,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
     private final PrivacyMetrics metrics;
     private final OrchestrationOptions options;
     private final SourceCatalog catalog;
+    private final LinkBuilder linkBuilder;
 
     /**
      * The standard pipeline: the supplied comparison check, plus the pattern
@@ -151,6 +156,9 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         this.metrics = Objects.requireNonNull(metrics, "metrics");
         this.options = Objects.requireNonNull(options, "options");
         this.catalog = options.catalog().orElseGet(() -> SourceCatalog.build(this.adapters, Map.of()));
+        this.linkBuilder = options.links()
+                .map(l -> new LinkBuilder(l.codec(), l.maxPerResponse(), l.resolvers(), l.descriptors(), l.clock()))
+                .orElse(null);
         if (this.validators.isEmpty()) {
             throw new IllegalArgumentException("at least one response validator is required");
         }
@@ -182,6 +190,8 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         Set<String> emitted = new LinkedHashSet<>();
         Map<String, ObjectNode> trees = Map.of();
         boolean[] allSourcesRefused = {false};
+        int[] issuedLinks = {0};
+        int[] omittedLinks = {0};
         Map<String, String> dispositions = new LinkedHashMap<>();
         // The effective label setting, on every event of this call, a denial included (OD-C2 (a)).
         dispositions.put(AuditEvent.NAMES_KEY,
@@ -256,11 +266,26 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
             // the returned sources' trees in the response's own key order. A validator that refuses a
             // combination across sources sees it, and no source name or alias is a key it can see or
             // report in a path. The union of every returned source's emitted values applies.
+            LinkBuilder.Result linkResult = issueLinks(request, context, investigationContext, labels, trees,
+                    raw, prohibited, emitted);
+            // Only tokens the builder sealed are exempt from the key-shape scan; a token-shaped string
+            // that came from a source record is not in this set and still fails.
+            emitted.addAll(linkResult.tokens());
+            issuedLinks[0] = linkResult.issued();
+            omittedLinks[0] = linkResult.omitted();
             ArrayNode assembled = JsonNodeFactory.instance.arrayNode();
             trees.entrySet().stream()
                     .sorted(Map.Entry.comparingByKey(java.util.Comparator.comparing(
                             labels::labelOf)))
                     .forEach(entry -> assembled.add(entry.getValue()));
+            // The links are scanned too, after the trees so that no tree's index moves.
+            linkResult.bySource().entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .forEach(entry -> {
+                        if (!entry.getValue().links().isEmpty()) {
+                            assembled.add(linkNode(entry.getValue().links()));
+                        }
+                    });
             List<Violation> violations = new ArrayList<>();
             for (LlmResponseValidator validator : validators) {
                 violations.addAll(validator.validate(assembled, prohibited, emitted, context).violations());
@@ -276,7 +301,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                                 + " by " + violations.get(0).detectionMethod() + "; response withheld");
             }
             response = ContextResponse.of(request.entityType(), subjectToken, sources,
-                    findings, trees, fieldsByNamespace(raw), labels, correlationId);
+                    findings, trees, fieldsByNamespace(raw), labels, correlationId, linkResult.bySource());
             if (ResponseSize.records(response) > limits.maxRecords()) {
                 throw new PrivacyRefusedException("TOO_MANY_RECORDS", "$",
                         "response exceeds configured record limit " + limits.maxRecords());
@@ -317,9 +342,84 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         // failclosed counts refused calls only; this counts each source withheld from a returned response.
         sources.stream().filter(o -> o.status() == SourceOutcome.Status.REFUSED)
                 .forEach(o -> metrics.increment(Metric.PRIVACY_SOURCE_WITHHELD));
+        // Counted once the response is certain to leave: a refused call issued nothing.
+        for (int i = 0; i < issuedLinks[0]; i++) {
+            metrics.increment(Metric.LINKS_ISSUED);
+        }
+        for (int i = 0; i < omittedLinks[0]; i++) {
+            metrics.increment(Metric.LINKS_OMITTED);
+        }
         audit(request, subjectToken, fingerprint, context, investigationContext, "ALLOW", sources,
                 correlationId, dispositions);
         return response;
+    }
+
+    /**
+     * Issues the sealed links of the sources that answered, or nothing: links off, a comparison (which carries
+     * no links), no answered source, or any failure. Reads declarations and the raw records only; calls no
+     * resolver and no adapter.
+     */
+    private LinkBuilder.Result issueLinks(ContextRequest request, PrivacyContext context,
+                                          InvestigationContext caller, SourceLabels labels,
+                                          Map<String, ObjectNode> trees,
+                                          List<EntityCorrelationService.SourceRecord> raw,
+                                          Set<String> prohibited, Set<String> emitted) {
+        if (linkBuilder == null || request.includeAgreementFindings()) {
+            return LinkBuilder.Result.NONE;
+        }
+        try {
+            Map<String, Object> recordByLabel = new LinkedHashMap<>();
+            raw.forEach(source -> recordByLabel.put(source.sourceName(), source.record()));
+            List<LinkBuilder.Origin> origins = new ArrayList<>();
+            for (String name : trees.keySet()) {
+                String label = labels.labelOf(name);
+                Object record = recordByLabel.get(label);
+                if (record != null) {
+                    origins.add(new LinkBuilder.Origin(name, label, record));
+                }
+            }
+            OrchestrationOptions.LinkIssuing issuing = options.links().orElseThrow();
+            Instant scopeExpiry = context.expiresAt() == null
+                    ? OrchestrationOptions.LinkIssuing.NO_EXPIRY : context.expiresAt();
+            LinkBinding binding = new LinkBinding(context.scopeId(), caller.principalId(), scopeExpiry,
+                    issuing.tokenExpiry().apply(caller));
+            return linkBuilder.build(origins, labels, binding,
+                    name -> nameIsSafe(name, prohibited, emitted, context));
+        } catch (RuntimeException failure) {
+            // Fail closed to no links. The class only: the message could name a value.
+            LOG.warn("links not issued: {}", failure.getClass().getSimpleName());
+            return LinkBuilder.Result.NONE;
+        }
+    }
+
+    /** Whether a declared field name may appear in output: every validator accepts it as a lone string. */
+    private boolean nameIsSafe(String name, Set<String> prohibited, Set<String> emitted, PrivacyContext context) {
+        ObjectNode probe = JsonNodeFactory.instance.objectNode().put("field", name);
+        for (LlmResponseValidator validator : validators) {
+            if (!validator.validate(probe, prohibited, emitted, context).violations().isEmpty()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static ObjectNode linkNode(List<IssuedLink> links) {
+        ArrayNode array = JsonNodeFactory.instance.arrayNode();
+        for (IssuedLink link : links) {
+            ObjectNode node = array.addObject();
+            node.put("rel", link.rel());
+            node.put("target", link.target());
+            node.put("field", link.field());
+            node.put("namespace", link.namespace());
+            if (link.toNamespace() != null) {
+                node.put("toNamespace", link.toNamespace());
+            }
+            node.put("link", link.link());
+            node.put("expiresAt", link.expiresAt());
+        }
+        ObjectNode holder = JsonNodeFactory.instance.objectNode();
+        holder.set("_links", array);
+        return holder;
     }
 
     /**

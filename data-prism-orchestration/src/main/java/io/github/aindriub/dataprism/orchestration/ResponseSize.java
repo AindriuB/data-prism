@@ -1,9 +1,11 @@
 package io.github.aindriub.dataprism.orchestration;
 
 import io.github.aindriub.dataprism.core.model.ConsistencyFinding;
+import io.github.aindriub.dataprism.orchestration.links.IssuedLink;
 import tools.jackson.databind.JsonNode;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -28,10 +30,21 @@ final class ResponseSize {
         boolean first = true;
         for (var entry : response.sources().entrySet()) {
             SourceResult source = entry.getValue();
-            long value = object(List.of("status"), List.of(string(source.status())));
+            List<String> keys = new ArrayList<>(List.of("status"));
+            List<Long> values = new ArrayList<>(List.of(string(source.status())));
             if (source.entity() != null) {
-                value = object(List.of("status", "entity"), List.of(string(source.status()), tree(source.entity())));
+                keys.add("entity");
+                values.add(tree(source.entity()));
             }
+            if (!source.links().isEmpty()) {
+                keys.add("_links");
+                values.add(links(source.links()));
+            }
+            if (source.linksOmitted() != null) {
+                keys.add("_linksOmitted");
+                values.add((long) Integer.toString(source.linksOmitted()).length());
+            }
+            long value = object(keys, values);
             sources = add(sources, (first ? 0 : 1) + string(entry.getKey()) + 1);
             sources = add(sources, value);
             first = false;
@@ -67,6 +80,27 @@ final class ResponseSize {
         }
         return object(List.of("entityType", "subject", "sources", "findings"),
                 List.of(string(response.entityType()), string(response.subject()), sources, findings));
+    }
+
+    private static long links(List<IssuedLink> links) {
+        long bytes = 2;
+        boolean first = true;
+        for (IssuedLink link : links) {
+            List<String> keys = new ArrayList<>(List.of("rel", "target", "field", "namespace"));
+            List<Long> values = new ArrayList<>(List.of(string(link.rel()), string(link.target()),
+                    string(link.field()), string(link.namespace())));
+            if (link.toNamespace() != null) {
+                keys.add("toNamespace");
+                values.add(string(link.toNamespace()));
+            }
+            keys.add("link");
+            values.add(string(link.link()));
+            keys.add("expiresAt");
+            values.add(string(link.expiresAt()));
+            bytes = add(bytes, (first ? 0 : 1) + object(keys, values));
+            first = false;
+        }
+        return bytes;
     }
 
     /** Mirrors CompareEntitySourcesTool's first-answer field projection without copying a tree. */

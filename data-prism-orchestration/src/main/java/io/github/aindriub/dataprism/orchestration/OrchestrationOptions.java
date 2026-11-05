@@ -1,11 +1,19 @@
 package io.github.aindriub.dataprism.orchestration;
 
+import io.github.aindriub.dataprism.core.descriptor.ModelDescriptor;
+import io.github.aindriub.dataprism.core.link.LinkCodec;
+import io.github.aindriub.dataprism.core.model.InvestigationContext;
 import io.github.aindriub.dataprism.orchestration.catalog.RealNamesPolicy;
 import io.github.aindriub.dataprism.orchestration.catalog.SourceCatalog;
 import io.github.aindriub.dataprism.orchestration.catalog.SourceVisibility;
+import io.github.aindriub.dataprism.orchestration.links.KeyResolvers;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Function;
 
 /**
  * The optional collaborators of a {@link DefaultContextOrchestrator}, passed as the last argument of
@@ -18,17 +26,60 @@ import java.util.Optional;
  * @param visibility            which sources a caller may see; every source to every caller by default
  * @param realNames             which scopes may be shown real source names; none by default
  * @param unselectedSourceLimit the most permitted sources a call without {@code targetSources} may ask
+ * @param links                 how sealed links are issued; empty means links are off and a response is exactly
+ *                              what it was before links existed
  */
 public record OrchestrationOptions(Optional<SourceCatalog> catalog, SourceVisibility visibility,
-                                   RealNamesPolicy realNames, int unselectedSourceLimit) {
+                                   RealNamesPolicy realNames, int unselectedSourceLimit,
+                                   Optional<LinkIssuing> links) {
 
     /** The default for {@code dataprism.catalog.unselected-source-limit}. */
     public static final int DEFAULT_UNSELECTED_SOURCE_LIMIT = 8;
+
+    /**
+     * The settings for issuing links ({@code dataprism.links.*}, bound in a later task).
+     *
+     * @param codec          seals the links; carries the key, the lifetime and the maximum length
+     * @param maxPerResponse the cap across the whole response, 1 to 500
+     * @param resolvers      the declared key resolvers; only their declarations are read
+     * @param descriptors    model descriptors by type name, as the chainable analysis reads them
+     * @param clock          the issue-time source
+     * @param tokenExpiry    when the caller's authentication token ends; never a request value
+     */
+    public record LinkIssuing(LinkCodec codec, int maxPerResponse, KeyResolvers resolvers,
+                              Map<String, ModelDescriptor> descriptors, Clock clock,
+                              Function<InvestigationContext, Instant> tokenExpiry) {
+
+        /** Used when no scope or token end is known: far enough that the link lifetime decides. */
+        public static final Instant NO_EXPIRY = Instant.ofEpochSecond(1L << 40);
+
+        public LinkIssuing {
+            Objects.requireNonNull(codec, "codec");
+            if (maxPerResponse < 1 || maxPerResponse > 500) {
+                throw new IllegalArgumentException("INVALID_LINK_LIMIT: max-per-response must be 1 to 500");
+            }
+            Objects.requireNonNull(resolvers, "resolvers");
+            descriptors = Map.copyOf(Objects.requireNonNull(descriptors, "descriptors"));
+            Objects.requireNonNull(clock, "clock");
+            Objects.requireNonNull(tokenExpiry, "tokenExpiry");
+        }
+
+        public static LinkIssuing of(LinkCodec codec, int maxPerResponse, KeyResolvers resolvers) {
+            return new LinkIssuing(codec, maxPerResponse, resolvers, Map.of(), Clock.systemUTC(),
+                    caller -> NO_EXPIRY);
+        }
+    }
+
+    public OrchestrationOptions(Optional<SourceCatalog> catalog, SourceVisibility visibility,
+                                RealNamesPolicy realNames, int unselectedSourceLimit) {
+        this(catalog, visibility, realNames, unselectedSourceLimit, Optional.empty());
+    }
 
     public OrchestrationOptions {
         Objects.requireNonNull(catalog, "catalog");
         Objects.requireNonNull(visibility, "visibility");
         Objects.requireNonNull(realNames, "realNames");
+        Objects.requireNonNull(links, "links");
         if (unselectedSourceLimit < 1) {
             throw new IllegalArgumentException("INVALID_CATALOG_SETTING: unselectedSourceLimit must be positive");
         }
@@ -36,22 +87,27 @@ public record OrchestrationOptions(Optional<SourceCatalog> catalog, SourceVisibi
 
     public static OrchestrationOptions defaults() {
         return new OrchestrationOptions(Optional.empty(), SourceVisibility.allowAll(), RealNamesPolicy.none(),
-                DEFAULT_UNSELECTED_SOURCE_LIMIT);
+                DEFAULT_UNSELECTED_SOURCE_LIMIT, Optional.empty());
     }
 
     public OrchestrationOptions withCatalog(SourceCatalog catalog) {
-        return new OrchestrationOptions(Optional.of(catalog), visibility, realNames, unselectedSourceLimit);
+        return new OrchestrationOptions(Optional.of(catalog), visibility, realNames, unselectedSourceLimit, links);
     }
 
     public OrchestrationOptions withVisibility(SourceVisibility visibility) {
-        return new OrchestrationOptions(catalog, visibility, realNames, unselectedSourceLimit);
+        return new OrchestrationOptions(catalog, visibility, realNames, unselectedSourceLimit, links);
     }
 
     public OrchestrationOptions withRealNames(RealNamesPolicy realNames) {
-        return new OrchestrationOptions(catalog, visibility, realNames, unselectedSourceLimit);
+        return new OrchestrationOptions(catalog, visibility, realNames, unselectedSourceLimit, links);
     }
 
     public OrchestrationOptions withUnselectedSourceLimit(int unselectedSourceLimit) {
-        return new OrchestrationOptions(catalog, visibility, realNames, unselectedSourceLimit);
+        return new OrchestrationOptions(catalog, visibility, realNames, unselectedSourceLimit, links);
+    }
+
+    public OrchestrationOptions withLinks(LinkIssuing links) {
+        return new OrchestrationOptions(catalog, visibility, realNames, unselectedSourceLimit,
+                Optional.of(links));
     }
 }
