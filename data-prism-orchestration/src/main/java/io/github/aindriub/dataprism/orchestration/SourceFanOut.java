@@ -678,8 +678,19 @@ public final class SourceFanOut {
             call.finishedAt = Instant.now(clock);
             callFinishedObserver.accept(call.adapter.sourceName());
         } catch (Throwable t) {
-            // The MDC could not be opened or the clock read: the source was not called, or its result is lost.
-            if (call.finishedAt == null) {
+            if (call.finishedAt != null) {
+                // The result is already recorded (closing the MDC failed): nothing is lost.
+                return;
+            }
+            // Written before the gate moves, so whoever sees the gate skipped sees the error too.
+            call.startError = t;
+            if (call.gate.compareAndSet(UNDECIDED, SKIPPED) || call.gate.get() == SKIPPED) {
+                // Failed before the adapter was called (opening the MDC): never called, like a call whose
+                // thread failed to start. The read goes back, the source is not blamed.
+                call.finishedAt = Instant.now(clock);
+            } else {
+                // The gate is INVOKING: the adapter was called and its result is lost.
+                call.startError = null;
                 call.failure = t;
                 call.finishedAt = Instant.now(clock);
             }
@@ -747,6 +758,10 @@ public final class SourceFanOut {
         // keeps its thread from calling the adapter after all.
         if (call.gate.get() == SKIPPED || call.gate.compareAndSet(UNDECIDED, SKIPPED)) {
             call.thread.interrupt();
+            if (call.startError != null) {
+                resolved.put(call, failedBeforeStart(call, call.startedAt == null ? now : call.startedAt));
+                return;
+            }
             resolved.put(call, cut == Cut.INTERRUPTED
                     ? cancelledBeforeTheCall(call, SourceOutcome.Status.FAILED, "interrupted")
                     : cancelledBeforeTheCall(call, SourceOutcome.Status.TIMED_OUT, "cancelled before the call began"));
@@ -818,6 +833,9 @@ public final class SourceFanOut {
                     false, false, false, true, call.refusal == SourceCallSlots.Start.SATURATED);
         }
         if (call.gate.get() == SKIPPED) {
+            if (call.startError != null) {
+                return failedBeforeStart(call, call.startedAt);
+            }
             return cancelledBeforeTheCall(call, SourceOutcome.Status.TIMED_OUT, "cancelled before the call began");
         }
         String name = call.adapter.sourceName();
