@@ -463,6 +463,34 @@ class SourceFanOutDeadlineRacesTest {
     }
 
     @Test
+    @DisplayName("a caller that is interrupted before its call gets a worker starts none: nothing is called and every permit and the trial go back")
+    void anInterruptedCallerStartsNoWorker() throws Exception {
+        var created = new java.util.concurrent.atomic.AtomicInteger();
+        var slots = new SourceCallSlots(2, 2, r -> {
+            created.incrementAndGet();
+            return new Thread(r);
+        });
+        var clock = new SourceFanOutDeadlineTest.MutableClock();
+        var breaker = new SourceCircuitBreaker(1, Duration.ofSeconds(5), clock);
+        breaker.record(failed("s"));
+        clock.advance(Duration.ofSeconds(6));
+        var limits = TestLimits.defaults().perSourceTimeout(Duration.ofSeconds(3)).maxConcurrency(1).build();
+        var reported = new Reported();
+        var fanOut = new SourceFanOut(breaker, clock, SourceFanOutOptions.defaults().withMetrics(reported), slots);
+        var f = new Fixture(clock, breaker, fanOut, new SourceFanOutDeadlineTest.Blocking("s"), limits, reported);
+        fanOut.callAfterStartObserver(name -> Thread.currentThread().interrupt());
+
+        var execution = f.start().get(WAIT_SECONDS, TimeUnit.SECONDS);
+
+        assertThat(created.get()).as("no worker thread was created").isZero();
+        assertThat(f.source().calls.get()).as("the adapter was never called").isZero();
+        assertThat(slots.poolPermits()).isEqualTo(2);
+        assertThat(slots.sourcePermits("s")).isEqualTo(2);
+        assertThat(execution.notStarted()).isEqualTo(1);
+        assertThat(f.breaker().admit("s").holdsTrial()).as("trial free").isTrue();
+    }
+
+    @Test
     @DisplayName("an execution that fails while a call is started but not yet calling counts that call as never called")
     void anAbortCountsAStartedButUncalledSourceAsNotStarted() throws Exception {
         var f = Fixture.create();

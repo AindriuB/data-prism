@@ -31,9 +31,11 @@ import java.util.function.Consumer;
 /**
  * Calls the sources for one request, in parallel and under limits.
  *
- * <p>Virtual threads, because the work is blocking HTTP and nothing else: a
- * platform thread per source would cap the useful fan-out at whatever the pool
- * was sized to, for no reason other than the threading model.
+ * <p>Each source has a virtual thread that waits for a bulkhead permit and watches its call. The call
+ * itself runs on a dedicated platform thread from {@link SourceCallSlots}, bounded in total and per
+ * source, so an adapter that ignores interrupts or pins its carrier cannot starve the shared
+ * virtual-thread scheduler. When no slot is free the source is not called and is reported
+ * {@code FAILED} with detail {@code UNAVAILABLE}.
  *
  * <p>Four things bound it, and they bound different failures. The bulkhead caps
  * concurrent calls, so a request over many sources cannot be the reason a
@@ -86,6 +88,7 @@ public final class SourceFanOut {
     private final Clock clock;
     private final PrivacyMetrics metrics;
     private final CorrelationMdc mdc;
+    private final SourceCallSlots slots;
     private volatile Consumer<Semaphore> bulkheadObserver = bulkhead -> { };
     private volatile Consumer<Instant> tickObserver = now -> { };
     private volatile Consumer<String> callStartObserver = source -> { };
@@ -98,9 +101,21 @@ public final class SourceFanOut {
      */
     private final ConcurrentHashMap<String, Load> load = new ConcurrentHashMap<>();
 
+    /** Why a source was reported without being called, in {@link Fetched#outcome()}'s detail. */
+    static final String UNAVAILABLE = "UNAVAILABLE";
+
+    /** One set of call slots for the process. */
+    private static final SourceCallSlots DEFAULT_SLOTS = new SourceCallSlots();
+
     /** @param options the metrics and MDC; {@link SourceFanOutOptions#defaults()} for neither */
     public SourceFanOut(SourceCircuitBreaker breaker, Clock clock, SourceFanOutOptions options) {
+        this(breaker, clock, options, DEFAULT_SLOTS);
+    }
+
+    /** For tests: call slots of their own sizes. */
+    SourceFanOut(SourceCircuitBreaker breaker, Clock clock, SourceFanOutOptions options, SourceCallSlots slots) {
         Objects.requireNonNull(options, "options");
+        this.slots = Objects.requireNonNull(slots, "slots");
         this.mdc = options.mdc();
         this.breaker = Objects.requireNonNull(breaker, "breaker");
         this.clock = Objects.requireNonNull(clock, "clock");
@@ -250,7 +265,8 @@ public final class SourceFanOut {
     /**
      * @param results    one entry per source in the plan, circuit-open sources first
      * @param notStarted how many sources were never called because the request
-     *                   deadline passed (or the caller gave up) before they held a permit.
+     *                   deadline passed (or the caller gave up) before they held a permit, or
+     *                   because no call slot or thread was available for them.
      *                   Their reads were reserved and never used
      */
     public record Execution(List<Fetched> results, int notStarted) {
@@ -384,6 +400,11 @@ public final class SourceFanOut {
         boolean threadEnded;
         boolean leftover;
         volatile Thread thread;
+        /** The platform thread running the adapter, once started. */
+        volatile Thread worker;
+        /** Set, before finishedAt, when the source was not called because no thread could be had for it. */
+        volatile SourceCallSlots.Start refusal;
+        final CountDownLatch workerDone = new CountDownLatch(1);
 
         Call(DataSourceAdapter<?> adapter, DataRequest request, boolean holdsTrial) {
             this.adapter = adapter;
@@ -399,9 +420,13 @@ public final class SourceFanOut {
      * @param errorMetric  whether a failure is counted in {@code SOURCE_ERRORS}
      * @param latency      whether the call ran, so that its latency means something
      * @param neverCalled  whether the source was never called, so that its read goes back
+     * @param saturated    whether the source was not called because no call slot was free
      */
     private record Resolution(Fetched fetched, boolean breaker, boolean errorMetric, boolean latency,
-                              boolean neverCalled) {
+                              boolean neverCalled, boolean saturated) {
+        Resolution(Fetched fetched, boolean breaker, boolean errorMetric, boolean latency, boolean neverCalled) {
+            this(fetched, breaker, errorMetric, latency, neverCalled, false);
+        }
     }
 
     private enum Cut { PER_SOURCE, DEADLINE, INTERRUPTED }
@@ -516,13 +541,17 @@ public final class SourceFanOut {
         }
         for (Call call : calls) {
             Resolution resolution = resolved.get(call);
-            recordMetrics(resolution.fetched().outcome(), resolution.latency(), resolution.errorMetric());
+            recordMetrics(resolution.fetched().outcome(), resolution.latency(), resolution.errorMetric(),
+                    resolution.saturated());
         }
         return new Execution(results, notStarted);
     }
 
-    private void recordMetrics(SourceOutcome outcome, boolean latency, boolean error) {
+    private void recordMetrics(SourceOutcome outcome, boolean latency, boolean error, boolean saturated) {
         try {
+            if (saturated) {
+                metrics.increment(Metric.SOURCE_CALLS_SATURATED, outcome.sourceName());
+            }
             if (latency) {
                 metrics.record(Metric.SOURCE_LATENCY, outcome.sourceName(), outcome.took());
             }
@@ -566,21 +595,7 @@ public final class SourceFanOut {
                         call.trialCounted = true;
                     }
                     callAfterStartObserver.accept(call.adapter.sourceName());
-                    try {
-                        if (Thread.currentThread().isInterrupted()) {
-                            // Cancelled between starting and calling: do not begin remote work.
-                            call.gate.compareAndSet(UNDECIDED, SKIPPED);
-                        }
-                        if (!call.gate.compareAndSet(UNDECIDED, INVOKING)) {
-                            throw new InterruptedException();
-                        }
-                        call.record = call.adapter.fetch(call.request);
-                        call.succeeded = true;
-                    } catch (Throwable t) {
-                        call.failure = t;
-                    }
-                    call.finishedAt = Instant.now(clock);
-                    callFinishedObserver.accept(call.adapter.sourceName());
+                    runOnSlot(call);
                 } finally {
                     bulkhead.release();
                 }
@@ -604,6 +619,81 @@ public final class SourceFanOut {
             call.ended.countDown();
             finished.add(call);
             callEndObserver.accept(call.adapter.sourceName());
+        }
+    }
+
+    /**
+     * Runs the adapter call on a platform thread from the slots and waits for it to return. An interrupt of
+     * this thread is passed on to the call's thread, and the wait goes on: this thread, like the call, is
+     * over only when the adapter has returned, so a call that ignores its interrupt is still counted.
+     */
+    private void runOnSlot(Call call) {
+        String name = call.adapter.sourceName();
+        if (Thread.currentThread().isInterrupted()) {
+            // Cancelled before a worker exists: decide it here, so no thread or permit is taken for it.
+            call.gate.compareAndSet(UNDECIDED, SKIPPED);
+        }
+        if (call.gate.get() == SKIPPED) {
+            call.finishedAt = Instant.now(clock);
+            return;
+        }
+        SourceCallSlots.Start start = slots.acquireAndStart(name, () -> invoke(call), call.workerDone::countDown,
+                thread -> call.worker = thread);
+        if (start != SourceCallSlots.Start.STARTED) {
+            call.refusal = start;
+            call.finishedAt = Instant.now(clock);
+            return;
+        }
+        boolean interrupted = false;
+        while (true) {
+            try {
+                call.workerDone.await();
+                break;
+            } catch (InterruptedException e) {
+                interrupted = true;
+                call.worker.interrupt();
+            }
+        }
+        if (interrupted) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /** The call's own thread: the adapter call, with the MDC of its own request, then its result recorded. */
+    private void invoke(Call call) {
+        try (CorrelationMdc.Scope ignored = mdc.open(call.request.context().externalCorrelationId())) {
+            try {
+                if (Thread.currentThread().isInterrupted()) {
+                    // Cancelled between starting and calling: do not begin remote work.
+                    call.gate.compareAndSet(UNDECIDED, SKIPPED);
+                }
+                if (!call.gate.compareAndSet(UNDECIDED, INVOKING)) {
+                    throw new InterruptedException();
+                }
+                call.record = call.adapter.fetch(call.request);
+                call.succeeded = true;
+            } catch (Throwable t) {
+                call.failure = t;
+            }
+            call.finishedAt = Instant.now(clock);
+            callFinishedObserver.accept(call.adapter.sourceName());
+        } catch (Throwable t) {
+            if (call.finishedAt != null) {
+                // The result is already recorded (closing the MDC failed): nothing is lost.
+                return;
+            }
+            // Written before the gate moves, so whoever sees the gate skipped sees the error too.
+            call.startError = t;
+            if (call.gate.compareAndSet(UNDECIDED, SKIPPED) || call.gate.get() == SKIPPED) {
+                // Failed before the adapter was called (opening the MDC): never called, like a call whose
+                // thread failed to start. The read goes back, the source is not blamed.
+                call.finishedAt = Instant.now(clock);
+            } else {
+                // The gate is INVOKING: the adapter was called and its result is lost.
+                call.startError = null;
+                call.failure = t;
+                call.finishedAt = Instant.now(clock);
+            }
         }
     }
 
@@ -668,6 +758,10 @@ public final class SourceFanOut {
         // keeps its thread from calling the adapter after all.
         if (call.gate.get() == SKIPPED || call.gate.compareAndSet(UNDECIDED, SKIPPED)) {
             call.thread.interrupt();
+            if (call.startError != null) {
+                resolved.put(call, failedBeforeStart(call, call.startedAt == null ? now : call.startedAt));
+                return;
+            }
             resolved.put(call, cut == Cut.INTERRUPTED
                     ? cancelledBeforeTheCall(call, SourceOutcome.Status.FAILED, "interrupted")
                     : cancelledBeforeTheCall(call, SourceOutcome.Status.TIMED_OUT, "cancelled before the call began"));
@@ -732,7 +826,16 @@ public final class SourceFanOut {
      * everywhere else is expired here. A waiter that was slow to notice changes neither.
      */
     private Resolution completed(Call call, Instant deadline, RequestLimits limits) {
+        if (call.refusal != null) {
+            // Not called: no call slot, or no thread. The source did nothing, so no verdict on it.
+            return new Resolution(new Fetched(new SourceOutcome(call.adapter.sourceName(),
+                    SourceOutcome.Status.FAILED, Duration.between(call.startedAt, call.finishedAt), UNAVAILABLE), null),
+                    false, false, false, true, call.refusal == SourceCallSlots.Start.SATURATED);
+        }
         if (call.gate.get() == SKIPPED) {
+            if (call.startError != null) {
+                return failedBeforeStart(call, call.startedAt);
+            }
             return cancelledBeforeTheCall(call, SourceOutcome.Status.TIMED_OUT, "cancelled before the call began");
         }
         String name = call.adapter.sourceName();
