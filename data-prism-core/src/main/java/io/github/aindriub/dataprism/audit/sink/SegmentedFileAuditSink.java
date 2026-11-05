@@ -184,6 +184,16 @@ public final class SegmentedFileAuditSink implements AuditSink, Closeable {
                     new IOException(poisonedBy));
         }
         try {
+            writes.run(() -> recordInternal(event));
+        } catch (RuntimeException e) {
+            poisonedBy = e;
+            throw e;
+        }
+    }
+
+    /** Runs on the internal writer thread, so an interrupt of the caller never reaches a channel. */
+    private void recordInternal(AuditEvent event) {
+        {
             LocalDate date = event.timestamp().atZone(ZoneOffset.UTC).toLocalDate();
             if (currentDate != null && date.isBefore(currentDate)) {
                 // The clock stepped back across midnight. The segment date never goes backwards:
@@ -205,9 +215,6 @@ public final class SegmentedFileAuditSink implements AuditSink, Closeable {
                 return;
             }
             current.recordLine(line);
-        } catch (RuntimeException e) {
-            poisonedBy = e;
-            throw e;
         }
     }
 
@@ -253,7 +260,7 @@ public final class SegmentedFileAuditSink implements AuditSink, Closeable {
                 FileAuditSink.closeQuietly(channel);
                 throw e;
             }
-            current = new FileAuditSink(segment, channel);
+            current = new FileAuditSink(segment, channel, writes);
         } catch (IOException e) {
             throw new FileAuditSink.OpenFailedException("AUDIT_SINK_OPEN_FAILED", segment, e);
         }

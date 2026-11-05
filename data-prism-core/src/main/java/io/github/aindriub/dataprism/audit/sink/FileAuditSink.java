@@ -150,7 +150,14 @@ public final class FileAuditSink implements AuditSink, Closeable {
 
     @Override
     public synchronized void record(AuditEvent event) {
-        recordLine(AuditRecordFormat.serialize(event));
+        String content = AuditRecordFormat.serialize(event);
+        try {
+            writes.run(() -> recordLine(content));
+        } catch (UninterruptedWrites.HandOffException e) {
+            // Nothing was written, but the caller must not carry on as if audit were healthy.
+            poisonedBy = new IOException(e);
+            throw e;
+        }
     }
 
     /** Appends {@code line} and a newline, with this class's fsync and poisoning discipline. */
