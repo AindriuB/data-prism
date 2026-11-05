@@ -80,6 +80,13 @@ final class SourceRecordWalker {
     /** Nesting beyond this many levels is refused. A record, collection, array, map and node container each count one. */
     static final int MAX_DEPTH = 64;
 
+    /**
+     * One walk of one source value visits at most this many positions (the root, each record, component value,
+     * element, map entry, node and leaf, each counted once whatever its size). It bounds how many positions a
+     * walk visits and how often it calls {@code next()}; it is not a memory limit.
+     */
+    static final int MAX_NODES = 1_000_000;
+
     /** A cause chain is followed for at most this many steps. */
     private static final int MAX_CAUSES = 32;
 
@@ -160,6 +167,10 @@ final class SourceRecordWalker {
 
     private final boolean lenient;
     private final Set<String> prohibited = new HashSet<>();
+    /** The positions this walk has entered. */
+    private int nodes;
+    /** Lenient mode only: the cap was reached, so nothing more is read anywhere in the walk. */
+    private boolean stopped;
 
     private SourceRecordWalker(boolean lenient) {
         this.lenient = lenient;
@@ -217,6 +228,7 @@ final class SourceRecordWalker {
     }
 
     private JsonNode build(Object v, Pos pos) {
+        count();
         if (v == null) {
             return nodes().nullNode();
         }
@@ -307,7 +319,7 @@ final class SourceRecordWalker {
                     name(c) + " cannot be read: its package is not opened to the engine", v);
         }
         ObjectNode out = nodes().objectNode();
-        for (int i = 0; i < handles.components().length; i++) {
+        for (int i = 0; i < handles.components().length && !stopped; i++) {
             String component = handles.components()[i].getName();
             MethodHandle getter = handles.getters()[i];
             Pos child = pos.child(pos.path() + "." + component, handles.types()[i], 0, false);
@@ -349,7 +361,7 @@ final class SourceRecordWalker {
         ArrayNode out = nodes().arrayNode();
         Pos child = pos.child(pos.path() + "[*]", elementType(pos.declared()),
                 pos.level() + (isLevelType(pos.declared()) ? 1 : 0), pos.inMap());
-        for (int i = 0; i < length; i++) {
+        for (int i = 0; i < length && !stopped; i++) {
             int index = i;
             Object element;
             try {
@@ -374,12 +386,13 @@ final class SourceRecordWalker {
         ArrayNode out = nodes().arrayNode();
         Pos child = pos.child(pos.path() + "[*]", elementType(pos.declared()),
                 pos.level() + (isLevelType(pos.declared()) ? 1 : 0), pos.inMap());
-        while (true) {
+        while (!stopped) {
             Object element;
             try {
                 if (!guarded(pos, iterator::hasNext)) {
                     break;
                 }
+                beforeRead();
                 element = guarded(pos, iterator::next);
             } catch (Skip s) {
                 break;
@@ -400,7 +413,7 @@ final class SourceRecordWalker {
         Iterator<?> iterator = guarded(pos, () -> v.entrySet().iterator());
         ObjectNode out = nodes().objectNode();
         Pos child = pos.child(pos.path() + "." + "<undeclared>", mapValueType(pos.declared()), pos.level(), true);
-        while (true) {
+        while (!stopped) {
             Map.Entry<?, ?> entry;
             Object key;
             Object value;
@@ -408,7 +421,9 @@ final class SourceRecordWalker {
                 if (!guarded(pos, iterator::hasNext)) {
                     break;
                 }
+                beforeRead();
                 entry = guarded(pos, () -> (Map.Entry<?, ?>) iterator.next());
+                count();
                 key = guarded(pos, entry::getKey);
                 value = guarded(pos, entry::getValue);
             } catch (Skip s) {
@@ -511,7 +526,7 @@ final class SourceRecordWalker {
             }
             ObjectNode copy = f.objectNode();
             Iterator<?> iterator = guarded(pos, () -> ((ObjectNode) n).properties().iterator());
-            while (true) {
+            while (!stopped) {
                 Map.Entry<?, ?> entry;
                 String key;
                 Object value;
@@ -519,7 +534,9 @@ final class SourceRecordWalker {
                     if (!guarded(pos, iterator::hasNext)) {
                         break;
                     }
+                    beforeRead();
                     entry = guarded(pos, () -> (Map.Entry<?, ?>) iterator.next());
+                    count();
                     key = guarded(pos, () -> (String) entry.getKey());
                     value = guarded(pos, entry::getValue);
                 } catch (Skip s) {
@@ -541,13 +558,15 @@ final class SourceRecordWalker {
             }
             ArrayNode copy = f.arrayNode();
             Iterator<?> iterator = guarded(pos, () -> ((ArrayNode) n).iterator());
-            while (true) {
+            while (!stopped) {
                 Object element;
                 try {
                     if (!guarded(pos, iterator::hasNext)) {
                         break;
                     }
+                    beforeRead();
                     element = guarded(pos, iterator::next);
+                    count();
                 } catch (Skip s) {
                     break;
                 }
@@ -627,6 +646,35 @@ final class SourceRecordWalker {
 
     // ------------------------------------------------------------------ refusals and reads
 
+    /** Counts one position entered. Past the cap: strict refuses; lenient stops the whole walk. */
+    private void count() {
+        if (stopped) {
+            throw SKIP;
+        }
+        if (++nodes > MAX_NODES) {
+            capReached();
+        }
+    }
+
+    /** Checked before a read that would enter another position, so {@code next()} runs at most MAX_NODES times. */
+    private void beforeRead() {
+        if (stopped) {
+            throw SKIP;
+        }
+        if (nodes >= MAX_NODES) {
+            capReached();
+        }
+    }
+
+    private void capReached() {
+        if (lenient) {
+            stopped = true;
+            throw SKIP;
+        }
+        throw new PrivacyRefusedException(SourceTree.SOURCE_TREE_TOO_LARGE, "$",
+                "the source value has more nodes than the engine reads");
+    }
+
     private void enter(Pos pos) {
         enterAt(pos.depth());
     }
@@ -649,7 +697,7 @@ final class SourceRecordWalker {
         if (!lenient) {
             return new PrivacyRefusedException(code, pos.path(), detail);
         }
-        collectAll(value, pos.depth());
+        collectCounted(value, pos.depth());
         return SKIP;
     }
 
@@ -714,7 +762,20 @@ final class SourceRecordWalker {
      * one; nothing else is read. Each read is caught, so this throws nothing but a {@code VirtualMachineError}.
      */
     private void collectAll(Object v, int depth) {
-        if (v == null || depth > MAX_DEPTH) {
+        if (stopped) {
+            return;
+        }
+        try {
+            count();
+        } catch (Skip s) {
+            return;
+        }
+        collectCounted(v, depth);
+    }
+
+    /** As {@link #collectAll}, for a position the walk has already counted: each position counts once. */
+    private void collectCounted(Object v, int depth) {
+        if (stopped || v == null || depth > MAX_DEPTH) {
             return;
         }
         try {
@@ -754,7 +815,7 @@ final class SourceRecordWalker {
                 collectAll(((AtomicReference<?>) v).get(), depth + 1);
             } else if (c == AtomicReferenceArray.class) {
                 AtomicReferenceArray<?> array = (AtomicReferenceArray<?>) v;
-                for (int i = 0; i < array.length(); i++) {
+                for (int i = 0; i < array.length() && !stopped; i++) {
                     collectAll(array.get(i), depth + 1);
                 }
             } else if (c == AtomicStampedReference.class) {
@@ -773,7 +834,7 @@ final class SourceRecordWalker {
                 }
             } else if (c.isArray() && c != byte[].class && c != char[].class) {
                 int length = Array.getLength(v);
-                for (int i = 0; i < length; i++) {
+                for (int i = 0; i < length && !stopped; i++) {
                     collectAll(Array.get(v, i), depth + 1);
                 }
             } else if (v instanceof Collection<?> collection && SourceModels.platform(c)) {
@@ -801,7 +862,8 @@ final class SourceRecordWalker {
 
     private void collectIterator(Iterator<?> iterator, int depth) {
         try {
-            while (iterator.hasNext()) {
+            while (!stopped && iterator.hasNext()) {
+                beforeRead();
                 collectAll(iterator.next(), depth);
             }
         } catch (VirtualMachineError e) {
@@ -814,8 +876,10 @@ final class SourceRecordWalker {
     private void collectMap(Map<?, ?> map, int depth) {
         try {
             Iterator<? extends Map.Entry<?, ?>> iterator = map.entrySet().iterator();
-            while (iterator.hasNext()) {
+            while (!stopped && iterator.hasNext()) {
+                beforeRead();
                 Map.Entry<?, ?> entry = iterator.next();
+                count();
                 Object key = entry.getKey();
                 try {
                     String text = key == null ? null : keyText(key, new Pos("$", null, depth, 0, true));
@@ -838,7 +902,7 @@ final class SourceRecordWalker {
 
     private void collectRecord(Object v, Class<?> c, int depth) {
         Handles handles = HANDLES.get(c);
-        for (int i = 0; i < handles.components().length; i++) {
+        for (int i = 0; i < handles.components().length && !stopped; i++) {
             try {
                 Object value;
                 if (handles.readable()) {
