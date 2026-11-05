@@ -65,7 +65,7 @@ class MemberCardsStartLookTest {
         var join = config.getNetworkConfig().getJoin();
         join.getAutoDetectionConfig().setEnabled(false);
         join.getMulticastConfig().setEnabled(false);
-        real = Hazelcast.newHazelcastInstance(config);
+        real = Hazelcast.newHazelcastInstance(PrivacyCluster.configure(config));
         Cluster cluster = (Cluster) Proxy.newProxyInstance(getClass().getClassLoader(),
                 new Class<?>[] {Cluster.class}, (p, m, a) -> {
                     if (m.getName().equals("addMembershipListener")) {

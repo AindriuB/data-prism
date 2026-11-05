@@ -1023,7 +1023,7 @@ public final class MemberCards {
     private void lookSoon() {
         try {
             executor.execute(() -> {
-                if (!closed) {
+                if (running && !closed) {
                     look(clock.instant());
                 }
             });
