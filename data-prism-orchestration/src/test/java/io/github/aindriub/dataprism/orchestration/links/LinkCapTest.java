@@ -1,5 +1,7 @@
 package io.github.aindriub.dataprism.orchestration.links;
 
+import io.github.aindriub.dataprism.annotations.Chainable;
+import io.github.aindriub.dataprism.annotations.InternalIdentifier;
 import io.github.aindriub.dataprism.core.metrics.Metric;
 import io.github.aindriub.dataprism.orchestration.ContextResponse;
 import io.github.aindriub.dataprism.orchestration.SourceResult;
@@ -75,19 +77,29 @@ class LinkCapTest {
         assertThat(origin.linksOmitted()).isEqualTo(1);
     }
 
+    /** A record whose chained key lives in a namespace of the maximum length. */
+    public record WorstCase(@InternalIdentifier @Chainable(keyNamespace = FROM_NAMESPACE) String key) {
+    }
+
+    private static final String FROM_NAMESPACE = "from-namespace-of-exactly-32-chr";
+    private static final String TO_NAMESPACE = "to-namespace-of-exactly-32-chars";
+
     @Test
-    void anEncodingOverMaxLengthIsNotIssuedAndCountsAsOmitted() {
-        // 616 is the floor of max-length; a 256-byte key with a long target label seals near it. Use a rig whose
-        // settings allow only the floor and a key that does not fit.
-        Parcel nearly = new Parcel("P-" + "k".repeat(250), List.of(), List.of(), "ok");
-        Rig rig = new Rig().source("origin-api", nearly)
-                .source("t".repeat(64), new Plain("a"), "parcel-ref");
+    void aWorstCaseFollowLinkIsIssuedAtTheMinimumMaxLength() {
+        // 616 is the floor of max-length and equals the worst-case follow link, so nothing legal can exceed it.
+        assertThat(FROM_NAMESPACE).hasSize(32);
+        assertThat(TO_NAMESPACE).hasSize(32);
+        String resolver = "r".repeat(32);
+        String target = "t".repeat(64);
+        Rig rig = new Rig().maxLength(616).linkKeyId("k".repeat(16))
+                .source("origin-api", new WorstCase("P-" + "k".repeat(254)))
+                .source(target, new Plain("a"), TO_NAMESPACE)
+                .resolver(resolver, FROM_NAMESPACE, TO_NAMESPACE);
 
         SourceResult origin = origin(rig.run());
 
-        // Either issued within 1024 or omitted and counted: the link is never silently lost.
-        assertThat(origin.links().size() + (origin.linksOmitted() == null ? 0 : origin.linksOmitted()))
-                .isEqualTo(1);
+        assertThat(origin.links()).hasSize(1);
+        assertThat(origin.linksOmitted()).isNull();
     }
 
     private static Rig rig(boolean links, int maxBytes) {

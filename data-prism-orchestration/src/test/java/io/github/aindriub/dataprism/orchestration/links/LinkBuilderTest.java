@@ -105,6 +105,8 @@ public class LinkBuilderTest {
         private boolean enabled = true;
         private int maxResponseBytes = RequestLimits.DEFAULT.maxResponseBytes();
         private Duration lifetime = Duration.ofMinutes(30);
+        private int maxLength = 1024;
+        private String linkKeyId = "link-key";
         public final StaticSecretKeyProvider keys = StaticSecretKeyProvider.of("development-only-key-not-for-any-real-data");
         public final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
 
@@ -201,19 +203,29 @@ public class LinkBuilderTest {
             return this;
         }
 
+        public Rig maxLength(int maxLength) {
+            this.maxLength = maxLength;
+            return this;
+        }
+
+        public Rig linkKeyId(String linkKeyId) {
+            this.linkKeyId = linkKeyId;
+            return this;
+        }
+
         public Rig validator(LlmResponseValidator validator) {
             validators.add(validator);
             return this;
         }
 
         public LinkSettings settings() {
-            return new LinkSettings("link-key", Optional.of(lifetime), 1024, true, Duration.ofSeconds(5));
+            return new LinkSettings(linkKeyId, Optional.of(lifetime), maxLength, true, Duration.ofSeconds(5));
         }
 
         public LinkCodec codec() {
-            LinkKeys linkKeys = new LinkKeys(id -> id.equals("link-key")
+            LinkKeys linkKeys = new LinkKeys(id -> id.equals(linkKeyId)
                     ? "link-key-material-0123456789abcdef0123456789".getBytes() : keys.secret(id),
-                    "link-key", "pseudo-key");
+                    linkKeyId, "pseudo-key");
             return new LinkCodec(settings(), linkKeys, clock);
         }
 
@@ -223,7 +235,7 @@ public class LinkBuilderTest {
 
         public DefaultContextOrchestrator orchestrator() {
             ScrubbingEngine scrubber = (record, ctx) -> {
-                String note = record instanceof Parcel p ? p.note() : ((Plain) record).note();
+                String note = record instanceof Parcel p ? p.note() : record instanceof Plain n ? n.note() : null;
                 return new ScrubResult(MAPPER.createObjectNode().put("note", note == null ? "n" : note),
                         Set.of(), Map.of("/note", PrivacyAction.PASS_THROUGH));
             };
