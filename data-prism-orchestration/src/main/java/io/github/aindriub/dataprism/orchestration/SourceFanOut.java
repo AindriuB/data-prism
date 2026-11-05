@@ -265,7 +265,8 @@ public final class SourceFanOut {
     /**
      * @param results    one entry per source in the plan, circuit-open sources first
      * @param notStarted how many sources were never called because the request
-     *                   deadline passed (or the caller gave up) before they held a permit.
+     *                   deadline passed (or the caller gave up) before they held a permit, or
+     *                   because no call slot or thread was available for them.
      *                   Their reads were reserved and never used
      */
     public record Execution(List<Fetched> results, int notStarted) {

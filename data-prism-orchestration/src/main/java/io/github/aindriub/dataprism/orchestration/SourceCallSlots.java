@@ -72,6 +72,9 @@ final class SourceCallSlots {
         // Not inheriting inheritable thread-locals: the requesting thread's are not the call's.
         Thread thread = new Thread(null, task, "dataprism-source-" + THREAD_NUMBER.incrementAndGet(), 0, false);
         thread.setDaemon(true);
+        // The constructor above resets it to the system loader; this runs on the call's virtual thread,
+        // which inherited the requester's, and an adapter's ServiceLoader needs that one.
+        thread.setContextClassLoader(Thread.currentThread().getContextClassLoader());
         return thread;
     }
 

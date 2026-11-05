@@ -415,6 +415,62 @@ class SourceFanOutStarvationTest {
         assertThat(captured.get()).satisfiesAnyOf(m -> assertThat(m).isNull(), m -> assertThat(m).isEmpty());
     }
 
+    @Test
+    @DisplayName("the adapter sees the requester's context class loader")
+    void contextClassLoaderIsKept() throws Exception {
+        var slots = new SourceCallSlots(1, 1);
+        var fanOut = fanOut(slots);
+        var seen = new AtomicReference<ClassLoader>();
+        var adapter = new DataSourceAdapter<String>() {
+            @Override public String sourceName() { return "cl"; }
+            @Override public Class<String> responseType() { return String.class; }
+            @Override public String fetch(DataRequest request) {
+                seen.set(Thread.currentThread().getContextClassLoader());
+                return "x";
+            }
+        };
+        var custom = new ClassLoader(getClass().getClassLoader()) { };
+        var original = Thread.currentThread().getContextClassLoader();
+        Thread.currentThread().setContextClassLoader(custom);
+        try {
+            var results = fanOut.fetchAll(adapters(adapter), ask("cl"), limits(Duration.ofSeconds(5)));
+            assertThat(results.get(0).outcome().status()).isEqualTo(SourceOutcome.Status.ANSWERED);
+        } finally {
+            Thread.currentThread().setContextClassLoader(original);
+        }
+        assertThat(seen.get()).isSameAs(custom);
+    }
+
+    @Test
+    @DisplayName("a refused call's read is reported as not started: saturated and start-failed")
+    void refusedCallsAreNotStarted() throws Exception {
+        var slots = new SourceCallSlots(1, 1);
+        var fanOut = fanOut(slots);
+        var limits = limits(Duration.ofSeconds(20));
+        var release = new Release();
+        var entered = new CountDownLatch(1);
+        List<Thread> threads = new ArrayList<>();
+        try {
+            var spinner = new Spinner("a", entered, release);
+            threads.add(start(() -> fanOut.fetchAll(adapters(spinner), ask("a"), limits)));
+            assertThat(entered.await(WAIT_SECONDS, TimeUnit.SECONDS)).isTrue();
+            var quick = new Quick("a");
+            var saturated = fanOut.execute(fanOut.plan(adapters(quick), ask("a"), limits), limits);
+            assertThat(saturated.notStarted()).isEqualTo(1);
+            assertThat(quick.calls.get()).isZero();
+        } finally {
+            finish(release, threads);
+        }
+        var broken = new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(),
+                SourceFanOutOptions.defaults(), new SourceCallSlots(1, 1, r -> {
+                    throw new OutOfMemoryError("unable to create native thread");
+                }));
+        var quick = new Quick("q");
+        var failed = broken.execute(broken.plan(adapters(quick), ask("q"), limits), limits);
+        assertThat(failed.notStarted()).isEqualTo(1);
+        assertThat(quick.calls.get()).isZero();
+    }
+
     private static void awaitHook(AtomicInteger times, int expected) {
         long limit = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
         while (times.get() < expected && System.nanoTime() < limit) {

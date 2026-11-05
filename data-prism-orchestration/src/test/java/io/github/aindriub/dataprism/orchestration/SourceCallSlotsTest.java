@@ -96,6 +96,23 @@ class SourceCallSlotsTest {
     }
 
     @Test
+    @DisplayName("a thread that runs the task and whose start() then throws releases the slots once")
+    void startThrowsAfterTheTaskRan() {
+        var slots = new SourceCallSlots(2, 2, r -> new Thread(r) {
+            @Override public void start() {
+                r.run();
+                throw new IllegalStateException("start failed");
+            }
+        });
+        var afterRelease = new AtomicInteger();
+        var start = slots.acquireAndStart("a", NOTHING, afterRelease::incrementAndGet, t -> { });
+        assertThat(start).isEqualTo(SourceCallSlots.Start.START_FAILED);
+        assertThat(slots.poolPermits()).isEqualTo(2);
+        assertThat(slots.sourcePermits("a")).isEqualTo(2);
+        assertThat(afterRelease.get()).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("1,000 calls, some failing, leave every permit free")
     void accounting() throws Exception {
         var slots = new SourceCallSlots(8, 4);

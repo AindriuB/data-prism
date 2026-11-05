@@ -133,7 +133,7 @@ not encrypted or authenticated, so isolating it is the deployer's job; see
 optimisation and losing it changes no answer; the read budget and the
 re-identification index are not, and are treated differently for that reason.
 
-**Concurrency.** Virtual threads for the blocking fan-out, with per-source
+**Concurrency.** Adapter calls run on bounded dedicated platform threads, with per-source
 timeouts, circuit breakers, bulkheads and a bounded pool. An LLM in a retry loop
 is the realistic overload, not an attacker.
 
