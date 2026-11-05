@@ -73,6 +73,7 @@ public final class FileAuditSink implements AuditSink, Closeable {
 
     private final Path path;
     private final FileChannel channel;
+    private final UninterruptedWrites writes;
     private volatile IOException poisonedBy;
 
     public FileAuditSink(Path path) {
@@ -87,6 +88,7 @@ public final class FileAuditSink implements AuditSink, Closeable {
             throw new OpenFailedException("AUDIT_SINK_OPEN_FAILED", path, e);
         }
         this.channel = opened;
+        this.writes = UninterruptedWrites.SHARED;
     }
 
     /**
@@ -137,8 +139,13 @@ public final class FileAuditSink implements AuditSink, Closeable {
      * production code uses.
      */
     FileAuditSink(Path path, FileChannel channel) {
+        this(path, channel, UninterruptedWrites.SHARED);
+    }
+
+    FileAuditSink(Path path, FileChannel channel, UninterruptedWrites writes) {
         this.path = path;
         this.channel = channel;
+        this.writes = writes;
     }
 
     @Override

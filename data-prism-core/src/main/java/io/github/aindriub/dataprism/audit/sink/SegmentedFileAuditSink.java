@@ -70,6 +70,7 @@ public final class SegmentedFileAuditSink implements AuditSink, Closeable {
     private LocalDate currentDate;
     private int currentIndex;
     private long currentSize;
+    private final UninterruptedWrites writes;
     private volatile RuntimeException poisonedBy;
 
     public SegmentedFileAuditSink(Path directory) {
@@ -114,9 +115,20 @@ public final class SegmentedFileAuditSink implements AuditSink, Closeable {
         this(directory, opener, suffix, renderer, 0);
     }
 
+    SegmentedFileAuditSink(Path directory, ChannelOpener opener, long maxSegmentBytes, UninterruptedWrites writes) {
+        this(directory, opener, SUFFIX, AuditRecordFormat::serialize, maxSegmentBytes, writes);
+    }
+
     private SegmentedFileAuditSink(Path directory, ChannelOpener opener, String suffix,
                                    java.util.function.Function<AuditEvent, String> renderer,
                                    long maxSegmentBytes) {
+        this(directory, opener, suffix, renderer, maxSegmentBytes, UninterruptedWrites.SHARED);
+    }
+
+    private SegmentedFileAuditSink(Path directory, ChannelOpener opener, String suffix,
+                                   java.util.function.Function<AuditEvent, String> renderer,
+                                   long maxSegmentBytes, UninterruptedWrites writes) {
+        this.writes = writes;
         this.maxSegmentBytes = maxSegmentBytes;
         this.directory = directory;
         this.opener = opener;
