@@ -1,0 +1,12 @@
+json-sources:
+  zeta-service:
+    base-url: https://zeta.example.internal
+    path: /zeta/{subject}
+    timeout: PT2S
+    model-version: zeta-v1
+    subject-json-path: ref
+    fields:
+      ref:
+        identifier: true
+      state:
+        nonSensitive: "Enumerated lifecycle state"

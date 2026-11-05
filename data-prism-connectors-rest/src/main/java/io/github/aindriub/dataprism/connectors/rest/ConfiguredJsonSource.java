@@ -1,7 +1,10 @@
 package io.github.aindriub.dataprism.connectors.rest;
 
+import io.github.aindriub.dataprism.core.engine.ChainableField;
 import io.github.aindriub.dataprism.core.model.FieldMetadata;
+import io.github.aindriub.dataprism.core.spi.SourceDescription;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -51,7 +54,15 @@ import java.util.Objects;
  */
 public record ConfiguredJsonSource(RestSource transport, String modelVersion,
                                     String subjectField, Map<String, FieldMetadata> fields,
-                                    Map<String, Map<String, FieldMetadata>> nestedCatalogues) {
+                                    Map<String, Map<String, FieldMetadata>> nestedCatalogues,
+                                    SourceDescription description, List<ChainableField> chainableFields) {
+
+    public ConfiguredJsonSource(RestSource transport, String modelVersion,
+                                String subjectField, Map<String, FieldMetadata> fields,
+                                Map<String, Map<String, FieldMetadata>> nestedCatalogues) {
+        this(transport, modelVersion, subjectField, fields, nestedCatalogues,
+                SourceDescription.undeclared(), List.of());
+    }
 
     public ConfiguredJsonSource(RestSource transport, String modelVersion,
                                 String subjectField, Map<String, FieldMetadata> fields) {
@@ -70,6 +81,15 @@ public record ConfiguredJsonSource(RestSource transport, String modelVersion,
         }
         fields = Map.copyOf(fields);
         nestedCatalogues = nestedCatalogues == null ? Map.of() : Map.copyOf(nestedCatalogues);
+        description = description == null ? SourceDescription.undeclared() : description;
+        chainableFields = chainableFields == null ? List.of() : List.copyOf(chainableFields);
+        for (ChainableField chainable : chainableFields) {
+            FieldMetadata md = fields.get(chainable.path());
+            if (md == null || !md.internalIdentifier()) {
+                throw new IllegalArgumentException("INVALID_CHAINABLE_FIELD: source " + safeName(transport)
+                        + " field " + chainable.path() + " is chainable but is not an identifier: true entry");
+            }
+        }
         if (subjectField == null || subjectField.isBlank()) {
             throw new IllegalArgumentException(
                     "source " + safeName(transport) + " has no subject-json-path");
@@ -86,6 +106,11 @@ public record ConfiguredJsonSource(RestSource transport, String modelVersion,
                     + identifierCount + " fields identifier: true; exactly one is required, "
                     + "matching subject-json-path");
         }
+    }
+
+    /** The host of the base URL, for the catalog's check that a description does not name it. */
+    public String baseUrlHost() {
+        return transport.baseUrl().getHost();
     }
 
     private static String safeName(RestSource transport) {

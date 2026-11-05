@@ -1,0 +1,16 @@
+tls:
+  key-store: ks.p12
+  key-store-password-env: PATH
+  trust-store: ts.p12
+  trust-store-password-env: PATH
+  store-type: PKCS12
+json-sources:
+  tls-one:
+    base-url: https://tls-one.example.internal
+    path: /one/{subject}
+    timeout: PT2S
+    model-version: one-v1
+    subject-json-path: ref
+    fields:
+      ref:
+        identifier: true
