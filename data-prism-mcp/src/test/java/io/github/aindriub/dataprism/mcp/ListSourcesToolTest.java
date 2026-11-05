@@ -273,6 +273,88 @@ class ListSourcesToolTest {
         assertThat(text(described)).isEqualTo("SOURCE_NOT_AVAILABLE");
     }
 
+    private static Env approvalEnv(InMemoryApprovalStore approvals, String... tools) {
+        ToolAdmission admission = new ToolAdmission(new InMemoryOversightState(), approvals,
+                new InMemoryCallerRateLimiter(), new OversightPolicy(Set.of(tools), OptionalInt.empty(),
+                Duration.ofMinutes(1), Duration.ofHours(1)), FIXED);
+        return new Env(Set.of("LIST_SOURCES", "DESCRIBE_SOURCE", "EXPOSE_SOURCE_NAMES"), 7, true,
+                ToolOptions.defaults().admission(admission, new ParameterFingerprinter(KEYS)).build(), 2);
+    }
+
+    /** Calls, and if an approval is required approves it as approver-9 and calls again. */
+    private static McpSchema.CallToolResult approvedCall(Env env, InMemoryApprovalStore approvals,
+                                                         McpServerFeatures.SyncToolSpecification spec,
+                                                         Map<String, Object> arguments) {
+        McpSchema.CallToolResult first = call(spec, arguments);
+        assertThat(text(first)).startsWith("APPROVAL_REQUIRED approvalId=");
+        approvals.approve(env.audited.get(env.audited.size() - 1).approvalId(), "approver-9", FIXED.instant());
+        return call(spec, arguments);
+    }
+
+    @Test
+    @DisplayName("an approval covers exactly the page request it was granted for, not another link or the first page")
+    void approvalIsBoundToTheExactPageToken() {
+        InMemoryApprovalStore approvals = new InMemoryApprovalStore();
+        Env env = approvalEnv(approvals, "list_sources");
+        var spec = env.list.specification();
+        McpSchema.CallToolResult p1 = approvedCall(env, approvals, spec, args());
+        String linkA = (String) page(p1).get("next");
+        McpSchema.CallToolResult p2 = approvedCall(env, approvals, spec, args("page", linkA));
+        String linkB = (String) page(p2).get("next");
+        assertThat(linkB).isNotEqualTo(linkA);
+
+        // approve link A without spending it, then present link B, the first page and link A
+        call(spec, args("page", linkA));
+        approvals.approve(env.audited.get(env.audited.size() - 1).approvalId(), "approver-9", FIXED.instant());
+
+        assertThat(text(call(spec, args("page", linkB)))).startsWith("APPROVAL_REQUIRED approvalId=");
+        assertThat(text(call(spec, args()))).startsWith("APPROVAL_REQUIRED approvalId=");
+        McpSchema.CallToolResult retried = call(spec, args("page", linkA));
+        assertThat(retried.isError()).isNotEqualTo(Boolean.TRUE);
+        assertThat(labels(retried)).isNotEmpty();
+    }
+
+    @Test
+    @DisplayName("an approval for a continuation does not cover the first page")
+    void continuationApprovalDoesNotCoverTheFirstPage() {
+        InMemoryApprovalStore approvals = new InMemoryApprovalStore();
+        Env env = approvalEnv(approvals, "list_sources");
+        var spec = env.list.specification();
+        String linkA = (String) page(approvedCall(env, approvals, spec, args())).get("next");
+        call(spec, args("page", linkA));
+        approvals.approve(env.audited.get(env.audited.size() - 1).approvalId(), "approver-9", FIXED.instant());
+
+        assertThat(text(call(spec, args()))).startsWith("APPROVAL_REQUIRED approvalId=");
+    }
+
+    @Test
+    @DisplayName("an approved list_sources call audits the approval id and the approver id")
+    void approvedListAuditsApproval() {
+        InMemoryApprovalStore approvals = new InMemoryApprovalStore();
+        Env env = approvalEnv(approvals, "list_sources");
+
+        approvedCall(env, approvals, env.list.specification(), args());
+
+        AuditEvent allow = env.audited.get(env.audited.size() - 1);
+        assertThat(allow.policyDecision()).isEqualTo("ALLOW");
+        assertThat(allow.approvalId()).isEqualTo(env.audited.get(env.audited.size() - 2).approvalId()).isNotBlank();
+        assertThat(allow.approverId()).isEqualTo("approver-9");
+    }
+
+    @Test
+    @DisplayName("an approved describe_source call audits the approval id and the approver id")
+    void approvedDescribeAuditsApproval() {
+        InMemoryApprovalStore approvals = new InMemoryApprovalStore();
+        Env env = approvalEnv(approvals, "describe_source");
+
+        approvedCall(env, approvals, env.describe.specification(), args("source", "src-001"));
+
+        AuditEvent allow = env.audited.get(env.audited.size() - 1);
+        assertThat(allow.policyDecision()).isEqualTo("ALLOW");
+        assertThat(allow.approvalId()).isEqualTo(env.audited.get(env.audited.size() - 2).approvalId()).isNotBlank();
+        assertThat(allow.approverId()).isEqualTo("approver-9");
+    }
+
     // ---- the answer and its audit ----
 
     @Test

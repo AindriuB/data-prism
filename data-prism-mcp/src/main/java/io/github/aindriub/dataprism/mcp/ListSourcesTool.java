@@ -148,7 +148,7 @@ public final class ListSourcesTool extends CatalogTool<ListSourcesTool.Arguments
         CatalogQueries.ListRequest r = arguments.request();
         return String.join("\u0000", r.entityType() == null ? "" : r.entityType(),
                 r.keyNamespace() == null ? "" : r.keyNamespace(),
-                r.pageSize() == null ? "" : r.pageSize().toString(), r.page() == null ? "0" : "1");
+                r.pageSize() == null ? "" : r.pageSize().toString(), r.page() == null ? "0" : "1:" + r.page());
     }
 
     @Override
@@ -255,7 +255,10 @@ abstract class CatalogTool<A> {
     /** What the audit record's {@code entityType} holds. */
     abstract String auditedEntityType(A arguments, AuditedEntityTypes entityTypes);
 
-    /** What an approval is bound to, besides the caller's own context. */
+    /**
+     * What an approval is bound to, besides the caller's own context. The value is only ever passed through the
+     * keyed {@link ParameterFingerprinter}; the raw text is neither stored nor logged.
+     */
     abstract String bindingValue(A arguments);
 
     abstract CatalogQueries.Outcome run(A arguments, PrivacySession session, AuthenticatedCaller caller,
@@ -338,7 +341,9 @@ abstract class CatalogTool<A> {
                     session.privacyContext().redactionProfile(), session.privacyContext().scopeId(),
                     caller.purpose(), caller.caseId(),
                     outcome.refused() ? ToolCalls.denyDecision(outcome.refusalCode()) : "ALLOW",
-                    outcome.sourceSystems(), rejected, correlationId, dispositions, "", "", externalId));
+                    outcome.sourceSystems(), rejected, correlationId, dispositions,
+                    admitted.approvalId() == null ? "" : admitted.approvalId(),
+                    admitted.approverPrincipalId() == null ? "" : admitted.approverPrincipalId(), externalId));
         } catch (RuntimeException auditFailure) {
             LOG.error("audit record failed for a catalog call; refusing it as AUDIT_UNAVAILABLE rather than "
                     + "serving an unaudited decision", auditFailure);
