@@ -492,10 +492,14 @@ public final class CatalogQueries {
 
     /** Every validator runs over the whole body; any failure, or any throw, withholds it. */
     private boolean valid(ObjectNode body, PrivacyContext context) {
+        // The correlation id is a server-generated UUID, not content: a random run of digits in it must not
+        // trip a shape scan and refuse a good answer.
+        ObjectNode scanned = body.deepCopy();
+        scanned.remove("correlationId");
         boolean ok = true;
         for (LlmResponseValidator validator : validators) {
             try {
-                ValidationResult result = validator.validate(body, Set.of(), Set.of(), context);
+                ValidationResult result = validator.validate(scanned, Set.of(), Set.of(), context);
                 ok &= result != null && result.valid();
             } catch (RuntimeException failure) {
                 ok = false;
