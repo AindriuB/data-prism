@@ -159,4 +159,25 @@ class TrustedNetworkReachabilityTest {
         assertThat(refused).isInstanceOf(PrivacyClusterRefusal.class);
         assertThat(((PrivacyClusterRefusal) refused).code()).isEqualTo(Code.PUBLIC_MEMBER_INTERFACE);
     }
+
+    /** A keyed Config with no joiner whose advertised local address is the wildcard, so the socket binds to it. */
+    private void wildcardSocketIsRefused(String iface) {
+        Config config = keyed(TestMembers.uniqueName("wildsock"), FreePorts.consecutive(1), false, iface);
+        config.setProperty("hazelcast.local.localAddress", "0.0.0.0");
+        ClusterSecuritySettings declared = UNDECLARED.withTrustedNetwork(true, List.of("0.0.0.0/24"), false);
+        Throwable refused = catchThrowable(() -> run(Route.CONFIG, config, declared));
+        assertThat(refused).isInstanceOf(PrivacyClusterRefusal.class);
+        assertThat(((PrivacyClusterRefusal) refused).code()).isEqualTo(Code.PUBLIC_MEMBER_INTERFACE);
+        assertThat(Hazelcast.getAllHazelcastInstances()).as("no member is left running").isEmpty();
+    }
+
+    @Test
+    void aPaddedInterfaceDoesNotLetAMemberStayOnAWildcardSocket() {
+        wildcardSocketIsRefused(" 10.0.0.5");
+    }
+
+    @Test
+    void aPlainInterfaceDoesNotLetAMemberStayOnAWildcardSocket() {
+        wildcardSocketIsRefused("10.0.0.5");
+    }
 }

@@ -640,6 +640,11 @@ public final class PrivacyCluster implements AutoCloseable {
      */
     static void refuseUnlessTrusted(Config config, Set<InetAddress> bound, ClusterSecuritySettings settings,
                                     Logger log) {
+        refuseUnlessTrusted(config, bound, settings, log, true);
+    }
+
+    private static void refuseUnlessTrusted(Config config, Set<InetAddress> bound, ClusterSecuritySettings settings,
+                                            Logger log, boolean announce) {
         var interfaces = config.getNetworkConfig().getInterfaces();
         if (!interfaces.isEnabled() || interfaces.getInterfaces().isEmpty()) {
             throw new PrivacyClusterRefusal(Code.MISSING_MEMBER_INTERFACE,
@@ -680,7 +685,7 @@ public final class PrivacyCluster implements AutoCloseable {
                             + "counters on that port are unsealed, so anyone else who can reach it can read and "
                             + "forge them");
         }
-        if (!settings.trustedNetworkAnnounced()) {
+        if (announce && !settings.trustedNetworkAnnounced()) {
             log.info("trusted-network is declared: this member asserts that only Data Prism members can reach member "
                     + "port {}; approvals and counters on that port are unsealed",
                     config.getNetworkConfig().getPort());
@@ -931,15 +936,21 @@ public final class PrivacyCluster implements AutoCloseable {
                                          boolean isolate, ClusterSecuritySettings settings,
                                          Environment environment) {
         Config hardened = configure(config, approvalMinimumMembers);
+        boolean reachable = false;
         if (isolate) {
             ClusterMembership.isolate(hardened);
         } else if (joins(hardened) || !ClusterMembership.reachableOnlyFromThisHost(hardened)) {
+            reachable = true;
             // Before any member starts: a refusal leaves nothing running.
             refuseUnlessTrusted(hardened, null, settings, environment.log());
         }
         HazelcastInstance started = Hazelcast.newHazelcastInstance(hardened);
         try {
-            // The address the member really bound, not the one it was asked for, before anything is served.
+            // The address the member really bound, not the one it was asked for, before anything is served. A
+            // wildcard socket is refused first: it is public whatever the interface list says.
+            if (reachable) {
+                refuseUnlessTrusted(hardened, listeningAddresses(started), settings, environment.log(), false);
+            }
             refuseUnlessBoundWithinMembership(started, hardened, isolate);
             ClusterMembership.refuseUnsealedState(started);
         } catch (RuntimeException | Error refused) {
