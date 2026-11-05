@@ -3,6 +3,7 @@ package io.github.aindriub.dataprism.connectors.rest;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.convert.Delimiter;
 import org.springframework.context.ApplicationContextInitializer;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.env.Environment;
@@ -11,6 +12,7 @@ import org.springframework.web.client.RestClient;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.annotation.Annotation;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.List;
@@ -67,6 +69,20 @@ public final class ConfiguredJsonSourcesInitializer
         }
     }
 
+    @Delimiter(Delimiter.NONE)
+    private static final List<String> NO_DELIMITER_CARRIER = List.of();
+
+    private static final Annotation NO_DELIMITER;
+
+    static {
+        try {
+            NO_DELIMITER = ConfiguredJsonSourcesInitializer.class.getDeclaredField("NO_DELIMITER_CARRIER")
+                    .getAnnotation(Delimiter.class);
+        } catch (NoSuchFieldException e) {
+            throw new ExceptionInInitializerError(e);
+        }
+    }
+
     /**
      * The configured locations: one value or an indexed list, in the order given. A single value is
      * never split at commas (a comma is legal in a path and in user-info, and splitting would show a
@@ -76,8 +92,9 @@ public final class ConfiguredJsonSourcesInitializer
     static List<String> locations(Environment environment) {
         Binder binder = Binder.get(environment);
         String property = ConfiguredJsonSourcesAutoConfiguration.CONFIG_LOCATION_PROPERTY;
-        List<String> configured = binder.bind(property, String.class).map(List::of)
-                .orElseGet(() -> binder.bind(property, Bindable.listOf(String.class)).orElse(List.of()));
+        // One bind, so normal precedence applies; NONE keeps a single value from being split at commas.
+        List<String> configured = binder.bind(property,
+                Bindable.listOf(String.class).withAnnotations(NO_DELIMITER)).orElse(List.of());
         return configured.stream()
                 .filter(location -> location != null && !location.isBlank())
                 .map(String::trim)

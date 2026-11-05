@@ -64,6 +64,15 @@ class ConfiguredJsonSourceFilesTest {
     }
 
     @Test
+    @DisplayName("a higher-priority indexed list beats a lower-priority single value")
+    void higherPriorityListBeatsLowerSingleValue() {
+        StandardEnvironment environment = new StandardEnvironment();
+        environment.getPropertySources().addFirst(new MapPropertySource("low", Map.of(PROPERTY, DUP)));
+        environment.getPropertySources().addFirst(new MapPropertySource("high", indexed(false, A, B)));
+        assertThat(ConfiguredJsonSourcesInitializer.locations(environment)).containsExactly(A, B);
+    }
+
+    @Test
     @DisplayName("the sources do not depend on the order of the files")
     void orderOfFilesDecidesNothing() {
         var forward = ConfiguredJsonSourcesInitializer.loadConfig(environment(A, B)).sources();

@@ -258,12 +258,12 @@ public final class ConfiguredJsonSources {
                 description, chainableFields);
     }
 
+    private static final String INVALID_DESCRIPTION = "INVALID_SOURCE_DESCRIPTION";
+
     /**
      * The optional {@code description:} block. Messages name the source and the key, never a value:
      * description text is operator prose and must not reach a log through a parser message.
      */
-    private static final String INVALID_DESCRIPTION = "INVALID_SOURCE_DESCRIPTION";
-
     private static SourceDescription description(String sourceName, Map<String, Object> body) {
         if (!body.containsKey("description")) {
             return SourceDescription.undeclared();

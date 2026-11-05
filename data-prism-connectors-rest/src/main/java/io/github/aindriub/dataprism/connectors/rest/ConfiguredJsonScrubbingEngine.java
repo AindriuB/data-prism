@@ -267,7 +267,7 @@ public final class ConfiguredJsonScrubbingEngine implements ScrubbingEngine {
             }
 
             ConfiguredJsonNestedLeafShapeGuard.check(payload.sourceName(), payload.body(),
-                    sources.get(payload.sourceName()).fields(), resolver);
+                    sources.get(payload.sourceName()).fields(), resolver, policy, context);
 
             ScrubResult scrubbed = engine.scrub(payload.body(), context);
             Set<String> prohibited = SourceValues.prohibited(payload.body(), resolver);
