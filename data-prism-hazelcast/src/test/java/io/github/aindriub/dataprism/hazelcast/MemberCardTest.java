@@ -504,16 +504,17 @@ class MemberCardTest {
     }
 
     @Test
-    void aFailedLookNeverKeepsTheLastStatus() {
+    void aFailedLookNeverKeepsTheLastStatus() throws InterruptedException {
         Pair pair = pair();
         MemberCards cards = pair.a().memberCards().orElseThrow();
         cards.tick();
         assertThat(pair.a().securityStatus().serving()).isTrue();
 
-        cards.lookFault = () -> {
+        // On the executor, so a membership look still queued there cannot finish after it and write serving again.
+        passOnExecutor(cards, () -> {
             throw new IllegalStateException("the cluster could not be read");
-        };
-        cards.tick();
+        });
+        assertThat(Fixture.await(30, () -> !pair.a().securityStatus().serving())).isTrue();
         assertThat(pair.a().securityStatus().serving()).isFalse();
         assertThatThrownBy(pair.a()::servingInstance).isInstanceOf(ClusterOperationRefusedException.class);
 
@@ -689,10 +690,28 @@ class MemberCardTest {
         return new HashMap<>(wrapper.instance().<String, Object>getMap(PrivacyCluster.OVERSIGHT_MAP));
     }
 
+    /**
+     * Runs one pass of {@code cards} on its own executor with {@code fault} as the look, and returns once that look has
+     * run. Single thread, FIFO: any look submitted earlier has finished first.
+     */
+    static void passOnExecutor(MemberCards cards, Runnable fault) throws InterruptedException {
+        CountDownLatch looked = new CountDownLatch(1);
+        cards.lookFault = () -> {
+            try {
+                fault.run();
+            } finally {
+                looked.countDown();
+            }
+        };
+        assertThat(cards.submitPass()).isTrue();
+        assertThat(looked.await(30, TimeUnit.SECONDS)).isTrue();
+    }
+
     /** The serving precondition of a resume is the instance's verdict, not the calling wrapper's alone. */
     @Test
     @Timeout(120)
-    void aResumeOrEndScopeThroughAServingWrapperIsRefusedWhileAnotherWrapperOfTheInstanceDoesNotServe() {
+    void aResumeOrEndScopeThroughAServingWrapperIsRefusedWhileAnotherWrapperOfTheInstanceDoesNotServe()
+            throws InterruptedException {
         PrivacyCluster[] wrappers = twoWrappers();
         MemberCards faulty = wrappers[0].memberCards().orElseThrow();
         for (PrivacyCluster wrapper : wrappers) {
@@ -704,10 +723,12 @@ class MemberCardTest {
         state.pauseAll();
         var index = new ScopeIdentityIndex(wrappers[1], PrivacyMetrics.none(), Duration.ofSeconds(10));
 
-        faulty.lookFault = () -> {
+        // The pauses above wake the schedule, so a look may still be on the wrapper's executor; a hand-called tick
+        // could be overtaken by it. A pass on the executor runs after every earlier look (single thread, FIFO).
+        passOnExecutor(faulty, () -> {
             throw new IllegalStateException("the cluster could not be read");
-        };
-        faulty.tick();
+        });
+        assertThat(Fixture.await(30, () -> !wrappers[0].securityStatus().serving())).isTrue();
         assertThat(wrappers[0].securityStatus().serving()).isFalse();
         assertThat(wrappers[1].securityStatus().serving()).as("the calling wrapper alone would serve").isTrue();
         Map<String, Object> before = oversightEntries(wrappers[1]);
@@ -718,8 +739,8 @@ class MemberCardTest {
         assertThatThrownBy(() -> index.endScope("CASE-A")).isInstanceOf(ClusterOperationRefusedException.class);
         assertThat(oversightEntries(wrappers[1])).as("nothing was written").isEqualTo(before);
 
-        faulty.lookFault = () -> { };
-        faulty.tick();
+        passOnExecutor(faulty, () -> { });
+        assertThat(Fixture.await(30, () -> wrappers[0].securityStatus().serving())).isTrue();
         wrappers[1].memberCards().orElseThrow().tick();
         assertThat(wrappers[0].securityStatus().serving()).isTrue();
         assertThat(wrappers[1].securityStatus().serving()).isTrue();
