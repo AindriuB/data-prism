@@ -369,12 +369,11 @@ class UnverifiedMemberTest {
         });
         assertThat(Fixture.await(30, () -> !serving.securityStatus().serving())).isTrue();
         assertThat(serving.securityStatus().serving()).isFalse();
-        cards.lookFault = () -> { };
         fixture.clock.advance(Duration.ofSeconds(2));
-        cards.tick();
-
-        assertThat(serving.securityStatus().reason()).as("31 s since the outsider arrived")
-                .isEqualTo(ClusterSecurityStatus.Reason.UNVERIFIED_MEMBER);
+        MemberCardTest.passOnExecutor(cards, () -> { });
+        assertThat(Fixture.await(30,
+                () -> serving.securityStatus().reason() == ClusterSecurityStatus.Reason.UNVERIFIED_MEMBER))
+                .as("31 s since the outsider arrived").isTrue();
         outsider.shutdown();
     }
 

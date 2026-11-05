@@ -518,9 +518,9 @@ class MemberCardTest {
         assertThat(pair.a().securityStatus().serving()).isFalse();
         assertThatThrownBy(pair.a()::servingInstance).isInstanceOf(ClusterOperationRefusedException.class);
 
-        cards.lookFault = () -> { };
-        cards.tick();
-        assertThat(pair.a().securityStatus().serving()).as("a good look serves again").isTrue();
+        passOnExecutor(cards, () -> { });
+        assertThat(Fixture.await(30, () -> pair.a().securityStatus().serving())).as("a good look serves again")
+                .isTrue();
     }
 
     /** A member that locks the card key of another must not stall its refresh, its status or its close. */
@@ -691,8 +691,10 @@ class MemberCardTest {
     }
 
     /**
-     * Runs one pass of {@code cards} on its own executor with {@code fault} as the look, and returns once that look has
-     * run. Single thread, FIFO: any look submitted earlier has finished first.
+     * Runs one pass of {@code cards} on its own executor with {@code fault} as the look, and returns once {@code fault}
+     * has run in some look, possibly an earlier queued one, and before that look's outcome is written. Callers must
+     * therefore await the state they expect. The pass itself is queued FIFO behind any earlier pass, so it is the
+     * last to write.
      */
     static void passOnExecutor(MemberCards cards, Runnable fault) throws InterruptedException {
         CountDownLatch looked = new CountDownLatch(1);
