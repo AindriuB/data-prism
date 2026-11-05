@@ -214,7 +214,8 @@ public final class LinkBuilder {
             walk(tree, field.path().split("\\."), 0, "", found);
             for (Found value : found) {
                 for (LinkTargets.Target target : targets) {
-                    String identity = target.name() + '\0' + field.keyNamespace().value() + '\0' + value.key();
+                    String identity = target.name() + '\0' + field.keyNamespace().value() + '\0'
+                            + (target.toNamespace() == null ? "" : target.toNamespace().value()) + '\0' + value.key();
                     if (!seen.add(identity)) {
                         continue;
                     }

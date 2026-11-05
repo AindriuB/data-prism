@@ -2,18 +2,15 @@ package io.github.aindriub.dataprism.orchestration;
 
 import io.github.aindriub.dataprism.core.descriptor.ModelDescriptor;
 import io.github.aindriub.dataprism.core.link.LinkCodec;
-import io.github.aindriub.dataprism.core.model.InvestigationContext;
 import io.github.aindriub.dataprism.orchestration.catalog.RealNamesPolicy;
 import io.github.aindriub.dataprism.orchestration.catalog.SourceCatalog;
 import io.github.aindriub.dataprism.orchestration.catalog.SourceVisibility;
 import io.github.aindriub.dataprism.orchestration.links.KeyResolvers;
 
 import java.time.Clock;
-import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.function.Function;
 
 /**
  * The optional collaborators of a {@link DefaultContextOrchestrator}, passed as the last argument of
@@ -44,14 +41,9 @@ public record OrchestrationOptions(Optional<SourceCatalog> catalog, SourceVisibi
      * @param resolvers      the declared key resolvers; only their declarations are read
      * @param descriptors    model descriptors by type name, as the chainable analysis reads them
      * @param clock          the issue-time source
-     * @param tokenExpiry    when the caller's authentication token ends; never a request value
      */
     public record LinkIssuing(LinkCodec codec, int maxPerResponse, KeyResolvers resolvers,
-                              Map<String, ModelDescriptor> descriptors, Clock clock,
-                              Function<InvestigationContext, Instant> tokenExpiry) {
-
-        /** Used when no scope or token end is known: far enough that the link lifetime decides. */
-        public static final Instant NO_EXPIRY = Instant.ofEpochSecond(1L << 40);
+                              Map<String, ModelDescriptor> descriptors, Clock clock) {
 
         public LinkIssuing {
             Objects.requireNonNull(codec, "codec");
@@ -61,12 +53,10 @@ public record OrchestrationOptions(Optional<SourceCatalog> catalog, SourceVisibi
             Objects.requireNonNull(resolvers, "resolvers");
             descriptors = Map.copyOf(Objects.requireNonNull(descriptors, "descriptors"));
             Objects.requireNonNull(clock, "clock");
-            Objects.requireNonNull(tokenExpiry, "tokenExpiry");
         }
 
         public static LinkIssuing of(LinkCodec codec, int maxPerResponse, KeyResolvers resolvers) {
-            return new LinkIssuing(codec, maxPerResponse, resolvers, Map.of(), Clock.systemUTC(),
-                    caller -> NO_EXPIRY);
+            return new LinkIssuing(codec, maxPerResponse, resolvers, Map.of(), Clock.systemUTC());
         }
     }
 

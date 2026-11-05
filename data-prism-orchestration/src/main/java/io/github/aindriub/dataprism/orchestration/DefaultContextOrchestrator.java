@@ -379,10 +379,13 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                 }
             }
             OrchestrationOptions.LinkIssuing issuing = options.links().orElseThrow();
-            Instant scopeExpiry = context.expiresAt() == null
-                    ? OrchestrationOptions.LinkIssuing.NO_EXPIRY : context.expiresAt();
+            Instant scopeExpiry = context.expiresAt();
+            if (scopeExpiry == null) {
+                return LinkBuilder.Result.NONE; // fail closed: a link with no known end is not issued
+            }
+            // The scope's end already includes the token's (ScopeResolver), so it binds both.
             LinkBinding binding = new LinkBinding(context.scopeId(), caller.principalId(), scopeExpiry,
-                    issuing.tokenExpiry().apply(caller));
+                    scopeExpiry);
             return linkBuilder.build(origins, labels, binding,
                     name -> nameIsSafe(name, prohibited, emitted, context));
         } catch (RuntimeException failure) {

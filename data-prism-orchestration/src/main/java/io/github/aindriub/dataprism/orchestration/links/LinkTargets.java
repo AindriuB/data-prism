@@ -12,7 +12,9 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Which permitted sources a key of one namespace can be followed to, from declarations only: no resolver is
@@ -46,23 +48,28 @@ public final class LinkTargets {
                                      KeyResolvers resolvers) {
         Objects.requireNonNull(namespace, "namespace");
         Map<String, SourceCatalog.Entry> permitted = labels.permittedEntries();
+        // A direct target is keyed by name; a translated one by name and target namespace, so two resolvers
+        // reaching one source into different namespaces each give a link.
         Map<String, Target> byName = new LinkedHashMap<>();
+        Set<String> direct = new HashSet<>();
         for (SourceCatalog.Entry entry : permitted.values()) {
             if (!entry.name().equals(originName) && entry.description().inputKeys().contains(namespace)) {
+                direct.add(entry.name());
                 byName.put(entry.name(), target(LinkRelation.DIRECT, entry, labels, null, null));
             }
         }
         for (KeyResolver resolver : resolvers.from(namespace)) {
             KeyNamespace to = resolver.to();
             for (SourceCatalog.Entry entry : permitted.values()) {
-                if (!entry.name().equals(originName) && !byName.containsKey(entry.name())
+                if (!entry.name().equals(originName) && !direct.contains(entry.name())
                         && entry.description().inputKeys().contains(to)) {
-                    byName.put(entry.name(), target(LinkRelation.TRANSLATED, entry, labels, to, resolver.name()));
+                    byName.putIfAbsent(entry.name() + '\0' + to.value(), target(LinkRelation.TRANSLATED, entry, labels, to, resolver.name()));
                 }
             }
         }
         List<Target> out = new ArrayList<>(byName.values());
-        out.sort(Comparator.comparing(Target::label));
+        out.sort(Comparator.comparing(Target::label)
+                .thenComparing(t -> t.toNamespace() == null ? "" : t.toNamespace().value()));
         return out;
     }
 

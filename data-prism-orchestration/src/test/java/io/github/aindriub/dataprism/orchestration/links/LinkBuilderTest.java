@@ -46,6 +46,7 @@ import io.github.aindriub.dataprism.orchestration.catalog.SourceVisibility;
 import io.github.aindriub.dataprism.pseudonymisation.HmacValueTokenSource;
 import io.github.aindriub.dataprism.pseudonymisation.StaticSecretKeyProvider;
 import io.github.aindriub.dataprism.validation.LlmResponseValidator;
+import io.github.aindriub.dataprism.validation.RawValueLeakValidator;
 import io.github.aindriub.dataprism.validation.SensitivePatternValidator;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.json.JsonMapper;
@@ -99,6 +100,8 @@ public class LinkBuilderTest {
         private final List<LlmResponseValidator> validators = new ArrayList<>(List.of(new SensitivePatternValidator()));
         private SourceVisibility visibility = SourceVisibility.allowAll();
         private int cap = 50;
+        private Instant scopeEnd = SCOPE_END;
+        private boolean scopeEndKnown = true;
         private boolean enabled = true;
         private int maxResponseBytes = RequestLimits.DEFAULT.maxResponseBytes();
         private Duration lifetime = Duration.ofMinutes(30);
@@ -183,6 +186,16 @@ public class LinkBuilderTest {
             return this;
         }
 
+        public Rig scopeEnd(Instant scopeEnd) {
+            this.scopeEnd = scopeEnd;
+            return this;
+        }
+
+        public Rig scopeEndUnknown() {
+            this.scopeEndKnown = false;
+            return this;
+        }
+
         public Rig lifetime(Duration lifetime) {
             this.lifetime = lifetime;
             return this;
@@ -205,7 +218,7 @@ public class LinkBuilderTest {
         }
 
         public static LinkBinding binding() {
-            return new LinkBinding(SCOPE, PRINCIPAL, SCOPE_END, OrchestrationOptions.LinkIssuing.NO_EXPIRY);
+            return new LinkBinding(SCOPE, PRINCIPAL, SCOPE_END, SCOPE_END);
         }
 
         public DefaultContextOrchestrator orchestrator() {
@@ -232,7 +245,7 @@ public class LinkBuilderTest {
             OrchestrationOptions options = OrchestrationOptions.defaults().withVisibility(visibility);
             if (enabled) {
                 options = options.withLinks(new OrchestrationOptions.LinkIssuing(codec(), cap,
-                        new KeyResolvers(resolvers), Map.of(), clock, caller -> OrchestrationOptions.LinkIssuing.NO_EXPIRY));
+                        new KeyResolvers(resolvers), Map.of(), clock));
             }
             var resolver = new DefaultFieldMetadataResolver();
             return new DefaultContextOrchestrator(adapters, scrubber, resolver, validators,
@@ -250,7 +263,8 @@ public class LinkBuilderTest {
         }
 
         public ContextResponse run() {
-            return orchestrator().buildContext(ContextRequest.of("THING", "1"), context(), caller());
+            return orchestrator().buildContext(ContextRequest.of("THING", "1"),
+                    scopeEndKnown ? context(scopeEnd) : context(null), caller());
         }
 
         public int count(Metric metric) {
@@ -262,7 +276,11 @@ public class LinkBuilderTest {
     public static final JsonMapper MAPPER = JsonMapper.builder().build();
 
     public static PrivacyContext context() {
-        return new PrivacyContext(SCOPE, PrivacyScopeType.CASE, "DEFAULT", "test", SCOPE_END,
+        return context(SCOPE_END);
+    }
+
+    public static PrivacyContext context(Instant expiresAt) {
+        return new PrivacyContext(SCOPE, PrivacyScopeType.CASE, "DEFAULT", "test", expiresAt,
                 PseudonymisationVersion.HMAC_SHA256_V1);
     }
 
@@ -425,7 +443,7 @@ public class LinkBuilderTest {
         FollowPayload payload = (FollowPayload) ((LinkOpenResult.Opened) opened).payload();
         assertThat(payload.target()).isEqualTo(link.target());
         // Another caller's binding fails: the link is sealed to this session, not to anything in the request.
-        LinkBinding other = new LinkBinding(SCOPE, "someone-else", SCOPE_END, OrchestrationOptions.LinkIssuing.NO_EXPIRY);
+        LinkBinding other = new LinkBinding(SCOPE, "someone-else", SCOPE_END, SCOPE_END);
         assertThat(rig.codec().open(link.link(), other, Set.of(LinkRelation.DIRECT)))
                 .isInstanceOf(LinkOpenResult.Refused.class);
     }
@@ -453,35 +471,95 @@ public class LinkBuilderTest {
         assertThat(rig.count(Metric.LINKS_ISSUED)).isZero();
     }
 
-    /** Stands for a scan that refuses any token-shaped string the engine did not emit. */
-    private static final LlmResponseValidator REFUSES_UNEMITTED_TOKEN_SHAPES = (tree, prohibited, emitted, ctx) -> {
-        List<io.github.aindriub.dataprism.validation.Violation> found = new ArrayList<>();
-        scan(tree, emitted, found);
-        return found.isEmpty() ? io.github.aindriub.dataprism.validation.ValidationResult.ok()
-                : io.github.aindriub.dataprism.validation.ValidationResult.failed(found);
-    };
-
-    private static void scan(tools.jackson.databind.JsonNode node, Set<String> emitted,
-                             List<io.github.aindriub.dataprism.validation.Violation> found) {
-        if (node.isString() && node.asString().matches("[A-Za-z0-9_-]{60,}") && !emitted.contains(node.asString())) {
-            found.add(new io.github.aindriub.dataprism.validation.Violation("$", "TOKEN_SHAPE", "TEST"));
-        }
-        node.forEach(child -> scan(child, emitted, found));
+    private static Rig withRealValidators() {
+        return rig().validator(new RawValueLeakValidator());
     }
 
     @Test
-    void anIssuedTokenPassesTheScanButATokenShapedStringFromARecordStillFails() {
-        Rig issued = rig().source("origin-api", parcel()).source("parcel-api", new Plain("a"), "parcel-ref")
-                .validator(REFUSES_UNEMITTED_TOKEN_SHAPES);
-        assertThat(originOf(issued.run()).links()).hasSize(1);
+    void anIssuedTokenPassesTheRealValidatorsAsExactValueExemptions() {
+        Rig issued = withRealValidators().source("origin-api", parcel())
+                .source("parcel-api", new Plain("a"), "parcel-ref");
 
-        String shaped = "AQ" + "x".repeat(80);
-        Rig forged = rig().source("origin-api", new Parcel("P-1", List.of(), List.of(), shaped))
-                .source("parcel-api", new Plain("a"), "parcel-ref").validator(REFUSES_UNEMITTED_TOKEN_SHAPES);
-        ContextResponse response = forged.run();
-        // The record's own token-shaped string was not issued, so its source is withheld whole, links included.
+        ContextResponse response = issued.run();
+
+        assertThat(originOf(response).links()).hasSize(1);
+        assertThat(response.sources().values()).extracting(SourceResult::status).doesNotContain("REFUSED");
+    }
+
+    /** Shaped like an API secret, which the real pattern validator refuses unless the engine emitted it. */
+    private static final String SECRET_SHAPED = "sk-a1B2c3D4e5F6g7H8i9J0";
+
+    @Test
+    void theExemptionIsTheExactValueTheEngineEmittedAndNothingNearIt() {
+        SensitivePatternValidator real = new SensitivePatternValidator();
+        var tree = MAPPER.createObjectNode().put("link", SECRET_SHAPED);
+
+        assertThat(real.validate(tree, Set.of(), Set.of(), context()).violations()).isNotEmpty();
+        // Exactly the emitted value is exempt.
+        assertThat(real.validate(tree, Set.of(), Set.of(SECRET_SHAPED), context()).violations()).isEmpty();
+        // A lookalike is ordinary data: another value, or this one when it was not emitted, is still refused.
+        assertThat(real.validate(tree, Set.of(), Set.of(SECRET_SHAPED + "x"), context()).violations()).isNotEmpty();
+        assertThat(real.validate(tree, Set.of(), Set.of(SECRET_SHAPED.substring(1)), context()).violations())
+                .isNotEmpty();
+    }
+
+    @Test
+    void anEmittedTokenNeverLaundersARawValue() {
+        var tree = MAPPER.createObjectNode().put("link", SECRET_SHAPED);
+
+        assertThat(new RawValueLeakValidator().validate(tree, Set.of(SECRET_SHAPED), Set.of(SECRET_SHAPED), context())
+                .violations()).isNotEmpty();
+    }
+
+    @Test
+    void aRecordValueThatLooksLikeASecretStillWithholdsItsSourceWhileLinksAreIssued() {
+        Rig rig = withRealValidators()
+                .source("origin-api", new Parcel("P-1", List.of(), List.of(), SECRET_SHAPED))
+                .source("parcel-api", new Plain("a"), "parcel-ref");
+
+        ContextResponse response = rig.run();
+
+        // The call's own tokens are exempt, but a record cannot pre-supply one: it cannot know this call's
+        // random tokens, and its own secret-shaped value is not among them.
         assertThat(response.sources().values()).extracting(SourceResult::status).contains("REFUSED");
         assertThat(response.sources().values()).allMatch(s -> s.links().isEmpty());
+    }
+
+    @Test
+    void twoResolversToOneSourceWithDifferentTargetNamespacesIssueBothLinks() {
+        Rig rig = rig().source("origin-api", parcel()).source("both-api", new Plain("a"), "route-code", "zone-code")
+                .resolver("a-parcel-route", "parcel-ref", "route-code")
+                .resolver("b-parcel-zone", "parcel-ref", "zone-code");
+
+        List<IssuedLink> links = originOf(rig.run()).links();
+
+        assertThat(links).extracting(IssuedLink::rel).containsOnly("translated");
+        assertThat(links).extracting(IssuedLink::toNamespace).containsExactlyInAnyOrder("route-code", "zone-code");
+    }
+
+    @Test
+    void whenTheScopeEndsBeforeTheLifetimeTheLinkEndsWithTheScopeAndIsBoundToIt() {
+        Instant scopeEnd = NOW.plus(Duration.ofMinutes(10));
+        Rig rig = rig().scopeEnd(scopeEnd).source("origin-api", parcel())
+                .source("parcel-api", new Plain("a"), "parcel-ref");
+
+        IssuedLink link = originOf(rig.run()).links().get(0);
+
+        assertThat(link.expiresAt()).isEqualTo("2026-10-09T12:10:00Z");
+        LinkBinding sessions = new LinkBinding(SCOPE, PRINCIPAL, scopeEnd, scopeEnd);
+        assertThat(rig.codec().open(link.link(), sessions, Set.of(LinkRelation.DIRECT)))
+                .isInstanceOf(LinkOpenResult.Opened.class);
+    }
+
+    @Test
+    void noLinkIsIssuedWhenTheScopeEndIsUnknown() {
+        Rig rig = rig().scopeEndUnknown().source("origin-api", parcel())
+                .source("parcel-api", new Plain("a"), "parcel-ref");
+
+        ContextResponse response = rig.run();
+
+        assertThat(response.sources().values()).allMatch(s -> s.links().isEmpty() && s.linksOmitted() == null);
+        assertThat(rig.count(Metric.LINKS_ISSUED)).isZero();
     }
 
     @Test

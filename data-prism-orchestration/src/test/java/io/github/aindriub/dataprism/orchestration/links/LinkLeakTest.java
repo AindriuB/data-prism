@@ -18,8 +18,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HexFormat;
@@ -28,6 +33,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** The chained value never leaves except as ciphertext, in any form, on any path. */
 class LinkLeakTest {
@@ -69,7 +75,53 @@ class LinkLeakTest {
 
     private void assertNoForm(String where, String text) {
         for (String form : forms(KEY)) {
+            if (text.contains(form)) {
+                preserveCapture(where, text);
+            }
             assertThat(text).as(where + " must not hold the chained value as " + form).doesNotContain(form);
+        }
+    }
+
+    /** Writes what was captured to {@code logs/}, so a failure can be read afterwards (docs/conventions.md). */
+    static Path preserveCapture(String where, String text) {
+        try {
+            Path dir = repoRoot().resolve("logs");
+            Files.createDirectories(dir);
+            String name = "link-leak-" + where.replaceAll("[^A-Za-z0-9]+", "-") + "-"
+                    + Instant.now().toEpochMilli() + ".log";
+            Path file = dir.resolve(name);
+            Files.writeString(file, text, StandardCharsets.UTF_8);
+            return file;
+        } catch (IOException unwritable) {
+            throw new UncheckedIOException("could not preserve the captured output", unwritable);
+        }
+    }
+
+    private static Path repoRoot() {
+        Path dir = Path.of("").toAbsolutePath();
+        while (dir != null && !Files.exists(dir.resolve(".git"))) {
+            dir = dir.getParent();
+        }
+        if (dir == null) {
+            throw new IllegalStateException("could not find a repository root above " + Path.of("").toAbsolutePath());
+        }
+        return dir;
+    }
+
+    @Test
+    void aLeakFoundByTheScanLeavesItsCaptureInLogs() throws Exception {
+        org.slf4j.Logger log = LoggerFactory.getLogger("leaky");
+        log.warn("carrying {}", KEY);
+        long before = System.currentTimeMillis();
+
+        assertThatThrownBy(() -> assertNoForm("the logs", logs())).isInstanceOf(AssertionError.class);
+
+        Path dir = repoRoot().resolve("logs");
+        try (var files = Files.list(dir)) {
+            Path written = files.filter(f -> f.getFileName().toString().startsWith("link-leak-the-logs-"))
+                    .filter(f -> f.toFile().lastModified() >= before - 1000).findFirst().orElseThrow();
+            assertThat(Files.readString(written)).contains(KEY);
+            Files.delete(written);
         }
     }
 
