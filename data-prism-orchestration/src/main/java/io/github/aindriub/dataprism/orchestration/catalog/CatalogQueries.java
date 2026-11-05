@@ -64,6 +64,8 @@ public final class CatalogQueries {
     public static final String SOURCE_NOT_AVAILABLE = SourceSelection.NOT_AVAILABLE;
     /** The code when a response failed its validators or the served schema's caps; the orchestrator's own code. */
     public static final String RESPONSE_REFUSED = "VALIDATION_FAILED";
+    /** The code of an unexpected failure: no validator ran, so it is not a validation failure. */
+    public static final String REQUEST_FAILED = io.github.aindriub.dataprism.orchestration.AuditedRefusalException.REQUEST_FAILED;
     /** The code when a page link could not be issued, so the page is not served. */
     public static final String PAGING_UNAVAILABLE = "PAGING_UNAVAILABLE";
     /** The code for a refused page link that never reached the gate (no codec configured). */
@@ -208,7 +210,7 @@ public final class CatalogQueries {
             return new Outcome(null, SourceLabels.Collision.CODE, collision.sources(), dispositions, kind);
         } catch (RuntimeException failure) {
             // Fail closed. The message of an unexpected failure is not copied anywhere.
-            return refuse(RESPONSE_REFUSED, dispositions, kind);
+            return refuse(REQUEST_FAILED, dispositions, kind);
         }
     }
 
@@ -314,7 +316,7 @@ public final class CatalogQueries {
         CatalogPage page = new CatalogPage(kind, pageRows.stream().map(row -> entry(row, kind)).toList(), size,
                 last, next, expiresAt);
         ObjectNode body = page.toJson(correlationId);
-        if (!valid(body, context)) {
+        if (!valid(body, context, kind)) {
             return refuse(RESPONSE_REFUSED, dispositions, kind);
         }
         metrics.increment(Metric.PAGING_PAGES);
@@ -440,7 +442,7 @@ public final class CatalogQueries {
             }
             ObjectNode body = describeBody(correlationId, kind, labels.labelOf(entry.name()), entry,
                     described.get());
-            if (!valid(body, context)) {
+            if (!valid(body, context, kind)) {
                 return unavailable("CATALOG_DESCRIPTION_REFUSED", real, dispositions, kind);
             }
             return new Outcome(body, null, real, dispositions, kind);
@@ -506,19 +508,21 @@ public final class CatalogQueries {
      * throw, withholds it. The schema is checked here so that a body the SDK would reject is refused before
      * the audit write, not audited as served.
      *
-     * <p>The correlation id and the labels are this server's own output, so they are the validators'
-     * {@code emitted} set, which matches by exact value: a label that happens to look like an identifier is
-     * not refused, and nothing else is exempt.
+     * <p>The correlation id, and under {@code ALIAS} the labels, are values this server generated, so they
+     * are the validators' {@code emitted} set, which matches by exact value. A real name is the operator's
+     * and is scanned like any other text: one that looks like an identifier refuses the response.
      */
-    private boolean valid(ObjectNode body, PrivacyContext context) {
+    private boolean valid(ObjectNode body, PrivacyContext context, SourceCatalog.LabelKind kind) {
         if (!withinServedSchema(body)) {
             return false;
         }
         Set<String> emitted = new LinkedHashSet<>();
         addText(emitted, body.get("correlationId"));
-        addText(emitted, body.get("source"));
-        if (body.get("sources") instanceof ArrayNode sources) {
-            sources.forEach(entry -> addText(emitted, entry.get("source")));
+        if (kind == SourceCatalog.LabelKind.ALIAS) {
+            addText(emitted, body.get("source"));
+            if (body.get("sources") instanceof ArrayNode sources) {
+                sources.forEach(entry -> addText(emitted, entry.get("source")));
+            }
         }
         boolean ok = true;
         for (LlmResponseValidator validator : validators) {

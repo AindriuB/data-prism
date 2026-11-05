@@ -24,6 +24,8 @@ import io.github.aindriub.dataprism.core.spi.KeyNamespace;
 import io.github.aindriub.dataprism.core.spi.ScrubbingEngine;
 import io.github.aindriub.dataprism.core.spi.SecretKeyProvider;
 import io.github.aindriub.dataprism.core.spi.SourceDescription;
+import io.github.aindriub.dataprism.core.spi.ValueTokenSource;
+import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.orchestration.SourceAliasing;
 import io.github.aindriub.dataprism.pseudonymisation.HmacValueTokenSource;
 import io.github.aindriub.dataprism.pseudonymisation.StaticSecretKeyProvider;
@@ -192,13 +194,19 @@ class CatalogQueriesTest {
 
         Fixture(List<String> names, PagingSettings paging, boolean links, boolean chainable,
                 List<LlmResponseValidator> validators, Map<String, SourceDescription> descriptions) {
+            this(names, paging, links, chainable, validators, descriptions, new HmacValueTokenSource(
+                    StaticSecretKeyProvider.of("development-only-key-not-for-any-real-data")));
+        }
+
+        Fixture(List<String> names, PagingSettings paging, boolean links, boolean chainable,
+                List<LlmResponseValidator> validators, Map<String, SourceDescription> descriptions,
+                ValueTokenSource tokens) {
             for (String name : names) {
                 SourceDescription description = descriptions.getOrDefault(name, SourceDescription.undeclared());
                 adapters.add(new TestAdapters.DescribedAdapter(name, description));
             }
             queries = new CatalogQueries(SourceCatalog.build(adapters, Map.of()), SourceVisibility.allowAll(),
-                    new SourceAliasing(new HmacValueTokenSource(StaticSecretKeyProvider.of(
-                            "development-only-key-not-for-any-real-data"))),
+                    new SourceAliasing(tokens),
                     new RealNamesPolicy(List.of("scope-*")), engine, adapters, validators, paging,
                     links ? new CatalogQueries.PageLinks(codec, keys, new LinkAttemptGate(codec, limiter)) : null,
                     chainable, metrics, clock);
@@ -520,23 +528,133 @@ class CatalogQueriesTest {
 
     // ---- review round 1 ----
 
-    /** A name whose label carries a valid PPSN shape (7 digits, check character T). */
-    private static final String PPSN_SHAPED = "ORGANISATION_IDENTITY-1234567T";
+    /** A token source whose alias for every name is that name with a fixed shaped suffix, or that throws. */
+    static final class ShapedTokens implements ValueTokenSource {
+        final String suffix;
+        boolean throwing;
+
+        ShapedTokens(String suffix) {
+            this.suffix = suffix;
+        }
+
+        @Override
+        public String hash(String value, PrivacyNamespace namespace, PrivacyContext context) {
+            return token(value, namespace, context);
+        }
+
+        @Override
+        public String token(String value, PrivacyNamespace namespace, PrivacyContext context) {
+            if (throwing) {
+                throw new IllegalStateException("token source down");
+            }
+            return value + suffix;
+        }
+
+        @Override
+        public boolean available() {
+            return true;
+        }
+    }
+
+    /** An email shape, and a PPSN shape with a deliberately wrong check character. */
+    private static final String SHAPED_SUFFIX = ".person@example.org";
+    private static final String PPSN_SHAPED = "ORG-1234567A";
 
     @Test
-    @DisplayName("a label that has a sensitive shape is the server's own, so it does not refuse the page or the description")
-    void aLabelWithASensitiveShapeIsNotRefused() {
-        Fixture fx = new Fixture(List.of(PPSN_SHAPED, "other"), DEFAULT, false);
+    @DisplayName("an alias that has a sensitive shape is this scope's own value, so it does not refuse the page or the description")
+    void aShapedAliasIsNotRefused() {
+        Fixture fx = new Fixture(List.of("ledger", "other"), DEFAULT, false, true,
+                List.of(new SensitivePatternValidator()), Map.of(), new ShapedTokens(SHAPED_SUFFIX));
         fx.engine.answer = Optional.of(modelDescription());
+        InvestigationContext alias = caller("p", false);
 
-        CatalogQueries.Outcome listed = fx.list(null, null);
-        CatalogQueries.Outcome described = fx.queries.describeSource(PPSN_SHAPED, caller("p", true),
+        CatalogQueries.Outcome listed = fx.list(new CatalogQueries.ListRequest(null, null, null, null), false);
+        CatalogQueries.Outcome described = fx.queries.describeSource("ledger" + SHAPED_SUFFIX, alias,
                 context("scope-a"), "c-2");
 
         assertThat(listed.refused()).isFalse();
-        assertThat(sources(listed)).contains(PPSN_SHAPED);
+        assertThat(sources(listed)).contains("ledger" + SHAPED_SUFFIX);
         assertThat(described.refused()).isFalse();
-        assertThat(described.body().get("source").asString()).isEqualTo(PPSN_SHAPED);
+    }
+
+    @Test
+    @DisplayName("a real name that has a sensitive shape is scanned and refuses the page and the description")
+    void aShapedRealNameIsRefused() {
+        for (String shaped : List.of("person@example.org", PPSN_SHAPED)) {
+            Fixture fx = new Fixture(List.of(shaped, "other"), DEFAULT, false);
+            fx.engine.answer = Optional.of(modelDescription());
+
+            CatalogQueries.Outcome listed = fx.list(null, null);
+            CatalogQueries.Outcome described = fx.queries.describeSource(shaped, caller("p", true),
+                    context("scope-a"), "c-2");
+
+            assertThat(listed.refused()).isTrue();
+            assertThat(listed.refusalCode()).isEqualTo("VALIDATION_FAILED");
+            assertThat(described.refused()).isTrue();
+            assertThat(described.refusalCode()).isEqualTo("SOURCE_NOT_AVAILABLE");
+        }
+    }
+
+    @Test
+    @DisplayName("a correlation id that has a sensitive shape is this server's own value and does not refuse")
+    void aShapedCorrelationIdIsNotRefused() {
+        Fixture fx = new Fixture(List.of("ledger"), DEFAULT, false);
+        fx.engine.answer = Optional.of(modelDescription());
+
+        CatalogQueries.Outcome listed = fx.queries.listSources(
+                new CatalogQueries.ListRequest(null, null, null, null), caller("p", true), context("scope-a"),
+                null, "person@example.org");
+        CatalogQueries.Outcome described = fx.queries.describeSource("ledger", caller("p", true),
+                context("scope-a"), "person@example.org");
+
+        assertThat(listed.refused()).isFalse();
+        assertThat(described.refused()).isFalse();
+    }
+
+    @Test
+    @DisplayName("the 128 cap on a name counts code points: 128 with a supplementary character is served, 129 is refused")
+    void nameCapCountsCodePoints() {
+        String atCap = "n".repeat(127) + new String(Character.toChars(0x1F600));
+        String overCap = "n".repeat(128) + new String(Character.toChars(0x1F600));
+        assertThat(atCap.length()).isEqualTo(129);
+
+        CatalogQueries.Outcome at = new Fixture(List.of(atCap), DEFAULT, false).list(null, null);
+        CatalogQueries.Outcome over = new Fixture(List.of(overCap), DEFAULT, false).list(null, null);
+
+        assertThat(at.refused()).isFalse();
+        assertThat(over.refused()).isTrue();
+    }
+
+    @Test
+    @DisplayName("an unexpected failure is REQUEST_FAILED, since no validator ran")
+    void unexpectedFailureIsRequestFailed() {
+        ShapedTokens tokens = new ShapedTokens("-x");
+        tokens.throwing = true;
+        Fixture fx = new Fixture(List.of("ledger"), DEFAULT, false, true,
+                List.of(new SensitivePatternValidator()), Map.of(), tokens);
+
+        CatalogQueries.Outcome listed = fx.list(new CatalogQueries.ListRequest(null, null, null, null), false);
+
+        assertThat(listed.refused()).isTrue();
+        assertThat(listed.refusalCode()).isEqualTo("REQUEST_FAILED");
+    }
+
+    @Test
+    @DisplayName("a generated description is within the served cap however many entity types are declared")
+    void generatedDescriptionStaysWithinTheCap() {
+        Set<String> types = new java.util.TreeSet<>();
+        IntStream.rangeClosed(1, 30).forEach(i -> types.add(String.format("ENTITY_TYPE_%02d", i)));
+        SourceDescription many = new SourceDescription(types, null, null, List.of(new KeyNamespace("parcel-ref")),
+                CostHint.LOW, FreshnessHint.DAILY);
+        Fixture fx = new Fixture(List.of("ledger"), DEFAULT, false, true,
+                List.of(new SensitivePatternValidator()), Map.of("ledger", many));
+
+        CatalogQueries.Outcome listed = fx.list(null, null);
+
+        assertThat(listed.refused()).isFalse();
+        String text = listed.body().get("sources").get(0).get("description").asString();
+        assertThat(text.codePointCount(0, text.length())).isBetween(1, 240);
+        assertThat(text).startsWith("Holds ENTITY_TYPE_01").contains("more");
     }
 
     @Test

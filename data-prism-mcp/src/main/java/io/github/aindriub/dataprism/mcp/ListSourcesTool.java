@@ -315,7 +315,7 @@ abstract class CatalogTool<A> {
             outcome = run(parsed, session, caller, correlationId);
         } catch (RuntimeException failure) {
             // Fail closed. The message of an unexpected failure is not copied anywhere.
-            outcome = new CatalogQueries.Outcome(null, CatalogQueries.RESPONSE_REFUSED, Set.of(), Map.of(),
+            outcome = new CatalogQueries.Outcome(null, CatalogQueries.REQUEST_FAILED, Set.of(), Map.of(),
                     queries.names(session.investigationContext(), session.privacyContext()));
         }
 
@@ -326,7 +326,7 @@ abstract class CatalogTool<A> {
                 structured = mapper.convertValue(outcome.body(), LinkedHashMap.class);
                 text = mapper.writeValueAsString(outcome.body());
             } catch (JacksonException | IllegalArgumentException e) {
-                outcome = new CatalogQueries.Outcome(null, CatalogQueries.RESPONSE_REFUSED, Set.of(),
+                outcome = new CatalogQueries.Outcome(null, CatalogQueries.REQUEST_FAILED, Set.of(),
                         Map.of(), outcome.names());
             }
         }
