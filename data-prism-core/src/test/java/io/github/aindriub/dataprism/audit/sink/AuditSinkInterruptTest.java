@@ -3,6 +3,7 @@ package io.github.aindriub.dataprism.audit.sink;
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.AuditSink;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
@@ -27,6 +28,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+@Timeout(30)
 class AuditSinkInterruptTest {
 
     @TempDir

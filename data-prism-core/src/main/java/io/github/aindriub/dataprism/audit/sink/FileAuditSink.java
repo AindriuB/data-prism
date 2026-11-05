@@ -148,8 +148,12 @@ public final class FileAuditSink implements AuditSink, Closeable {
         this.writes = writes;
     }
 
+    /**
+     * Deliberately not synchronized: the caller waits for the writer thread, which takes this monitor in
+     * {@link #recordLine}. Holding it here would deadlock. {@code recordLine} serializes the writes.
+     */
     @Override
-    public synchronized void record(AuditEvent event) {
+    public void record(AuditEvent event) {
         String content = AuditRecordFormat.serialize(event);
         try {
             writes.run(() -> recordLine(content));
