@@ -217,6 +217,11 @@ class MemberCardTest {
             return await(30, () -> cluster.instance().getCluster().getMembers().size() == members);
         }
 
+        /** Waits until the cluster of {@code cluster} reports its partitions safe: no migration is under way. */
+        static boolean awaitSafe(PrivacyCluster cluster) {
+            return await(30, () -> cluster.instance().getPartitionService().isClusterSafe());
+        }
+
         void closeAll() {
             for (PrivacyCluster cluster : clusters) {
                 cluster.close();

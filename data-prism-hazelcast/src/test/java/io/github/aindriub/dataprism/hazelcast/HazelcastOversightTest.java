@@ -66,7 +66,8 @@ class HazelcastOversightTest {
         int port = FreePorts.consecutive(2);
         a = PrivacyCluster.using(Hazelcast.newHazelcastInstance(member(name, port, port)), false, TestMembers.KEYS);
         b = PrivacyCluster.using(Hazelcast.newHazelcastInstance(member(name, port + 1, port)), false, TestMembers.KEYS);
-        assertThat(a.instance().getCluster().getMembers()).hasSize(2);
+        assertThat(TestMembers.settled(30, a, b)).as("both members list each other and their partitions are safe")
+                .isTrue();
     }
 
     private static Config member(String name, int port, int base) {

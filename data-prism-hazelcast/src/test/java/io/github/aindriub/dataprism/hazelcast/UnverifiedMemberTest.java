@@ -65,6 +65,8 @@ class UnverifiedMemberTest {
         outsider = Fixture.plain(name, first + 2, all);
         assertThat(Fixture.awaitMembers(a, 3)).isTrue();
         assertThat(Fixture.awaitMembers(b, 3)).isTrue();
+        assertThat(Fixture.awaitSafe(a)).as("partitions settled after the third member joined").isTrue();
+        assertThat(Fixture.awaitSafe(b)).isTrue();
     }
 
     private void look() {
@@ -156,6 +158,7 @@ class UnverifiedMemberTest {
         PrivacyCluster late = fixture.keyed(name, first + 1, all, TestMembers.KEYS, settings, new Fixture.Metrics(),
                 new RecordingLogger(), true);
         assertThat(Fixture.awaitMembers(late, 3)).isTrue();
+        assertThat(Fixture.awaitSafe(late)).as("partitions settled after the late member joined").isTrue();
         late.memberCards().orElseThrow().tick();
         assertThat(late.securityStatus().serving()).as("no grace for a member that was there first").isFalse();
         assertThat(late.securityStatus().reason()).isEqualTo(ClusterSecurityStatus.Reason.UNVERIFIED_MEMBER);
