@@ -50,7 +50,9 @@ final class UninterruptedWrites {
         FutureTask<T> task = new FutureTask<>(work::get);
         try {
             executor.execute(task);
-        } catch (RuntimeException e) {
+        } catch (RuntimeException | Error e) {
+            // An Error counts too: Thread.start can throw OutOfMemoryError ("unable to create native
+            // thread"), and nothing was written, so it must poison the sink like any failed hand-off.
             throw new HandOffException(e);
         }
         boolean interrupted = false;

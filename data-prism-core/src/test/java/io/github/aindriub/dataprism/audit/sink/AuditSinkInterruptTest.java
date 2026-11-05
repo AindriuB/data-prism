@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@Timeout(30)
+@Timeout(value = 30, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
 class AuditSinkInterruptTest {
 
     @TempDir
@@ -77,7 +77,7 @@ class AuditSinkInterruptTest {
     // ---- flag already set on entry ----
 
     @Test
-    void fileSink_flagSetOnEntry_recordIsDurableFlagStaysSetSinkUsable() throws Exception {
+    void fileSinkWritesDurablyKeepsTheFlagSetAndStaysUsableWhenInterruptedOnEntry() throws Exception {
         Path file = tempDir.resolve("a.log");
         try (FileAuditSink sink = new FileAuditSink(file)) {
             boolean flag = flagAfter(() -> {
@@ -91,7 +91,7 @@ class AuditSinkInterruptTest {
     }
 
     @Test
-    void segmentedSink_flagSetOnEntry_recordIsDurableFlagStaysSetSinkUsable() throws Exception {
+    void segmentedSinkWritesDurablyKeepsTheFlagSetAndStaysUsableWhenInterruptedOnEntry() throws Exception {
         Path dir = tempDir.resolve("seg");
         try (SegmentedFileAuditSink sink = new SegmentedFileAuditSink(dir)) {
             boolean flag = flagAfter(() -> {
@@ -107,7 +107,7 @@ class AuditSinkInterruptTest {
     // ---- interrupt lands mid-write ----
 
     @Test
-    void fileSink_interruptDuringWrite_recordIsDurableAndSinkUsable() throws Exception {
+    void fileSinkWritesDurablyAndStaysUsableWhenInterruptedDuringTheWrite() throws Exception {
         Path file = tempDir.resolve("a.log");
         ParkingChannel parking = new ParkingChannel(open(file));
         try (FileAuditSink sink = FileAuditSinkTestAccess.over(file, parking)) {
@@ -119,7 +119,7 @@ class AuditSinkInterruptTest {
     }
 
     @Test
-    void segmentedSink_interruptDuringWrite_recordIsDurableAndSinkUsable() throws Exception {
+    void segmentedSinkWritesDurablyAndStaysUsableWhenInterruptedDuringTheWrite() throws Exception {
         Path dir = tempDir.resolve("seg");
         ParkingChannel[] parking = new ParkingChannel[1];
         try (SegmentedFileAuditSink sink = new SegmentedFileAuditSink(dir, segment -> {
@@ -160,7 +160,7 @@ class AuditSinkInterruptTest {
     // ---- rollover ----
 
     @Test
-    void segmentedSink_rolloverWithFlagSet_writesToNewSegmentAndIsNotPoisoned() throws Exception {
+    void segmentedSinkRollsToTheNewSegmentWithoutPoisoningWhenInterruptedOnEntry() throws Exception {
         Path dir = tempDir.resolve("seg");
         try (SegmentedFileAuditSink sink = new SegmentedFileAuditSink(dir, 1)) {
             sink.record(event("e1"));
@@ -179,7 +179,7 @@ class AuditSinkInterruptTest {
     // ---- genuine failure still poisons ----
 
     @Test
-    void fileSink_closedByInterruptFromTheChannel_poisonsTheSink() throws Exception {
+    void fileSinkIsPoisonedWhenTheChannelIsClosedByInterrupt() throws Exception {
         Path file = tempDir.resolve("a.log");
         FileChannel real = open(file);
         FileAuditSink sink = FileAuditSinkTestAccess.over(file, new ThrowingChannel(real));
@@ -190,7 +190,7 @@ class AuditSinkInterruptTest {
     }
 
     @Test
-    void segmentedSink_closedByInterruptFromTheChannel_poisonsTheSink() {
+    void segmentedSinkIsPoisonedWhenTheChannelIsClosedByInterrupt() {
         Path dir = tempDir.resolve("seg");
         SegmentedFileAuditSink sink = new SegmentedFileAuditSink(dir, segment -> new ThrowingChannel(open(segment)));
         assertThatThrownBy(() -> sink.record(event("e1"))).isInstanceOf(UncheckedIOException.class)
@@ -201,7 +201,7 @@ class AuditSinkInterruptTest {
     // ---- hand-off failure ----
 
     @Test
-    void fileSink_handOffFailure_throwsAndPoisons() throws Exception {
+    void fileSinkThrowsAndIsPoisonedWhenTheHandOffFails() throws Exception {
         Path file = tempDir.resolve("a.log");
         FileAuditSink sink = new FileAuditSink(file, open(file), rejecting());
         assertThatThrownBy(() -> sink.record(event("e1"))).isInstanceOf(RuntimeException.class);
@@ -211,7 +211,7 @@ class AuditSinkInterruptTest {
     }
 
     @Test
-    void segmentedSink_handOffFailure_throwsAndPoisons() {
+    void segmentedSinkThrowsAndIsPoisonedWhenTheHandOffFails() {
         Path dir = tempDir.resolve("seg");
         SegmentedFileAuditSink sink = new SegmentedFileAuditSink(dir, SegmentedFileAuditSink.APPEND_OPENER, 0,
                 rejecting());
@@ -225,10 +225,192 @@ class AuditSinkInterruptTest {
         });
     }
 
+    // ---- the flag on a failure path ----
+
+    @Test
+    void fileSinkLeavesTheFlagSetWhenTheWriteFailsAfterAnInterruptOnEntry() throws Exception {
+        Path file = tempDir.resolve("a.log");
+        FileChannel real = open(file);
+        FileAuditSink sink = FileAuditSinkTestAccess.over(file, new ThrowingChannel(real));
+        assertThat(flagAfterFailure(true, () -> sink.record(event("e1")))).isTrue();
+        real.close();
+    }
+
+    @Test
+    void fileSinkLeavesTheFlagClearWhenTheWriteFailsAndNoInterruptWasSet() throws Exception {
+        Path file = tempDir.resolve("a.log");
+        FileChannel real = open(file);
+        FileAuditSink sink = FileAuditSinkTestAccess.over(file, new ThrowingChannel(real));
+        assertThat(flagAfterFailure(false, () -> sink.record(event("e1")))).isFalse();
+        real.close();
+    }
+
+    @Test
+    void segmentedSinkLeavesTheFlagSetWhenTheWriteFailsAfterAnInterruptOnEntry() {
+        Path dir = tempDir.resolve("seg");
+        SegmentedFileAuditSink sink = new SegmentedFileAuditSink(dir, segment -> new ThrowingChannel(open(segment)));
+        assertThat(uncheckedFlagAfterFailure(true, () -> sink.record(event("e1")))).isTrue();
+    }
+
+    @Test
+    void segmentedSinkLeavesTheFlagClearWhenTheWriteFailsAndNoInterruptWasSet() {
+        Path dir = tempDir.resolve("seg");
+        SegmentedFileAuditSink sink = new SegmentedFileAuditSink(dir, segment -> new ThrowingChannel(open(segment)));
+        assertThat(uncheckedFlagAfterFailure(false, () -> sink.record(event("e1")))).isFalse();
+    }
+
+    @Test
+    void fileSinkKeepsTheFlagSetWhenInterruptedWhileParkedInAWriteThatThenFails() throws Exception {
+        Path file = tempDir.resolve("a.log");
+        ParkingChannel parking = new ParkingChannel(open(file));
+        parking.failAfterRelease = true;
+        try (FileAuditSink sink = FileAuditSinkTestAccess.over(file, parking)) {
+            assertThat(interruptMidFailingWrite(sink, parking)).isTrue();
+            assertPoisoned(sink);
+        }
+    }
+
+    @Test
+    void segmentedSinkKeepsTheFlagSetWhenInterruptedWhileParkedInAWriteThatThenFails() throws Exception {
+        Path dir = tempDir.resolve("seg");
+        ParkingChannel[] parking = new ParkingChannel[1];
+        try (SegmentedFileAuditSink sink = new SegmentedFileAuditSink(dir, segment -> {
+            parking[0] = new ParkingChannel(open(segment));
+            return parking[0];
+        })) {
+            sink.record(event("e0"));
+            parking[0].failAfterRelease = true;
+            assertThat(interruptMidFailingWrite(sink, parking[0])).isTrue();
+            assertPoisoned(sink);
+        }
+    }
+
+    @Test
+    void fileSinkLeavesTheFlagAsTheCallerHadItWhenTheHandOffFails() throws Exception {
+        Path file = tempDir.resolve("a.log");
+        try (FileAuditSink sink = new FileAuditSink(file, open(file), rejecting())) {
+            assertThat(flagAfterFailure(true, () -> sink.record(event("e1")))).isTrue();
+        }
+        Path other = tempDir.resolve("b.log");
+        try (FileAuditSink sink = new FileAuditSink(other, open(other), rejecting())) {
+            assertThat(flagAfterFailure(false, () -> sink.record(event("e1")))).isFalse();
+        }
+    }
+
+    @Test
+    void segmentedSinkLeavesTheFlagAsTheCallerHadItWhenTheHandOffFails() {
+        SegmentedFileAuditSink set = new SegmentedFileAuditSink(tempDir.resolve("s1"),
+                SegmentedFileAuditSink.APPEND_OPENER, 0, rejecting());
+        assertThat(uncheckedFlagAfterFailure(true, () -> set.record(event("e1")))).isTrue();
+        SegmentedFileAuditSink clear = new SegmentedFileAuditSink(tempDir.resolve("s2"),
+                SegmentedFileAuditSink.APPEND_OPENER, 0, rejecting());
+        assertThat(uncheckedFlagAfterFailure(false, () -> clear.record(event("e1")))).isFalse();
+    }
+
+    @Test
+    void anErrorFromTheHandOffPoisonsBothSinksAndTheRecorderRollsBackItsSequence() throws Exception {
+        Path file = tempDir.resolve("a.log");
+        try (FileAuditSink sink = new FileAuditSink(file, open(file), failingOnceWith(new OutOfMemoryError(
+                "unable to create native thread")))) {
+            assertRecorderRollsBackAndSinkIsPoisoned(sink);
+        }
+        assertThat(Files.readAllLines(file)).hasSize(1);
+
+        Path dir = tempDir.resolve("seg");
+        SegmentedFileAuditSink segmented = new SegmentedFileAuditSink(dir, SegmentedFileAuditSink.APPEND_OPENER, 0,
+                failingOnceWith(new OutOfMemoryError("unable to create native thread")));
+        assertRecorderRollsBackAndSinkIsPoisoned(segmented);
+        assertThat(Files.readAllLines(dir.resolve("audit-2026-03-01.log"))).hasSize(1);
+        segmented.close();
+    }
+
+    /** First record lands, the second hits the hand-off Error, the third is refused: sequences 1, 2, 2. */
+    private void assertRecorderRollsBackAndSinkIsPoisoned(AuditSink sink) {
+        java.util.List<Long> attempted = new java.util.ArrayList<>();
+        AuditSink spy = e -> {
+            attempted.add(e.sequence());
+            sink.record(e);
+        };
+        java.time.Clock clock = java.time.Clock.fixed(Instant.parse("2026-03-01T10:00:00Z"),
+                java.time.ZoneOffset.UTC);
+        io.github.aindriub.dataprism.audit.AuditRecorder recorder =
+                new io.github.aindriub.dataprism.audit.AuditRecorder(spy, clock, "w");
+        io.github.aindriub.dataprism.audit.AuditEntry entry = new io.github.aindriub.dataprism.audit.AuditEntry(
+                "p", "c", "t", "ty", "s", "f", "pr", "sc", "pu", "ca", "ALLOW", Set.of("crm:ANSWERED"), Set.of(),
+                "co", java.util.Map.of(), "", "");
+        recorder.record(entry);
+        assertThatThrownBy(() -> recorder.record(entry)).isInstanceOf(UninterruptedWrites.HandOffException.class)
+                .hasCauseInstanceOf(OutOfMemoryError.class);
+        assertThatThrownBy(() -> recorder.record(entry)).isInstanceOf(FileAuditSink.PoisonedException.class);
+        assertThat(attempted).containsExactly(1L, 2L, 2L);
+    }
+
+    /** The first hand-off runs inline, the second throws {@code error}, later ones run inline again. */
+    private static UninterruptedWrites failingOnceWith(Error error) {
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        return new UninterruptedWrites(task -> {
+            if (calls.incrementAndGet() == 2) {
+                throw error;
+            }
+            task.run();
+        });
+    }
+
+    /** Records on a fresh thread with the flag set or clear; returns the flag after the expected failure. */
+    private static boolean flagAfterFailure(boolean setOnEntry, ThrowingRunnable body) throws InterruptedException {
+        AtomicBoolean flag = new AtomicBoolean();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        Thread t = new Thread(() -> {
+            if (setOnEntry) {
+                Thread.currentThread().interrupt();
+            }
+            try {
+                body.run();
+            } catch (Throwable e) {
+                failure.set(e);
+            }
+            flag.set(Thread.currentThread().isInterrupted());
+        });
+        t.start();
+        t.join();
+        assertThat(failure.get()).isNotNull();
+        return flag.get();
+    }
+
+    private static boolean uncheckedFlagAfterFailure(boolean setOnEntry, ThrowingRunnable body) {
+        try {
+            return flagAfterFailure(setOnEntry, body);
+        } catch (InterruptedException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** As {@link #interruptMidWrite}, but the parked write then fails; the caller must see the failure and its flag. */
+    private static boolean interruptMidFailingWrite(AuditSink sink, ParkingChannel parking) throws Exception {
+        parking.arm();
+        AtomicBoolean flag = new AtomicBoolean();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        Thread caller = new Thread(() -> {
+            try {
+                sink.record(event("e1"));
+            } catch (Throwable e) {
+                failure.set(e);
+            }
+            flag.set(Thread.currentThread().isInterrupted());
+        });
+        caller.start();
+        parking.inWrite.await();
+        caller.interrupt();
+        parking.release.countDown();
+        caller.join();
+        assertThat(failure.get()).isInstanceOf(UncheckedIOException.class);
+        return flag.get();
+    }
+
     // ---- close ----
 
     @Test
-    void fileSink_afterClose_recordStillFailsAsBefore() throws Exception {
+    void fileSinkRecordStillFailsAfterClose() throws Exception {
         FileAuditSink sink = new FileAuditSink(tempDir.resolve("a.log"));
         sink.close();
         assertThatThrownBy(() -> sink.record(event("e1"))).isInstanceOf(UncheckedIOException.class);
@@ -237,7 +419,7 @@ class AuditSinkInterruptTest {
     }
 
     @Test
-    void segmentedSink_afterClose_reopensTheSegmentOnTheNextRecord() throws Exception {
+    void segmentedSinkReopensTheSegmentOnTheNextRecordAfterClose() throws Exception {
         Path dir = tempDir.resolve("seg");
         SegmentedFileAuditSink sink = new SegmentedFileAuditSink(dir);
         sink.record(event("e1"));
@@ -354,6 +536,7 @@ class AuditSinkInterruptTest {
         final CountDownLatch inWrite = new CountDownLatch(1);
         final CountDownLatch release = new CountDownLatch(1);
         private volatile boolean armed;
+        volatile boolean failAfterRelease;
 
         ParkingChannel(FileChannel delegate) {
             super(delegate);
@@ -380,6 +563,9 @@ class AuditSinkInterruptTest {
                 if (interrupted) {
                     // the interrupt reached the thread that is writing: what a real one would see
                     Thread.currentThread().interrupt();
+                }
+                if (failAfterRelease) {
+                    throw new IOException("simulated disk failure");
                 }
             }
             return delegate.write(src);
