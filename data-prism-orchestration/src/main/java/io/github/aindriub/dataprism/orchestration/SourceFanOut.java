@@ -629,6 +629,14 @@ public final class SourceFanOut {
      */
     private void runOnSlot(Call call) {
         String name = call.adapter.sourceName();
+        if (Thread.currentThread().isInterrupted()) {
+            // Cancelled before a worker exists: decide it here, so no thread or permit is taken for it.
+            call.gate.compareAndSet(UNDECIDED, SKIPPED);
+        }
+        if (call.gate.get() == SKIPPED) {
+            call.finishedAt = Instant.now(clock);
+            return;
+        }
         SourceCallSlots.Start start = slots.acquireAndStart(name, () -> invoke(call), call.workerDone::countDown,
                 thread -> call.worker = thread);
         if (start != SourceCallSlots.Start.STARTED) {
