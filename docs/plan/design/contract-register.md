@@ -793,6 +793,7 @@ Every metric is one constant of `Metric`, with no free-form tag or value (core:M
 | `dataprism.identity.cache.miss` | shipped | 0.1.0 | core:Metric.java:17 (`IDENTITY_CACHE_MISS`) |  |
 | `dataprism.source.latency` | shipped | 0.1.0 | core:Metric.java:18 (`SOURCE_LATENCY`) |  |
 | `dataprism.source.errors` | shipped | 0.1.0 | core:Metric.java:19 (`SOURCE_ERRORS`) |  |
+| `dataprism.source.calls_saturated` | proposed | 0.8 | core:Metric.java (`SOURCE_CALLS_SATURATED`) | task 272: a source call not made because no call slot was free (the pool's or the source's ceiling); tagged `source`; the outcome is `FAILED` with detail `UNAVAILABLE`, and `dataprism.source.errors` is not incremented |
 | `dataprism.identity.collision` | shipped | 0.1.0 | core:Metric.java:20 (`IDENTITY_COLLISION`) |  |
 | `dataprism.privacy.failclosed` | shipped | 0.1.0 | core:Metric.java:21 (`PRIVACY_FAILCLOSED`) |  |
 | `dataprism.privacy.source.withheld` | shipped* | 0.7.0* | core:Metric.java:22 (`PRIVACY_SOURCE_WITHHELD`) | counts each source withheld from a returned response (D-070-2); `failclosed` counts refused calls only |
