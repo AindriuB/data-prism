@@ -6,7 +6,7 @@
 **Depends on:** 254 (serialised on the shared Spring files; `LinksProperties`), 286 (serialised on `PrivacyExtensionPoints.java` and the bean inventories; added 2026-10-23), 253 (the `follow` tool), 241 (registry and invoker), 269 (`LinkAttemptGate`, which this task wires)
 **Decisions:** OD-08-2 (a, shared Hazelcast limiter, brief 264, `MISSING_SHARED_LINK_LIMITER`; fallback (c) agreed if 264 slips: refuse every sealed-token consumer, links and page links, only on members joining via `tcp-ip` or `kubernetes`, never `join.mode: none` or `single-node`; option (b) excluded; extended 2026-10-20 after review of PR #141 to every sealed-token consumer), OD-08-10 (a, else b given OD-215-5) and OD-08-16 (a, ceiling 16) are decided 2026-10-20. Owner decision (b), 2026-10-23: 264 is deferred past 1.0, so fallback (c) is the 1.0 behaviour.
 **Serialised with:** the cluster wiring tasks on the shared Spring files listed in 254: 222 and 284 land before this task (through 254), and 286 before it by the edge above. Re-wired 2026-10-23 for owner decision (b): 230, 231 and 264 are deferred past 1.0, so nothing in 0.8 follows this task on these files, and no cluster-wide limiter bean exists in 1.0. The `MISSING_SHARED_LINK_LIMITER` refusal below is the shipped 1.0 behaviour on every member that joins via `tcp-ip` or `kubernetes` (OD-08-2 fallback (c))
-**Wave:** 11 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
+**Wave:** 12 (moved from 11 on 2026-11-05, behind 253 and 286)
 **Owns:**
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/LinksProperties.java
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/KeyResolverProperties.java *(new)*
@@ -36,6 +36,8 @@
 Turn the agent-led surface on through configuration: `dataprism.links.*` (sealed-links "Configuration keys", without the option-(b) key per OD-200-8), `dataprism.key-resolvers.*`, every application `KeyResolver` bean collected into the registry, the attempt limiter, and the `follow` tool registered only when links are enabled. Show which link keys a member holds, so rotation phase 1 can be confirmed (sealed-links section 3). Then prove, over the real HTTP example, that none of the new tools or links puts a real value into a log line or audit record.
 
 ## Context
+- From 251 (2026-11-05, coordinator call, owner-delegated): build `LinkIssuing(codec, maxPerResponse, resolvers, descriptors, clock)`. There is no `tokenExpiry` function to wire.
+- From 254 (2026-11-05, coordinator call, owner-delegated): 251's `LinkBuilder` keys on the record class, so configured sources probably get no links while `describe_source` advertises a `keyNamespace`. Do not enable links until 254's Outcome has settled this.
 - docs/plan/design/sealed-links.md section 3 ("Rotation", the held-key signal) and section 5 "Configuration keys", with register OD-200-8 and OD-200-10.
 - docs/plan/design/key-resolvers.md section 6 ("Registration": beans only, OD-R6) and section 9 OD-R1 ("configurable with a ceiling") and OD-R10.
 - docs/plan/design/batch-and-bulk-follow.md A.8 (`paging.lifetime` never exceeds `links.lifetime` when links are on).

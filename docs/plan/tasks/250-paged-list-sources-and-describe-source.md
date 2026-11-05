@@ -5,6 +5,7 @@
 **Base branch:** `origin/main` once 241, 242, 269, 247, 248 and 203 have merged
 **Depends on:** 241 (the `PAGING_PAGES` constant), 242 (page links, limiter), 269 (the limiter contract: `AttemptSubject`, atomic `recordFailure`, `LinkAttemptGate`), 247 (labels, visibility, `names`), 248 (`describe`), 203 (203 owns `CapabilityKnownSetTest` and `ExampleApplication.java`)
 **Wave:** 8 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
+**Wave 8 review (2026-11-05):** lines marked *(2026-11-05)* are coordinator calls, owner-delegated. This brief is consolidated: the text below is the current contract.
 **Owns:**
 - data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/catalog/CatalogQueries.java *(new)*
 - data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/catalog/CatalogPage.java *(new)*
@@ -34,20 +35,34 @@
 - [ ] `Capability` gains `LIST_SOURCES`, `DESCRIBE_SOURCE` and `FOLLOW` (OD-200-5) in `KNOWN`, and `CapabilityKnownSetTest` pins them. Each new tool refuses with `TOOL_NOT_PERMITTED` for a role without its capability, and runs admission under its own tool name.
 - [ ] `list_sources` returns only permitted sources, in ascending byte order of label, with one label kind per response and the description of that kind; `entityTypes`, `cost` and `freshness` are omitted when undeclared; nothing is `null`; no count of hidden sources appears. Filters match exactly and apply before the slice; a filter matching nothing returns `sources: []` and `page: {size, last: true}`.
 - [ ] Paging, Part A items 1 to 10: every entry exactly once over estates of 0, 1, n, n+1 and 2n at page size n; no empty final page; `last` decided by looking one entry past; a `pageSize` above the ceiling applies the ceiling and reports it in `page.size`; the default applies when absent. Mutants killed: offset instead of keyset, `>=` for `>`, filtering after slicing.
-- [ ] A page link is sealed with relation `0x02` and an empty target. It is refused, with the uniform `LINK_INVALID` text, in another scope, for another caller, after expiry, with different filters or `pageSize`, after the label kind changed, and after the catalog tag changed (a source added, removed, or the visible set narrowed); the audit has `link` = `REFUSED:LINK_<REASON>` for each. Two catalogs with the same entries give the same tag on two instances. A `follow` link passed as `page` is refused (`LINK_WRONG_TOOL`, not counted).
+- [ ] A page link is sealed with relation `0x02` and an empty target. It is refused with `LINK_INVALID` and the design's text "The link is not valid." *(2026-11-05)*, in another scope, for another caller, after expiry, with different filters or `pageSize`, after the label kind changed, and after the catalog tag changed (a source added, removed, or the visible set narrowed); the audit has `link` = `REFUSED:LINK_<REASON>` for each. Two catalogs with the same entries give the same tag on two instances. A `follow` link passed as `page` is refused (`LINK_WRONG_TOOL`, not counted).
 - [ ] Pre-authentication failures of page links count in the shared limiter; a locked principal gets `LINK_ATTEMPTS_EXHAUSTED` for a call with `page` and never for a call without it.
 - [ ] Page-link refusals through `LinkAttemptGate` (269), one row per stub limiter or opener state: `LOCKED`, `OVER_LIMIT`, `CEILING`, `LIMITER_UNAVAILABLE` (the limiter returns `UNAVAILABLE`, returns null, or throws), and `OPEN_FAILED`. Each row asserts the client result is `decision.clientCode()` with the uniform text, and that the audit record's `link` disposition is exactly `REFUSED:LINK_ATTEMPTS_<CAUSE>`. Expected codes: `LINK_ATTEMPTS_EXHAUSTED` for `LOCKED`, `OVER_LIMIT` and `CEILING`; `LINK_CHECK_UNAVAILABLE` for `LIMITER_UNAVAILABLE`; `LINK_INVALID` for `OPEN_FAILED`. The `OPEN_FAILED` result is identical to a forged link's apart from `correlationId`, and its audit value is still `REFUSED:LINK_ATTEMPTS_OPEN_FAILED`. A forged page token within the limit audits `REFUSED:LINK_AUTH_FAILED`. Rows for `LOCKED`, `OVER_LIMIT` and `CEILING` give results identical to one another apart from `correlationId`. Mutant: audit `REFUSED:LINK_ATTEMPTS_EXHAUSTED` for every cause.
 - [ ] With no link codec configured, a call returns the whole visible list on one page with `last: true`, whatever `pageSize` says (batch OD-B2 (a), call-time rule); the startup rule is 254's.
 - [ ] `describe_source` returns the schema of `catalog.md` section 4 from the scrub plan (248), with `undeclared`, `valueNamespace` only for `SYNTHETIC` and `TOKEN`, and `chainable` with `keyNamespace` only while links are enabled. An unknown label, a label of the wrong kind, a source the caller may not use and a source whose description cannot be computed all return the identical `SOURCE_NOT_AVAILABLE` result; the audit reasons differ. The response contains no value, classification name, base-url, model class name or credential reference (scanned).
-- [ ] Both outputs pass the response validators (the key-shape and pattern scans) before they leave, as every tool response does.
-- [ ] One audit event per call: `tool` is the tool name, `sourceSystems` the real names of the sources on the page (or of the described source), `names` the effective setting, `DENY:<code>` on refusal. No client-sent label, filter, page token or description text is in any audit record, log line, metric or exception. `PAGING_PAGES` is incremented once per page served.
+- [ ] Both outputs pass the response validators (the key-shape and pattern scans) before they leave, as every tool response does. A failure refuses with the existing `VALIDATION_FAILED`, not a new `RESPONSE_VALIDATION_FAILED`. *(2026-11-05)*
+- [ ] One audit event per call: `tool` is the tool name, `sourceSystems` the real names of the sources on the page (or of the described source), `names` the effective setting, `DENY:<code>` on refusal. `entityType` holds registered values only, otherwise `<unregistered>`, and never client text. *(2026-11-05)* No client-sent label, filter, page token or description text is in any audit record, log line, metric or exception. `PAGING_PAGES` is incremented once per page served.
+  - catalog.md section 3 says `entityType` is "the filter value, or empty". That is wrong for an unregistered filter; the meaning is the line above, and the scribe corrects the table at /record.
 - [ ] The four schema files are valid draft 2020-12; the served schemas are generated from the same definitions and `CatalogToolSchemaTest` compares them byte for byte with the checked-in files; the `page` `maxLength` is the configured link `max-length`.
 - [ ] `DataPrismMcpServer`'s existing test that every tool and the transport share one mapper covers the two new tools.
 - [ ] Before merge, a whole-component hunt for privacy-boundary and oracle defects covers both tools and the page link; each finding is fixed or filed and named in the Outcome.
 - [ ] `./mvnw -B verify` (full reactor) passes.
+
+## For the scribe at /record
+- Register `PAGING_UNAVAILABLE` and the audit reasons `CATALOG_DESCRIPTION_FAILED`, `CATALOG_DESCRIPTION_REFUSED` and `CATALOG_LABELS_FAILED`. *(2026-11-05)*
 
 ## Out of scope
 - Spring registration and the `dataprism.paging.*` and `dataprism.catalog.*` properties (254).
 - `follow` and `_links` (251, 252, 253).
 - `describe_entity_model` and per-source role authorisation (0.9).
 - `docs/tools.md` (261).
+
+## Appendix: superseded
+
+Agents: do not read this section.
+
+Text replaced by the 2026-11-05 consolidation, kept for the record.
+
+- [ ] A page link is sealed with relation `0x02` and an empty target. It is refused, with the uniform `LINK_INVALID` text, in another scope, for another caller, after expiry, with different filters or `pageSize`, after the label kind changed, and after the catalog tag changed (a source added, removed, or the visible set narrowed); the audit has `link` = `REFUSED:LINK_<REASON>` for each. Two catalogs with the same entries give the same tag on two instances. A `follow` link passed as `page` is refused (`LINK_WRONG_TOOL`, not counted).
+- [ ] Both outputs pass the response validators (the key-shape and pattern scans) before they leave, as every tool response does.
+- [ ] One audit event per call: `tool` is the tool name, `sourceSystems` the real names of the sources on the page (or of the described source), `names` the effective setting, `DENY:<code>` on refusal. No client-sent label, filter, page token or description text is in any audit record, log line, metric or exception. `PAGING_PAGES` is incremented once per page served.

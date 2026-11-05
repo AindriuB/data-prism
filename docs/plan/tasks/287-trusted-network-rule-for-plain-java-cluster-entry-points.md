@@ -7,17 +7,19 @@ Filed 2026-10-23 for owner decision (b), as the second half of 284. 284 refuses 
 **Base branch:** the 0.8 integration branch, at a commit that contains 227, 228 and 284.
 **Depends on:** 225 (owns `CachingSyntheticValueSource`, `ScopeIdentityIndex` and their tests in wave 5), 227 (owns `PrivacyCluster.java`, `ClusterMembership.java`, `PrivacyClusterRefusal.java` and `KeylessMemberIsolationTest.java`, and switches five store files, in wave 6), 228 (owns `HazelcastOversightTest.java` in wave 7), 284 (creates `TrustedNetwork.evaluate`, the one copy of the rule, and registers the codes; this task calls it), 294 (owns `TestMembers.java`, `FreePorts.java`, `MemberCardTest.java`, `ApprovalRaceTest.java`, `seal/SealedWritesTest.java` and `ApprovalStoreContractTest.java` (its settle wait) in wave 7; added 2026-10-29)
 **Wave:** 8 (moved from 7 on 2026-10-23, after 228)
+**Wave 8 review (2026-11-05):** lines marked *(2026-11-05)* are coordinator calls, owner-delegated. This brief is consolidated: the text below is the current contract.
 **Owns:**
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/ClusterSecuritySettings.java *(the trusted-network declaration only)*
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/PrivacyCluster.java *(the checks in `embedded` and `using`, before a member starts or is wrapped, only)*
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/ClusterMembership.java *(calling `TrustedNetwork.evaluate` on the built config only)*
-- data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/PrivacyClusterRefusal.java *(insertions only: `PUBLIC_MEMBER_INTERFACE`, `MISSING_TRUSTED_NETWORK`, `INVALID_TRUSTED_RANGE`)*
+- data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/PrivacyClusterRefusal.java *(insertions only: `PUBLIC_MEMBER_INTERFACE`, `MISSING_TRUSTED_NETWORK`, `INVALID_TRUSTED_RANGE`, beside 228's `CLUSTER_SETTINGS_MISMATCH`; rebase on `main` before editing)*
 - data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/TrustedNetworkEntryPointsTest.java *(new)*
-- data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/** *(existing tests and `TestMembers.java`: adding the declaration where a joining or multi-member instance is built, only; `TrustedNetworkTest.java` is 284's and is not edited)*
+- data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/** *(existing tests, `spike/Q05SubsystemSwitchesSpikeTest.java` and `TestMembers.java`: the edits the "Existing tests" item in Acceptance allows, only; `TrustedNetworkTest.java` is 284's and is not edited)*
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/ClusterBackedState.java *(passing the declaration from `dataprism.hazelcast.trusted-network` and `member.trusted-ranges` to the `PrivacyCluster` bean only)*
+- data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/ClusterLegacyGaugeTest.java *(the same allowed edits; added 2026-11-05. 286 edits it next, by its edge on this task)*
 
 ## Goal
-Every entry point that starts or wraps a member that joins, or already has, other members refuses unless it carries an explicit trusted-network declaration and the member listens only on a private interface (or one in the declared ranges). The codes are those 284 registered. There is one copy of the rule, `TrustedNetwork.evaluate` in the hazelcast module, which 284 creates and the Spring check already calls; this task calls it from every plain-Java route and does not edit it (third external review of PR #164).
+Every entry point that starts or wraps a member reachable beyond this host refuses unless it has an enabled interface, a trusted address and an explicit trusted-network declaration. A loopback-only member passes undeclared and keeps its name. A keyed `Config` with no joiner falls under this. *(2026-11-05)* The codes are those 284 registered. There is one copy of the rule, `TrustedNetwork.evaluate` in the hazelcast module, which 284 creates and the Spring check already calls; this task calls it from every plain-Java route and does not edit it (third external review of PR #164).
 
 ## Context
 - Task 284's brief and Outcome: the private rule, the order of the checks, the three codes, and the message rules (no interface or range value in any message).
@@ -30,23 +32,29 @@ Every entry point that starts or wraps a member that joins, or already has, othe
 ## Required shape
 - The declaration: `ClusterSecuritySettings` gains `trustedNetwork` (boolean, `false` in `defaults()`) and `trustedRanges` (a list, empty in `defaults()`). Its Javadoc states 284's isolation assertion word for word. A member started with the declaration logs that assertion at INFO once, with the member port and no address; on the Spring path the line is not logged twice.
 - One rule, every route (third external review of PR #164, High). Each route builds or reads the effective `Config` and calls `TrustedNetwork.evaluate(config, trustedRanges)` (284), before a member starts or an instance is wrapped. The verdict maps to `PUBLIC_MEMBER_INTERFACE` or `INVALID_TRUSTED_RANGE` (constants added here to `PrivacyClusterRefusal`). The routes:
-  - `embedded(ClusterMembership, …)` with a `tcp-ip` or `kubernetes` join: on the config from `toConfig()`. Because `evaluate` also reads system properties, a `-Dhazelcast.local.publicAddress`, `-Dhazelcast.local.localAddress`, `-Dhazelcast.socket.bind.any` or `-Dhazelcast.socket.server.bind.any` on this route is caught. Before the review it was not.
-  - `embedded(Config, …)` on a config with `tcp-ip` or Kubernetes discovery enabled: no enabled interface refuses with `MISSING_MEMBER_INTERFACE`; otherwise `evaluate` on the supplied config.
-  - `using(…)` on an instance whose config joins or which already has more than one member: `evaluate` on the instance's config, and the bound address checked with the same rule. On refusal the instance is left running, as `using` does today.
+  - `embedded(ClusterMembership, …)` when the member is not loopback-only: on the config from `toConfig()`. Because `evaluate` also reads system properties, a `-Dhazelcast.local.publicAddress`, `-Dhazelcast.local.localAddress`, `-Dhazelcast.socket.bind.any` or `-Dhazelcast.socket.server.bind.any` on this route is caught. Before the review it was not.
+  - `embedded(Config, …)` on a config that is not loopback-only, joining or not: no enabled interface refuses with `MISSING_MEMBER_INTERFACE`; otherwise `evaluate` on the supplied config.
+  - `using(…)` on an instance that is not loopback-only: `evaluate` on the instance's config, and the bound address checked with the same rule. A wildcard in the bound set refuses `PUBLIC_MEMBER_INTERFACE` before the probe. *(2026-11-05)* On refusal the instance is left running, as `using` does today.
   - The Spring path through 284's `MemberInterfaceCheck`, unchanged here, plus this task's pass-through of the declaration in `ClusterBackedState`.
-- Undeclared and joining refuses with `MISSING_TRUSTED_NETWORK` on every route, in 284's order.
-- A solo member (`join: none`, or a loopback-only supplied instance) needs no declaration, and is never refused for one.
+- Undeclared and not loopback-only refuses with `MISSING_TRUSTED_NETWORK` on every route, in 284's order.
+- A loopback-only member needs no declaration, is never refused for one, and keeps its name.
 
 ## Acceptance
 - [ ] Tests are written first, and the Outcome shows each new test failing on the base commit. Do not use `git stash` for this: check out the base commit in a separate worktree.
-- [ ] `TrustedNetworkEntryPointsTest`, one row per entry point (`embedded` with a membership, `embedded` with a `Config`, `using`) and case: undeclared and joining gives `MISSING_TRUSTED_NETWORK`; declared with interface `198.51.100.*` gives `PUBLIC_MEMBER_INTERFACE`; declared with `198.51.100.0/24` in the ranges and the same interface starts; declared with `10.0.*.*` or `127.0.0.1` starts; a `Config` that joins with no enabled interface gives `MISSING_MEMBER_INTERFACE`; a solo member starts undeclared. For `embedded`, no Hazelcast instance is left running after a refusal (asserted through `Hazelcast.getAllHazelcastInstances()`). For `using`, the supplied instance is left running.
+- [ ] `TrustedNetworkEntryPointsTest`, one row per entry point (`embedded` with a membership, `embedded` with a `Config`, `using`) and case: undeclared and joining gives `MISSING_TRUSTED_NETWORK`; declared with interface `198.51.100.*` gives `PUBLIC_MEMBER_INTERFACE`; declared with `198.51.100.0/24` in the ranges and the same interface starts; declared with `10.0.*.*` or `127.0.0.1` starts; a `Config` that joins with no enabled interface gives `MISSING_MEMBER_INTERFACE`; a loopback-only member starts undeclared with its name unchanged; a keyed `Config` with no joiner that is not loopback-only gives `MISSING_MEMBER_INTERFACE` with no enabled interface and `MISSING_TRUSTED_NETWORK` with one. For `embedded`, no Hazelcast instance is left running after a refusal (asserted through `Hazelcast.getAllHazelcastInstances()`). For `using`, the supplied instance is left running.
 - [ ] `using` on a supplied instance whose configured interface is private but whose bound address is not refuses with `PUBLIC_MEMBER_INTERFACE`.
+- [ ] `using` on an instance with a wildcard in its bound set refuses with `PUBLIC_MEMBER_INTERFACE` before the probe. *(2026-11-05)*
 - [ ] `embedded(ClusterMembership, …)`, declared, `tcp-ip`, interface `10.0.*.*`, one row each (third external review of PR #164): the system properties `hazelcast.local.publicAddress` and `hazelcast.local.localAddress` set to `198.51.100.7`, and `hazelcast.socket.bind.any=true` and `hazelcast.socket.server.bind.any=true`. Each refuses with `PUBLIC_MEMBER_INTERFACE` before any member starts, and no Hazelcast instance is left running. The two address rows with `10.0.0.5`, or with `198.51.100.7` in a declared range, start.
 - [ ] `embedded(Config, …)` and `using(…)`, declared, joining, interface `10.0.*.*`, one row each: `hazelcast.socket.bind.any=true` and `hazelcast.socket.server.bind.any=true`, each as a Config property and as a system property; `NetworkConfig.setPublicAddress("198.51.100.7")`; `hazelcast.local.publicAddress` and `hazelcast.local.localAddress` set to `198.51.100.7`. Each refuses with `PUBLIC_MEMBER_INTERFACE` (no member left running for `embedded`; the supplied instance left running for `using`). The same rows with `10.0.0.5`, or with `198.51.100.7` in a declared range, start (the `bind.any` rows have no passing variant).
 - [ ] One copy: `git diff` shows no change to `TrustedNetwork.java` or `TrustedNetworkTest.java` (284's). Each route calls `TrustedNetwork.evaluate`, and `git grep` finds no private-block constant, and no read of `hazelcast.local.publicAddress`, `localAddress` or `bind.any` for this check, outside `TrustedNetwork.java`. (227's keyless loopback check reads `localAddress` for its own rule and is not this check.)
 - [ ] A Spring member configured with `trusted-network: true` starts, so the declaration is passed through: 284's `TrustedNetworkConfigurationTest` passes unchanged.
 - [ ] No refusal message, exception or log line contains an interface, an address or a range value (a sentinel scan over the test's `RecordingLogger` output and the exception messages).
-- [ ] Existing tests change only by adding the declaration where a joining or multi-member instance is built. `git diff --stat` on `data-prism-hazelcast/src/test` lists those files, and `git diff` shows no assertion removed or weakened.
+- [ ] Existing tests change only as follows *(2026-11-05)*:
+  - adding the declaration where an instance reachable beyond this host is built;
+  - the `bind.any=false` helper lines;
+  - the two substantive edits in `KeylessMemberIsolationTest` and `PrivacyClusterMembershipTest`;
+  - `IdentityPoisoningTest`, `ReidentificationSealingTest` and `IdentityMetricsTest` becoming loopback-only.
+  - `git diff --stat` lists those files, and `git diff` shows no other assertion removed or weakened.
 - [ ] `./mvnw -B -pl data-prism-hazelcast -am verify` and `./mvnw -B verify` exit 0. Report the counts.
 
 ## Out of scope
@@ -62,5 +70,21 @@ Every entry point that starts or wraps a member that joins, or already has, othe
 - No Hazelcast Enterprise feature (D-0.4.1-A). No new dependency.
 - No sleeps.
 
+## Appendix: superseded
+
+Agents: do not read this section.
+
+Text replaced by the 2026-11-05 consolidation, kept for the record.
+
+- data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/** *(existing tests and `TestMembers.java`: adding the declaration where a joining or multi-member instance is built, only; `TrustedNetworkTest.java` is 284's and is not edited)*
+- data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/PrivacyClusterRefusal.java *(insertions only: `PUBLIC_MEMBER_INTERFACE`, `MISSING_TRUSTED_NETWORK`, `INVALID_TRUSTED_RANGE`)*
+Every entry point that starts or wraps a member that joins, or already has, other members refuses unless it carries an explicit trusted-network declaration and the member listens only on a private interface (or one in the declared ranges). The codes are those 284 registered. There is one copy of the rule, `TrustedNetwork.evaluate` in the hazelcast module, which 284 creates and the Spring check already calls; this task calls it from every plain-Java route and does not edit it (third external review of PR #164).
+  - `embedded(ClusterMembership, …)` with a `tcp-ip` or `kubernetes` join: on the config from `toConfig()`. Because `evaluate` also reads system properties, a `-Dhazelcast.local.publicAddress`, `-Dhazelcast.local.localAddress`, `-Dhazelcast.socket.bind.any` or `-Dhazelcast.socket.server.bind.any` on this route is caught. Before the review it was not.
+  - `embedded(Config, …)` on a config with `tcp-ip` or Kubernetes discovery enabled: no enabled interface refuses with `MISSING_MEMBER_INTERFACE`; otherwise `evaluate` on the supplied config.
+  - `using(…)` on an instance whose config joins or which already has more than one member: `evaluate` on the instance's config, and the bound address checked with the same rule. On refusal the instance is left running, as `using` does today.
+- Undeclared and joining refuses with `MISSING_TRUSTED_NETWORK` on every route, in 284's order.
+- A solo member (`join: none`, or a loopback-only supplied instance) needs no declaration, and is never refused for one.
+- [ ] `TrustedNetworkEntryPointsTest`, one row per entry point (`embedded` with a membership, `embedded` with a `Config`, `using`) and case: undeclared and joining gives `MISSING_TRUSTED_NETWORK`; declared with interface `198.51.100.*` gives `PUBLIC_MEMBER_INTERFACE`; declared with `198.51.100.0/24` in the ranges and the same interface starts; declared with `10.0.*.*` or `127.0.0.1` starts; a `Config` that joins with no enabled interface gives `MISSING_MEMBER_INTERFACE`; a solo member starts undeclared. For `embedded`, no Hazelcast instance is left running after a refusal (asserted through `Hazelcast.getAllHazelcastInstances()`). For `using`, the supplied instance is left running.
+- [ ] Existing tests change only by adding the declaration where a joining or multi-member instance is built. `git diff --stat` on `data-prism-hazelcast/src/test` lists those files, and `git diff` shows no assertion removed or weakened.
 ## Note from the wave-7 record (2026-11-04)
 `PrivacyClusterRefusal.java` is no longer only 227's: task 228 (merged, PR #191) inserted `CLUSTER_SETTINGS_MISMATCH`. Read the Depends-on line's "227 owns `PrivacyClusterRefusal.java`" as "227 and 228". This task's insertions (`PUBLIC_MEMBER_INTERFACE`, `MISSING_TRUSTED_NETWORK`, `INVALID_TRUSTED_RANGE`) go in beside it; rebase on `main` before editing.
