@@ -44,6 +44,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.regex.Pattern;
 
 /**
  * {@code list_sources} and {@code describe_source}: metadata only, no source is called (catalog.md sections 3
@@ -61,8 +62,8 @@ public final class CatalogQueries {
 
     /** The code of every {@code describe_source} refusal, whatever the reason. */
     public static final String SOURCE_NOT_AVAILABLE = SourceSelection.NOT_AVAILABLE;
-    /** The code when a response failed its validators. */
-    public static final String RESPONSE_REFUSED = "RESPONSE_VALIDATION_FAILED";
+    /** The code when a response failed its validators or the served schema's caps; the orchestrator's own code. */
+    public static final String RESPONSE_REFUSED = "VALIDATION_FAILED";
     /** The code when a page link could not be issued, so the page is not served. */
     public static final String PAGING_UNAVAILABLE = "PAGING_UNAVAILABLE";
     /** The code for a refused page link that never reached the gate (no codec configured). */
@@ -75,6 +76,16 @@ public final class CatalogQueries {
 
     private static final Instant FAR_FUTURE = Instant.parse("9999-12-31T00:00:00Z");
     private static final int MAX_LABEL_BYTES = 64;
+    // The caps of the served output schemas (list_sources.output.json, describe_source.output.json).
+    private static final int MAX_SOURCE_CHARS = 128;
+    private static final int MAX_DESCRIPTION_CHARS = 240;
+    private static final int MAX_INPUT_KEYS = 8;
+    private static final int MAX_PATH_CHARS = 64;
+    private static final Pattern ENTITY_TYPE = Pattern.compile("[A-Za-z][A-Za-z0-9_-]{0,63}");
+    private static final Pattern KEY_NAMESPACE = Pattern.compile("[a-z][a-z0-9-]{0,31}");
+    private static final Pattern VALUE_NAMESPACE = Pattern.compile("[A-Z][A-Z0-9_]{0,63}");
+    private static final Pattern FIELD_PATH =
+            Pattern.compile("[A-Za-z_][A-Za-z0-9_]*(\\[\\])?(\\.[A-Za-z_][A-Za-z0-9_]*(\\[\\])?)*");
     private static final Comparator<String> BYTE_ORDER = (a, b) ->
             Arrays.compareUnsigned(a.getBytes(StandardCharsets.UTF_8), b.getBytes(StandardCharsets.UTF_8));
 
@@ -490,21 +501,111 @@ public final class CatalogQueries {
         return new Outcome(null, code, Set.of(), dispositions, kind);
     }
 
-    /** Every validator runs over the whole body; any failure, or any throw, withholds it. */
+    /**
+     * The body fits the served schema, and every validator passes over the whole of it; any failure, or any
+     * throw, withholds it. The schema is checked here so that a body the SDK would reject is refused before
+     * the audit write, not audited as served.
+     *
+     * <p>The correlation id and the labels are this server's own output, so they are the validators'
+     * {@code emitted} set, which matches by exact value: a label that happens to look like an identifier is
+     * not refused, and nothing else is exempt.
+     */
     private boolean valid(ObjectNode body, PrivacyContext context) {
-        // The correlation id is a server-generated UUID, not content: a random run of digits in it must not
-        // trip a shape scan and refuse a good answer.
-        ObjectNode scanned = body.deepCopy();
-        scanned.remove("correlationId");
+        if (!withinServedSchema(body)) {
+            return false;
+        }
+        Set<String> emitted = new LinkedHashSet<>();
+        addText(emitted, body.get("correlationId"));
+        addText(emitted, body.get("source"));
+        if (body.get("sources") instanceof ArrayNode sources) {
+            sources.forEach(entry -> addText(emitted, entry.get("source")));
+        }
         boolean ok = true;
         for (LlmResponseValidator validator : validators) {
             try {
-                ValidationResult result = validator.validate(scanned, Set.of(), Set.of(), context);
+                ValidationResult result = validator.validate(body, Set.of(), emitted, context);
                 ok &= result != null && result.valid();
             } catch (RuntimeException failure) {
                 ok = false;
             }
         }
         return ok;
+    }
+
+    private static void addText(Set<String> into, tools.jackson.databind.JsonNode node) {
+        if (node != null && node.isString()) {
+            into.add(node.asString());
+        }
+    }
+
+    private static boolean withinServedSchema(ObjectNode body) {
+        if (body.get("sources") instanceof ArrayNode sources) {
+            for (tools.jackson.databind.JsonNode entry : sources) {
+                if (!entryWithinSchema(entry)) {
+                    return false;
+                }
+            }
+        } else if (!entryWithinSchema(body)) {
+            return false;
+        }
+        if (body.get("fields") instanceof ArrayNode fields) {
+            for (tools.jackson.databind.JsonNode field : fields) {
+                String path = textOf(field.get("path"));
+                if (path == null || path.codePointCount(0, path.length()) > MAX_PATH_CHARS
+                        || !FIELD_PATH.matcher(path).matches()) {
+                    return false;
+                }
+                String valueNamespace = textOf(field.get("valueNamespace"));
+                String keyNamespace = textOf(field.get("keyNamespace"));
+                if (field.has("valueNamespace") && (valueNamespace == null
+                        || !VALUE_NAMESPACE.matcher(valueNamespace).matches())) {
+                    return false;
+                }
+                if (field.has("keyNamespace") && (keyNamespace == null
+                        || !KEY_NAMESPACE.matcher(keyNamespace).matches())) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /** One source's part of a body: a list entry, or the root of a description. */
+    private static boolean entryWithinSchema(tools.jackson.databind.JsonNode entry) {
+        String source = textOf(entry.get("source"));
+        String description = textOf(entry.get("description"));
+        if (source == null || description == null
+                || !between(source, MAX_SOURCE_CHARS) || !between(description, MAX_DESCRIPTION_CHARS)) {
+            return false;
+        }
+        if (entry.get("entityTypes") instanceof ArrayNode types) {
+            for (tools.jackson.databind.JsonNode type : types) {
+                String text = textOf(type);
+                if (text == null || !ENTITY_TYPE.matcher(text).matches()) {
+                    return false;
+                }
+            }
+        }
+        if (entry.get("inputKeys") instanceof ArrayNode keys) {
+            if (keys.size() > MAX_INPUT_KEYS) {
+                return false;
+            }
+            for (tools.jackson.databind.JsonNode key : keys) {
+                String text = textOf(key);
+                if (text == null || !KEY_NAMESPACE.matcher(text).matches()) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private static boolean between(String text, int max) {
+        int length = text.codePointCount(0, text.length());
+        return length >= 1 && length <= max;
+    }
+
+    private static String textOf(tools.jackson.databind.JsonNode node) {
+        return node != null && node.isString() ? node.asString() : null;
     }
 }

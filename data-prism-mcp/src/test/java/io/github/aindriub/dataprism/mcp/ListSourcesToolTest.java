@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.mcp;
 
 import io.github.aindriub.dataprism.audit.AuditEvent;
+import io.github.aindriub.dataprism.audit.AuditedEntityTypes;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.core.link.InMemoryLinkAttemptLimiter;
 import io.github.aindriub.dataprism.core.link.LinkAttemptGate;
@@ -64,6 +65,7 @@ import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.function.BiFunction;
+import java.util.function.IntFunction;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -120,8 +122,13 @@ class ListSourcesToolTest {
         final List<DataSourceAdapter<?>> adapters = new ArrayList<>();
 
         Env(Set<String> capabilities, int sources, boolean links, ToolOptions options, int pageSize) {
+            this(capabilities, sources, links, options, pageSize, i -> String.format("src-%03d", i), "state");
+        }
+
+        Env(Set<String> capabilities, int sources, boolean links, ToolOptions options, int pageSize,
+            IntFunction<String> naming, String statePath) {
             for (int i = 1; i <= sources; i++) {
-                String name = String.format("src-%03d", i);
+                String name = naming.apply(i);
                 adapters.add(new DataSourceAdapter<Thing>() {
                     @Override
                     public String sourceName() {
@@ -149,7 +156,7 @@ class ListSourcesToolTest {
                 public Optional<ModelDescription> describe(Class<?> model, PrivacyContext context, boolean links) {
                     return Optional.of(new ModelDescription(List.of(
                             new FieldProtection("id", FieldProtection.Protection.ABSENT, null, "thing-ref"),
-                            new FieldProtection("state", FieldProtection.Protection.VERBATIM, null, null)),
+                            new FieldProtection(statePath, FieldProtection.Protection.VERBATIM, null, null)),
                             ModelDescription.Undeclared.REFUSE));
                 }
             };
@@ -315,7 +322,7 @@ class ListSourcesToolTest {
 
         assertThat(labels(second)).containsExactly("src-003", "src-004");
         assertThat(filtered.isError()).isTrue();
-        assertThat(text(filtered)).isEqualTo("LINK_INVALID");
+        assertThat(text(filtered)).isEqualTo("The link is not valid.");
         AuditEvent refused = env.audited.get(env.audited.size() - 1);
         assertThat(refused.policyDecision()).isEqualTo("DENY:LINK_INVALID");
         assertThat(refused.fieldDispositions()).containsEntry("link", "REFUSED:LINK_FILTER_MISMATCH")
@@ -330,10 +337,70 @@ class ListSourcesToolTest {
         String token = "SENTINEL-TOKEN-AAAAAAAAAAAAAAAAAAAAAAAA";
 
         McpSchema.CallToolResult result = call(env.list.specification(),
-                args("keyNamespace", "sentinel-ns", "page", token));
+                args("keyNamespace", "sentinel-ns", "page", token, "entityType", "SENTINEL_TYPE"));
 
         assertThat(text(result)).doesNotContain("SENTINEL").doesNotContain("sentinel-ns");
         assertThat(env.audited.toString()).doesNotContain("SENTINEL").doesNotContain("sentinel-ns");
+        assertThat(env.audited.get(0).entityType()).isEqualTo(AuditedEntityTypes.UNREGISTERED);
+    }
+
+    @Test
+    @DisplayName("an entityType filter is audited only when it is a registered value")
+    void registeredEntityTypeFilterIsAudited() {
+        Env env = new Env(LIST_AND_NAMES, 2, true, ToolOptions.defaults().noAdmission()
+                .entityTypes(AuditedEntityTypes.of(List.of("PARCEL"))).build(), 2);
+
+        call(env.list.specification(), args("entityType", "PARCEL"));
+        call(env.list.specification(), args("entityType", "OTHER"));
+
+        assertThat(env.audited.get(0).entityType()).isEqualTo("PARCEL");
+        assertThat(env.audited.get(1).entityType()).isEqualTo(AuditedEntityTypes.UNREGISTERED);
+    }
+
+    @Test
+    @DisplayName("a page link refusal says what the design says, not the bare code")
+    void linkRefusalText() {
+        Env env = new Env(LIST_AND_NAMES, 5);
+        String next = (String) page(call(env.list.specification(), args())).get("next");
+
+        McpSchema.CallToolResult refused = call(env.list.specification(),
+                args("page", next, "entityType", "PARCEL"));
+
+        assertThat(refused.isError()).isTrue();
+        assertThat(text(refused)).isEqualTo("The link is not valid.");
+        assertThat(env.audited.get(env.audited.size() - 1).policyDecision()).isEqualTo("DENY:LINK_INVALID");
+    }
+
+    @Test
+    @DisplayName("output the served schema rejects is refused and audited as a refusal, never ALLOW")
+    void outputOverTheSchemaIsRefusedBeforeTheAudit() {
+        DefaultJsonSchemaValidator validator = new DefaultJsonSchemaValidator();
+        Env longPath = new Env(Set.of("DESCRIBE_SOURCE", "EXPOSE_SOURCE_NAMES"), 1, true,
+                ToolOptions.defaults().noAdmission().build(), 2, i -> "ledger", "a".repeat(69));
+        Env longName = new Env(LIST_AND_NAMES, 1, true, ToolOptions.defaults().noAdmission().build(), 2,
+                i -> "n".repeat(129), "state");
+
+        McpSchema.CallToolResult described = call(longPath.describe.specification(), args("source", "ledger"));
+        McpSchema.CallToolResult listed = call(longName.list.specification(), args());
+
+        for (Object[] c : new Object[][] {{described, longPath}, {listed, longName}}) {
+            McpSchema.CallToolResult result = (McpSchema.CallToolResult) c[0];
+            Env env = (Env) c[1];
+            // Whatever is served must pass the schema the SDK applies; here nothing structured is served.
+            assertThat(result.isError()).isTrue();
+            assertThat(result.structuredContent()).isNull();
+            assertThat(env.audited).hasSize(1);
+            assertThat(env.audited.get(0).policyDecision()).startsWith("DENY:").isNotEqualTo("ALLOW");
+        }
+
+        // At the cap the answer is served, and the served schema agrees.
+        Env atCap = new Env(Set.of("DESCRIBE_SOURCE", "EXPOSE_SOURCE_NAMES"), 1, true,
+                ToolOptions.defaults().noAdmission().build(), 2, i -> "n".repeat(128), "a".repeat(64));
+        McpServerFeatures.SyncToolSpecification spec = atCap.describe.specification();
+        McpSchema.CallToolResult served = call(spec, args("source", "n".repeat(128)));
+        assertThat(served.isError()).isNotEqualTo(Boolean.TRUE);
+        assertThat(validator.validate(spec.tool().outputSchema(), served.structuredContent()).valid()).isTrue();
+        assertThat(atCap.audited.get(0).policyDecision()).isEqualTo("ALLOW");
     }
 
     @Test

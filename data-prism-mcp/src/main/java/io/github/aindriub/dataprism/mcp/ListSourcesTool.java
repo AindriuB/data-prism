@@ -136,7 +136,11 @@ public final class ListSourcesTool extends CatalogTool<ListSourcesTool.Arguments
     @Override
     String auditedEntityType(Arguments arguments, AuditedEntityTypes entityTypes) {
         String filter = arguments == null ? null : arguments.request().entityType();
-        return filter == null ? "" : entityTypes.audited(filter);
+        if (filter == null) {
+            return "";
+        }
+        // A filter is client text: only a configured, registered type is recorded, never a shape match.
+        return entityTypes.isShapeMode() ? AuditedEntityTypes.UNREGISTERED : entityTypes.audited(filter);
     }
 
     @Override
@@ -203,6 +207,9 @@ abstract class CatalogTool<A> {
 
     private static final Logger LOG = LoggerFactory.getLogger(CatalogTool.class);
     private static final String UNAUTHENTICATED_PRINCIPAL = "unauthenticated";
+    /** The one text for a refused page link, whatever the reason (sealed-links.md section on refusals). */
+    private static final String LINK_INVALID_CODE = "LINK_INVALID";
+    private static final String LINK_INVALID_TEXT = "The link is not valid.";
 
     final String name;
     final ToolInvocation invocation;
@@ -340,7 +347,8 @@ abstract class CatalogTool<A> {
 
         if (outcome.refused()) {
             metrics.increment(Metric.MCP_DENIED);
-            return denied(ToolCalls.refusalText(outcome.refusalCode(), null), correlationId);
+            return denied(LINK_INVALID_CODE.equals(outcome.refusalCode()) ? LINK_INVALID_TEXT
+                    : ToolCalls.refusalText(outcome.refusalCode(), null), correlationId);
         }
         return ToolCalls.withCorrelation(McpSchema.CallToolResult.builder()
                 .structuredContent(structured).addTextContent(text), correlationId).build();

@@ -518,6 +518,54 @@ class CatalogQueriesTest {
                 .doesNotContain("PII").doesNotContain("Thing").doesNotContain("class");
     }
 
+    // ---- review round 1 ----
+
+    /** A name whose label carries a valid PPSN shape (7 digits, check character T). */
+    private static final String PPSN_SHAPED = "ORGANISATION_IDENTITY-1234567T";
+
+    @Test
+    @DisplayName("a label that has a sensitive shape is the server's own, so it does not refuse the page or the description")
+    void aLabelWithASensitiveShapeIsNotRefused() {
+        Fixture fx = new Fixture(List.of(PPSN_SHAPED, "other"), DEFAULT, false);
+        fx.engine.answer = Optional.of(modelDescription());
+
+        CatalogQueries.Outcome listed = fx.list(null, null);
+        CatalogQueries.Outcome described = fx.queries.describeSource(PPSN_SHAPED, caller("p", true),
+                context("scope-a"), "c-2");
+
+        assertThat(listed.refused()).isFalse();
+        assertThat(sources(listed)).contains(PPSN_SHAPED);
+        assertThat(described.refused()).isFalse();
+        assertThat(described.body().get("source").asString()).isEqualTo(PPSN_SHAPED);
+    }
+
+    @Test
+    @DisplayName("a body the served schema would reject is refused here: a path over 64 characters, a name over 128")
+    void aBodyOverTheSchemaCapsIsRefused() {
+        Fixture fx = new Fixture(List.of("ledger"), DEFAULT, false);
+        fx.engine.answer = Optional.of(new ModelDescription(List.of(
+                new FieldProtection("a".repeat(69), Protection.VERBATIM, null, null)),
+                ModelDescription.Undeclared.REFUSE));
+        Fixture longName = new Fixture(List.of("n".repeat(129)), DEFAULT, false);
+
+        CatalogQueries.Outcome described = fx.queries.describeSource("ledger", caller("p", true),
+                context("scope-a"), "c-2");
+        CatalogQueries.Outcome listed = longName.list(null, null);
+
+        assertThat(described.refused()).isTrue();
+        assertThat(described.refusalCode()).isEqualTo("SOURCE_NOT_AVAILABLE");
+        assertThat(described.dispositions()).containsEntry("catalog", "REFUSED:CATALOG_DESCRIPTION_REFUSED");
+        assertThat(listed.refused()).isTrue();
+        assertThat(listed.refusalCode()).isEqualTo("VALIDATION_FAILED");
+        assertThat(listed.body()).isNull();
+    }
+
+    @Test
+    @DisplayName("a body validation failure is the existing VALIDATION_FAILED code")
+    void validationFailureUsesTheExistingCode() {
+        assertThat(CatalogQueries.RESPONSE_REFUSED).isEqualTo("VALIDATION_FAILED");
+    }
+
     @Test
     @DisplayName("settings are validated and name the property, never the value")
     void pagingSettingsAreValidated() {
