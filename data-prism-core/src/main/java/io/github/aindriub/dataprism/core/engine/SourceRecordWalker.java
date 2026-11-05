@@ -697,7 +697,7 @@ final class SourceRecordWalker {
         if (!lenient) {
             return new PrivacyRefusedException(code, pos.path(), detail);
         }
-        collectAll(value, pos.depth());
+        collectCounted(value, pos.depth());
         return SKIP;
     }
 
@@ -762,11 +762,23 @@ final class SourceRecordWalker {
      * one; nothing else is read. Each read is caught, so this throws nothing but a {@code VirtualMachineError}.
      */
     private void collectAll(Object v, int depth) {
-        if (stopped || v == null || depth > MAX_DEPTH) {
+        if (stopped) {
             return;
         }
         try {
             count();
+        } catch (Skip s) {
+            return;
+        }
+        collectCounted(v, depth);
+    }
+
+    /** As {@link #collectAll}, for a position the walk has already counted: each position counts once. */
+    private void collectCounted(Object v, int depth) {
+        if (stopped || v == null || depth > MAX_DEPTH) {
+            return;
+        }
+        try {
             Class<?> c = v.getClass();
             if (v instanceof JsonNode node) {
                 boolean[] foreign = new boolean[1];

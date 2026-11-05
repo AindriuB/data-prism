@@ -210,20 +210,23 @@ class SourceTreeNodeCapTest {
         Counting atCap = new Counting(exact, i -> "item-" + i + "@example.invalid");
         JsonNode tree = SourceTree.of(one(atCap));
         assertThat(tree.get("items")).hasSize(exact);
-        assertThat(atCap.nexts.get()).isLessThanOrEqualTo(MAX);
+        for (int i = 0; i < exact; i++) {
+            assertThat(tree.get("items").get(i).asString()).isEqualTo("item-" + i + "@example.invalid");
+        }
+        assertThat(atCap.nexts.get()).isEqualTo(exact);
 
         atCap.reset();
         assertThat(prohibited(one(atCap))).contains("item-" + (exact - 1) + "@example.invalid");
-        assertThat(atCap.nexts.get()).isLessThanOrEqualTo(MAX);
+        assertThat(atCap.nexts.get()).isEqualTo(exact);
 
         Counting over = new Counting(exact + 1, i -> "item-" + i + "@example.invalid");
         assertTooLarge(refused(one(over)));
-        assertThat(over.nexts.get()).isLessThanOrEqualTo(MAX);
+        assertThat(over.nexts.get()).isEqualTo(exact);
         over.reset();
         Set<String> set = prohibited(one(over));
         assertThat(set).contains("item-" + (exact - 1) + "@example.invalid")
                 .doesNotContain("item-" + exact + "@example.invalid");
-        assertThat(over.nexts.get()).isLessThanOrEqualTo(MAX);
+        assertThat(over.nexts.get()).isEqualTo(exact);
     }
 
     /** A map whose entry iterator never ends. */
@@ -332,5 +335,99 @@ class SourceTreeNodeCapTest {
     void smallValueUnaffected() {
         Counting small = new Counting(3, i -> "s" + i + "@example.invalid");
         assertThat(SourceTree.of(one(small)).get("items")).hasSize(3);
+    }
+
+    record Holder(Object o) {
+    }
+
+    record Inner(List<String> items) {
+    }
+
+    record Leaf(String s) {
+    }
+
+    record Many(
+            @SensitiveData(classifications = DataClassification.CONTACT, namespace = PrivacyNamespace.EMAIL,
+                    suggestedAction = PrivacyAction.REDACT) List<Object> items) {
+    }
+
+    /** An endless list whose next() throws far past any cap, so a missing bound fails instead of hanging. */
+    static final class Bounded extends AbstractList<String> {
+        final java.util.concurrent.atomic.AtomicLong nexts = new java.util.concurrent.atomic.AtomicLong();
+        private final String value;
+
+        Bounded(String value) {
+            this.value = value;
+        }
+
+        @Override
+        public String get(int index) {
+            return value;
+        }
+
+        @Override
+        public int size() {
+            return Integer.MAX_VALUE;
+        }
+
+        @Override
+        public Iterator<String> iterator() {
+            return new Iterator<>() {
+                @Override
+                public boolean hasNext() {
+                    return true;
+                }
+
+                @Override
+                public String next() {
+                    if (nexts.incrementAndGet() > 5_000_000L) {
+                        throw new IllegalStateException("next() called past any bound");
+                    }
+                    return value;
+                }
+            };
+        }
+    }
+
+    @Test
+    @DisplayName("endless nulls under a refused record are capped")
+    void endlessNullsUnderRefusedRecord() {
+        Bounded nulls = new Bounded(null);
+        prohibited(new Holder(new Inner(Collections.unmodifiableList(nulls))));
+        assertThat(nulls.nexts.get()).isLessThanOrEqualTo(MAX);
+    }
+
+    @Test
+    @DisplayName("endless elements past the collection depth are capped")
+    void endlessElementsAtDepthSixtyFour() {
+        for (int levels = 56; levels <= 70; levels++) {
+            Bounded deep = new Bounded("deep@example.invalid");
+            Object nested = new Inner(Collections.unmodifiableList(deep));
+            for (int i = 0; i < levels; i++) {
+                nested = List.of(nested);
+            }
+            prohibited(new Holder(nested));
+            assertThat(deep.nexts.get()).as("levels " + levels).isLessThanOrEqualTo(MAX);
+        }
+    }
+
+    @Test
+    @DisplayName("an endless non-null list under a refused record is capped")
+    void endlessListUnderRefusedRecord() {
+        Bounded list = new Bounded(ITEM);
+        Set<String> set = prohibited(new Holder(new Inner(Collections.unmodifiableList(list))));
+        assertThat(set).contains(ITEM);
+        assertThat(list.nexts.get()).isLessThanOrEqualTo(MAX);
+    }
+
+    @Test
+    @DisplayName("a refused position counts once, so the lenient walk reaches the cap exactly")
+    void refusedPositionCountsOnce() {
+        int n = 400_000; // root + list + n records + n strings = 800,002 nodes, under the cap
+        List<Object> items = new java.util.ArrayList<>(n);
+        for (int i = 0; i < n; i++) {
+            items.add(new Leaf("v-" + i + "@example.invalid"));
+        }
+        assertThat(prohibited(new Many(items))).contains("v-" + (n - 1) + "@example.invalid");
     }
 }
