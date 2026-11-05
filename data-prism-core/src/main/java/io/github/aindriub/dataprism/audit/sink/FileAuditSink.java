@@ -154,6 +154,9 @@ public final class FileAuditSink implements AuditSink, Closeable {
      */
     @Override
     public void record(AuditEvent event) {
+        if (poisonedBy != null) {
+            throw new PoisonedException("AUDIT_SINK_POISONED", path, poisonedBy);
+        }
         String content = AuditRecordFormat.serialize(event);
         try {
             writes.run(() -> recordLine(content));
