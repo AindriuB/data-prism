@@ -88,6 +88,12 @@ import java.util.Locale;
 public final class SourceTree {
 
     /**
+     * The refusal code for a source value with more than 1,000,000 nodes. It counts positions, not bytes, so it
+     * is not a memory limit.
+     */
+    public static final String SOURCE_TREE_TOO_LARGE = "SOURCE_TREE_TOO_LARGE";
+
+    /**
      * The inspecting reader. Main code uses it only to look serializers up
      * ({@link #refuseIfReadByGetters}, the foreign-property lookup, {@link #writtenAsStructure}); it never
      * writes a value with it. Its modifier refuses what would be read by getters or by a user class's own
