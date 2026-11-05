@@ -187,7 +187,7 @@ final class StalledInsert {
                                 return invoke(call, target, callArgs);
                             }));
                 });
-        return PrivacyCluster.using(stalledInstance, false, TestMembers.KEYS);
+        return PrivacyCluster.using(stalledInstance, false, PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
     }
 
     void resume() {

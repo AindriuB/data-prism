@@ -1414,7 +1414,8 @@ class HazelcastOversightTest {
             throws Exception {
         for (var action : ClusterSecuritySettings.UnverifiedMemberAction.values()) {
             var settings = new ClusterSecuritySettings(MESH_LEASE, ClusterSecuritySettings.DEFAULT_CLOCK_SKEW_TOLERANCE,
-                    action, Duration.ofMinutes(10), true);
+                    action, Duration.ofMinutes(10), true)
+                    .withTrustedNetwork(true, List.of(), true);
             try (Mesh m = new Mesh(5, settings)) {
                 for (int i = 0; i < 3; i++) {
                     m.addMember();

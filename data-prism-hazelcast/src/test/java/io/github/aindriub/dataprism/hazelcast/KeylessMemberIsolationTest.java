@@ -884,18 +884,20 @@ class KeylessMemberIsolationTest {
      * therefore never takes effect, and the member is started and listens on its interface only.
      */
     @Test
-    void aSystemPropertyThatBindsEveryInterfaceDoesNotOverrideAKeyedMembersInterface() {
+    void aSystemPropertyThatBindsEveryInterfaceRefusesAKeyedMembersStart() {
         for (String property : List.of("hazelcast.socket.server.bind.any", "hazelcast.socket.bind.any")) {
             withSystemProperty(property, "true", () -> {
                 int port = FreePorts.consecutive(1);
                 ClusterMembership membership = ClusterMembership
                         .tcpIp(TestMembers.uniqueName("keyedbindany"), List.of("127.0.0.1:" + port))
                         .withPort(port).withInterface("127.0.0.1");
-                try (PrivacyCluster keyed = PrivacyCluster.embedded(membership, false, OptionalInt.empty(), Duration.ofMinutes(1), TestMembers.KEYS, TestMembers.TRUSTED)) {
-                    assertListensOnLoopbackOnly(keyed, port);
-                } catch (Exception failed) {
-                    throw new AssertionError(property, failed);
-                }
+                // Task 287: a declared joining member refuses at once on a bind-any system property.
+                Throwable refused = org.assertj.core.api.Assertions.catchThrowable(() -> PrivacyCluster.embedded(
+                        membership, false, OptionalInt.empty(), Duration.ofMinutes(1), TestMembers.KEYS,
+                        TestMembers.TRUSTED));
+                assertThat(refused).as(property).isInstanceOf(PrivacyClusterRefusal.class);
+                assertThat(((PrivacyClusterRefusal) refused).code()).as(property)
+                        .isEqualTo(PrivacyClusterRefusal.Code.PUBLIC_MEMBER_INTERFACE);
             });
             assertThat(Hazelcast.getAllHazelcastInstances()).as("no member is left running").isEmpty();
         }
