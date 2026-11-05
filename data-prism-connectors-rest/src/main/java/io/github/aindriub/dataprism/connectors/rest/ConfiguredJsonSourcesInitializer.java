@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.connectors.rest;
 
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
+import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.context.ApplicationContextInitializer;
 import org.springframework.context.ConfigurableApplicationContext;
@@ -12,7 +13,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * Registers one {@link ConfiguredJsonDataSourceAdapter} bean per configured
@@ -44,8 +47,7 @@ public final class ConfiguredJsonSourcesInitializer
     @Override
     public void initialize(ConfigurableApplicationContext context) {
         Environment environment = context.getEnvironment();
-        String location = bindString(environment, ConfiguredJsonSourcesAutoConfiguration.CONFIG_LOCATION_PROPERTY);
-        if (location == null || location.isBlank()) {
+        if (locations(environment).isEmpty()) {
             return;
         }
 
@@ -58,26 +60,78 @@ public final class ConfiguredJsonSourcesInitializer
                 : RestClient.create();
         beanFactory.registerSingleton("dataPrismConfiguredJsonSourcesRestClient", client);
 
-        for (Map.Entry<String, ConfiguredJsonSource> entry : config.sources().entrySet()) {
+        // By name, so the registration order does not depend on the order of the files.
+        for (Map.Entry<String, ConfiguredJsonSource> entry : new TreeMap<>(config.sources()).entrySet()) {
             beanFactory.registerSingleton("dataPrismConfiguredJsonSource_" + entry.getKey(),
                     new ConfiguredJsonDataSourceAdapter(entry.getValue(), client));
         }
     }
 
+    /**
+     * The configured locations: one value, a comma-separated value or an indexed list, in the order
+     * given. Blank entries are ignored, so a blank property counts as unset.
+     */
+    static List<String> locations(Environment environment) {
+        return Binder.get(environment)
+                .bind(ConfiguredJsonSourcesAutoConfiguration.CONFIG_LOCATION_PROPERTY,
+                        Bindable.listOf(String.class))
+                .orElse(List.of()).stream()
+                .filter(location -> location != null && !location.isBlank())
+                .map(String::trim)
+                .toList();
+    }
+
+    /**
+     * Reads and parses every location, each strictly, and joins them. A source name declared in two
+     * files refuses startup with {@code DUPLICATE_JSON_SOURCE}, naming the source and neither location.
+     * The sources come back sorted by name, so the file order decides nothing.
+     */
     static ConfiguredJsonSourcesConfig loadConfig(Environment environment) {
-        String location = bindString(environment, ConfiguredJsonSourcesAutoConfiguration.CONFIG_LOCATION_PROPERTY);
+        List<String> locations = locations(environment);
         boolean fixtureDevelopment = Binder.get(environment)
                 .bind(FIXTURE_DEVELOPMENT_PROPERTY, Boolean.class)
                 .orElse(false);
-        try (InputStream in = new DefaultResourceLoader().getResource(location).getInputStream()) {
-            String outboundHeader = bindString(environment, OUTBOUND_HEADER_PROPERTY);
-            return ConfiguredJsonSources.fromYaml(in, fixtureDevelopment, outboundHeader);
-        } catch (IOException e) {
-            // The cause is not chained (its message repeats the raw location) and the location is
-            // shown without user-info, query string or fragment.
-            throw new IllegalStateException(ConfiguredJsonSourcesAutoConfiguration.CONFIG_LOCATION_PROPERTY
-                    + " '" + describe(location) + "' could not be read");
+        String outboundHeader = bindString(environment, OUTBOUND_HEADER_PROPERTY);
+
+        Map<String, ConfiguredJsonSource> merged = new TreeMap<>();
+        TlsSettings tls = null;
+        for (String location : locations) {
+            ConfiguredJsonSourcesConfig one;
+            try (InputStream in = new DefaultResourceLoader().getResource(location).getInputStream()) {
+                one = ConfiguredJsonSources.fromYaml(in, fixtureDevelopment, outboundHeader);
+            } catch (IOException e) {
+                // The cause is not chained (its message repeats the raw location) and the location is
+                // shown without user-info, query string or fragment.
+                throw new IllegalStateException(ConfiguredJsonSourcesAutoConfiguration.CONFIG_LOCATION_PROPERTY
+                        + " '" + describe(location) + "' could not be read");
+            }
+            for (Map.Entry<String, ConfiguredJsonSource> entry : one.sources().entrySet()) {
+                if (merged.putIfAbsent(entry.getKey(), entry.getValue()) != null) {
+                    // Neither location is named: either may carry a token.
+                    throw new IllegalStateException("DUPLICATE_JSON_SOURCE: json source "
+                            + io.github.aindriub.dataprism.core.model.StrictYaml.shown(entry.getKey())
+                            + " is declared in more than one json-sources file");
+                }
+            }
+            if (one.tls() != null) {
+                if (tls != null) {
+                    throw new IllegalStateException("json-sources `tls:` is declared in more than one file;"
+                            + " declare it in exactly one");
+                }
+                tls = one.tls();
+            }
         }
+        if (tls != null && locations.size() > 1) {
+            // One client serves every source, so a plaintext source in another file would be dialled with it.
+            for (Map.Entry<String, ConfiguredJsonSource> entry : merged.entrySet()) {
+                if (!"https".equalsIgnoreCase(entry.getValue().transport().baseUrl().getScheme())) {
+                    throw new IllegalStateException("json source "
+                            + io.github.aindriub.dataprism.core.model.StrictYaml.shown(entry.getKey())
+                            + " base-url must be https when any json-sources file configures `tls:`");
+                }
+            }
+        }
+        return new ConfiguredJsonSourcesConfig(merged, tls);
     }
 
     /**

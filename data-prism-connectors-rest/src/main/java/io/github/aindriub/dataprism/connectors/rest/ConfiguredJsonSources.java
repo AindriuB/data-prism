@@ -3,8 +3,13 @@ package io.github.aindriub.dataprism.connectors.rest;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
+import io.github.aindriub.dataprism.core.engine.ChainableField;
 import io.github.aindriub.dataprism.core.model.FieldMetadata;
 import io.github.aindriub.dataprism.core.model.StrictYaml;
+import io.github.aindriub.dataprism.core.spi.CostHint;
+import io.github.aindriub.dataprism.core.spi.FreshnessHint;
+import io.github.aindriub.dataprism.core.spi.KeyNamespace;
+import io.github.aindriub.dataprism.core.spi.SourceDescription;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -53,8 +58,10 @@ public final class ConfiguredJsonSources {
 
     private static final Set<String> SOURCE_KEYS =
             Set.of("base-url", "path", "timeout", "model-version", "subject-json-path", "fields",
-                    "nested-catalogues", OutboundCorrelationHeader.KEY);
-    private static final Set<String> IDENTIFIER_FIELD_KEYS = Set.of("identifier");
+                    "nested-catalogues", "description", OutboundCorrelationHeader.KEY);
+    private static final Set<String> DESCRIPTION_KEYS =
+            Set.of("entity-types", "alias-description", "real-description", "input-keys", "cost", "freshness");
+    private static final Set<String> IDENTIFIER_FIELD_KEYS = Set.of("identifier", "chainable", "keyNamespace");
     private static final Set<String> NON_SENSITIVE_FIELD_KEYS = Set.of("nonSensitive");
     private static final Set<String> SENSITIVE_FIELD_KEYS =
             Set.of("classifications", "namespace", "action");
@@ -213,7 +220,10 @@ public final class ConfiguredJsonSources {
                     + " must be named here");
         }
 
+        SourceDescription description = description(name, body);
+
         Set<String> referencedNestedCatalogues = new LinkedHashSet<>();
+        Map<String, KeyNamespace> chainables = new LinkedHashMap<>();
         Map<String, FieldMetadata> fields = new LinkedHashMap<>();
         for (Map.Entry<?, ?> entry : fieldsMap.entrySet()) {
             String fieldName = String.valueOf(entry.getKey());
@@ -226,7 +236,7 @@ public final class ConfiguredJsonSources {
                         "json source " + StrictYaml.shown(name) + " field " + StrictYaml.shown(fieldName) + " is not a mapping");
             }
             fields.put(fieldName, field(name, fieldName, (Map<String, Object>) fieldBody, true,
-                    nestedCatalogues.keySet(), referencedNestedCatalogues));
+                    nestedCatalogues.keySet(), referencedNestedCatalogues, chainables));
         }
 
         for (String catalogueName : nestedCatalogues.keySet()) {
@@ -242,7 +252,74 @@ public final class ConfiguredJsonSources {
         // never consumes a pool slot for a catalogue it would not have kept.
         fields = assignNestedTokens(name, fields, nestedCatalogues);
 
-        return new ConfiguredJsonSource(transport, modelVersion, subjectJsonPath, fields, nestedCatalogues);
+        List<ChainableField> chainableFields = new ArrayList<>();
+        chainables.forEach((field, ns) -> chainableFields.add(new ChainableField(field, ns, false)));
+        return new ConfiguredJsonSource(transport, modelVersion, subjectJsonPath, fields, nestedCatalogues,
+                description, chainableFields);
+    }
+
+    /**
+     * The optional {@code description:} block. Messages name the source and the key, never a value:
+     * description text is operator prose and must not reach a log through a parser message.
+     */
+    private static SourceDescription description(String sourceName, Map<String, Object> body) {
+        if (!body.containsKey("description")) {
+            return SourceDescription.undeclared();
+        }
+        String where = "json source " + StrictYaml.shown(sourceName) + " description";
+        if (!(body.get("description") instanceof Map<?, ?> raw)) {
+            throw new IllegalArgumentException(StrictYaml.INVALID_SHAPE + ": " + where + " must be a mapping");
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> block = (Map<String, Object>) raw;
+        rejectUnknownKeys(block.keySet(), DESCRIPTION_KEYS, where);
+
+        Set<String> entityTypes = new LinkedHashSet<>();
+        List<Object> types = StrictYaml.optionalList(block, "entity-types", where);
+        if (types != null) {
+            for (Object type : types) {
+                entityTypes.add(StrictYaml.text(type, where + ".entity-types"));
+            }
+        }
+        List<KeyNamespace> inputKeys = new ArrayList<>();
+        List<Object> keys = StrictYaml.optionalList(block, "input-keys", where);
+        if (keys != null) {
+            for (Object key : keys) {
+                String text = StrictYaml.text(key, where + ".input-keys");
+                try {
+                    inputKeys.add(new KeyNamespace(text));
+                } catch (IllegalArgumentException e) {
+                    throw new IllegalArgumentException(where + ".input-keys has an entry that is not a key namespace");
+                }
+            }
+        }
+        String alias = StrictYaml.optionalString(block, "alias-description", where);
+        String real = StrictYaml.optionalString(block, "real-description", where);
+        CostHint cost = hint(CostHint.class, block, "cost", where);
+        FreshnessHint freshness = hint(FreshnessHint.class, block, "freshness", where);
+        try {
+            return new SourceDescription(entityTypes, alias, real, inputKeys, cost, freshness);
+        } catch (IllegalArgumentException e) {
+            // SourceDescription's messages carry no value; this one adds only where.
+            throw new IllegalArgumentException(where + " is not valid: " + e.getMessage());
+        }
+    }
+
+    private static <E extends Enum<E>> E hint(Class<E> type, Map<String, Object> block, String key, String where) {
+        if (!block.containsKey(key)) {
+            return null;
+        }
+        String text = StrictYaml.text(block.get(key), where + "." + key);
+        try {
+            return Enum.valueOf(type, text.trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            // The value is not repeated.
+            throw new IllegalArgumentException(where + "." + key + " is not one of the allowed values");
+        }
+    }
+
+    private static IllegalArgumentException invalidChainable(String where, String reason) {
+        return new IllegalArgumentException("INVALID_CHAINABLE_FIELD: " + where + " " + reason);
     }
 
     /**
@@ -335,7 +412,7 @@ public final class ConfiguredJsonSources {
                             + StrictYaml.shown(catalogueName) + "' field " + fieldName + " is not a mapping");
                 }
                 catalogueFields.put(fieldName,
-                        field(sourceName, fieldName, (Map<String, Object>) fieldBody, false, null, null));
+                        field(sourceName, fieldName, (Map<String, Object>) fieldBody, false, null, null, null));
             }
 
             out.put(catalogueName, Map.copyOf(catalogueFields));
@@ -360,13 +437,18 @@ public final class ConfiguredJsonSources {
      */
     private static FieldMetadata field(String sourceName, String fieldName, Map<String, Object> body,
                                        boolean topLevel, Set<String> declaredNestedCatalogueNames,
-                                       Set<String> referencedNestedCatalogues) {
+                                       Set<String> referencedNestedCatalogues,
+                                       Map<String, KeyNamespace> chainables) {
         String where = "json source " + StrictYaml.shown(sourceName) + " field " + StrictYaml.shown(fieldName);
         boolean identifier = body.containsKey("identifier");
         boolean nonSensitive = body.containsKey("nonSensitive");
         boolean sensitive = body.containsKey("classifications") || body.containsKey("namespace")
                 || body.containsKey("action");
         boolean nested = body.containsKey("nested");
+
+        if ((body.containsKey("chainable") || body.containsKey("keyNamespace")) && (!identifier || !topLevel)) {
+            throw invalidChainable(where, "is chainable, but only an `identifier: true` entry of `fields:` may be");
+        }
 
         if (nested && !topLevel) {
             throw new IllegalArgumentException(where + " states `nested:` inside a nested catalogue;"
@@ -408,6 +490,18 @@ public final class ConfiguredJsonSources {
             if (!StrictYaml.optionalBoolean(body, "identifier", where)) {
                 throw new IllegalArgumentException(where + " sets identifier: false;"
                         + " remove the key entirely instead of stating a negative");
+            }
+            if (body.containsKey("chainable") || body.containsKey("keyNamespace")) {
+                if (!body.containsKey("chainable") || !body.containsKey("keyNamespace")
+                        || !Boolean.TRUE.equals(StrictYaml.optionalBoolean(body, "chainable", where))) {
+                    throw invalidChainable(where, "must state `chainable: true` together with a `keyNamespace`");
+                }
+                String namespace = StrictYaml.text(body.get("keyNamespace"), where + " keyNamespace");
+                try {
+                    chainables.put(fieldName, new KeyNamespace(namespace));
+                } catch (IllegalArgumentException e) {
+                    throw invalidChainable(where, "has a keyNamespace that is not a key namespace");
+                }
             }
             return new FieldMetadata(fieldName, true, FieldMetadata.SELF, List.of(),
                     PrivacyNamespace.NONE, null, "", null, String.class, null);
