@@ -1,13 +1,17 @@
 package io.github.aindriub.dataprism.orchestration;
 
 import io.github.aindriub.dataprism.core.descriptor.ModelDescriptor;
+import io.github.aindriub.dataprism.core.link.LinkAttemptGate;
 import io.github.aindriub.dataprism.core.link.LinkCodec;
+import io.github.aindriub.dataprism.core.link.LinkKeys;
 import io.github.aindriub.dataprism.orchestration.catalog.RealNamesPolicy;
 import io.github.aindriub.dataprism.orchestration.catalog.SourceCatalog;
 import io.github.aindriub.dataprism.orchestration.catalog.SourceVisibility;
 import io.github.aindriub.dataprism.orchestration.links.KeyResolvers;
+import io.github.aindriub.dataprism.orchestration.links.ResolverInvoker;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -25,10 +29,11 @@ import java.util.Optional;
  * @param unselectedSourceLimit the most permitted sources a call without {@code targetSources} may ask
  * @param links                 how sealed links are issued; empty means links are off and a response is exactly
  *                              what it was before links existed
+ * @param follow                how a sealed link is followed; empty means {@code follow} refuses every link
  */
 public record OrchestrationOptions(Optional<SourceCatalog> catalog, SourceVisibility visibility,
                                    RealNamesPolicy realNames, int unselectedSourceLimit,
-                                   Optional<LinkIssuing> links) {
+                                   Optional<LinkIssuing> links, Optional<FollowSettings> follow) {
 
     /** The default for {@code dataprism.catalog.unselected-source-limit}. */
     public static final int DEFAULT_UNSELECTED_SOURCE_LIMIT = 8;
@@ -60,9 +65,59 @@ public record OrchestrationOptions(Optional<SourceCatalog> catalog, SourceVisibi
         }
     }
 
+    /**
+     * The settings for following a link ({@code dataprism.links.*} and {@code dataprism.key-resolvers.*}, bound
+     * in a later task).
+     *
+     * @param gate            the only way a token is opened; owns the failed-attempt limiter
+     * @param keys            the link keys, for the keyed fingerprint that orders a one-to-many follow
+     * @param resolvers       the declared key resolvers
+     * @param invoker         the bounded caller of a resolver
+     * @param maxTargets      {@code dataprism.key-resolvers.max-targets}: the most keys a resolver may return
+     * @param resolverTimeout {@code dataprism.key-resolvers.timeout}
+     * @param budgetCost      {@code dataprism.key-resolvers.budget-cost}: reads one resolver call is charged
+     */
+    public record FollowSettings(LinkAttemptGate gate, LinkKeys keys, KeyResolvers resolvers,
+                                 ResolverInvoker invoker, int maxTargets, Duration resolverTimeout,
+                                 int budgetCost) {
+
+        public static final int DEFAULT_MAX_TARGETS = 5;
+        public static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(2);
+        public static final int DEFAULT_BUDGET_COST = 1;
+
+        public FollowSettings {
+            Objects.requireNonNull(gate, "gate");
+            Objects.requireNonNull(keys, "keys");
+            Objects.requireNonNull(resolvers, "resolvers");
+            Objects.requireNonNull(invoker, "invoker");
+            Objects.requireNonNull(resolverTimeout, "resolverTimeout");
+            if (maxTargets < 1) {
+                throw new IllegalArgumentException("INVALID_KEY_RESOLVER_SETTING: max-targets must be positive");
+            }
+            if (resolverTimeout.isZero() || resolverTimeout.isNegative()) {
+                throw new IllegalArgumentException("INVALID_KEY_RESOLVER_SETTING: timeout must be positive");
+            }
+            if (budgetCost < 1) {
+                throw new IllegalArgumentException("INVALID_KEY_RESOLVER_SETTING: budget-cost must be positive");
+            }
+        }
+
+        public static FollowSettings of(LinkAttemptGate gate, LinkKeys keys, KeyResolvers resolvers,
+                                        ResolverInvoker invoker) {
+            return new FollowSettings(gate, keys, resolvers, invoker, DEFAULT_MAX_TARGETS, DEFAULT_TIMEOUT,
+                    DEFAULT_BUDGET_COST);
+        }
+    }
+
     public OrchestrationOptions(Optional<SourceCatalog> catalog, SourceVisibility visibility,
                                 RealNamesPolicy realNames, int unselectedSourceLimit) {
-        this(catalog, visibility, realNames, unselectedSourceLimit, Optional.empty());
+        this(catalog, visibility, realNames, unselectedSourceLimit, Optional.empty(), Optional.empty());
+    }
+
+    public OrchestrationOptions(Optional<SourceCatalog> catalog, SourceVisibility visibility,
+                                RealNamesPolicy realNames, int unselectedSourceLimit,
+                                Optional<LinkIssuing> links) {
+        this(catalog, visibility, realNames, unselectedSourceLimit, links, Optional.empty());
     }
 
     public OrchestrationOptions {
@@ -70,6 +125,7 @@ public record OrchestrationOptions(Optional<SourceCatalog> catalog, SourceVisibi
         Objects.requireNonNull(visibility, "visibility");
         Objects.requireNonNull(realNames, "realNames");
         Objects.requireNonNull(links, "links");
+        Objects.requireNonNull(follow, "follow");
         if (unselectedSourceLimit < 1) {
             throw new IllegalArgumentException("INVALID_CATALOG_SETTING: unselectedSourceLimit must be positive");
         }
@@ -77,27 +133,32 @@ public record OrchestrationOptions(Optional<SourceCatalog> catalog, SourceVisibi
 
     public static OrchestrationOptions defaults() {
         return new OrchestrationOptions(Optional.empty(), SourceVisibility.allowAll(), RealNamesPolicy.none(),
-                DEFAULT_UNSELECTED_SOURCE_LIMIT, Optional.empty());
+                DEFAULT_UNSELECTED_SOURCE_LIMIT, Optional.empty(), Optional.empty());
     }
 
     public OrchestrationOptions withCatalog(SourceCatalog catalog) {
-        return new OrchestrationOptions(Optional.of(catalog), visibility, realNames, unselectedSourceLimit, links);
+        return new OrchestrationOptions(Optional.of(catalog), visibility, realNames, unselectedSourceLimit, links, follow);
     }
 
     public OrchestrationOptions withVisibility(SourceVisibility visibility) {
-        return new OrchestrationOptions(catalog, visibility, realNames, unselectedSourceLimit, links);
+        return new OrchestrationOptions(catalog, visibility, realNames, unselectedSourceLimit, links, follow);
     }
 
     public OrchestrationOptions withRealNames(RealNamesPolicy realNames) {
-        return new OrchestrationOptions(catalog, visibility, realNames, unselectedSourceLimit, links);
+        return new OrchestrationOptions(catalog, visibility, realNames, unselectedSourceLimit, links, follow);
     }
 
     public OrchestrationOptions withUnselectedSourceLimit(int unselectedSourceLimit) {
-        return new OrchestrationOptions(catalog, visibility, realNames, unselectedSourceLimit, links);
+        return new OrchestrationOptions(catalog, visibility, realNames, unselectedSourceLimit, links, follow);
     }
 
     public OrchestrationOptions withLinks(LinkIssuing links) {
         return new OrchestrationOptions(catalog, visibility, realNames, unselectedSourceLimit,
-                Optional.of(links));
+                Optional.of(links), follow);
+    }
+
+    public OrchestrationOptions withFollow(FollowSettings follow) {
+        return new OrchestrationOptions(catalog, visibility, realNames, unselectedSourceLimit, links,
+                Optional.of(follow));
     }
 }

@@ -44,6 +44,14 @@ final class ResponseSize {
                 keys.add("_linksOmitted");
                 values.add((long) Integer.toString(source.linksOmitted()).length());
             }
+            if (!source.items().isEmpty()) {
+                keys.add("items");
+                values.add(items(source.items()));
+            }
+            if (source.itemsTruncated() != null) {
+                keys.add("itemsTruncated");
+                values.add(source.itemsTruncated() ? 4L : 5L);
+            }
             long value = object(keys, values);
             sources = add(sources, (first ? 0 : 1) + string(entry.getKey()) + 1);
             sources = add(sources, value);
@@ -80,6 +88,30 @@ final class ResponseSize {
         }
         return object(List.of("entityType", "subject", "sources", "findings"),
                 List.of(string(response.entityType()), string(response.subject()), sources, findings));
+    }
+
+    private static long items(List<SourceResult.Item> items) {
+        long bytes = 2;
+        boolean first = true;
+        for (SourceResult.Item item : items) {
+            List<String> keys = new ArrayList<>(List.of("status"));
+            List<Long> values = new ArrayList<>(List.of(string(item.status())));
+            if (item.entity() != null) {
+                keys.add("entity");
+                values.add(tree(item.entity()));
+            }
+            if (!item.links().isEmpty()) {
+                keys.add("_links");
+                values.add(links(item.links()));
+            }
+            if (item.linksOmitted() != null) {
+                keys.add("_linksOmitted");
+                values.add((long) Integer.toString(item.linksOmitted()).length());
+            }
+            bytes = add(bytes, (first ? 0 : 1) + object(keys, values));
+            first = false;
+        }
+        return bytes;
     }
 
     private static long links(List<IssuedLink> links) {
@@ -147,6 +179,12 @@ final class ResponseSize {
             if (source.entity() != null) {
                 records = add(records, 1);
                 pending.add(source.entity());
+            }
+            for (SourceResult.Item item : source.items()) {
+                if (item.entity() != null) {
+                    records = add(records, 1);
+                    pending.add(item.entity());
+                }
             }
         }
         while (!pending.isEmpty()) {

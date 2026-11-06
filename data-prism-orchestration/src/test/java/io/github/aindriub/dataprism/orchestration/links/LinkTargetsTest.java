@@ -57,6 +57,36 @@ class LinkTargetsTest {
         };
     }
 
+    private static DataSourceAdapter<Object> typed(String name, java.util.Set<String> types,
+                                                   Map<KeyNamespace, String> mapping, String... inputKeys) {
+        List<KeyNamespace> keys = new ArrayList<>();
+        for (String key : inputKeys) {
+            keys.add(ns(key));
+        }
+        DataSourceAdapter<Object> base = adapter(name);
+        return new DataSourceAdapter<>() {
+            @Override
+            public String sourceName() {
+                return name;
+            }
+
+            @Override
+            public Class<Object> responseType() {
+                return Object.class;
+            }
+
+            @Override
+            public Object fetch(DataRequest request) {
+                throw new AssertionError("a target is never read to decide a link");
+            }
+
+            @Override
+            public SourceDescription description() {
+                return new SourceDescription(types, null, null, keys, null, null, mapping);
+            }
+        };
+    }
+
     private static KeyResolver resolver(String name, String from, String to) {
         return new KeyResolver() {
             @Override
@@ -152,5 +182,39 @@ class LinkTargetsTest {
         List<String> found = targets("parcel-ref", labels).stream().map(LinkTargets.Target::label).toList();
 
         assertThat(found).isSorted().hasSize(3);
+    }
+
+    @Test
+    void theTypeIsDeclaredOneMappedOrTheSentinelAndAnUnmappedMultiTypeSourceIsIneligible() {
+        SourceLabels labels = labels(List.of(adapter("origin-api"), adapter("none-api", "parcel-ref"),
+                typed("one-api", java.util.Set.of("PARCEL"), Map.of(), "parcel-ref"),
+                typed("mapped-api", java.util.Set.of("DEPOT", "PARCEL"), Map.of(ns("parcel-ref"), "PARCEL"),
+                        "depot-code", "parcel-ref"),
+                typed("loose-api", java.util.Set.of("DEPOT", "PARCEL"), Map.of(), "depot-code", "parcel-ref")),
+                SourceVisibility.allowAll());
+
+        List<LinkTargets.Target> found = targets("parcel-ref", labels);
+
+        assertThat(found).filteredOn(t -> t.name().equals("none-api")).extracting(LinkTargets.Target::entityType)
+                .containsExactly("entity");
+        assertThat(found).filteredOn(t -> t.name().equals("one-api")).extracting(LinkTargets.Target::entityType)
+                .containsExactly("PARCEL");
+        assertThat(found).filteredOn(t -> t.name().equals("mapped-api")).extracting(LinkTargets.Target::entityType)
+                .containsExactly("PARCEL");
+        assertThat(found).filteredOn(t -> t.name().equals("loose-api")).extracting(LinkTargets.Target::eligible)
+                .containsExactly(false);
+    }
+
+    @Test
+    void aTranslatedTargetIsTypedByTheNamespaceItReadsNotTheOneItWasIssuedFrom() {
+        SourceLabels labels = labels(List.of(adapter("origin-api"),
+                typed("hub-api", java.util.Set.of("DEPOT", "PARCEL"),
+                        Map.of(ns("route-code"), "PARCEL", ns("parcel-ref"), "DEPOT"), "route-code", "parcel-ref")),
+                SourceVisibility.allowAll());
+
+        List<LinkTargets.Target> found = targets("depot-code", labels, resolver("d-to-r", "depot-code", "route-code"));
+
+        assertThat(found).hasSize(1);
+        assertThat(found.get(0).entityType()).isEqualTo("PARCEL");
     }
 }

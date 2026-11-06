@@ -208,6 +208,17 @@ class CatalogPageLinkTest {
         assertThat(fx.limiter.recorded).isZero();
     }
 
+    @Test
+    @DisplayName("UNREADABLE_PAGE is a non-empty token that fails to decode: MALFORMED, counted once, LINK_INVALID")
+    void unreadablePageIsACountedMalformedLink() {
+        Fixture fx = new Fixture(names(5), settings(), true);
+
+        assertThat(CatalogQueries.UNREADABLE_PAGE).isNotEmpty();
+        assertRefused(call(fx, "investigator-1", "scope-a", true, page(CatalogQueries.UNREADABLE_PAGE)),
+                "LINK_INVALID", "REFUSED:LINK_MALFORMED");
+        assertThat(fx.limiter.recorded).isEqualTo(1);
+    }
+
     // ---- the limiter ----
 
     @Test

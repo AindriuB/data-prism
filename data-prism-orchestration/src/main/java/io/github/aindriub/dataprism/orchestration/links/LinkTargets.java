@@ -3,6 +3,7 @@ package io.github.aindriub.dataprism.orchestration.links;
 import io.github.aindriub.dataprism.core.link.LinkRelation;
 import io.github.aindriub.dataprism.core.spi.KeyNamespace;
 import io.github.aindriub.dataprism.core.spi.KeyResolver;
+import io.github.aindriub.dataprism.core.spi.SourceDescription;
 import io.github.aindriub.dataprism.orchestration.catalog.SourceCatalog;
 import io.github.aindriub.dataprism.orchestration.catalog.SourceLabels;
 
@@ -34,10 +35,13 @@ public final class LinkTargets {
      * @param label        the target's label in the effective setting
      * @param toNamespace  the namespace after translation; null when direct
      * @param resolverName the one resolver; null when direct
-     * @param eligible     false when the real name is over 64 bytes: no link in 0.8, counted as omitted
+     * @param eligible     false when the real name is over 64 bytes, or the source declares several entity
+     *                     types and none is mapped to the read namespace: no link, counted as omitted
+     * @param entityType   the type the read carries: {@code entity} when the source declares none, its one type,
+     *                     or the mapped one; null when not eligible for want of a mapping
      */
     record Target(LinkRelation relation, String name, String label, KeyNamespace toNamespace, String resolverName,
-                  boolean eligible) {
+                  boolean eligible, String entityType) {
     }
 
     private LinkTargets() {
@@ -55,7 +59,7 @@ public final class LinkTargets {
         for (SourceCatalog.Entry entry : permitted.values()) {
             if (!entry.name().equals(originName) && entry.description().inputKeys().contains(namespace)) {
                 direct.add(entry.name());
-                byName.put(entry.name(), target(LinkRelation.DIRECT, entry, labels, null, null));
+                byName.put(entry.name(), target(LinkRelation.DIRECT, entry, labels, namespace, null, null));
             }
         }
         for (KeyResolver resolver : resolvers.from(namespace)) {
@@ -64,7 +68,7 @@ public final class LinkTargets {
                 if (!entry.name().equals(originName) && !direct.contains(entry.name())
                         && entry.description().inputKeys().contains(to)) {
                     byName.putIfAbsent(entry.name() + '\0' + to.value(),
-                            target(LinkRelation.TRANSLATED, entry, labels, to, resolver.name()));
+                            target(LinkRelation.TRANSLATED, entry, labels, namespace, to, resolver.name()));
                 }
             }
         }
@@ -75,8 +79,23 @@ public final class LinkTargets {
     }
 
     private static Target target(LinkRelation relation, SourceCatalog.Entry entry, SourceLabels labels,
-                                 KeyNamespace to, String resolverName) {
+                                 KeyNamespace from, KeyNamespace to, String resolverName) {
         boolean eligible = entry.name().getBytes(StandardCharsets.UTF_8).length <= MAX_NAME_BYTES;
-        return new Target(relation, entry.name(), labels.labelOf(entry.name()), to, resolverName, eligible);
+        // The type follows the namespace the target reads: the translated one when there is a resolver.
+        KeyNamespace read = to != null ? to : from;
+        SourceDescription description = entry.description();
+        String entityType;
+        if (description.entityTypes().isEmpty()) {
+            entityType = SourceDescription.UNDECLARED_ENTITY_TYPE;
+        } else if (description.entityTypes().size() == 1) {
+            entityType = description.entityTypes().iterator().next();
+        } else {
+            entityType = description.namespaceTypes().get(read);
+            if (entityType == null) {
+                eligible = false;
+            }
+        }
+        return new Target(relation, entry.name(), labels.labelOf(entry.name()), to, resolverName, eligible,
+                entityType);
     }
 }

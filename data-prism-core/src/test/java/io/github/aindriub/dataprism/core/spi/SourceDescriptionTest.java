@@ -88,4 +88,18 @@ class SourceDescriptionTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageNotContaining("SENTINEL");
     }
+
+    @Test
+    @DisplayName("a namespace-to-type map must name an input key and a declared type")
+    void namespaceTypes() {
+        KeyNamespace key = new KeyNamespace("k");
+        SourceDescription ok = new SourceDescription(Set.of("A", "B"), null, null, List.of(key), null, null,
+                java.util.Map.of(key, "A"));
+        assertThat(ok.namespaceTypes()).containsEntry(key, "A");
+        assertThat(SourceDescription.undeclared().namespaceTypes()).isEmpty();
+        assertThatThrownBy(() -> new SourceDescription(Set.of("A"), null, null, List.of(key), null, null,
+                java.util.Map.of(new KeyNamespace("other"), "A"))).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new SourceDescription(Set.of("A"), null, null, List.of(key), null, null,
+                java.util.Map.of(key, "Z"))).isInstanceOf(IllegalArgumentException.class);
+    }
 }

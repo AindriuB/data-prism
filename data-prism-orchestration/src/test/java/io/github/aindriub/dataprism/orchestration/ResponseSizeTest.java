@@ -43,6 +43,27 @@ class ResponseSizeTest {
         assertThat(ResponseSize.records(response)).isEqualTo(1);
     }
 
+    @Test void itemsAndTheTruncationFlagAreCountedExactlyAndTheirEntitiesAreRecords() {
+        ObjectNode one = NODES.objectNode().put("note", "alpha");
+        ObjectNode two = NODES.objectNode().put("note", "beta \"q\"");
+        var items = List.of(new SourceResult.Item("ANSWERED", one, List.of(), null),
+                new SourceResult.Item("NO_DATA", null, List.of(), null),
+                new SourceResult.Item("ANSWERED", two, List.of(), null));
+        var response = new ContextResponse("PARCEL", "SUBJ-1",
+                Map.of("label", SourceResult.ofItems(SourceOutcome.Status.ANSWERED, items, true)),
+                List.of(), Map.of(), "ignored");
+
+        long actual = MAPPER.writeValueAsString(response).getBytes(StandardCharsets.UTF_8).length;
+
+        assertThat(ResponseSize.bytes(response)).isEqualTo(actual);
+        assertThat(ResponseSize.records(response)).isEqualTo(2);
+        var untruncated = new ContextResponse("PARCEL", "SUBJ-1",
+                Map.of("label", SourceResult.ofItems(SourceOutcome.Status.ANSWERED, items, false)),
+                List.of(), Map.of(), "ignored");
+        assertThat(ResponseSize.bytes(untruncated))
+                .isEqualTo(MAPPER.writeValueAsString(untruncated).getBytes(StandardCharsets.UTF_8).length);
+    }
+
     @Test void binaryNodesIncludeTheirBase64Encoding() {
         for (int length : new int[] {0, 1, 2, 3, 76, 1024}) {
             var node = NODES.binaryNode(new byte[length]);
