@@ -11,6 +11,7 @@ import io.github.aindriub.dataprism.core.link.LinkSettings;
 import io.github.aindriub.dataprism.core.metrics.Metric;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.model.FieldProtection;
+import io.github.aindriub.dataprism.core.model.InvestigationContext;
 import io.github.aindriub.dataprism.core.model.ModelDescription;
 import io.github.aindriub.dataprism.core.model.PrivacyContext;
 import io.github.aindriub.dataprism.core.model.PrivacyScopeType;
@@ -23,6 +24,9 @@ import io.github.aindriub.dataprism.core.spi.SecretKeyProvider;
 import io.github.aindriub.dataprism.oversight.InMemoryApprovalStore;
 import io.github.aindriub.dataprism.oversight.InMemoryCallerRateLimiter;
 import io.github.aindriub.dataprism.oversight.InMemoryOversightState;
+import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
+import io.github.aindriub.dataprism.orchestration.ContextRequest;
+import io.github.aindriub.dataprism.orchestration.ContextResponse;
 import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
 import io.github.aindriub.dataprism.orchestration.SourceAliasing;
 import io.github.aindriub.dataprism.orchestration.catalog.CatalogQueries;
@@ -164,8 +168,21 @@ class ListSourcesToolTest {
             LinkCodec codec = new LinkCodec(
                     new LinkSettings("link-key", Optional.empty(), 1024, true, Duration.ofSeconds(30)), keys, FIXED);
             queries = new CatalogQueries(SourceCatalog.build(adapters, Map.of()), SourceVisibility.allowAll(),
-                    new SourceAliasing(new HmacValueTokenSource(KEYS)), new RealNamesPolicy(List.of("*")), engine,
-                    adapters, List.of(new SensitivePatternValidator()),
+                    new SourceAliasing(new HmacValueTokenSource(KEYS)), new RealNamesPolicy(List.of("*")),
+                    new ContextOrchestrator() {
+                        @Override
+                        public ContextResponse buildContext(ContextRequest request, PrivacyContext privacy,
+                                                            InvestigationContext caller) {
+                            throw new AssertionError("the catalog tools never build context");
+                        }
+
+                        @Override
+                        public Optional<ModelDescription> describe(String sourceName, PrivacyContext privacy,
+                                                                   boolean links) {
+                            return adapters.stream().filter(a -> a.sourceName().equals(sourceName)).findFirst()
+                                    .flatMap(a -> engine.describe(sourceName, a.responseType(), privacy, links));
+                        }
+                    }, List.of(new SensitivePatternValidator()),
                     new PagingSettings(pageSize, 100, Duration.ofMinutes(15)),
                     links ? new CatalogQueries.PageLinks(codec, keys, new LinkAttemptGate(codec,
                             new InMemoryLinkAttemptLimiter(5, Duration.ofMinutes(10), FIXED))) : null,

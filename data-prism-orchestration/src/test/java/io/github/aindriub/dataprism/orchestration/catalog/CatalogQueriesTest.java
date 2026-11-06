@@ -26,6 +26,9 @@ import io.github.aindriub.dataprism.core.spi.SecretKeyProvider;
 import io.github.aindriub.dataprism.core.spi.SourceDescription;
 import io.github.aindriub.dataprism.core.spi.ValueTokenSource;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
+import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
+import io.github.aindriub.dataprism.orchestration.ContextRequest;
+import io.github.aindriub.dataprism.orchestration.ContextResponse;
 import io.github.aindriub.dataprism.orchestration.SourceAliasing;
 import io.github.aindriub.dataprism.pseudonymisation.HmacValueTokenSource;
 import io.github.aindriub.dataprism.pseudonymisation.StaticSecretKeyProvider;
@@ -106,6 +109,23 @@ class CatalogQueriesTest {
         int count(Metric metric) {
             return counts.getOrDefault(metric, 0);
         }
+    }
+
+    /** What the orchestrator answers for a source: its scrubber, asked about the adapter's response type. */
+    static ContextOrchestrator orchestratorOver(ScrubbingEngine engine, List<DataSourceAdapter<?>> adapters) {
+        return new ContextOrchestrator() {
+            @Override
+            public ContextResponse buildContext(ContextRequest request, PrivacyContext privacy,
+                                                InvestigationContext caller) {
+                throw new AssertionError("the catalog tools never build context");
+            }
+
+            @Override
+            public Optional<ModelDescription> describe(String sourceName, PrivacyContext privacy, boolean links) {
+                return adapters.stream().filter(a -> a.sourceName().equals(sourceName)).findFirst()
+                        .flatMap(a -> engine.describe(sourceName, a.responseType(), privacy, links));
+            }
+        };
     }
 
     /** Describes every model the same way, or fails. */
@@ -207,7 +227,7 @@ class CatalogQueriesTest {
             }
             queries = new CatalogQueries(SourceCatalog.build(adapters, Map.of()), SourceVisibility.allowAll(),
                     new SourceAliasing(tokens),
-                    new RealNamesPolicy(List.of("scope-*")), engine, adapters, validators, paging,
+                    new RealNamesPolicy(List.of("scope-*")), orchestratorOver(engine, adapters), validators, paging,
                     links ? new CatalogQueries.PageLinks(codec, keys, new LinkAttemptGate(codec, limiter)) : null,
                     chainable, metrics, clock);
         }
@@ -342,7 +362,7 @@ class CatalogQueriesTest {
         CatalogQueries queries = new CatalogQueries(SourceCatalog.build(adapters, Map.of()),
                 (caller, name) -> !name.startsWith("closed"),
                 new SourceAliasing(new HmacValueTokenSource(StaticSecretKeyProvider.of("development-only-key-not-for-any-real-data"))),
-                new RealNamesPolicy(List.of("scope-*")), new StubEngine(Optional.empty()), adapters,
+                new RealNamesPolicy(List.of("scope-*")), orchestratorOver(new StubEngine(Optional.empty()), adapters),
                 List.of(new SensitivePatternValidator()), DEFAULT, null, true, PrivacyMetrics.none(), new TestClock());
 
         CatalogQueries.Outcome outcome = queries.listSources(new CatalogQueries.ListRequest(null, null, null, null),
@@ -486,7 +506,8 @@ class CatalogQueriesTest {
         CatalogQueries queries = new CatalogQueries(SourceCatalog.build(adapters, Map.of()),
                 (caller, name) -> !name.startsWith("closed"),
                 new SourceAliasing(new HmacValueTokenSource(StaticSecretKeyProvider.of("development-only-key-not-for-any-real-data"))),
-                new RealNamesPolicy(List.of("scope-*")), engine, adapters, List.of(new SensitivePatternValidator()),
+                new RealNamesPolicy(List.of("scope-*")), orchestratorOver(engine, adapters),
+                List.of(new SensitivePatternValidator()),
                 DEFAULT, null, true, PrivacyMetrics.none(), new TestClock());
         InvestigationContext real = caller("p", true);
         InvestigationContext alias = caller("p", false);
