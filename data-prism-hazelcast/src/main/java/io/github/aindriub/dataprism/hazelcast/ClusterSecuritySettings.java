@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.hazelcast;
 
 import java.time.Duration;
+import java.util.List;
 
 /**
  * The runtime settings of the sealed cluster that the stores of tasks 226 to 228 read
@@ -9,6 +10,10 @@ import java.time.Duration;
  *
  * <p>Immutable. The constructor refuses a value outside its bounds with {@link IllegalArgumentException}; the
  * message names the component and never the value.
+ *
+ * <p>The isolation assertion that {@code trustedNetwork} makes: only Data Prism members can reach the member port;
+ * approvals and counters on that port are unsealed, so anyone else who can reach it can read and forge them. A
+ * member that starts under it logs the assertion once at INFO, with the member port and no address.
  *
  * @param pauseLease              how long a pause document, or a member card, stays fresh; {@code PT5S} to
  *                                {@code PT5M}, default {@code PT30S}
@@ -19,10 +24,26 @@ import java.time.Duration;
  *                                {@code PT0S} to {@code PT10M}, default {@code PT30S}
  * @param localFloorEnabled       whether each instance also enforces its own count beside the shared one; default
  *                                {@code true}
+ * @param trustedNetwork          the operator's assertion that only Data Prism members can reach the member port;
+ *                                required to start or wrap a member that joins other members; default {@code false}
+ * @param trustedRanges           IPv4 CIDR blocks trusted beyond the private ones; they count only when
+ *                                {@code trustedNetwork} is {@code true}; default empty
+ * @param trustedNetworkAnnounced whether the host has already logged the assertion, so that this class does not log
+ *                                it again; default {@code false}
  */
 public record ClusterSecuritySettings(Duration pauseLease, Duration clockSkewTolerance,
                                       UnverifiedMemberAction unverifiedMemberAction,
-                                      Duration unverifiedMemberGrace, boolean localFloorEnabled) {
+                                      Duration unverifiedMemberGrace, boolean localFloorEnabled,
+                                      boolean trustedNetwork, List<String> trustedRanges,
+                                      boolean trustedNetworkAnnounced) {
+
+    /** The settings of design 4.1 with the given values and no trusted-network declaration. */
+    public ClusterSecuritySettings(Duration pauseLease, Duration clockSkewTolerance,
+                                   UnverifiedMemberAction unverifiedMemberAction, Duration unverifiedMemberGrace,
+                                   boolean localFloorEnabled) {
+        this(pauseLease, clockSkewTolerance, unverifiedMemberAction, unverifiedMemberGrace, localFloorEnabled,
+                false, List.of(), false);
+    }
 
     /** What an unverified member causes (design 4.4, OD-8). */
     public enum UnverifiedMemberAction {
@@ -50,12 +71,19 @@ public record ClusterSecuritySettings(Duration pauseLease, Duration clockSkewTol
         require(unverifiedMemberGrace != null
                 && within(unverifiedMemberGrace, MIN_UNVERIFIED_MEMBER_GRACE, MAX_UNVERIFIED_MEMBER_GRACE),
                 "unverifiedMemberGrace");
+        trustedRanges = trustedRanges == null ? List.of() : List.copyOf(trustedRanges);
     }
 
     /** The defaults of design 4.1. */
     public static ClusterSecuritySettings defaults() {
         return new ClusterSecuritySettings(DEFAULT_PAUSE_LEASE, DEFAULT_CLOCK_SKEW_TOLERANCE,
-                UnverifiedMemberAction.REFUSE, DEFAULT_UNVERIFIED_MEMBER_GRACE, true);
+                UnverifiedMemberAction.REFUSE, DEFAULT_UNVERIFIED_MEMBER_GRACE, true, false, List.of(), false);
+    }
+
+    /** These settings with the trusted-network declaration; {@code announced} says the host already logged it. */
+    public ClusterSecuritySettings withTrustedNetwork(boolean declared, List<String> ranges, boolean announced) {
+        return new ClusterSecuritySettings(pauseLease, clockSkewTolerance, unverifiedMemberAction,
+                unverifiedMemberGrace, localFloorEnabled, declared, ranges, announced);
     }
 
     private static boolean within(Duration value, Duration min, Duration max) {

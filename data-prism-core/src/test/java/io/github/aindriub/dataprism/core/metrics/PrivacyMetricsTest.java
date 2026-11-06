@@ -25,6 +25,7 @@ class PrivacyMetricsTest {
                 "dataprism.identity.cache.miss",
                 "dataprism.source.latency",
                 "dataprism.source.errors",
+                "dataprism.source.calls_saturated",
                 "dataprism.identity.collision",
                 "dataprism.privacy.failclosed",
                 "dataprism.privacy.source.withheld",

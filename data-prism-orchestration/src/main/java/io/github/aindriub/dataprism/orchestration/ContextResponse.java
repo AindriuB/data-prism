@@ -5,6 +5,7 @@ import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.core.model.ConsistencyFinding;
 import io.github.aindriub.dataprism.orchestration.catalog.SourceLabels;
+import io.github.aindriub.dataprism.orchestration.links.LinkBuilder;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -80,11 +81,24 @@ public record ContextResponse(
                               List<ConsistencyFinding> findings, Map<String, ObjectNode> trees,
                               Map<PrivacyNamespace, List<String>> fieldsByNamespace,
                               SourceLabels labels, String correlationId) {
+        return of(entityType, subject, outcomes, findings, trees, fieldsByNamespace, labels, correlationId,
+                Map.of());
+    }
+
+    /** As above; {@code links} is by label and applies to {@code ANSWERED} sources only. */
+    static ContextResponse of(String entityType, String subject, List<SourceOutcome> outcomes,
+                              List<ConsistencyFinding> findings, Map<String, ObjectNode> trees,
+                              Map<PrivacyNamespace, List<String>> fieldsByNamespace,
+                              SourceLabels labels, String correlationId,
+                              Map<String, LinkBuilder.Linked> links) {
         Map<String, SourceResult> results = new LinkedHashMap<>();
         outcomes.forEach(outcome -> {
             ObjectNode tree = outcome.answered() ? trees.get(outcome.sourceName()) : null;
-            results.put(labels.labelOf(outcome.sourceName()),
-                    tree == null ? SourceResult.of(outcome.status()) : SourceResult.answered(tree));
+            String label = labels.labelOf(outcome.sourceName());
+            LinkBuilder.Linked linked = tree == null ? null : links.get(label);
+            results.put(label, tree == null ? SourceResult.of(outcome.status())
+                    : linked == null ? SourceResult.answered(tree)
+                    : SourceResult.answered(tree, linked.links(), linked.omitted()));
         });
         return new ContextResponse(entityType, subject, results, findings, fieldsByNamespace, correlationId);
     }

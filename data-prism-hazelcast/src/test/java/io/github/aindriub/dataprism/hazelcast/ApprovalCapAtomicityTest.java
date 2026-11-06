@@ -124,7 +124,7 @@ class ApprovalCapAtomicityTest {
         // Below the 10 s lease of a two-second timeout; above the 500 ms lease of the shortest.
         config.setProperty("hazelcast.lock.max.lease.time.seconds", "1");
         try (PrivacyCluster limited = PrivacyCluster.embedded(config, false, OptionalInt.empty(),
-                TestMembers.KEYS)) {
+                PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED)) {
             var refused = new HazelcastApprovalStore(limited, Duration.ofSeconds(2));
             var accepted = new HazelcastApprovalStore(limited, Duration.ofMillis(100));
             for (boolean capped : new boolean[]{false, true}) {
