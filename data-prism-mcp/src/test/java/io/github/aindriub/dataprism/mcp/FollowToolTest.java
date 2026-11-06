@@ -31,7 +31,7 @@ import io.github.aindriub.dataprism.orchestration.SourceCircuitBreaker;
 import io.github.aindriub.dataprism.orchestration.SourceFanOut;
 import io.github.aindriub.dataprism.orchestration.SourceFanOutOptions;
 import io.github.aindriub.dataprism.orchestration.SourceResult;
-import io.github.aindriub.dataprism.orchestration.links.FollowRequest;
+import io.github.aindriub.dataprism.orchestration.FollowRequest;
 import io.github.aindriub.dataprism.orchestration.links.KeyResolvers;
 import io.github.aindriub.dataprism.orchestration.links.ResolverInvoker;
 import io.github.aindriub.dataprism.oversight.InMemoryApprovalStore;

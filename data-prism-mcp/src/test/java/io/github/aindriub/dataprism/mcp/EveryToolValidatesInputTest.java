@@ -62,7 +62,7 @@ class EveryToolValidatesInputTest {
                 }
 
                 @Override
-                public ContextResponse follow(io.github.aindriub.dataprism.orchestration.links.FollowRequest request,
+                public ContextResponse follow(io.github.aindriub.dataprism.orchestration.FollowRequest request,
                                               PrivacyContext privacy, InvestigationContext caller) {
                     // A call with a link member reaches the gate as a forged link; the real one refuses and audits it.
                     return followOnly.follow(request, privacy, caller);

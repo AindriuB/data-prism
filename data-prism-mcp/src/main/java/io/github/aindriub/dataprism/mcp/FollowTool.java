@@ -16,8 +16,7 @@ import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.ContextResponse;
 import io.github.aindriub.dataprism.orchestration.DenialAuditFailedException;
 import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
-import io.github.aindriub.dataprism.orchestration.links.FollowRequest;
-import io.github.aindriub.dataprism.orchestration.links.LinkFollower;
+import io.github.aindriub.dataprism.orchestration.FollowRequest;
 import io.github.aindriub.dataprism.security.AdmissionDecision;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationDecision;
@@ -74,6 +73,7 @@ public final class FollowTool {
     private static final String UNREADABLE_LINK = "!";
 
     private static final String LINK_INVALID = "LINK_INVALID";
+    private static final String LINK_INVALID_TEXT = "The link is not valid.";
     private static final String UNAUTHENTICATED_PRINCIPAL = "unauthenticated";
     private static final Logger LOG = LoggerFactory.getLogger(FollowTool.class);
 
@@ -274,7 +274,7 @@ public final class FollowTool {
         String code = refused.code();
         if (LINK_INVALID.equals(code)) {
             return ToolCalls.withCorrelation(McpSchema.CallToolResult.builder().isError(true)
-                    .addTextContent(LinkFollower.INVALID_TEXT), refused.correlationId()).build();
+                    .addTextContent(LINK_INVALID_TEXT), refused.correlationId()).build();
         }
         if (code != null && code.startsWith("LINK_")) {
             return ToolCalls.withCorrelation(McpSchema.CallToolResult.builder().isError(true)

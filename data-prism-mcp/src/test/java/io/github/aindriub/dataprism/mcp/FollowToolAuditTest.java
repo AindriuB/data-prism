@@ -20,7 +20,7 @@ import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.ContextRequest;
 import io.github.aindriub.dataprism.orchestration.ContextResponse;
 import io.github.aindriub.dataprism.orchestration.SourceAliasing;
-import io.github.aindriub.dataprism.orchestration.links.FollowRequest;
+import io.github.aindriub.dataprism.orchestration.FollowRequest;
 import io.github.aindriub.dataprism.pseudonymisation.HmacValueTokenSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

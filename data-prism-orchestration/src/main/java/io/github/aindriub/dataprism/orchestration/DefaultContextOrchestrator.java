@@ -53,7 +53,6 @@ import io.github.aindriub.dataprism.core.link.LinkRelation;
 import io.github.aindriub.dataprism.core.spi.KeyNamespace;
 import io.github.aindriub.dataprism.core.spi.ResolutionContext;
 import io.github.aindriub.dataprism.audit.AuditedEntityTypes;
-import io.github.aindriub.dataprism.orchestration.links.FollowRequest;
 import io.github.aindriub.dataprism.orchestration.links.LinkFollower;
 import io.github.aindriub.dataprism.orchestration.links.ResolverOutcome;
 

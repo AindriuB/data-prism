@@ -19,7 +19,7 @@ public interface ContextOrchestrator {
      *
      * <p>The default refuses: an orchestrator that does not implement {@code follow} follows nothing.
      */
-    default ContextResponse follow(io.github.aindriub.dataprism.orchestration.links.FollowRequest request,
+    default ContextResponse follow(FollowRequest request,
                                    PrivacyContext privacyContext, InvestigationContext investigationContext) {
         throw new UnsupportedOperationException("this orchestrator does not follow links");
     }

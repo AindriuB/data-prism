@@ -1,4 +1,4 @@
-package io.github.aindriub.dataprism.orchestration.links;
+package io.github.aindriub.dataprism.orchestration;
 
 import io.github.aindriub.dataprism.core.correlation.ExternalCorrelationId;
 
