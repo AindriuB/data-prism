@@ -821,6 +821,29 @@ The full property list, every refusal code, the Compose and Kubernetes examples
 and the network isolation you must supply are on
 [Running multiple instances](multiple-instances.md).
 
+### Logging
+
+The MCP SDK logs the raw JSON-RPC message at DEBUG, including client-supplied
+arguments such as `subjectId`, and `Client initialize request` at INFO with the
+client-supplied `clientInfo`. Data Prism pins the whole `io.modelcontextprotocol`
+logger prefix to **WARN**, so neither line is written, on stdio and on
+streamable HTTP, and any line a later SDK version adds is covered too.
+
+- **Spring applications** (the server, the images and every starter
+  application): `McpSdkLogPin`, an `EnvironmentPostProcessor` registered in
+  `spring.factories`, adds `logging.level.io.modelcontextprotocol=WARN` as the
+  lowest-precedence property source. Turning on `logging.level.root=DEBUG` does
+  not undo it, and neither does a custom `logback-spring.xml`.
+- **Plain-Java stdio** (`ExampleApplication`, on slf4j-simple):
+  `org.slf4j.simpleLogger.log.io.modelcontextprotocol=warn` in
+  `simplelogger.properties`.
+- **A plain-Java embedder of `DataPrismMcpServer`** that uses its own SLF4J
+  binding must set the same level itself.
+
+Naming `io.modelcontextprotocol` (or one of its loggers) at DEBUG or INFO
+yourself overrides the pin. That is unsupported in production, because it logs
+client arguments.
+
 ## Oversight, re-identification and the operator surface
 
 Three groups, all off or empty by default. Together they turn the oversight and
