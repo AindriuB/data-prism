@@ -430,6 +430,21 @@ class ListSourcesToolTest {
     }
 
     @Test
+    @DisplayName("a pageSize of 2.0 is the integer 2: a genuine link with it resumes the walk, uncounted")
+    void integralDoublePageSizeIsAnInteger() {
+        Env env = new Env(LIST_AND_NAMES, 5);
+        McpSchema.CallToolResult first = call(env.list.specification(), args("pageSize", 2));
+        String next = (String) page(first).get("next");
+
+        for (int i = 0; i < 8; i++) {
+            McpSchema.CallToolResult second = call(env.list.specification(), args("page", next, "pageSize", 2.0));
+
+            assertThat(second.isError()).isNotEqualTo(Boolean.TRUE);
+            assertThat(labels(second)).containsExactly("src-003", "src-004");
+        }
+    }
+
+    @Test
     @DisplayName("no client-sent filter, label or page token appears in any audit record or result text")
     void noClientTextIsRecorded() {
         Env env = new Env(LIST_AND_NAMES, 5);
@@ -508,12 +523,45 @@ class ListSourcesToolTest {
         Env env = new Env(LIST_AND_NAMES, 5);
 
         for (Map<String, Object> bad : List.of(args("pageSize", 0), args("pageSize", "2"), args("pageSize", 1.5),
-                args("entityType", "bad type"), args("keyNamespace", "UPPER"), args("page", 12))) {
+                args("entityType", "bad type"), args("keyNamespace", "UPPER"))) {
             McpSchema.CallToolResult result = call(env.list.specification(), bad);
             assertThat(result.isError()).isTrue();
-            assertThat(text(result)).isEqualTo("list_sources arguments are not valid");
+            assertThat(text(result)).isEqualTo("TOOL_INPUT_INVALID");
         }
-        assertThat(env.audited).isEmpty();
+        assertThat(env.audited).hasSize(5).allSatisfy(event ->
+                assertThat(event.policyDecision()).isEqualTo("DENY:TOOL_INPUT_INVALID"));
+        // a page that is not a string is a forged link, not an invalid input
+        assertThat(text(call(env.list.specification(), args("page", 12)))).isEqualTo("The link is not valid.");
+    }
+
+    @Test
+    @DisplayName("a genuine link beside an argument that breaks the schema is a forged link: one DENY, one counted failure, no page")
+    void genuineLinkWithInvalidSiblingIsRefused() {
+        for (Map<String, Object> extra : List.<Map<String, Object>>of(args("pageSize", 0),
+                args("pageSize", "2"), args("entityType", "bad type"), args("unknownProperty", "x", "pageSize", 0),
+                args("scopeId", "other-scope", "pageSize", 0))) {
+            Env env = new Env(LIST_AND_NAMES, 5);
+            String next = (String) page(call(env.list.specification(), args())).get("next");
+            env.audited.clear();
+            Map<String, Object> bad = new java.util.HashMap<>(extra);
+            bad.put("page", next);
+
+            McpSchema.CallToolResult result = call(env.list.specification(), bad);
+
+            assertThat(result.isError()).as(extra.toString()).isTrue();
+            assertThat(text(result)).isEqualTo("The link is not valid.");
+            assertThat(result.structuredContent()).isNull();
+            assertThat(env.audited).hasSize(1);
+            assertThat(env.audited.get(0).policyDecision()).isEqualTo("DENY:LINK_INVALID");
+            assertThat(env.audited.get(0).sourceSystems()).isEmpty();
+            // that was one counted failure of five: four more forged links are refused, the next is over the limit
+            for (int i = 0; i < 4; i++) {
+                assertThat(text(call(env.list.specification(), args("page", "AAAAAAAAAAAAAAAAAAAAAAAA"))))
+                        .isEqualTo("The link is not valid.");
+            }
+            assertThat(text(call(env.list.specification(), args("page", "AAAAAAAAAAAAAAAAAAAAAAAA"))))
+                    .isEqualTo("LINK_ATTEMPTS_EXHAUSTED");
+        }
     }
 
     @Test

@@ -71,6 +71,12 @@ public final class CatalogQueries {
 
     /** The audit key of a description refusal. */
     static final String CATALOG_KEY = "catalog";
+    /**
+     * A page token that is never a link: not base64url, so it fails to decode and is counted as a malformed
+     * link. A tool that finds a {@code page} argument invalid sends this in its place, so the call is a forged
+     * link in every respect and the client text never reaches the gate.
+     */
+    public static final String UNREADABLE_PAGE = "!";
     /** The audit key of a page-link refusal. */
     static final String LINK_KEY = "link";
 
