@@ -624,15 +624,18 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
     private List<SourceFanOut.Fetched> fetchAll(ContextRequest request, PrivacyContext context,
                                                 List<DataSourceAdapter<?>> selected) {
         SourceFanOut.Plan plan = fanOut.plan(selected, requestsPerSource(request, selected), limits);
-        return fetchPlanned(plan, context, request.subjectId(), request.entityType());
+        return fetchPlanned(plan, context, request.subjectId(), request.entityType(), null);
     }
 
     /**
      * Charges and runs a plan: one read per callable source is reserved against {@code budgetSubject} and the
      * scope total, and nothing is called if that is refused. {@code path} names the entity type in a refusal.
+     * With a {@code deadline} (a follow's), the reservation may take time: if the deadline has passed when it
+     * returns, the reservation is released, nothing is called and the answer is null; otherwise the reads are
+     * bound by the time left, not by a fresh request timeout.
      */
     private List<SourceFanOut.Fetched> fetchPlanned(SourceFanOut.Plan plan, PrivacyContext context,
-                                                    String budgetSubject, String path) {
+                                                    String budgetSubject, String path, Instant deadline) {
         ReadReservation reservation = null;
         if (!plan.callable().isEmpty()) {
             try {
@@ -651,9 +654,19 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                                         + " source reads in this scope");
             }
         }
+        Duration window = limits.requestTimeout();
+        if (deadline != null) {
+            window = Duration.between(clock.instant(), deadline);
+            if (window.isNegative() || window.isZero()) {
+                // The reservation outlasted the follow: nothing is called, and every unused read goes back.
+                fanOut.abandon(plan);
+                settle(reservation, plan.callable().size());
+                return null;
+            }
+        }
         int unused = 0;
         try {
-            SourceFanOut.Execution execution = fanOut.execute(plan, limits);
+            SourceFanOut.Execution execution = fanOut.execute(plan, limits, window);
             unused = execution.notStarted();
             return execution.results();
         } catch (SourceFanOut.ExecutionFailure failure) {
@@ -844,13 +857,24 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
             try {
                 // Charged to the key's own subject counter and to the scope total, before the read.
                 fetched = fetchPlanned(fanOut.plan(List.of(adapter), Map.of(name, read), limits), context,
-                        keys.get(i), entityType);
+                        keys.get(i), entityType, direct ? null : deadline);
             } catch (PrivacyRefusedException refused) {
                 if (i > 0 && "SCOPE_READ_BUDGET".equals(refused.code())) {
                     truncated = true;
                     break;
                 }
                 throw refused;
+            }
+            if (fetched == null) {
+                // The reservation took the rest of the follow's time; no read was started.
+                if (i == 0) {
+                    state.sources.add(new SourceOutcome(name, SourceOutcome.Status.TIMED_OUT, Duration.ZERO, null));
+                    return followEnvelope(entityType, label,
+                            SourceResult.ofItems(SourceOutcome.Status.TIMED_OUT, List.of(), true),
+                            correlationId, state);
+                }
+                truncated = true;
+                break;
             }
             List<SourceOutcome> itemSources = new ArrayList<>();
             Map<String, String> itemDispositions = new LinkedHashMap<>();

@@ -437,10 +437,19 @@ public final class SourceFanOut {
      * @throws ExecutionFailure if the execution itself failed, after cancelling everything it started
      */
     public Execution execute(Plan plan, RequestLimits limits) {
+        return execute(plan, limits, limits.requestTimeout());
+    }
+
+    /**
+     * As {@link #execute(Plan, RequestLimits)}, but the overall deadline falls {@code window} after the start
+     * rather than {@code requestTimeout} after it, so a caller with its own, shorter deadline bounds the reads
+     * it starts. Each source keeps its own timeout; the window can only cut a read sooner.
+     */
+    public Execution execute(Plan plan, RequestLimits limits, Duration window) {
         List<Call> calls = new ArrayList<>();
         AtomicBoolean launched = new AtomicBoolean();
         try {
-            return run(plan, limits, calls, launched);
+            return run(plan, limits, window, calls, launched);
         } catch (RuntimeException failure) {
             throw new ExecutionFailure(failure, abort(plan, calls, launched.get()));
         } catch (Error failure) {
@@ -449,9 +458,10 @@ public final class SourceFanOut {
         }
     }
 
-    private Execution run(Plan plan, RequestLimits limits, List<Call> calls, AtomicBoolean launched) {
+    private Execution run(Plan plan, RequestLimits limits, Duration window, List<Call> calls,
+                          AtomicBoolean launched) {
         Instant started = Instant.now(clock);
-        Instant deadline = started.plus(limits.requestTimeout());
+        Instant deadline = started.plus(window);
         // Fair, so permits go in the order the calls asked for them.
         Semaphore bulkhead = new Semaphore(limits.maxConcurrency(), true);
         bulkheadObserver.accept(bulkhead);

@@ -1,6 +1,9 @@
 package io.github.aindriub.dataprism.orchestration.links;
 
+import io.github.aindriub.dataprism.core.limits.InMemoryScopeBudget;
+import io.github.aindriub.dataprism.core.limits.ReadReservation;
 import io.github.aindriub.dataprism.core.limits.RequestLimits;
+import io.github.aindriub.dataprism.core.limits.ScopeBudget;
 import io.github.aindriub.dataprism.core.metrics.Metric;
 import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 import io.github.aindriub.dataprism.core.spi.KeyResolutionException;
@@ -291,5 +294,112 @@ class FollowTranslatedTest {
         assertThat(result.itemsTruncated()).isTrue();
         assertThat(rig.fetches.get()).isZero();
         assertThat(rig.lastAudit().sourceSystems()).anyMatch(s -> s.endsWith(":TIMED_OUT"));
+    }
+
+    /** A budget whose Nth reservation takes (on the rig's clock) {@code delay}, and which counts releases. */
+    private static final class SlowBudget implements ScopeBudget {
+        final InMemoryScopeBudget real = new InMemoryScopeBudget();
+        final FollowRig rig;
+        final int slowCall;
+        final Duration delay;
+        int calls;
+        int released;
+
+        SlowBudget(FollowRig rig, int slowCall, Duration delay) {
+            this.rig = rig;
+            this.slowCall = slowCall;
+            this.delay = delay;
+        }
+
+        @Override
+        public boolean tryRead(String scopeId, String subjectId, int budget) {
+            return real.tryRead(scopeId, subjectId, budget);
+        }
+
+        @Override
+        public int reads(String scopeId, String subjectId) {
+            return real.reads(scopeId, subjectId);
+        }
+
+        @Override
+        public void forget(String scopeId) {
+            real.forget(scopeId);
+        }
+
+        @Override
+        public ReadReservation reserve(String scopeId, String subjectId, int reads, int subjectBudget, int total) {
+            if (++calls == slowCall) {
+                rig.now = rig.now.plus(delay);
+            }
+            return real.reserve(scopeId, subjectId, reads, subjectBudget, total);
+        }
+
+        @Override
+        public void release(ReadReservation reservation, int unused) {
+            released += unused;
+            real.release(reservation, unused);
+        }
+
+        @Override
+        public int scopeReads(String scopeId) {
+            return real.scopeReads(scopeId);
+        }
+    }
+
+    private static FollowRig slowRig(int slowCall, Duration delay, Duration timeout) {
+        FollowRig rig = rig(KEYS.subList(0, 3), false);
+        rig.limits = new RequestLimits(8, 500, 512 * 1024, timeout, 4, 100, timeout, 50_000);
+        rig.budget = new SlowBudget(rig, slowCall, delay);
+        return rig;
+    }
+
+    @Test
+    void aReservationThatOutlastsTheDeadlineStartsNoReadAndIsReleased() {
+        // Call 1 is the resolver's charge; call 2 is the first read's reservation.
+        FollowRig rig = slowRig(2, Duration.ofMillis(400), Duration.ofMillis(300));
+        SlowBudget budget = (SlowBudget) rig.budget;
+
+        SourceResult result = rig.follow(link(rig)).sources().get(rig.label("depot-api"));
+
+        assertThat(rig.fetches.get()).isZero();
+        assertThat(result.status()).isEqualTo("TIMED_OUT");
+        assertThat(result.items()).isEmpty();
+        assertThat(result.itemsTruncated()).isTrue();
+        assertThat(budget.released).isEqualTo(1);
+        assertThat(budget.scopeReads(SCOPE)).isEqualTo(1); // the resolver's charge only
+        assertThat(rig.lastAudit().policyDecision()).isEqualTo("ALLOW");
+        assertThat(rig.lastAudit().sourceSystems()).anyMatch(s -> s.endsWith(":TIMED_OUT"));
+    }
+
+    @Test
+    void aLaterReservationThatOutlastsTheDeadlineTruncatesAfterTheReadsAlreadyMade() {
+        FollowRig rig = slowRig(3, Duration.ofMillis(400), Duration.ofMillis(300));
+        SlowBudget budget = (SlowBudget) rig.budget;
+
+        SourceResult result = rig.follow(link(rig)).sources().get(rig.label("depot-api"));
+
+        assertThat(rig.fetches.get()).isEqualTo(1);
+        assertThat(result.status()).isEqualTo("ANSWERED");
+        assertThat(result.items()).hasSize(1);
+        assertThat(result.itemsTruncated()).isTrue();
+        assertThat(budget.released).isEqualTo(1);
+        assertThat(budget.scopeReads(SCOPE)).isEqualTo(2); // resolver + the one read made
+        assertThat(rig.lastAudit().policyDecision()).isEqualTo("ALLOW");
+    }
+
+    @Test
+    void aReadStartedWithLittleTimeLeftIsBoundByTheTimeLeftNotAFreshTimeout() {
+        Duration timeout = Duration.ofSeconds(10);
+        FollowRig rig = slowRig(2, timeout.minusMillis(100), timeout);
+        rig.fetchBlocks = Duration.ofSeconds(30);
+
+        long began = System.nanoTime();
+        SourceResult result = rig.follow(link(rig)).sources().get(rig.label("depot-api"));
+        Duration took = Duration.ofNanos(System.nanoTime() - began);
+
+        // The rig's clock is frozen once the reservation moves it, so each of the keys is a read with 100 ms left.
+        assertThat(rig.fetches.get()).isPositive();
+        assertThat(took).isLessThan(Duration.ofSeconds(5));
+        assertThat(result.status()).isEqualTo("TIMED_OUT");
     }
 }

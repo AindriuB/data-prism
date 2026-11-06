@@ -115,6 +115,8 @@ class FollowTest {
         /** How long one read takes on the rig's clock; the clock moves by this at the start of each fetch. */
         public volatile Duration fetchTakes = Duration.ZERO;
         public final List<Instant> fetchStarts = new CopyOnWriteArrayList<>();
+        /** Real time a read blocks for, interruptibly, before it answers; zero for none. */
+        public volatile Duration fetchBlocks = Duration.ZERO;
         public ScopeBudget budget = new InMemoryScopeBudget();
         public LinkAttemptLimiter limiter = new InMemoryLinkAttemptLimiter(3, Duration.ofMinutes(10),
                 Clock.fixed(NOW, ZoneId.of("UTC")));
@@ -187,6 +189,14 @@ class FollowTest {
                     now = now.plus(fetchTakes);
                     events.add("fetch");
                     fetches.incrementAndGet();
+                    if (!fetchBlocks.isZero()) {
+                        try {
+                            Thread.sleep(fetchBlocks);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new IllegalStateException("interrupted");
+                        }
+                    }
                     RuntimeException failure = fetchFailure.apply(request.subjectId());
                     if (failure != null) {
                         throw failure;
