@@ -68,6 +68,65 @@ class AuditCheckpointTest {
     }
 
     @Test
+    void crashLineAcceptedRoundTripsWithItsFieldsAndWithBootWaivedPresentOrAbsent() {
+        Instant at = Instant.parse("2026-09-01T00:00:00Z");
+        java.time.LocalDate day = java.time.LocalDate.of(2026, 3, 1);
+        AuditCheckpoint plain = new AuditCheckpoint(AuditCheckpoint.Kind.CRASH_LINE_ACCEPTED, "w", 4, "ab12", at,
+                day, "audit-2026-03-01.log", 321L, false);
+        AuditCheckpoint waived = new AuditCheckpoint(AuditCheckpoint.Kind.CRASH_LINE_ACCEPTED, "w", 4, "ab12", at,
+                day, "audit-2026-03-01.log", 321L, true);
+
+        assertThat(AuditCheckpoint.fromJsonLine(plain.toJsonLine())).isEqualTo(plain);
+        assertThat(plain.toJsonLine()).contains("\"segmentName\":\"audit-2026-03-01.log\"")
+                .contains("\"byteOffset\":321").doesNotContain("bootWaived");
+        assertThat(AuditCheckpoint.fromJsonLine(waived.toJsonLine())).isEqualTo(waived);
+        assertThat(waived.toJsonLine()).contains("\"bootWaived\":true");
+    }
+
+    @Test
+    void bootWaivedIsAcceptedOnlyAsTheLiteralTrue() {
+        String base = "{\"kind\":\"CRASH_LINE_ACCEPTED\",\"instanceId\":\"w\",\"sequence\":4,\"headHash\":\"ab\","
+                + "\"recordedAt\":\"2026-09-01T00:00:00Z\",\"segmentDate\":\"2026-03-01\","
+                + "\"segmentName\":\"audit-2026-03-01.log\",\"byteOffset\":3,";
+        assertThat(AuditCheckpoint.fromJsonLine(base + "\"bootWaived\":true}").bootWaived()).isTrue();
+        assertThatThrownBy(() -> AuditCheckpoint.fromJsonLine(base + "\"bootWaived\":false}"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> AuditCheckpoint.fromJsonLine(base + "\"bootWaived\":\"true\"}"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void otherKindsAreByteIdenticalToTheirFormWithoutTheNewFields() {
+        Instant at = Instant.parse("2026-09-01T00:00:00Z");
+        for (AuditCheckpoint.Kind kind : new AuditCheckpoint.Kind[] {AuditCheckpoint.Kind.BOOT,
+                AuditCheckpoint.Kind.PERIODIC, AuditCheckpoint.Kind.SHUTDOWN}) {
+            assertThat(new AuditCheckpoint(kind, "w", 2, "h", at).toJsonLine()).isEqualTo(
+                    "{\"kind\":\"" + kind + "\",\"instanceId\":\"w\",\"sequence\":2,\"headHash\":\"h\","
+                            + "\"recordedAt\":\"2026-09-01T00:00:00Z\"}");
+        }
+        assertThat(new AuditCheckpoint(AuditCheckpoint.Kind.RETENTION_ANCHOR, "w", 2, "h", at,
+                java.time.LocalDate.of(2026, 3, 1)).toJsonLine()).isEqualTo(
+                "{\"kind\":\"RETENTION_ANCHOR\",\"instanceId\":\"w\",\"sequence\":2,\"headHash\":\"h\","
+                        + "\"recordedAt\":\"2026-09-01T00:00:00Z\",\"segmentDate\":\"2026-03-01\"}");
+    }
+
+    @Test
+    void retentionAnchorsNeverReturnsAnAcceptance() throws IOException {
+        Path store = tempDir.resolve("cp.jsonl");
+        try (FileAuditCheckpointSink sink = new FileAuditCheckpointSink(store, tempDir.resolve("audit.log"))) {
+            Instant at = Instant.parse("2026-09-01T00:00:00Z");
+            sink.record(new AuditCheckpoint(AuditCheckpoint.Kind.CRASH_LINE_ACCEPTED, "w", 4, "ab12", at,
+                    java.time.LocalDate.of(2026, 3, 1), "audit-2026-03-01.log", 321L, false));
+            sink.record(new AuditCheckpoint(AuditCheckpoint.Kind.RETENTION_ANCHOR, "w", 3, "h3", at,
+                    java.time.LocalDate.of(2026, 3, 1)));
+            assertThat(sink.retentionAnchors()).extracting(AuditCheckpoint::kind)
+                    .containsExactly(AuditCheckpoint.Kind.RETENTION_ANCHOR);
+            assertThat(sink.crashLinesAccepted()).extracting(AuditCheckpoint::kind)
+                    .containsExactly(AuditCheckpoint.Kind.CRASH_LINE_ACCEPTED);
+        }
+    }
+
+    @Test
     void bootCheckpointWrittenAtConstructionWithGenesis() {
         Capture cps = new Capture();
         AuditRecorder r = new AuditRecorder(e -> { }, FIXED, "w", cps);

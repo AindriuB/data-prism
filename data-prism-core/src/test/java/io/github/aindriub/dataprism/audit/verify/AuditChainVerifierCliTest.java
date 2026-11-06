@@ -248,6 +248,11 @@ class AuditChainVerifierCliTest {
         assertThat(out).doesNotContain("non-tampering anomaly");
         assertThat(out).contains("never returned together with exit code 2");
         assertThat(out).contains("cannot detect truncation");
+        assertThat(out).contains("accept-crash-line");
+        assertThat(out).contains(AuditChainVerifierCli.EXIT_ACCEPT_REFUSED + "  accept-crash-line refused");
+        assertThat(out).contains("do not prove a crash").contains("--no-boot-checkpoint")
+                .contains("NO_MATCH_LOOKS_CUT").contains("UNKEYED_ONLY_FORGER_SHAPE").contains("KEYED_MATCH <i>")
+                .contains("stop the server").contains("0.7.x");
     }
 
     @Test

@@ -3,6 +3,7 @@ package io.github.aindriub.dataprism.audit.verify;
 import io.github.aindriub.dataprism.audit.AuditChainKey;
 import io.github.aindriub.dataprism.audit.AuditCheckpoint;
 import io.github.aindriub.dataprism.audit.AuditEventHash;
+import io.github.aindriub.dataprism.audit.checkpoint.FileAuditCheckpointSink;
 import io.github.aindriub.dataprism.audit.sink.FileAuditSink;
 import io.github.aindriub.dataprism.audit.sink.SegmentedFileAuditSink;
 import java.io.IOException;
@@ -53,6 +54,8 @@ public final class AuditChainVerifierCli {
      * checkpointed writer has no surviving records. Only returned when no break was found.
      */
     public static final int EXIT_CHECKPOINT_MISMATCH = 5;
+    /** {@code accept-crash-line} refused: a condition did not hold, and nothing was written. */
+    public static final int EXIT_ACCEPT_REFUSED = 6;
 
     private static final String LIMITATION_HEAD =
             "LIMITATION: this verifier detects an edit or a deletion of a record already written, replayed "
@@ -101,6 +104,8 @@ public final class AuditChainVerifierCli {
         return keyed ? KEYED_SCOPE : LIMITATION;
     }
 
+    private static final String ACCEPT_COMMAND = "accept-crash-line";
+
     private AuditChainVerifierCli() {
     }
 
@@ -113,6 +118,9 @@ public final class AuditChainVerifierCli {
         if (args.length == 1 && ("--help".equals(args[0]) || "-h".equals(args[0]))) {
             printHelp(out);
             return EXIT_INTACT;
+        }
+        if (args.length > 0 && ACCEPT_COMMAND.equals(args[0])) {
+            return runAccept(args, out, err);
         }
         Path path = null;
         Path checkpoints = null;
@@ -188,6 +196,9 @@ public final class AuditChainVerifierCli {
             out.println(UNKEYED_WRITERS_PREFIX + report.unkeyedWriterCount() + " writer(s) verified only as an "
                     + "unkeyed chain, which anyone able to write the file can forge.");
         }
+        if (checkpoints != null) {
+            printWaiverNotices(out, checkpoints);
+        }
 
         if (report.hasBreak()) {
             return EXIT_BREAK_DETECTED;
@@ -201,6 +212,120 @@ public final class AuditChainVerifierCli {
         if (report.tail().isPresent()) {
             return EXIT_POSSIBLY_IN_FLIGHT;
         }
+        return EXIT_INTACT;
+    }
+
+    /**
+     * One line for each accepted crash line whose BOOT check was waived. It reads the store through the
+     * verifier's own parse, so it skips what verify skips and never writes.
+     */
+    private static void printWaiverNotices(PrintStream out, Path checkpoints) {
+        try {
+            for (AuditCheckpoint cp : AuditChainVerifier.readCheckpoints(checkpoints)) {
+                if (cp.kind() == AuditCheckpoint.Kind.CRASH_LINE_ACCEPTED && cp.bootWaived()) {
+                    out.println("NOTICE: crash line accepted with the BOOT check waived: instance "
+                            + cp.instanceId() + ", segment " + cp.segmentName() + ", offset " + cp.byteOffset());
+                }
+            }
+        } catch (IOException e) {
+            // verify read the same file a moment ago and would have failed first
+        }
+    }
+
+    private static int runAccept(String[] args, PrintStream out, PrintStream err) {
+        Path directory = null;
+        Path checkpoints = null;
+        String segment = null;
+        String sha256 = null;
+        Long offset = null;
+        Period minimumRetention = AuditChainVerifier.DEFAULT_MINIMUM_RETENTION;
+        boolean allowUnkeyed = false;
+        boolean noBoot = false;
+        boolean malformed = false;
+        List<Path> keyFiles = new ArrayList<>();
+        for (int i = 1; i < args.length; i++) {
+            boolean hasValue = i + 1 < args.length;
+            if ("--checkpoints".equals(args[i]) && checkpoints == null && hasValue) {
+                checkpoints = Path.of(args[++i]);
+            } else if ("--segment".equals(args[i]) && segment == null && hasValue) {
+                segment = args[++i];
+            } else if ("--sha256".equals(args[i]) && sha256 == null && hasValue) {
+                sha256 = args[++i];
+            } else if ("--offset".equals(args[i]) && offset == null && hasValue) {
+                try {
+                    offset = Long.parseLong(args[++i]);
+                } catch (NumberFormatException e) {
+                    malformed = true;
+                }
+            } else if ("--min-retention".equals(args[i]) && hasValue) {
+                try {
+                    minimumRetention = Period.parse(args[++i]);
+                } catch (java.time.format.DateTimeParseException e) {
+                    malformed = true;
+                }
+            } else if ("--hmac-key-file".equals(args[i]) && hasValue) {
+                keyFiles.add(Path.of(args[++i]));
+            } else if ("--allow-unkeyed-writers".equals(args[i]) && !allowUnkeyed) {
+                allowUnkeyed = true;
+            } else if ("--no-boot-checkpoint".equals(args[i]) && !noBoot) {
+                noBoot = true;
+            } else if (directory == null && !args[i].startsWith("--")) {
+                directory = Path.of(args[i]);
+            } else {
+                malformed = true;
+            }
+        }
+        if (malformed || directory == null || checkpoints == null || segment == null || offset == null
+                || sha256 == null) {
+            err.println("Usage: AuditChainVerifierCli accept-crash-line <audit-directory> --checkpoints "
+                    + "<anchor-store-file> --segment <segment-file-name> --offset <byte-offset-in-segment> "
+                    + "--sha256 <hex> [--hmac-key-file <path>]... [--allow-unkeyed-writers] "
+                    + "[--no-boot-checkpoint] [--min-retention <ISO-8601 period>]  (or --help)");
+            return EXIT_UNREADABLE_INPUT;
+        }
+        List<AuditChainKey> keys = new ArrayList<>();
+        for (Path keyFile : keyFiles) {
+            AuditChainKey key = readKey(keyFile);
+            if (key == null || keys.stream().anyMatch(k -> k.id().equals(key.id()))) {
+                err.println("UNREADABLE INPUT: --hmac-key-file could not be read or is malformed, or two keys "
+                        + "share an id");
+                return EXIT_UNREADABLE_INPUT;
+            }
+            keys.add(key);
+        }
+        AuditChainVerifier.CrashLineVerdict verdict;
+        try {
+            verdict = AuditChainVerifier.checkCrashLine(directory, checkpoints, segment, offset, sha256,
+                    minimumRetention, keys, allowUnkeyed, noBoot);
+        } catch (IOException e) {
+            err.println("UNREADABLE INPUT: could not read " + directory + " or " + checkpoints + ": "
+                    + e.getMessage());
+            return EXIT_UNREADABLE_INPUT;
+        }
+        if (verdict.hashStatus() != null) {
+            out.println("Hash report: " + verdict.hashStatus() + " -- " + verdict.hashSentence());
+        }
+        if (!verdict.accepted()) {
+            err.println("REFUSED, nothing was written: " + verdict.message());
+            return EXIT_ACCEPT_REFUSED;
+        }
+        AuditCheckpoint accepted = new AuditCheckpoint(AuditCheckpoint.Kind.CRASH_LINE_ACCEPTED,
+                verdict.instanceId(), verdict.sequence(), sha256.toLowerCase(java.util.Locale.ROOT),
+                java.time.Instant.now(), verdict.segmentDate(), segment, offset, verdict.bootWaived());
+        try (FileAuditCheckpointSink sink = new FileAuditCheckpointSink(checkpoints, directory)) {
+            sink.record(accepted);
+        } catch (IOException | RuntimeException e) {
+            err.println("UNREADABLE INPUT: could not append to the anchor store " + checkpoints);
+            return EXIT_UNREADABLE_INPUT;
+        }
+        if (verdict.bootWaived()) {
+            out.println("condition 7 (a) was not applied for that instance " + verdict.instanceId()
+                    + ": the store holds no BOOT checkpoint for it, and --no-boot-checkpoint was given. The "
+                    + "waiver is recorded in the acceptance.");
+        }
+        out.println("ACCEPTED: " + accepted.toJsonLine());
+        out.println("The checks do not prove a crash. The operator's investigation is what decides. Purge now "
+                + "tolerates this one line, and nothing else; no audit file was changed.");
         return EXIT_INTACT;
     }
 
@@ -330,7 +455,55 @@ public final class AuditChainVerifierCli {
                 + "records; returned only when no break (exit code " + EXIT_BREAK_DETECTED + ") was found, "
                 + "and takes precedence over exit codes " + EXIT_STRUCTURAL_ANOMALY + " and "
                 + EXIT_POSSIBLY_IN_FLIGHT);
+        out.println("  " + EXIT_ACCEPT_REFUSED + "  accept-crash-line refused -- a condition did not hold; "
+                + "nothing was written");
+        out.println();
+        printAcceptHelp(out);
         out.println();
         out.println(LIMITATION);
+    }
+
+    private static void printAcceptHelp(PrintStream out) {
+        out.println("accept-crash-line <audit-directory> --checkpoints <anchor-store-file> --segment <name>");
+        out.println("    --offset <byte-offset-in-segment> --sha256 <hex> [--hmac-key-file <path>]...");
+        out.println("    [--allow-unkeyed-writers] [--no-boot-checkpoint] [--min-retention <ISO-8601 period>]");
+        out.println("  Use it only after a purge refused with AUDIT_RETENTION_CHAIN_UNVERIFIED and an investigation");
+        out.println("  found a crash line, not tampering. It appends one CRASH_LINE_ACCEPTED checkpoint to the");
+        out.println("  anchor store, so purge tolerates that exact line (segment, offset and the SHA-256 of its");
+        out.println("  bytes) and nothing else. No audit file is changed.");
+        out.println("  The checks do not prove a crash; the operator's investigation is what decides. Accept a line");
+        out.println("  only after confirming it is a crash you expect: a known crash or power loss of that");
+        out.println("  instance at that time. Someone who can write the audit directory can plant a line that");
+        out.println("  passes every check in order to get it accepted. The checks refuse a line whose own");
+        out.println("  evidence contradicts the store or the keys; they do not defend against someone who can");
+        out.println("  write the audit directory, who can delete a writer's records outright.");
+        out.println("  First stop the server, and run it as the account that owns the anchor store. Re-run purge");
+        out.println("  until it refuses only at the crash line's day (a day an earlier purge left partly deleted");
+        out.println("  must be finished first), then run this command.");
+        out.println("  It refuses when a BOOT, PERIODIC or SHUTDOWN checkpoint shows the writer got past the line");
+        out.println("  (condition 7 (b)); a power loss on a disk that does not honour fsync can trigger this, and");
+        out.println("  you can then extend retention by hand.");
+        out.println("  It refuses when the store holds no BOOT checkpoint for the line's instance (condition 7 (a)).");
+        out.println("  In a deployment with a checkpoint sink that is a strong sign of tampering, because BOOT is");
+        out.println("  forced to disk before the instance's first record. Only deployments with no checkpoint sink,");
+        out.println("  and instances that ran before the store existed, should pass --no-boot-checkpoint, after");
+        out.println("  investigating. Condition 7 (a) is then not applied to that instance and the output says so.");
+        out.println("  The waiver is recorded in the acceptance (bootWaived), and every later verify run given");
+        out.println("  --checkpoints prints a NOTICE for it. A program calling verify() directly does not see the");
+        out.println("  notice; an embedder must read the store's CRASH_LINE_ACCEPTED lines. Condition 7 (b) still");
+        out.println("  applies, and the flag waives nothing else.");
+        out.println("  In a keyed deployment pass --hmac-key-file. Without it a forged unkeyed line reports");
+        out.println("  UNKEYED_MATCH, which reads as a good sign, and condition 8 cannot apply.");
+        out.println("  The command reports whether the line's own hash recomputes. It does not decide acceptance,");
+        out.println("  except for UNKEYED_ONLY_FORGER_SHAPE, which is refused:");
+        out.println("    KEYED_MATCH <i>            recomputes under the key at 1-based position <i>; no key id is printed");
+        out.println("    UNKEYED_MATCH              recomputes unkeyed (no key given, or --allow-unkeyed-writers)");
+        out.println("    UNKEYED_ONLY_FORGER_SHAPE  keys given, only the unkeyed hash matches: a forger's shape; refused");
+        out.println("    NO_MATCH_LOOKS_CUT         keys given, nothing matches: looks like a cut or an edit");
+        out.println("    NO_UNKEYED_MATCH           no key given and the unkeyed hash does not match: the line looks");
+        out.println("                               cut if the deployment is unkeyed; a keyed line was not checked");
+        out.println("  An anchor store holding an acceptance cannot be read by 0.7.x or earlier. A 0.7.x verifier");
+        out.println("  stops with an unreadable checkpoint file, and a server rolled back to 0.7.x fails closed,");
+        out.println("  whenever it has an expired day to purge, with AUDIT_RETENTION_CHAIN_UNVERIFIED.");
     }
 }

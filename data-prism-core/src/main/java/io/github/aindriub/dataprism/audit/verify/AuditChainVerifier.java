@@ -124,7 +124,8 @@ public final class AuditChainVerifier {
      * What a replay records beyond the report, for {@link #verifySegmentsHashed}: where each segment starts in
      * the concatenation, and which (writer, sequence) pairs to keep a hashed record for.
      */
-    private record Instrument(long[] starts, Map<String, java.util.Set<Long>> probes) {
+    private record Instrument(long[] starts, Map<String, java.util.Set<Long>> probes,
+                              java.util.Set<Long> accepted) {
 
         int segmentAt(long offset) {
             int lo = 0;
@@ -224,11 +225,45 @@ public final class AuditChainVerifier {
                                                           List<AuditChainKey> keys, boolean allowUnkeyedWriters,
                                                           Map<String, java.util.Set<Long>> probes)
             throws IOException {
+        return verifySegmentsHashed(segments, starts, keys, allowUnkeyedWriters, probes, java.util.Set.of());
+    }
+
+    /**
+     * One audit line an operator confirmed as a crash line: the segment file name, the byte offset of the line in
+     * that file and the SHA-256 (hex) of the line's on-disk bytes. A line is "that line" only if all three match.
+     */
+    public record AcceptedLine(String segment, long offset, String sha256) {
+    }
+
+    /**
+     * As {@link #verifySegmentsHashed(List, List, List, boolean, Map)}, except that an accepted line is not counted
+     * in {@link HashedVerification#firstUnhashedCompleteOffset()}. The match is by segment name, in-segment offset
+     * and the SHA-256 of the line's current bytes, so an edited line, or a copy at another place, still counts.
+     */
+    public static HashedVerification verifySegmentsHashed(List<Path> segments, List<Long> starts,
+                                                          List<AuditChainKey> keys, boolean allowUnkeyedWriters,
+                                                          Map<String, java.util.Set<Long>> probes,
+                                                          java.util.Set<AcceptedLine> accepted)
+            throws IOException {
         java.util.Objects.requireNonNull(starts, "starts");
+        java.util.Objects.requireNonNull(accepted, "accepted");
         byte[] content = join(segments, starts);
         long[] startArray = starts.stream().mapToLong(Long::longValue).toArray();
+        java.util.Set<Long> acceptedOffsets = new java.util.HashSet<>();
+        for (int i = 0; i < segments.size() && !accepted.isEmpty(); i++) {
+            String name = segments.get(i).getFileName().toString();
+            byte[] segment = null;
+            for (AcceptedLine a : accepted) {
+                if (a.segment().equals(name)) {
+                    segment = segment == null ? Files.readAllBytes(segments.get(i)) : segment;
+                    if (lineMatches(segment, a)) {
+                        acceptedOffsets.add(startArray[i] + a.offset());
+                    }
+                }
+            }
+        }
         Detailed d = verifyWithKeys(content, List.of(), DEFAULT_MINIMUM_RETENTION, true, keys, allowUnkeyedWriters,
-                new Instrument(startArray, probes));
+                new Instrument(startArray, probes, acceptedOffsets));
         List<Map<String, WriterSpan>> perSegment = new ArrayList<>();
         List<java.time.LocalDate> dates = new ArrayList<>();
         for (int i = 0; i < segments.size(); i++) {
@@ -317,6 +352,29 @@ public final class AuditChainVerifier {
             start = i + 1;
         }
         return found;
+    }
+
+    /** True if {@code a.offset()} starts a line of {@code segment} whose on-disk bytes hash to {@code a.sha256()}. */
+    private static boolean lineMatches(byte[] segment, AcceptedLine a) {
+        long offset = a.offset();
+        if (offset < 0 || offset >= segment.length || (offset > 0 && segment[(int) offset - 1] != '\n')) {
+            return false;
+        }
+        int end = (int) offset;
+        while (end < segment.length && segment[end] != '\n') {
+            end++;
+        }
+        return sha256Hex(segment, (int) offset, end).equalsIgnoreCase(a.sha256());
+    }
+
+    private static String sha256Hex(byte[] bytes, int from, int to) {
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            md.update(bytes, from, to - from);
+            return java.util.HexFormat.of().formatHex(md.digest());
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     /**
@@ -417,6 +475,29 @@ public final class AuditChainVerifier {
         if (checkpointFile == null) {
             return verifyWithKeys(content, checkpoints, minimumRetention, false, keys, allowUnkeyedWriters);
         }
+        checkpoints.addAll(readCheckpoints(checkpointFile, torn));
+        VerificationReport report = verifyWithKeys(content, checkpoints, minimumRetention, false, keys,
+                allowUnkeyedWriters);
+        if (torn.isEmpty()) {
+            return report;
+        }
+        List<StructuralAnomaly> anomalies = new ArrayList<>(report.anomalies());
+        anomalies.addAll(torn);
+        return new VerificationReport(report.writers(), anomalies, report.tail(), report.checkpointFindings());
+    }
+
+    /**
+     * The checkpoints in {@code checkpointFile}, parsed exactly as {@link #verify(Path, Path, Period, List,
+     * boolean)} parses them: blank lines, lines ending in a raw carriage return and a torn final line are skipped,
+     * and any other malformed line fails with {@link IOException}. Nothing is written.
+     */
+    public static List<AuditCheckpoint> readCheckpoints(Path checkpointFile) throws IOException {
+        return readCheckpoints(checkpointFile, new ArrayList<>());
+    }
+
+    private static List<AuditCheckpoint> readCheckpoints(Path checkpointFile, List<StructuralAnomaly> torn)
+            throws IOException {
+        List<AuditCheckpoint> checkpoints = new ArrayList<>();
         // Split on '\n' only: Files.readAllLines would swallow the '\r' of a terminated torn line.
         String[] lines = Files.readString(checkpointFile, StandardCharsets.UTF_8).split("\n", -1);
         long offset = 0;
@@ -445,14 +526,7 @@ public final class AuditChainVerifier {
                         + " is not a valid checkpoint: " + e.getMessage(), e);
             }
         }
-        VerificationReport report = verifyWithKeys(content, checkpoints, minimumRetention, false, keys,
-                allowUnkeyedWriters);
-        if (torn.isEmpty()) {
-            return report;
-        }
-        List<StructuralAnomaly> anomalies = new ArrayList<>(report.anomalies());
-        anomalies.addAll(torn);
-        return new VerificationReport(report.writers(), anomalies, report.tail(), report.checkpointFindings());
+        return checkpoints;
     }
 
     private static StructuralAnomaly tornCheckpointLine(Path file, int lineNo, long byteOffset, String why) {
@@ -462,6 +536,282 @@ public final class AuditChainVerifier {
                         + "A crash during a checkpoint write leaves this; it is not reported as tampering, but the "
                         + "writer's tail-truncation coverage falls back to its previous checkpoint.",
                 byteOffset, -1);
+    }
+
+    // -- accept-crash-line ----------------------------------------------------------------------------
+
+    /**
+     * What {@link #checkCrashLine} decided. {@code condition} is the number of the first condition that failed
+     * (0 when accepted) and {@code message} says which and why. {@code hashStatus} and {@code hashSentence} are
+     * the report on whether the line's own hash recomputes; they are {@code null} when condition 1 or 2 refused,
+     * before the line was parsed. {@code bootWaived} is true only when the flag waived condition 7 (a).
+     */
+    public record CrashLineVerdict(boolean accepted, int condition, String message, String hashStatus,
+                                   String hashSentence, String instanceId, long sequence,
+                                   java.time.LocalDate segmentDate, boolean bootWaived) {
+    }
+
+    private static CrashLineVerdict refuseCrashLine(int condition, String message, String[] hash) {
+        return new CrashLineVerdict(false, condition, message, hash == null ? null : hash[0],
+                hash == null ? null : hash[1], null, 0, null, false);
+    }
+
+    private static List<Path> listSegments(Path directory) throws IOException {
+        List<Path> segments = new ArrayList<>();
+        try (java.util.stream.Stream<Path> files = Files.list(directory)) {
+            files.filter(Files::isRegularFile).forEach(f -> {
+                if (SegmentedFileAuditSink.segmentDate(f) != null) {
+                    segments.add(f);
+                }
+            });
+        }
+        segments.sort(SegmentedFileAuditSink.SEGMENT_ORDER);
+        return segments;
+    }
+
+    /** The report on whether {@code event}'s own hash recomputes: {status, one sentence}. */
+    private static String[] hashReport(AuditEvent event, List<AuditChainKey> keys, boolean allowUnkeyedWriters) {
+        for (int i = 0; i < keys.size(); i++) {
+            if (AuditEventHash.compute(event, keys.get(i)).equals(event.eventHash())) {
+                return new String[] {"KEYED_MATCH " + (i + 1), "the line's eventHash recomputes under the supplied "
+                        + "key at position " + (i + 1) + " (in the order the --hmac-key-file options were given)."};
+            }
+        }
+        boolean unkeyedMatches = AuditEventHash.compute(event).equals(event.eventHash());
+        if (unkeyedMatches && (keys.isEmpty() || allowUnkeyedWriters)) {
+            return new String[] {"UNKEYED_MATCH", "the line's eventHash recomputes as an unkeyed hash."};
+        }
+        if (unkeyedMatches) {
+            return new String[] {"UNKEYED_ONLY_FORGER_SHAPE", "keys were supplied without --allow-unkeyed-writers "
+                    + "and only the unkeyed hash matches. This is the shape a forger without the key produces, the "
+                    + "case the verifier treats as a forger."};
+        }
+        if (!keys.isEmpty()) {
+            return new String[] {"NO_MATCH_LOOKS_CUT", "nothing matches, unkeyed included. The line looks like a cut "
+                    + "inside the hashed fields, for example inside raw[19] or raw[24], or an edit."};
+        }
+        return new String[] {"NO_UNKEYED_MATCH", "the line looks cut if this deployment is unkeyed; a keyed line was "
+                + "not checked because no key was given."};
+    }
+
+    /**
+     * Judges whether an operator may accept the line of {@code segmentName} at byte {@code offset} as a crash line
+     * (task 293): conditions 1 to 8, in order, the first that fails being reported. Nothing is written. These
+     * checks do not prove a crash; they refuse a line whose own evidence contradicts the checkpoint store or the
+     * supplied keys. {@code noBootCheckpoint} waives condition 7 (a) only.
+     */
+    public static CrashLineVerdict checkCrashLine(Path auditDirectory, Path checkpointFile, String segmentName,
+                                                  long offset, String sha256, Period minimumRetention,
+                                                  List<AuditChainKey> keys, boolean allowUnkeyedWriters,
+                                                  boolean noBootCheckpoint) throws IOException {
+        // 1: the offset starts a line of an audit segment of the directory
+        List<Path> segments = listSegments(auditDirectory);
+        int targetIndex = -1;
+        for (int i = 0; i < segments.size(); i++) {
+            if (segments.get(i).getFileName().toString().equals(segmentName)) {
+                targetIndex = i;
+            }
+        }
+        if (targetIndex < 0) {
+            return refuseCrashLine(1, "condition 1: " + segmentName + " is not an audit-YYYY-MM-DD[.NNNN].log "
+                    + "segment file of " + auditDirectory, null);
+        }
+        byte[] segment = Files.readAllBytes(segments.get(targetIndex));
+        if (offset < 0 || offset >= segment.length || (offset > 0 && segment[(int) offset - 1] != '\n')) {
+            return refuseCrashLine(1, "condition 1: offset " + offset + " is not the start of a line in "
+                    + segmentName, null);
+        }
+        int end = (int) offset;
+        while (end < segment.length && segment[end] != '\n') {
+            end++;
+        }
+        boolean terminated = end < segment.length;
+        String line = new String(segment, (int) offset, end - (int) offset, StandardCharsets.UTF_8);
+        boolean carriageReturn = line.endsWith("\r");
+
+        // 2: skipped by the replay without parsing, and a complete record once one trailing CR is removed
+        if (terminated && !carriageReturn) {
+            return refuseCrashLine(2, "condition 2: the line is newline-terminated, so the replay parsed it. Only "
+                    + "a line ending in a carriage return, or the unterminated tail of a segment, is skipped "
+                    + "without parsing.", null);
+        }
+        AuditEvent event;
+        try {
+            event = AuditRecordFormat.parse(carriageReturn ? line.substring(0, line.length() - 1) : line);
+        } catch (RuntimeException e) {
+            return refuseCrashLine(2, "condition 2: the line does not parse as a record once one trailing carriage "
+                    + "return is removed. A torn fragment that does not parse is already tolerated by purge.", null);
+        }
+        String[] hash = hashReport(event, keys, allowUnkeyedWriters);
+        String instance = event.instanceId();
+
+        // 3 and the branch facts: every line of the directory that parses as this instance's record
+        boolean laterRecord = false;
+        boolean otherRecord = false;
+        for (int si = 0; si < segments.size(); si++) {
+            byte[] bytes = si == targetIndex ? segment : Files.readAllBytes(segments.get(si));
+            int from = 0;
+            while (from < bytes.length) {
+                int to = from;
+                while (to < bytes.length && bytes[to] != '\n') {
+                    to++;
+                }
+                if (!(si == targetIndex && from == offset)) {
+                    String other = new String(bytes, from, to - from, StandardCharsets.UTF_8);
+                    if (other.endsWith("\r")) {
+                        other = other.substring(0, other.length() - 1);
+                    }
+                    try {
+                        if (!other.isEmpty() && AuditRecordFormat.parse(other).instanceId().equals(instance)) {
+                            otherRecord = true;
+                            laterRecord |= si > targetIndex || (si == targetIndex && from > offset);
+                        }
+                    } catch (RuntimeException e) {
+                        // not a record: a fragment or a line the verifier reports
+                    }
+                }
+                from = to + 1;
+            }
+        }
+        if (laterRecord) {
+            return refuseCrashLine(3, "condition 3: instance " + instance + " has a later record in the directory, "
+                    + "so this line is not its last", hash);
+        }
+
+        // 4: the supplied hash is the line's
+        if (!sha256Hex(segment, (int) offset, end).equalsIgnoreCase(sha256)) {
+            return refuseCrashLine(4, "condition 4: the supplied --sha256 does not match the line's bytes", hash);
+        }
+
+        // 5: the line chains as its instance's next record
+        List<AuditCheckpoint> checkpoints = readCheckpoints(checkpointFile);
+        List<AuditCheckpoint> anchors = checkpoints.stream()
+                .filter(c -> c.kind() == AuditCheckpoint.Kind.RETENTION_ANCHOR && c.instanceId().equals(instance))
+                .toList();
+        String previous = event.previousHash();
+        if (otherRecord) {
+            List<Long> starts = new ArrayList<>();
+            byte[] content = join(segments, starts);
+            Detailed d = verifyWithKeys(content, checkpoints, minimumRetention, false, keys, allowUnkeyedWriters,
+                    new Instrument(starts.stream().mapToLong(Long::longValue).toArray(), Map.of(),
+                            java.util.Set.of()));
+            WriterResult writer = d.report().writers().stream().filter(w -> w.instanceId().equals(instance))
+                    .findFirst().orElse(null);
+            Picked pick = d.picked().get(instance);
+            if (writer != null && (writer.broken() || writer.nonGenesisStart().isPresent() || pick.forger()
+                    || pick.state().anchorRejection != null)) {
+                return refuseCrashLine(5, "condition 5 (i) check 1: instance " + instance + " is broken before the "
+                        + "line, or the replay reports a NON_GENESIS_START or RETENTION_ANCHOR_REJECTED for it, "
+                        + "so the line does not continue a chain the verifier accepts from its start", hash);
+            }
+            HashedRecord last = pick == null ? null : pick.state().lastHashed;
+            if (last == null) {
+                return refuseCrashLine(5, "condition 5 (i) check 2: instance " + instance + " has no hashed record "
+                        + "before the line", hash);
+            }
+            if (!previous.equals(last.eventHash())) {
+                return refuseCrashLine(5, "condition 5 (i) check 3: the line's previousHash is not the eventHash of "
+                        + "the instance's last hashed record", hash);
+            }
+            if (event.sequence() != last.sequence() + 1) {
+                return refuseCrashLine(5, "condition 5 (i) check 4: the line's sequence is not the last hashed "
+                        + "record's sequence + 1", hash);
+            }
+        } else if (anchors.isEmpty()) {
+            if (!GENESIS.equals(previous)) {
+                return refuseCrashLine(5, "condition 5 (ii) check 1: the instance's only line has a previousHash "
+                        + "that is not GENESIS", hash);
+            }
+            if (event.sequence() != 1) {
+                return refuseCrashLine(5, "condition 5 (ii) check 2: the instance's only line is GENESIS but its "
+                        + "sequence is not 1", hash);
+            }
+        } else {
+            long top = anchors.stream().mapToLong(AuditCheckpoint::sequence).max().orElseThrow();
+            List<AuditCheckpoint> highest = anchors.stream().filter(a -> a.sequence() == top).toList();
+            AuditCheckpoint anchor = highest.get(0);
+            if (highest.stream().anyMatch(a -> !a.headHash().equals(anchor.headHash()))) {
+                return refuseCrashLine(5, "condition 5 (iii) check 1: two retention anchors share the highest "
+                        + "sequence with different headHash values", hash);
+            }
+            if (GENESIS.equals(previous)) {
+                return refuseCrashLine(5, "condition 5 (iii) check 2: the line's previousHash is GENESIS, but the "
+                        + "instance has a retention anchor", hash);
+            }
+            if (event.sequence() != anchor.sequence() + 1) {
+                return refuseCrashLine(5, "condition 5 (iii) check 3: the line's sequence is not the anchor's "
+                        + "sequence + 1", hash);
+            }
+            if (!previous.equals(anchor.headHash())) {
+                return refuseCrashLine(5, "condition 5 (iii) check 4: the line's previousHash is not the anchor's "
+                        + "headHash", hash);
+            }
+            if (!anchorIsOldEnough(anchor, minimumRetention)) {
+                return refuseCrashLine(5, "condition 5 (iii) check 5: the anchor is not old enough for the minimum "
+                        + "retention " + minimumRetention, hash);
+            }
+            String contradiction = anchorContradiction(anchor, checkpoints);
+            if (contradiction != null) {
+                return refuseCrashLine(5, "condition 5 (iii) check 6: " + contradiction, hash);
+            }
+            if (event.timestamp().atZone(java.time.ZoneOffset.UTC).toLocalDate().isBefore(anchor.segmentDate())) {
+                return refuseCrashLine(5, "condition 5 (iii) check 7: the line is dated before the anchor's "
+                        + "segment date " + anchor.segmentDate(), hash);
+            }
+        }
+
+        // 6: the store ends at a line boundary, so appending never terminates a line itself
+        byte[] store = Files.readAllBytes(checkpointFile);
+        if (store.length > 0 && store[store.length - 1] != '\n') {
+            return refuseCrashLine(6, "condition 6: the checkpoint store's last byte is not a newline, so it ends "
+                    + "in a torn line. Stop the server and let it terminate the line first.", hash);
+        }
+
+        // 7: the store vouches for the instance
+        boolean hasBoot = checkpoints.stream().anyMatch(
+                c -> c.kind() == AuditCheckpoint.Kind.BOOT && c.instanceId().equals(instance));
+        if (!hasBoot && !noBootCheckpoint) {
+            return refuseCrashLine(7, "condition 7 (a): the checkpoint store holds no BOOT checkpoint for instance "
+                    + instance + ". In a deployment with a checkpoint sink, a missing BOOT is a strong sign of "
+                    + "tampering, because BOOT is written and forced to disk before the instance's first record. "
+                    + "Without a BOOT, condition 7 cannot be applied. Only for deployments with no checkpoint "
+                    + "sink, or instances that ran before the store existed, --no-boot-checkpoint lets the "
+                    + "command proceed, and you should investigate before using it.", hash);
+        }
+        AuditCheckpoint best = null;
+        for (AuditCheckpoint c : checkpoints) {
+            boolean head = c.kind() == AuditCheckpoint.Kind.BOOT || c.kind() == AuditCheckpoint.Kind.PERIODIC
+                    || c.kind() == AuditCheckpoint.Kind.SHUTDOWN;
+            if (head && c.instanceId().equals(instance) && c.sequence() >= event.sequence()
+                    && (best == null || c.sequence() > best.sequence()
+                    || (c.sequence() == best.sequence() && headRank(c.kind()) > headRank(best.kind())))) {
+                best = c;
+            }
+        }
+        if (best != null) {
+            return refuseCrashLine(7, "condition 7 (b): the store holds a " + best.kind() + " checkpoint at sequence "
+                    + best.sequence() + " for instance " + instance + ", at or above the line's sequence "
+                    + event.sequence() + ", so the writer got past this line and it is not the writer's last, "
+                    + "torn record. A power loss on a disk that does not honour fsync can cause this; extend "
+                    + "retention by hand.", hash);
+        }
+
+        // 8: the keys supplied do not contradict the line's own hash
+        if ("UNKEYED_ONLY_FORGER_SHAPE".equals(hash[0])) {
+            return refuseCrashLine(8, "condition 8: the hash report is UNKEYED_ONLY_FORGER_SHAPE, the shape a "
+                    + "forger without the key produces", hash);
+        }
+        java.time.LocalDate day = SegmentedFileAuditSink.segmentDate(segments.get(targetIndex));
+        return new CrashLineVerdict(true, 0, "accepted", hash[0], hash[1], instance, event.sequence(), day,
+                !hasBoot);
+    }
+
+    private static int headRank(AuditCheckpoint.Kind kind) {
+        return switch (kind) {
+            case SHUTDOWN -> 3;
+            case PERIODIC -> 2;
+            default -> 1;
+        };
     }
 
     private static VerificationReport verify(byte[] content, List<AuditCheckpoint> checkpoints,
@@ -680,7 +1030,8 @@ public final class AuditChainVerifier {
                                                             Period minimumRetention) {
         Map<String, Long> highest = new LinkedHashMap<>();
         for (AuditCheckpoint cp : checkpoints) {
-            if (cp.kind() == AuditCheckpoint.Kind.RETENTION_ANCHOR) {
+            if (cp.kind() == AuditCheckpoint.Kind.RETENTION_ANCHOR
+                    || cp.kind() == AuditCheckpoint.Kind.CRASH_LINE_ACCEPTED) {
                 continue;
             }
             highest.merge(cp.instanceId(), cp.sequence(), Math::max);
@@ -763,7 +1114,9 @@ public final class AuditChainVerifier {
             return null;
         }
         for (AuditCheckpoint cp : checkpoints) {
-            if (cp.kind() == AuditCheckpoint.Kind.RETENTION_ANCHOR || !cp.instanceId().equals(anchor.instanceId())
+            if (cp.kind() == AuditCheckpoint.Kind.RETENTION_ANCHOR
+                    || cp.kind() == AuditCheckpoint.Kind.CRASH_LINE_ACCEPTED
+                    || !cp.instanceId().equals(anchor.instanceId())
                     || cp.sequence() >= anchor.sequence()) {
                 continue;
             }
@@ -939,6 +1292,9 @@ public final class AuditChainVerifier {
             AuditRecordFormat.parse(body);
         } catch (RuntimeException e) {
             return;
+        }
+        if (replay.instr() != null && replay.instr().accepted().contains(offset)) {
+            return; // an operator confirmed this exact line as a crash line
         }
         long[] lowest = replay.fragmentOffset();
         if (lowest[0] < 0 || offset < lowest[0]) {
