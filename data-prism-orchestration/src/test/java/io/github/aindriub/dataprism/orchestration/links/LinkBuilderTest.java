@@ -111,11 +111,17 @@ public class LinkBuilderTest {
         public final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
 
         public Rig source(String name, Object record, String... inputKeys) {
+            return typedSource(name, record, Set.of(), Map.of(), inputKeys);
+        }
+
+        /** A source that declares entity types and which input namespace answers which type. */
+        public Rig typedSource(String name, Object record, Set<String> types, Map<KeyNamespace, String> mapping,
+                               String... inputKeys) {
             List<KeyNamespace> inputs = new ArrayList<>();
             for (String key : inputKeys) {
                 inputs.add(new KeyNamespace(key));
             }
-            SourceDescription description = new SourceDescription(Set.of(), null, null, inputs, null, null);
+            SourceDescription description = new SourceDescription(types, null, null, inputs, null, null, mapping);
             adapters.add(new DataSourceAdapter<Object>() {
                 @Override
                 public String sourceName() {
@@ -604,6 +610,19 @@ public class LinkBuilderTest {
     void aTargetNameOver64CharactersGetsNoLinkAndCountsAsOmitted() {
         String longName = "x".repeat(65);
         Rig rig = rig().source("origin-api", parcel()).source(longName, new Plain("a"), "parcel-ref");
+
+        ContextResponse response = rig.run();
+
+        SourceResult origin = response.sources().values().stream().filter(s -> s.linksOmitted() != null)
+                .findFirst().orElseThrow();
+        assertThat(origin.links()).isEmpty();
+        assertThat(origin.linksOmitted()).isEqualTo(1);
+    }
+
+    @Test
+    void aMultiTypeTargetWithNoTypeForTheNamespaceGetsNoLinkAndCountsAsOmitted() {
+        Rig rig = rig().source("origin-api", parcel()).typedSource("hub-api", new Plain("a"),
+                Set.of("DEPOT", "PARCEL"), Map.of(), "depot-code", "parcel-ref");
 
         ContextResponse response = rig.run();
 

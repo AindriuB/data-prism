@@ -17,6 +17,9 @@
 - data-prism-orchestration/src/test/resources/source-status-codes.txt *(one insertion)*
 - data-prism-orchestration/src/test/java/io/github/aindriub/dataprism/orchestration/links/FollowTest.java, FollowRefusalUniformityTest.java, FollowLimiterTest.java, FollowTranslatedTest.java, FollowBudgetTest.java, FollowLeakTest.java *(new)*
 - data-prism-orchestration/src/test/java/io/github/aindriub/dataprism/orchestration/links/LinkTimingSoakTest.java *(new; tagged `timing`, excluded from the default build, run by 263)*
+- data-prism-core/src/main/java/io/github/aindriub/dataprism/core/spi/SourceDescription.java *(added in review round 2: the optional `namespaceTypes` map and the `entity` sentinel; the 6-argument constructor stays)*
+- data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/links/LinkTargets.java *(added in review round 2: the entity type per target)*
+- data-prism-core/src/test/java/io/github/aindriub/dataprism/core/spi/SourceDescriptionTest.java, data-prism-orchestration/src/test/java/io/github/aindriub/dataprism/orchestration/links/LinkTargetsTest.java, LinkBuilderTest.java *(added in review round 2: new cases and a typed-source rig method only)*
 
 ## Goal
 `follow` takes one sealed link and reads its target on the holder's behalf. It must re-check everything a fresh call checks (P5), refuse every invalid link with one uniform answer while the real reason goes to the audit only (P4, T7), lock out a principal that grinds forged links (OD-8), resolve a translated link at follow time through the bounded invoker (OD-R2), charge every read and resolver call before making it, and pass the target's answer through the same scrub and validation as any read. No path from the adapter reaches the caller without the engine.

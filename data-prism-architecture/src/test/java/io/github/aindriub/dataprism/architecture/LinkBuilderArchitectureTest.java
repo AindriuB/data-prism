@@ -2,12 +2,14 @@ package io.github.aindriub.dataprism.architecture;
 
 import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.JavaClass;
+import com.tngtech.archunit.core.domain.JavaAccess;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.EvaluationResult;
 import io.github.aindriub.dataprism.orchestration.links.LinkBuilder;
+import io.github.aindriub.dataprism.orchestration.links.LinkFollower;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -27,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class LinkBuilderArchitectureTest {
 
     private static final String BUILDER = "io.github.aindriub.dataprism.orchestration.links.LinkBuilder";
+    private static final String AUTHORISED = "io.github.aindriub.dataprism.orchestration.links.LinkFollower$Authorised";
     private static final String TARGETS = "io.github.aindriub.dataprism.orchestration.links.LinkTargets";
 
     private static JavaClasses CLASSES;
@@ -64,7 +67,38 @@ class LinkBuilderArchitectureTest {
         noDependencyOnTheBuilder(inMcpOrConnectors()).check(CLASSES);
     }
 
+    /** Any access to the chained key an authorised link holds (sealed-links.md security obligation 25). */
+    private static DescribedPredicate<JavaAccess<?>> theChainedKey() {
+        return DescribedPredicate.describe("an access to LinkFollower.Authorised#key",
+                access -> access.getTarget().getOwner().getName().equals(AUTHORISED)
+                        && access.getTarget().getName().equals("key"));
+    }
+
+    private static ArchRule noReachToTheChainedKey(DescribedPredicate<JavaClass> origin) {
+        return noClasses().that(origin)
+                .should().accessTargetWhere(theChainedKey())
+                .because("the chained key is held for one call inside orchestration and never read by the tool layer")
+                .allowEmptyShould(true);
+    }
+
+    @Test
+    void noMcpOrConnectorsClassReachesTheChainedKeyOfAnAuthorisedLink() {
+        noReachToTheChainedKey(inMcpOrConnectors()).check(CLASSES);
+    }
+
     // ---- fixtures: the rule must be able to fail ----
+
+    static final class FixtureReadsTheChainedKey {
+        String read(LinkFollower.Authorised authorised) {
+            return authorised.key();
+        }
+    }
+
+    static final class FixtureReferencesTheChainedKey {
+        java.util.function.Function<LinkFollower.Authorised, String> read() {
+            return LinkFollower.Authorised::key;
+        }
+    }
 
     static final class FixtureUsesTheBuilderResult {
         LinkBuilder.Result result;
@@ -91,6 +125,24 @@ class LinkBuilderArchitectureTest {
     @Test
     void theRulePassesForAClassThatDoesNot() {
         assertThat(evaluate(noDependencyOnTheBuilder(named(FixtureUsesNothing.class)), FixtureUsesNothing.class)
+                .hasViolation()).isFalse();
+    }
+
+    @Test
+    void theChainedKeyRuleFailsForAClassThatReadsTheKey() {
+        assertThat(evaluate(noReachToTheChainedKey(named(FixtureReadsTheChainedKey.class)),
+                FixtureReadsTheChainedKey.class, LinkFollower.Authorised.class).hasViolation()).isTrue();
+    }
+
+    @Test
+    void theChainedKeyRuleFailsForAMethodReferenceToTheKey() {
+        assertThat(evaluate(noReachToTheChainedKey(named(FixtureReferencesTheChainedKey.class)),
+                FixtureReferencesTheChainedKey.class, LinkFollower.Authorised.class).hasViolation()).isTrue();
+    }
+
+    @Test
+    void theChainedKeyRulePassesForAClassThatDoesNot() {
+        assertThat(evaluate(noReachToTheChainedKey(named(FixtureUsesNothing.class)), FixtureUsesNothing.class)
                 .hasViolation()).isFalse();
     }
 }

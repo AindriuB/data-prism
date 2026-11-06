@@ -46,6 +46,16 @@ import io.github.aindriub.dataprism.orchestration.catalog.SourceSelection;
 import io.github.aindriub.dataprism.orchestration.links.IssuedLink;
 import io.github.aindriub.dataprism.orchestration.links.LinkBuilder;
 import io.github.aindriub.dataprism.core.link.LinkBinding;
+import io.github.aindriub.dataprism.core.link.LinkKeys;
+import java.time.Duration;
+import io.github.aindriub.dataprism.core.link.LinkReason;
+import io.github.aindriub.dataprism.core.link.LinkRelation;
+import io.github.aindriub.dataprism.core.spi.KeyNamespace;
+import io.github.aindriub.dataprism.core.spi.ResolutionContext;
+import io.github.aindriub.dataprism.audit.AuditedEntityTypes;
+import io.github.aindriub.dataprism.orchestration.links.FollowRequest;
+import io.github.aindriub.dataprism.orchestration.links.LinkFollower;
+import io.github.aindriub.dataprism.orchestration.links.ResolverOutcome;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -102,6 +112,9 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
     private final OrchestrationOptions options;
     private final SourceCatalog catalog;
     private final LinkBuilder linkBuilder;
+    private final LinkFollower follower;
+    /** The clock of link issuing, which follow shares; the system clock when links are off. */
+    private final Clock clock;
 
     /**
      * The standard pipeline: the supplied comparison check, plus the pattern
@@ -160,6 +173,11 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         this.catalog = options.catalog().orElseGet(() -> SourceCatalog.build(this.adapters, Map.of()));
         this.linkBuilder = options.links()
                 .map(l -> new LinkBuilder(l.codec(), l.maxPerResponse(), l.resolvers(), l.descriptors(), l.clock()))
+                .orElse(null);
+        this.clock = options.links().map(OrchestrationOptions.LinkIssuing::clock).orElse(Clock.systemUTC());
+        this.follower = options.follow()
+                .map(f -> new LinkFollower(f.gate(), f.resolvers(), f.keys(), f.invoker(), f.maxTargets(),
+                        f.resolverTimeout()))
                 .orElse(null);
         if (this.validators.isEmpty()) {
             throw new IllegalArgumentException("at least one response validator is required");
@@ -288,20 +306,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                             assembled.add(linkNode(entry.getValue().links()));
                         }
                     });
-            List<Violation> violations = new ArrayList<>();
-            for (LlmResponseValidator validator : validators) {
-                violations.addAll(validator.validate(assembled, prohibited, emitted, context).violations());
-            }
-            if (!violations.isEmpty()) {
-                violations.forEach(v -> metrics.increment(Metric.PRIVACY_VALIDATION_FAILURES));
-                // Named by classification and path; the values themselves stay in
-                // the withheld response, which no caller ever sees. The validators walk
-                // the trees, which can hold payload keys the model never declared.
-                throw new PrivacyRefusedException("VALIDATION_FAILED",
-                        RefusalPaths.redact(withoutSourceIndex(violations.get(0).path()), declared),
-                        violations.size() + " violation(s), first " + violations.get(0).code()
-                                + " by " + violations.get(0).detectionMethod() + "; response withheld");
-            }
+            requireValid(assembled, prohibited, emitted, declared, context);
             response = ContextResponse.of(request.entityType(), subjectToken, sources,
                     findings, trees, fieldsByNamespace(raw), labels, correlationId, linkResult.bySource());
             if (ResponseSize.records(response) > limits.maxRecords()) {
@@ -357,6 +362,26 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
     }
 
     /**
+     * The final check over everything that is about to leave, as one tree. Every validator runs; a violation
+     * refuses, named by classification and path and never by value. The validators walk the trees, which can
+     * hold payload keys the model never declared, so the path is checked against what was declared.
+     */
+    private void requireValid(ArrayNode assembled, Set<String> prohibited, Set<String> emitted,
+                              Set<String> declared, PrivacyContext context) {
+        List<Violation> violations = new ArrayList<>();
+        for (LlmResponseValidator validator : validators) {
+            violations.addAll(validator.validate(assembled, prohibited, emitted, context).violations());
+        }
+        if (!violations.isEmpty()) {
+            violations.forEach(v -> metrics.increment(Metric.PRIVACY_VALIDATION_FAILURES));
+            throw new PrivacyRefusedException("VALIDATION_FAILED",
+                    RefusalPaths.redact(withoutSourceIndex(violations.get(0).path()), declared),
+                    violations.size() + " violation(s), first " + violations.get(0).code()
+                            + " by " + violations.get(0).detectionMethod() + "; response withheld");
+        }
+    }
+
+    /**
      * Issues the sealed links of the sources that answered, or nothing: links off, a comparison (which carries
      * no links), no answered source, or any failure. Reads declarations and the raw records only; calls no
      * resolver and no adapter.
@@ -380,20 +405,25 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                     origins.add(new LinkBuilder.Origin(name, label, record));
                 }
             }
-            Instant scopeExpiry = context.expiresAt();
-            if (scopeExpiry == null) {
-                return LinkBuilder.Result.NONE; // fail closed: a link with no known end is not issued
-            }
-            // The scope's end already includes the token's (ScopeResolver), so it binds both.
-            LinkBinding binding = new LinkBinding(context.scopeId(), caller.principalId(), scopeExpiry,
-                    scopeExpiry);
-            return linkBuilder.build(origins, labels, binding,
-                    name -> nameIsSafe(name, prohibited, emitted, context));
+            return buildLinks(origins, labels, context, caller, prohibited, emitted);
         } catch (RuntimeException failure) {
             // Fail closed to no links. The class only: the message could name a value.
             LOG.warn("links not issued: {}", failure.getClass().getSimpleName());
             return LinkBuilder.Result.NONE;
         }
+    }
+
+    /** Builds the links of the given answered origins, or none when the scope has no known end. */
+    private LinkBuilder.Result buildLinks(List<LinkBuilder.Origin> origins, SourceLabels labels,
+                                          PrivacyContext context, InvestigationContext caller,
+                                          Set<String> prohibited, Set<String> emitted) {
+        Instant scopeExpiry = context.expiresAt();
+        if (linkBuilder == null || scopeExpiry == null) {
+            return LinkBuilder.Result.NONE; // fail closed: a link with no known end is not issued
+        }
+        // The scope's end already includes the token's (ScopeResolver), so it binds both.
+        LinkBinding binding = new LinkBinding(context.scopeId(), caller.principalId(), scopeExpiry, scopeExpiry);
+        return linkBuilder.build(origins, labels, binding, name -> nameIsSafe(name, prohibited, emitted, context));
     }
 
     /** Whether a declared field name may appear in output: every validator accepts it as a lone string. */
@@ -509,9 +539,20 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                                        SourceLabels labels, List<DataSourceAdapter<?>> selected,
                                        List<SourceOutcome> sources, Set<String> prohibited,
                                        Map<String, String> dispositions) {
+        return scrubAndValidate(fetchAll(request, context, selected), context, labels, sources, prohibited,
+                dispositions);
+    }
+
+    /**
+     * The scrub and validate steps over what was fetched, shared by every read: a record is scrubbed, then
+     * validated on its own against every value the other answers hold; a refusal drops that answer whole.
+     */
+    private FetchOutcome scrubAndValidate(List<SourceFanOut.Fetched> fetchedAll, PrivacyContext context,
+                                          SourceLabels labels, List<SourceOutcome> sources,
+                                          Set<String> prohibited, Map<String, String> dispositions) {
         List<PrivacyRefusedException> scrubRefusals = new ArrayList<>();
         List<Scrubbed> scrubbed = new ArrayList<>();
-        for (SourceFanOut.Fetched fetched : fetchAll(request, context, selected)) {
+        for (SourceFanOut.Fetched fetched : fetchedAll) {
             Object record = fetched.record();
             if (record == null) {
                 sources.add(fetched.outcome());
@@ -583,10 +624,22 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
     private List<SourceFanOut.Fetched> fetchAll(ContextRequest request, PrivacyContext context,
                                                 List<DataSourceAdapter<?>> selected) {
         SourceFanOut.Plan plan = fanOut.plan(selected, requestsPerSource(request, selected), limits);
+        return fetchPlanned(plan, context, request.subjectId(), request.entityType(), null);
+    }
+
+    /**
+     * Charges and runs a plan: one read per callable source is reserved against {@code budgetSubject} and the
+     * scope total, and nothing is called if that is refused. {@code path} names the entity type in a refusal.
+     * With a {@code deadline} (a follow's), the reservation may take time: if the deadline has passed when it
+     * returns, the reservation is released, nothing is called and the answer is null; otherwise the reads are
+     * bound by the time left, not by a fresh request timeout.
+     */
+    private List<SourceFanOut.Fetched> fetchPlanned(SourceFanOut.Plan plan, PrivacyContext context,
+                                                    String budgetSubject, String path, Instant deadline) {
         ReadReservation reservation = null;
         if (!plan.callable().isEmpty()) {
             try {
-                reservation = budget.reserve(context.scopeId(), request.subjectId(), plan.callable().size(),
+                reservation = budget.reserve(context.scopeId(), budgetSubject, plan.callable().size(),
                         limits.scopeReadBudget(), limits.scopeTotalReadBudget());
             } catch (RuntimeException failure) {
                 fanOut.abandon(plan);
@@ -594,16 +647,26 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
             }
             if (!reservation.granted()) {
                 fanOut.abandon(plan);
-                throw new PrivacyRefusedException("SCOPE_READ_BUDGET", request.entityType(),
+                throw new PrivacyRefusedException("SCOPE_READ_BUDGET", path,
                         reservation.refusedBy() == ReadReservation.Refusal.SCOPE_TOTAL
                                 ? "this scope has reached its read total of " + limits.scopeTotalReadBudget()
                                 : "this subject would pass " + limits.scopeReadBudget()
                                         + " source reads in this scope");
             }
         }
+        Duration window = limits.requestTimeout();
+        if (deadline != null) {
+            window = Duration.between(clock.instant(), deadline);
+            if (window.isNegative() || window.isZero()) {
+                // The reservation outlasted the follow: nothing is called, and every unused read goes back.
+                fanOut.abandon(plan);
+                settle(reservation, plan.callable().size());
+                return null;
+            }
+        }
         int unused = 0;
         try {
-            SourceFanOut.Execution execution = fanOut.execute(plan, limits);
+            SourceFanOut.Execution execution = fanOut.execute(plan, limits, window);
             unused = execution.notStarted();
             return execution.results();
         } catch (SourceFanOut.ExecutionFailure failure) {
@@ -638,6 +701,317 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         } catch (RuntimeException e) {
             LOG.warn("could not settle a read reservation: {}", e.getClass().getSimpleName());
         }
+    }
+
+    // ---- follow ----
+
+    /** What one follow call has done so far, so that a refusal can audit it. */
+    private static final class FollowState {
+        String subject = "";
+        final Map<String, String> dispositions = new LinkedHashMap<>();
+        final List<SourceOutcome> sources = new ArrayList<>();
+        boolean refusalAudited;
+        int issuedLinks;
+        int omittedLinks;
+    }
+
+    /**
+     * What a follow has decided to answer with, before the finishing step has validated, measured and audited it.
+     * {@code followChecked} can return nothing else, so no path can leave without that step.
+     */
+    private record FollowPending(String entityType, String label, SourceResult result, ArrayNode assembled,
+                                 Set<String> prohibited, Set<String> emitted, Set<String> declared) {
+        /** An answer that is a status alone: no tree, so nothing for the validators to read. */
+        static FollowPending statusOnly(String entityType, String label, SourceResult result) {
+            return new FollowPending(entityType, label, result, JsonNodeFactory.instance.arrayNode(),
+                    Set.of(), Set.of(), Set.of());
+        }
+    }
+
+    /** One key's read: its position in the fingerprint order, its outcome, and the scrubbed tree if it answered. */
+    private record FollowItem(int index, SourceOutcome outcome, ObjectNode tree, Object record) {
+    }
+
+    @Override
+    public ContextResponse follow(FollowRequest request, PrivacyContext context,
+                                  InvestigationContext investigationContext) {
+        Objects.requireNonNull(request, "request");
+        Objects.requireNonNull(context, "context");
+        Objects.requireNonNull(investigationContext, "investigationContext");
+        String correlationId = UUID.randomUUID().toString();
+        String fingerprint = fingerprinter.fingerprint(request.toolName(), context);
+        FollowState state = new FollowState();
+        state.dispositions.put(AuditEvent.NAMES_KEY,
+                SourceLabels.effectiveKind(options.realNames(), investigationContext, context).name());
+        ContextResponse response;
+        try {
+            FollowPending pending = followChecked(request, context, investigationContext, correlationId, state);
+            // The one successful exit: every answer, whatever its status, is validated and measured here.
+            response = followFinish(pending, context, correlationId, state);
+        } catch (RuntimeException failure) {
+            if (failure instanceof PrivacyRefusedException) {
+                metrics.increment(Metric.PRIVACY_FAILCLOSED);
+                if (!state.refusalAudited) {
+                    state.dispositions.put("merged:<refused>", "REFUSED");
+                }
+            }
+            try {
+                auditFollow(request, state, fingerprint, context, investigationContext, denyDecision(failure),
+                        correlationId);
+            } catch (RuntimeException auditFailure) {
+                LOG.error("audit record failed for a denial with code {}; refusing the call without an "
+                        + "audit event", denyCode(failure), auditFailure);
+                throw new DenialAuditFailedException(auditFailure);
+            }
+            if (failure instanceof PrivacyRefusedException refused) {
+                throw new AuditedRefusalException(refused, correlationId);
+            }
+            throw new AuditedRefusalException(failure, request.toolName(), correlationId);
+        }
+        state.sources.stream().filter(o -> o.status() == SourceOutcome.Status.REFUSED)
+                .forEach(o -> metrics.increment(Metric.PRIVACY_SOURCE_WITHHELD));
+        for (int i = 0; i < state.issuedLinks; i++) {
+            metrics.increment(Metric.LINKS_ISSUED);
+        }
+        for (int i = 0; i < state.omittedLinks; i++) {
+            metrics.increment(Metric.LINKS_OMITTED);
+        }
+        auditFollow(request, state, fingerprint, context, investigationContext, "ALLOW", correlationId);
+        return response;
+    }
+
+    private void auditFollow(FollowRequest request, FollowState state, String fingerprint, PrivacyContext context,
+                             InvestigationContext investigationContext, String decision, String correlationId) {
+        audit(request.toolName(), AuditedEntityTypes.UNREGISTERED, Set.of(), request.approvalId(),
+                request.approverId(), request.externalCorrelationId(), state.subject, fingerprint, context,
+                investigationContext, decision, state.sources, correlationId, state.dispositions);
+    }
+
+    /** The refusal for a link, with the real reason set aside for the audit. */
+    private static PrivacyRefusedException followRefusal(FollowState state, LinkFollower.Refused refused) {
+        state.dispositions.put("link", refused.auditValue());
+        state.refusalAudited = true;
+        return new PrivacyRefusedException(refused.clientCode(), "link", refused.message());
+    }
+
+    private FollowPending followChecked(FollowRequest request, PrivacyContext context,
+                                          InvestigationContext caller, String correlationId, FollowState state) {
+        if (follower == null) {
+            throw followRefusal(state, LinkFollower.refused(LinkReason.RELATION_UNDECLARED));
+        }
+        Instant scopeExpiry = context.expiresAt();
+        if (scopeExpiry == null) {
+            throw followRefusal(state, LinkFollower.refused(LinkReason.MALFORMED));
+        }
+        // The scope's end already includes the token's (ScopeResolver), so it binds both.
+        LinkBinding binding = new LinkBinding(context.scopeId(), caller.principalId(), scopeExpiry, scopeExpiry);
+        LinkFollower.Verdict verdict = follower.authorise(request.link(), binding, () -> SourceLabels.forRequest(
+                catalog, options.visibility(), aliasing, options.realNames(), caller, context));
+        if (!(verdict instanceof LinkFollower.Authorised target)) {
+            throw followRefusal(state, (LinkFollower.Refused) verdict);
+        }
+        // A synthetic value, like any subject token; never the key.
+        state.subject = synthetics.syntheticValue(target.key(), PrivacyNamespace.NONE, context);
+        String name = target.target().name();
+        DataSourceAdapter<?> adapter = adapters.stream().filter(a -> a.sourceName().equals(name)).findFirst()
+                .orElseThrow(() -> followRefusal(state, LinkFollower.refused(LinkReason.TARGET_NOT_PERMITTED)));
+        String entityType = target.entityType();
+        boolean direct = target.relation() == LinkRelation.DIRECT;
+        SourceLabels labels = target.labels();
+        String label = target.label();
+
+        List<String> keys;
+        boolean truncated = false;
+        // One deadline for the whole follow: the resolver and every read after it.
+        Instant deadline = clock.instant().plus(limits.requestTimeout());
+        if (direct) {
+            keys = List.of(target.key());
+        } else {
+            LinkKeys.ScopeKeys scopeKeys = follower.scopeKeys(context.scopeId());
+            chargeResolver(context, target.key(), entityType);
+            ResolutionContext resolution = new ResolutionContext(context.scopeId(), caller.principalId(),
+                    context.purpose(), deadline);
+            ResolverOutcome outcome = follower.resolve(target, resolution);
+            if (outcome instanceof ResolverOutcome.Keys resolved) {
+                keys = LinkFollower.ordered(scopeKeys, resolved.keys());
+                truncated = resolved.more();
+            } else {
+                // A failure never falls back to a direct read, another resolver or the untranslated key.
+                SourceOutcome.Status status = outcome instanceof ResolverOutcome.Empty
+                        ? SourceOutcome.Status.NO_DATA : SourceOutcome.Status.RESOLVER_FAILED;
+                state.sources.add(new SourceOutcome(name, status, Duration.ZERO, null));
+                return FollowPending.statusOnly(entityType, label, SourceResult.of(status));
+            }
+        }
+
+        Set<String> prohibited = new LinkedHashSet<>();
+        // The chained key and every key the resolver returned are raw values a target record must not echo.
+        prohibited.add(target.key());
+        prohibited.addAll(keys);
+        Set<String> emitted = new LinkedHashSet<>();
+        Set<String> declared = new LinkedHashSet<>();
+        List<FollowItem> items = new ArrayList<>();
+        PrivacyRefusedException firstRefusal = null;
+        for (int i = 0; i < keys.size(); i++) {
+            if (!direct && !clock.instant().isBefore(deadline)) {
+                // Past the follow's deadline no further read is started.
+                if (i == 0) {
+                    // Nothing was read, so this is not NO_DATA: the client sees the timeout the fan-out reports.
+                    state.sources.add(new SourceOutcome(name, SourceOutcome.Status.TIMED_OUT, Duration.ZERO, null));
+                    return FollowPending.statusOnly(entityType, label,
+                            SourceResult.ofItems(SourceOutcome.Status.TIMED_OUT, List.of(), true));
+                }
+                truncated = true;
+                break;
+            }
+            DataRequest read = DataRequest.of(entityType, keys.get(i))
+                    .withContext(new SourceCallContext(request.externalCorrelationId()))
+                    .withKeyNamespace(target.targetNamespace());
+            List<SourceFanOut.Fetched> fetched;
+            try {
+                // Charged to the key's own subject counter and to the scope total, before the read.
+                fetched = fetchPlanned(fanOut.plan(List.of(adapter), Map.of(name, read), limits), context,
+                        keys.get(i), entityType, direct ? null : deadline);
+            } catch (PrivacyRefusedException refused) {
+                if (i > 0 && "SCOPE_READ_BUDGET".equals(refused.code())) {
+                    truncated = true;
+                    break;
+                }
+                throw refused;
+            }
+            if (fetched == null) {
+                // The reservation took the rest of the follow's time; no read was started.
+                if (i == 0) {
+                    state.sources.add(new SourceOutcome(name, SourceOutcome.Status.TIMED_OUT, Duration.ZERO, null));
+                    return FollowPending.statusOnly(entityType, label,
+                            SourceResult.ofItems(SourceOutcome.Status.TIMED_OUT, List.of(), true));
+                }
+                truncated = true;
+                break;
+            }
+            List<SourceOutcome> itemSources = new ArrayList<>();
+            Map<String, String> itemDispositions = new LinkedHashMap<>();
+            FetchOutcome done = scrubAndValidate(fetched, context, labels, itemSources, prohibited,
+                    itemDispositions);
+            String auditName = direct ? name : name + "[" + i + "]";
+            itemDispositions.forEach((path, action) -> state.dispositions.put(
+                    path.equals(name + ":<refused>") ? auditName + ":<refused>" : path, action));
+            SourceOutcome outcome = itemSources.get(0);
+            state.sources.add(outcome);
+            if (outcome.status() == SourceOutcome.Status.REFUSED && firstRefusal == null) {
+                firstRefusal = !done.scrubRefusals().isEmpty() ? done.scrubRefusals().get(0)
+                        : done.validationRefusals().get(0);
+            }
+            items.add(new FollowItem(i, outcome, done.trees().get(name),
+                    done.raw().isEmpty() ? null : done.raw().get(0).record()));
+            emitted.addAll(done.emitted());
+            declared.addAll(done.declared());
+        }
+        if (items.stream().noneMatch(item -> item.outcome().answered()) && firstRefusal != null) {
+            // Every answer there was is refused: the call is refused, with the first code (D-070-2).
+            state.refusalAudited = true;
+            throw firstRefusal;
+        }
+
+        List<LinkBuilder.Origin> origins = new ArrayList<>();
+        for (FollowItem item : items) {
+            if (item.tree() != null && item.record() != null) {
+                origins.add(new LinkBuilder.Origin(name, originLabel(direct, label, item), item.record()));
+            }
+        }
+        LinkBuilder.Result linkResult = origins.isEmpty() ? LinkBuilder.Result.NONE
+                : quietLinks(origins, labels, context, caller, prohibited, emitted);
+        // Only tokens the builder sealed are exempt from the key-shape scan.
+        emitted.addAll(linkResult.tokens());
+        state.issuedLinks = linkResult.issued();
+        state.omittedLinks = linkResult.omitted();
+
+        ArrayNode assembled = JsonNodeFactory.instance.arrayNode();
+        items.stream().filter(item -> item.tree() != null).forEach(item -> assembled.add(item.tree()));
+        linkResult.bySource().entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(entry -> {
+            if (!entry.getValue().links().isEmpty()) {
+                assembled.add(linkNode(entry.getValue().links()));
+            }
+        });
+
+        SourceResult result;
+        List<SourceResult.Item> resultItems = new ArrayList<>();
+        List<String> statuses = new ArrayList<>();
+        for (FollowItem item : items) {
+            if (item.outcome().status() == SourceOutcome.Status.REFUSED) {
+                continue; // omitted (D-070-2); audited under <target>[<i>]:<refused>
+            }
+            String status = item.outcome().status().name();
+            statuses.add(status);
+            if (item.tree() == null) {
+                resultItems.add(new SourceResult.Item(status, null, List.of(), null));
+                continue;
+            }
+            LinkBuilder.Linked linked = linkResult.bySource().get(originLabel(direct, label, item));
+            List<IssuedLink> links = linked == null ? List.of() : linked.links();
+            int omitted = linked == null ? 0 : linked.omitted();
+            resultItems.add(new SourceResult.Item(status, item.tree(), links, omitted > 0 ? omitted : null));
+        }
+        if (direct) {
+            SourceResult.Item only = resultItems.get(0);
+            result = only.entity() == null ? SourceResult.of(SourceOutcome.Status.valueOf(only.status()))
+                    : SourceResult.answered(only.entity(), only.links(), only.linksOmitted() == null ? 0 : only.linksOmitted());
+        } else {
+            result = SourceResult.ofItems(SourceOutcome.Status.valueOf(LinkFollower.outerStatus(statuses)),
+                    resultItems, truncated);
+        }
+        return new FollowPending(entityType, label, result, assembled, prohibited, emitted, declared);
+    }
+
+    /**
+     * The finishing step of every successful follow, in this order: the final validation, then the record and
+     * byte limits on the response that leaves (with its real label). A refusal here is audited as a denial by
+     * {@link #follow}; the allow audit follows in the same exit.
+     */
+    private ContextResponse followFinish(FollowPending pending, PrivacyContext context, String correlationId,
+                                         FollowState state) {
+        requireValid(pending.assembled(), pending.prohibited(), pending.emitted(), pending.declared(), context);
+        ContextResponse measured = new ContextResponse(pending.entityType(), state.subject,
+                Map.of(pending.label(), pending.result()), List.of(), Map.of(), correlationId);
+        if (ResponseSize.records(measured) > limits.maxRecords()) {
+            throw new PrivacyRefusedException("TOO_MANY_RECORDS", "$",
+                    "response exceeds configured record limit " + limits.maxRecords());
+        }
+        if (ResponseSize.bytes(measured, false) > limits.maxResponseBytes()) {
+            throw new PrivacyRefusedException("RESPONSE_TOO_LARGE", "$",
+                    "response exceeds configured byte limit " + limits.maxResponseBytes());
+        }
+        return measured;
+    }
+
+    private static String originLabel(boolean direct, String label, FollowItem item) {
+        return direct ? label : Integer.toString(item.index());
+    }
+
+    /** As {@link #buildLinks}, failing closed to no links. The class only is logged. */
+    private LinkBuilder.Result quietLinks(List<LinkBuilder.Origin> origins, SourceLabels labels,
+                                          PrivacyContext context, InvestigationContext caller,
+                                          Set<String> prohibited, Set<String> emitted) {
+        try {
+            return buildLinks(origins, labels, context, caller, prohibited, emitted);
+        } catch (RuntimeException failure) {
+            LOG.warn("links not issued: {}", failure.getClass().getSimpleName());
+            return LinkBuilder.Result.NONE;
+        }
+    }
+
+    /** Charges one resolver call to the chained key's own counter and the scope total; refuses if unaffordable. */
+    private void chargeResolver(PrivacyContext context, String key, String path) {
+        int cost = options.follow().orElseThrow().budgetCost();
+        ReadReservation reservation = budget.reserve(context.scopeId(), key, cost, limits.scopeReadBudget(),
+                limits.scopeTotalReadBudget());
+        if (!reservation.granted()) {
+            throw new PrivacyRefusedException("SCOPE_READ_BUDGET", path,
+                    reservation.refusedBy() == ReadReservation.Refusal.SCOPE_TOTAL
+                            ? "this scope has reached its read total of " + limits.scopeTotalReadBudget()
+                            : "this subject would pass " + limits.scopeReadBudget() + " source reads in this scope");
+        }
+        settle(reservation, 0);
     }
 
     /** Describes the named source through this orchestrator's own scrubber, the one that scrubs it. */
@@ -687,6 +1061,16 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                        PrivacyContext context, InvestigationContext investigationContext,
                        String decision, List<SourceOutcome> sources, String correlationId,
                        Map<String, String> dispositions) {
+        audit(request.toolName(), request.auditedEntityType(), request.rejectedArguments(), request.approvalId(),
+                request.approverId(), request.externalCorrelationId(), subjectToken, fingerprint, context,
+                investigationContext, decision, sources, correlationId, dispositions);
+    }
+
+    private void audit(String toolName, String auditedEntityType, Set<String> rejectedArguments,
+                       String approvalId, String approverId, Optional<ExternalCorrelationId> externalId,
+                       String subjectToken, String fingerprint, PrivacyContext context,
+                       InvestigationContext investigationContext, String decision, List<SourceOutcome> sources,
+                       String correlationId, Map<String, String> dispositions) {
         // Name and status only, and always the real source name: the audit trail
         // is an operational record for an operator, not a view a caller sees, so
         // it is never subject to SourceAliasing's capability check.
@@ -694,10 +1078,10 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                 .map(outcome -> outcome.sourceName() + ":" + outcome.status())
                 .collect(Collectors.toCollection(LinkedHashSet::new));
         audit.record(new AuditEntry(investigationContext.principalId(), investigationContext.clientId(),
-                request.toolName(), request.auditedEntityType(), subjectToken, fingerprint,
+                toolName, auditedEntityType, subjectToken, fingerprint,
                 context.redactionProfile(), context.scopeId(), context.purpose(),
-                investigationContext.caseId(), decision, names, request.rejectedArguments(),
-                correlationId, dispositions, request.approvalId(), request.approverId(),
-                request.externalCorrelationId().map(ExternalCorrelationId::value).orElse("")));
+                investigationContext.caseId(), decision, names, rejectedArguments,
+                correlationId, dispositions, approvalId, approverId,
+                externalId.map(ExternalCorrelationId::value).orElse("")));
     }
 }

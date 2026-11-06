@@ -2,6 +2,7 @@ package io.github.aindriub.dataprism.core.spi;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -18,6 +19,11 @@ import java.util.regex.Pattern;
  * @param inputKeys        key namespaces accepted as the subject key; at most {@value #MAX_INPUT_KEYS}
  * @param cost             advisory hint; nullable
  * @param freshness        advisory hint; nullable
+ * @param namespaceTypes   which entity type a read keyed by each input namespace answers; each key must be in
+ *                         {@code inputKeys} and each value in {@code entityTypes}. Used by {@code follow} to name
+ *                         the type of the read. A source with no declared type is read as the sentinel type
+ *                         {@value #UNDECLARED_ENTITY_TYPE}; one declared type needs no mapping; several declared
+ *                         types need one entry per input namespace, and a source without it is not a link target
  */
 public record SourceDescription(
         Set<String> entityTypes,
@@ -25,9 +31,13 @@ public record SourceDescription(
         String realDescription,
         List<KeyNamespace> inputKeys,
         CostHint cost,
-        FreshnessHint freshness) {
+        FreshnessHint freshness,
+        Map<KeyNamespace, String> namespaceTypes) {
 
     public static final int MAX_INPUT_KEYS = 8;
+
+    /** The entity type a followed read carries when the source declares no entity type. */
+    public static final String UNDECLARED_ENTITY_TYPE = "entity";
 
     private static final Pattern ENTITY_TYPE = Pattern.compile("[A-Za-z][A-Za-z0-9_-]{0,63}");
 
@@ -51,10 +61,26 @@ public record SourceDescription(
             }
         }
         inputKeys = List.copyOf(inputKeys);
+        Objects.requireNonNull(namespaceTypes, "namespaceTypes");
+        for (Map.Entry<KeyNamespace, String> mapped : namespaceTypes.entrySet()) {
+            if (mapped.getKey() == null || !inputKeys.contains(mapped.getKey())) {
+                throw new IllegalArgumentException("a mapped namespace must be one of the input keys");
+            }
+            if (mapped.getValue() == null || !entityTypes.contains(mapped.getValue())) {
+                throw new IllegalArgumentException("a mapped type must be one of the entity types");
+            }
+        }
+        namespaceTypes = Map.copyOf(namespaceTypes);
+    }
+
+    /** Declares no namespace-to-type mapping. */
+    public SourceDescription(Set<String> entityTypes, String aliasDescription, String realDescription,
+                             List<KeyNamespace> inputKeys, CostHint cost, FreshnessHint freshness) {
+        this(entityTypes, aliasDescription, realDescription, inputKeys, cost, freshness, Map.of());
     }
 
     /** Declares nothing: the catalog generates a neutral description. */
     public static SourceDescription undeclared() {
-        return new SourceDescription(Set.of(), null, null, List.of(), null, null);
+        return new SourceDescription(Set.of(), null, null, List.of(), null, null, Map.of());
     }
 }
