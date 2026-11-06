@@ -31,4 +31,14 @@ public interface AuditCheckpointSink {
     default java.util.List<AuditCheckpoint> shutdownCheckpoints() {
         return java.util.List.of();
     }
+
+    /**
+     * The {@link AuditCheckpoint.Kind#CRASH_LINE_ACCEPTED} checkpoints already recorded here: the audit lines an
+     * operator confirmed as crash lines, which {@link io.github.aindriub.dataprism.audit.retention.AuditRetention}
+     * tolerates and nothing else. A sink that cannot read back returns the empty list, and then no line is
+     * tolerated: it fails closed. A read that throws makes purge fail closed.
+     */
+    default java.util.List<AuditCheckpoint> crashLinesAccepted() {
+        return java.util.List.of();
+    }
 }

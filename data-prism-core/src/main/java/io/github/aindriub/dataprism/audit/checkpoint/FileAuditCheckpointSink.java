@@ -93,6 +93,11 @@ public final class FileAuditCheckpointSink implements AuditCheckpointSink, Close
         return readKind(AuditCheckpoint.Kind.SHUTDOWN);
     }
 
+    @Override
+    public synchronized java.util.List<AuditCheckpoint> crashLinesAccepted() {
+        return readKind(AuditCheckpoint.Kind.CRASH_LINE_ACCEPTED);
+    }
+
     private java.util.List<AuditCheckpoint> readKind(AuditCheckpoint.Kind kind) {
         java.util.List<AuditCheckpoint> anchors = new java.util.ArrayList<>();
         try {
