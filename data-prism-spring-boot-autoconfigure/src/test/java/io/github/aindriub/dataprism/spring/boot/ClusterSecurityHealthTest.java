@@ -5,17 +5,24 @@ import io.github.aindriub.dataprism.hazelcast.ClusterSecurityStatus;
 import io.github.aindriub.dataprism.hazelcast.ClusterSecurityStatus.Reason;
 import io.github.aindriub.dataprism.hazelcast.HazelcastOversightState;
 import io.github.aindriub.dataprism.hazelcast.PrivacyCluster;
+import io.github.aindriub.dataprism.hazelcast.StalePauseFixture;
 import io.github.aindriub.dataprism.oversight.OversightState;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.boot.actuate.endpoint.SecurityContext;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.autoconfigure.availability.ApplicationAvailabilityAutoConfiguration;
 import org.springframework.boot.health.actuate.endpoint.AdditionalHealthEndpointPath;
 import org.springframework.boot.health.actuate.endpoint.HealthEndpointGroup;
 import org.springframework.boot.health.actuate.endpoint.HealthEndpointGroups;
 import org.springframework.boot.health.actuate.endpoint.HttpCodeStatusMapper;
 import org.springframework.boot.health.actuate.endpoint.StatusAggregator;
+import org.springframework.boot.health.autoconfigure.actuate.endpoint.AvailabilityProbesAutoConfiguration;
+import org.springframework.boot.health.autoconfigure.actuate.endpoint.HealthEndpointAutoConfiguration;
+import org.springframework.boot.health.autoconfigure.application.AvailabilityHealthContributorAutoConfiguration;
+import org.springframework.boot.health.autoconfigure.contributor.HealthContributorAutoConfiguration;
+import org.springframework.boot.health.autoconfigure.registry.HealthContributorRegistryAutoConfiguration;
 import org.springframework.boot.health.contributor.Health;
 import org.springframework.boot.health.contributor.HealthIndicator;
 import org.springframework.boot.health.contributor.Status;
@@ -119,6 +126,27 @@ class ClusterSecurityHealthTest {
         assertThat(processed.getPrimary()).isSameAs(primary);
     }
 
+    /**
+     * Boot adds the readiness group in a post-processor of its own that runs last, so DataPrismAutoConfiguration must
+     * be ordered after AvailabilityProbesAutoConfiguration: this is Boot's real HealthEndpointGroups, with default
+     * probes, in a context whose only DataPrism part is the real auto-configuration.
+     */
+    @Test void boots_real_readiness_group_has_the_contributor_and_the_liveness_group_does_not() {
+        embedded().withConfiguration(AutoConfigurations.of(ApplicationAvailabilityAutoConfiguration.class,
+                        HealthContributorRegistryAutoConfiguration.class, HealthContributorAutoConfiguration.class,
+                        HealthEndpointAutoConfiguration.class, AvailabilityHealthContributorAutoConfiguration.class,
+                        AvailabilityProbesAutoConfiguration.class))
+                .run(result -> {
+                    assertThat(result).hasNotFailed();
+                    HealthEndpointGroups groups = result.getBean(HealthEndpointGroups.class);
+                    assertThat(groups.getNames()).contains("readiness", "liveness");
+                    assertThat(groups.get("readiness").isMember("clusterSecurity")).isTrue();
+                    assertThat(groups.get("readiness").isMember("readinessState")).isTrue();
+                    assertThat(groups.get("liveness").isMember("clusterSecurity")).isFalse();
+                    assertThat(groups.get("liveness").isMember("livenessState")).isTrue();
+                });
+    }
+
     @Test void no_readiness_group_is_created_when_there_is_none() {
         HealthEndpointGroups groups = HealthEndpointGroups.of(new Group(name -> true), Map.of());
         assertThat(new ClusterSecurityHealth.Contributor(() -> new ClusterSecurityStatus(true, Reason.NONE, 1, 0))
@@ -183,6 +211,23 @@ class ClusterSecurityHealthTest {
             assertThat(result.getBean(BEAN, HealthIndicator.class).health().getDetails())
                     .containsEntry("reason", read.reason().name());
         });
+    }
+
+    /**
+     * The cluster's own gate stays open while the pause document is stale; only the oversight state knows. A keyless
+     * member on a fake clock lets the lease lapse with no sleep: the cluster still serves, the contributor is DOWN.
+     */
+    @Test void a_stale_pause_document_is_down_while_the_cluster_itself_still_serves() {
+        try (StalePauseFixture fixture = new StalePauseFixture(ClusterConfigurationTest.uniqueName())) {
+            ClusterSecurityHealth.Contributor contributor = new ClusterSecurityHealth.Contributor(
+                    () -> ClusterSecurityHealth.statusOf(fixture.cluster(), fixture.state()));
+            assertThat(contributor.health().getStatus()).as("before the lease lapses").isEqualTo(Status.UP);
+            fixture.advancePastLease();
+            assertThat(fixture.cluster().securityStatus().serving()).isTrue();
+            Health health = contributor.health();
+            assertThat(health.getStatus()).isEqualTo(Status.DOWN);
+            assertThat(health.getDetails()).containsEntry("reason", "PAUSE_NOT_FRESH");
+        }
     }
 
     @Test void another_oversight_state_falls_back_to_the_cluster_status() {
