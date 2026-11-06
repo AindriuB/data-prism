@@ -4,6 +4,7 @@ import tools.jackson.databind.json.JsonMapper;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
+import io.github.aindriub.dataprism.orchestration.catalog.CatalogQueries;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
 import io.github.aindriub.dataprism.security.ScopeResolver;
@@ -11,6 +12,7 @@ import io.github.aindriub.dataprism.security.SecurityRefusedException;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpServer;
+import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.McpTransportContextExtractor;
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
@@ -23,6 +25,8 @@ import jakarta.servlet.http.HttpServletRequest;
 
 import java.io.InputStream;
 import java.time.Clock;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 import java.util.Objects;
 
@@ -94,16 +98,34 @@ public final class DataPrismMcpServer {
                                       boolean singlePrincipalDevelopmentMode, boolean productionDeployment,
                                       PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
                                       ToolOptions options) {
+        return stdio(orchestrator, authorizationService, scopeResolver, developmentCaller,
+                singlePrincipalDevelopmentMode, productionDeployment, metrics, audit, clock, options, null,
+                ListSourcesTool.DEFAULT_PAGE_MAX_LENGTH);
+    }
+
+    /**
+     * As above, also serving {@code list_sources} and {@code describe_source}.
+     *
+     * @param catalog       the catalog answers; {@code null} serves neither tool
+     * @param pageMaxLength the configured {@code dataprism.links.max-length}, the bound of the {@code page}
+     *                      argument in the served schemas
+     */
+    public static McpSyncServer stdio(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
+                                      ScopeResolver scopeResolver, AuthenticatedCaller developmentCaller,
+                                      boolean singlePrincipalDevelopmentMode, boolean productionDeployment,
+                                      PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
+                                      ToolOptions options, CatalogQueries catalog, int pageMaxLength) {
         Objects.requireNonNull(options, "options");
         return build(orchestrator, authorizationService, scopeResolver, developmentCaller,
-                singlePrincipalDevelopmentMode, productionDeployment, metrics, audit, clock, options);
+                singlePrincipalDevelopmentMode, productionDeployment, metrics, audit, clock, options, catalog,
+                pageMaxLength);
     }
 
     private static McpSyncServer build(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
                                        ScopeResolver scopeResolver, AuthenticatedCaller developmentCaller,
                                        boolean singlePrincipalDevelopmentMode, boolean productionDeployment,
                                        PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
-                                       ToolOptions options) {
+                                       ToolOptions options, CatalogQueries catalog, int pageMaxLength) {
         if (!singlePrincipalDevelopmentMode || productionDeployment) {
             throw new SecurityRefusedException("STDIO_DEVELOPMENT_ONLY",
                     "stdio is a single-principal development transport and refuses to start "
@@ -112,7 +134,7 @@ public final class DataPrismMcpServer {
         Objects.requireNonNull(developmentCaller, "developmentCaller");
 
         Wiring wiring = Wiring.of(orchestrator, authorizationService, scopeResolver, metrics, audit, clock,
-                developmentCaller, options);
+                developmentCaller, options, catalog, pageMaxLength);
         var transport = new StdioServerTransportProvider(wiring.json());
 
         return syncServer(wiring, transport);
@@ -128,7 +150,7 @@ public final class DataPrismMcpServer {
                 .serverInfo("data-prism", VERSION)
                 .instructions(INSTRUCTIONS)
                 .capabilities(McpSchema.ServerCapabilities.builder().tools(true).build())
-                .tools(wiring.get().specification(), wiring.compare().specification())
+                .tools(wiring.specifications())
                 .build();
     }
 
@@ -139,7 +161,7 @@ public final class DataPrismMcpServer {
                 .serverInfo("data-prism", VERSION)
                 .instructions(INSTRUCTIONS)
                 .capabilities(McpSchema.ServerCapabilities.builder().tools(true).build())
-                .tools(wiring.get().specification(), wiring.compare().specification())
+                .tools(wiring.specifications())
                 .build();
     }
 
@@ -167,21 +189,39 @@ public final class DataPrismMcpServer {
                                                String endpointPath,
                                                PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
                                                ToolOptions options) {
+        return streamableHttp(orchestrator, authorizationService, scopeResolver, contextExtractor, endpointPath,
+                metrics, audit, clock, options, null, ListSourcesTool.DEFAULT_PAGE_MAX_LENGTH);
+    }
+
+    /**
+     * As above, also serving {@code list_sources} and {@code describe_source}.
+     *
+     * @param catalog       the catalog answers; {@code null} serves neither tool
+     * @param pageMaxLength the configured {@code dataprism.links.max-length}
+     */
+    public static HttpTransport streamableHttp(ContextOrchestrator orchestrator,
+                                               AuthorizationService authorizationService,
+                                               ScopeResolver scopeResolver,
+                                               McpTransportContextExtractor<HttpServletRequest> contextExtractor,
+                                               String endpointPath,
+                                               PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
+                                               ToolOptions options, CatalogQueries catalog, int pageMaxLength) {
         Objects.requireNonNull(options, "options");
         return build(orchestrator, authorizationService, scopeResolver, contextExtractor, endpointPath,
-                metrics, audit, clock, options);
+                metrics, audit, clock, options, catalog, pageMaxLength);
     }
 
     private static HttpTransport build(ContextOrchestrator orchestrator,
                                        AuthorizationService authorizationService, ScopeResolver scopeResolver,
                                        McpTransportContextExtractor<HttpServletRequest> contextExtractor,
                                        String endpointPath, PrivacyMetrics metrics, AuditRecorder audit,
-                                       Clock clock, ToolOptions options) {
+                                       Clock clock, ToolOptions options, CatalogQueries catalog,
+                                       int pageMaxLength) {
         Objects.requireNonNull(contextExtractor, "contextExtractor");
         Objects.requireNonNull(endpointPath, "endpointPath");
 
         Wiring wiring = Wiring.of(orchestrator, authorizationService, scopeResolver, metrics, audit, clock,
-                null, options);
+                null, options, catalog, pageMaxLength);
         HttpServletStreamableServerTransportProvider transport = HttpServletStreamableServerTransportProvider
                 .builder()
                 .jsonMapper(wiring.json())
@@ -200,17 +240,44 @@ public final class DataPrismMcpServer {
      * keeps every byte a model sees on the engine's mapper.
      */
     record Wiring(JsonMapper mapper, McpJsonMapper json, GetEntityContextTool get,
-                  CompareEntitySourcesTool compare) {
+                  CompareEntitySourcesTool compare, ListSourcesTool list, DescribeSourceTool describe) {
 
         static Wiring of(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
                          ScopeResolver scopeResolver, PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
                          AuthenticatedCaller developmentCaller, ToolOptions options) {
+            return of(orchestrator, authorizationService, scopeResolver, metrics, audit, clock, developmentCaller,
+                    options, null, ListSourcesTool.DEFAULT_PAGE_MAX_LENGTH);
+        }
+
+        /** @param catalog {@code null} serves neither catalog tool */
+        static Wiring of(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
+                         ScopeResolver scopeResolver, PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
+                         AuthenticatedCaller developmentCaller, ToolOptions options, CatalogQueries catalog,
+                         int pageMaxLength) {
             JsonMapper mapper = DataPrismObjectMapper.create();
             return new Wiring(mapper, new JacksonMcpJsonMapper(mapper),
                     new GetEntityContextTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
                             audit, clock, developmentCaller, options),
                     new CompareEntitySourcesTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
-                            audit, clock, developmentCaller, options));
+                            audit, clock, developmentCaller, options),
+                    catalog == null ? null : new ListSourcesTool(catalog, pageMaxLength, authorizationService,
+                            scopeResolver, mapper, metrics, audit, clock, developmentCaller, options),
+                    catalog == null ? null : new DescribeSourceTool(catalog, authorizationService, scopeResolver,
+                            mapper, metrics, audit, clock, developmentCaller, options));
+        }
+
+        /** The tools to register: the two entity tools, and the two catalog tools when a catalog was given. */
+        McpServerFeatures.SyncToolSpecification[] specifications() {
+            List<McpServerFeatures.SyncToolSpecification> specs = new ArrayList<>();
+            specs.add(get.specification());
+            specs.add(compare.specification());
+            if (list != null) {
+                specs.add(list.specification());
+            }
+            if (describe != null) {
+                specs.add(describe.specification());
+            }
+            return specs.toArray(new McpServerFeatures.SyncToolSpecification[0]);
         }
     }
 

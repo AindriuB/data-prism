@@ -73,6 +73,7 @@ public final class FileAuditSink implements AuditSink, Closeable {
 
     private final Path path;
     private final FileChannel channel;
+    private final UninterruptedWrites writes;
     private volatile IOException poisonedBy;
 
     public FileAuditSink(Path path) {
@@ -87,6 +88,7 @@ public final class FileAuditSink implements AuditSink, Closeable {
             throw new OpenFailedException("AUDIT_SINK_OPEN_FAILED", path, e);
         }
         this.channel = opened;
+        this.writes = UninterruptedWrites.SHARED;
     }
 
     /**
@@ -137,13 +139,32 @@ public final class FileAuditSink implements AuditSink, Closeable {
      * production code uses.
      */
     FileAuditSink(Path path, FileChannel channel) {
-        this.path = path;
-        this.channel = channel;
+        this(path, channel, UninterruptedWrites.SHARED);
     }
 
+    FileAuditSink(Path path, FileChannel channel, UninterruptedWrites writes) {
+        this.path = path;
+        this.channel = channel;
+        this.writes = writes;
+    }
+
+    /**
+     * Deliberately not synchronized: the caller waits for the writer thread, which takes this monitor in
+     * {@link #recordLine}. Holding it here would deadlock. {@code recordLine} serializes the writes.
+     */
     @Override
-    public synchronized void record(AuditEvent event) {
-        recordLine(AuditRecordFormat.serialize(event));
+    public void record(AuditEvent event) {
+        if (poisonedBy != null) {
+            throw new PoisonedException("AUDIT_SINK_POISONED", path, poisonedBy);
+        }
+        String content = AuditRecordFormat.serialize(event);
+        try {
+            writes.run(() -> recordLine(content));
+        } catch (UninterruptedWrites.HandOffException e) {
+            // Nothing was written, but the caller must not carry on as if audit were healthy.
+            poisonedBy = new IOException(e);
+            throw e;
+        }
     }
 
     /** Appends {@code line} and a newline, with this class's fsync and poisoning discipline. */

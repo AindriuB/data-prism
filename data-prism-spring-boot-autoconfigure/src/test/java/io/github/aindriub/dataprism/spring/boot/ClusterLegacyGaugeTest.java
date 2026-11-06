@@ -4,6 +4,7 @@ import com.hazelcast.core.Hazelcast;
 import io.github.aindriub.dataprism.core.metrics.Metric;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.hazelcast.ClusterMembership;
+import io.github.aindriub.dataprism.hazelcast.ClusterSecuritySettings;
 import io.github.aindriub.dataprism.hazelcast.PrivacyCluster;
 import io.github.aindriub.dataprism.hazelcast.seal.ClusterKeys;
 import org.junit.jupiter.api.AfterEach;
@@ -114,18 +115,19 @@ class ClusterLegacyGaugeTest {
         ClusterKeys keys = new ClusterKeys("cluster-1",
                 ClusterKeyConfigurationTest.material("cluster-1", "DATAPRISM_CLUSTER_KEY_REF"), null, null, null,
                 null, "name-1", ClusterKeyConfigurationTest.material("name-1", "DATAPRISM_NAME_KEY_REF"));
+        ClusterSecuritySettings trusted = ClusterSecuritySettings.defaults().withTrustedNetwork(true, List.of(), true);
         runner(RecordingMetrics.class, p).run(result -> {
             assertThat(result).hasNotFailed();
             PrivacyCluster cluster = result.getBean(PrivacyCluster.class);
             try (PrivacyCluster peer = PrivacyCluster.embedded(
                     ClusterMembership.tcpIp(name, members).withPort(second).withInterface("127.0.0.1"), false,
-                    OptionalInt.of(1), keys)) {
+                    OptionalInt.of(1), Duration.ofMinutes(5), keys, trusted)) {
                 DoubleSupplier gauge = GAUGES.get(Metric.CLUSTER_LEGACY_ENTRIES);
                 assertThat(gauge.getAsDouble()).isZero();
                 cluster.instance().getMap("dataprism.identity").put("legacy-key", "legacy-value");
                 try (PrivacyCluster refused = PrivacyCluster.embedded(
                         ClusterMembership.tcpIp(name, members).withPort(third).withInterface("127.0.0.1"), false,
-                        OptionalInt.of(1), keys)) {
+                        OptionalInt.of(1), Duration.ofMinutes(5), keys, trusted)) {
                     // Normally refused for the legacy state; if it starts, its join still ran the check.
                 } catch (RuntimeException expected) {
                     // The legacy state is found at its start.

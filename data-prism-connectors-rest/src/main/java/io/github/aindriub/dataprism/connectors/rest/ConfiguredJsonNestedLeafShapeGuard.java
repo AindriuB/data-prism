@@ -2,7 +2,10 @@ package io.github.aindriub.dataprism.connectors.rest;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ObjectNode;
+import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.core.model.FieldMetadata;
+import io.github.aindriub.dataprism.core.model.PrivacyContext;
+import io.github.aindriub.dataprism.core.policy.PrivacyPolicyResolver;
 import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 
 import java.util.Map;
@@ -21,6 +24,13 @@ import java.util.Map;
  * schema drift the operator's catalogue is stale against, not a gap in the
  * catalogue, and it gets its own stable code so the two are never confused
  * downstream.
+ *
+ * <p>The same applies to a root leaf (a field of the source itself, not of a
+ * nested catalogue): a structure there refuses with this code, never with
+ * {@code UNCLASSIFIED_STRUCTURE}. The one exemption is a root leaf the
+ * profile's policy resolves to {@code REMOVE}: it is described as absent, so
+ * nothing described verbatim is scrubbed and the engine drops it as before.
+ * Nested leaves have no such exemption.
  *
  * <p>Runs before the real engine scrubs anything, so the refusal fires
  * instead of core's, not merely alongside it.
@@ -48,7 +58,8 @@ final class ConfiguredJsonNestedLeafShapeGuard {
     }
 
     static void check(String sourceName, ObjectNode body, Map<String, FieldMetadata> rootFields,
-                      ConfiguredJsonFieldMetadataResolver resolver) {
+                      ConfiguredJsonFieldMetadataResolver resolver, PrivacyPolicyResolver policy,
+                      PrivacyContext context) {
         for (Map.Entry<String, FieldMetadata> entry : rootFields.entrySet()) {
             String field = entry.getKey();
             FieldMetadata md = entry.getValue();
@@ -59,6 +70,12 @@ final class ConfiguredJsonNestedLeafShapeGuard {
             Class<?> token = descendType(md, value.isArray());
             Map<String, FieldMetadata> nestedFields = token == null ? null : resolver.nestedFields(token);
             if (nestedFields == null) {
+                // A root leaf: described as a scalar, so a structure there is the same schema drift.
+                // Unless the profile removes it: it is described as absent, and the engine drops it.
+                if (policy.resolve(md, context).action() == PrivacyAction.REMOVE) {
+                    continue;
+                }
+                checkLeaf(sourceName, value, "$." + field, "catalogue");
                 continue;
             }
             if (value.isObject()) {
@@ -93,19 +110,22 @@ final class ConfiguredJsonNestedLeafShapeGuard {
             if (leafValue == null || leafValue.isNull()) {
                 continue;
             }
-            if (leafValue.isObject()) {
-                throw new PrivacyRefusedException(CODE, sourceName + path + "." + leafField,
-                        "nested catalogue leaf field is declared scalar/classified but the response"
+            checkLeaf(sourceName, leafValue, path + "." + leafField, "nested catalogue");
+        }
+    }
+
+    private static void checkLeaf(String sourceName, JsonNode leafValue, String leafPath, String kind) {
+        if (leafValue.isObject()) {
+            throw new PrivacyRefusedException(CODE, sourceName + leafPath,
+                    kind + " leaf field is declared scalar/classified but the response"
+                            + " carries a structure there; the catalogue is stale against the wire shape");
+        }
+        if (leafValue.isArray()) {
+            int objectIndex = firstObjectIndex(leafValue);
+            if (objectIndex >= 0) {
+                throw new PrivacyRefusedException(CODE, sourceName + leafPath + "[" + objectIndex + "]",
+                        kind + " leaf field is declared scalar/classified but the response"
                                 + " carries a structure there; the catalogue is stale against the wire shape");
-            }
-            if (leafValue.isArray()) {
-                int objectIndex = firstObjectIndex(leafValue);
-                if (objectIndex >= 0) {
-                    throw new PrivacyRefusedException(CODE,
-                            sourceName + path + "." + leafField + "[" + objectIndex + "]",
-                            "nested catalogue leaf field is declared scalar/classified but the response"
-                                    + " carries a structure there; the catalogue is stale against the wire shape");
-                }
             }
         }
     }

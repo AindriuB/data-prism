@@ -17,6 +17,7 @@ public enum Metric {
     IDENTITY_CACHE_MISS("dataprism.identity.cache.miss"),
     SOURCE_LATENCY("dataprism.source.latency"),
     SOURCE_ERRORS("dataprism.source.errors"),
+    SOURCE_CALLS_SATURATED("dataprism.source.calls_saturated"),
     IDENTITY_COLLISION("dataprism.identity.collision"),
     PRIVACY_FAILCLOSED("dataprism.privacy.failclosed"),
     PRIVACY_SOURCE_WITHHELD("dataprism.privacy.source.withheld"),
