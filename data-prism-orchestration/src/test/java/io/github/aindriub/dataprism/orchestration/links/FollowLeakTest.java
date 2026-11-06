@@ -198,4 +198,48 @@ class FollowLeakTest {
         assertThat(failure).isNotNull();
         assertClean(rig, token, "", failure);
     }
+
+    // ---- a target record that echoes a key (sealed-links P4, review round 1) ----
+
+    @Test
+    void aDirectTargetRecordEchoingTheChainedKeyIsRefusedByTheRealRawValueCheck() {
+        FollowRig rig = new FollowRig().realValidators()
+                .source("parcel-api", new FollowTest.Echo(CHAINED), "parcel-ref");
+        String token = rig.direct("parcel-api", "parcel-ref", CHAINED);
+
+        Throwable failure = catchThrowable(() -> rig.follow(token));
+
+        assertThat(failure).isInstanceOf(PrivacyRefusedException.class);
+        assertThat(((PrivacyRefusedException) failure).code()).isEqualTo("VALIDATION_FAILED");
+        assertClean(rig, token, "", failure);
+    }
+
+    @Test
+    void aTranslatedTargetRecordEchoingTheChainedKeyIsWithheldAndTheOtherItemStays() throws Exception {
+        FollowRig rig = translated().realValidators();
+        rig.records.put(OUT_1, new FollowTest.Echo(CHAINED));
+        rig.records.put(OUT_2, new FollowTest.Echo("fine"));
+        String token = rig.translated("depot-api", "parcel-ref", "parcel-to-depot", CHAINED);
+
+        ContextResponse response = rig.follow(token);
+
+        var result = response.sources().get(rig.label("depot-api"));
+        assertThat(result.items()).hasSize(1);
+        assertThat(result.items().get(0).entity().get("note").asString()).isEqualTo("fine");
+        assertClean(rig, token, LinkBuilderTest.MAPPER.writeValueAsString(response), null);
+    }
+
+    @Test
+    void aTranslatedTargetRecordEchoingAnotherKeyTheResolverReturnedIsRefused() {
+        FollowRig rig = translated().realValidators();
+        rig.records.put(OUT_1, new FollowTest.Echo(OUT_2));
+        rig.records.put(OUT_2, new FollowTest.Echo(OUT_1));
+        String token = rig.translated("depot-api", "parcel-ref", "parcel-to-depot", CHAINED);
+
+        Throwable failure = catchThrowable(() -> rig.follow(token));
+
+        assertThat(failure).isInstanceOf(PrivacyRefusedException.class);
+        assertThat(((PrivacyRefusedException) failure).code()).isEqualTo("VALIDATION_FAILED");
+        assertClean(rig, token, "", failure);
+    }
 }

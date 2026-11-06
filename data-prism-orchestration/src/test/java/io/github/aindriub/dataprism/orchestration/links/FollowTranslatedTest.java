@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.orchestration.links;
 
+import io.github.aindriub.dataprism.core.limits.RequestLimits;
 import io.github.aindriub.dataprism.core.metrics.Metric;
 import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 import io.github.aindriub.dataprism.core.spi.KeyResolutionException;
@@ -10,11 +11,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 
+import static io.github.aindriub.dataprism.orchestration.links.LinkBuilderTest.NOW;
 import static io.github.aindriub.dataprism.orchestration.links.LinkBuilderTest.SCOPE;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -249,5 +253,22 @@ class FollowTranslatedTest {
         rig.scrubFailure = record -> new PrivacyRefusedException("UNCLASSIFIED_FIELD", "$.x", "no");
 
         assertThat(FollowTest.refusal(rig, link(rig)).code()).isEqualTo("UNCLASSIFIED_FIELD");
+    }
+
+    @Test
+    void noReadStartsAfterTheFollowsDeadlineAndTheItemsAreTruncated() {
+        FollowRig rig = rig(KEYS.subList(0, 3), false);
+        rig.limits = new RequestLimits(8, 500, 512 * 1024, Duration.ofMillis(250), 4, 100,
+                Duration.ofMillis(300), 50_000);
+        rig.fetchTakes = Duration.ofMillis(200);
+
+        SourceResult result = rig.follow(link(rig)).sources().get(rig.label("depot-api"));
+
+        Instant deadline = NOW.plusMillis(300);
+        assertThat(rig.fetchStarts).isNotEmpty().allSatisfy(start -> assertThat(start).isBefore(deadline));
+        assertThat(rig.fetches.get()).isEqualTo(2);
+        assertThat(result.items()).hasSize(2);
+        assertThat(result.itemsTruncated()).isTrue();
+        assertThat(rig.lastAudit().policyDecision()).isEqualTo("ALLOW");
     }
 }
