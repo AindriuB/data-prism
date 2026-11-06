@@ -34,7 +34,12 @@ public record SourceOutcome(String sourceName, Status status, Duration took, Str
          * The source answered, and the answer was withheld: scrubbing or validating it refused. Nothing of
          * the record is returned. The call itself is refused only when no source is left to answer.
          */
-        REFUSED
+        REFUSED,
+        /**
+         * Only for a translated {@code follow}: the key resolver failed, so nothing was read. Never falls back
+         * to a direct read or to the untranslated key.
+         */
+        RESOLVER_FAILED
     }
 
     public boolean answered() {
