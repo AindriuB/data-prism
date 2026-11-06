@@ -70,6 +70,7 @@ public final class SegmentedFileAuditSink implements AuditSink, Closeable {
     private LocalDate currentDate;
     private int currentIndex;
     private long currentSize;
+    private final UninterruptedWrites writes;
     private volatile RuntimeException poisonedBy;
 
     public SegmentedFileAuditSink(Path directory) {
@@ -114,9 +115,20 @@ public final class SegmentedFileAuditSink implements AuditSink, Closeable {
         this(directory, opener, suffix, renderer, 0);
     }
 
+    SegmentedFileAuditSink(Path directory, ChannelOpener opener, long maxSegmentBytes, UninterruptedWrites writes) {
+        this(directory, opener, SUFFIX, AuditRecordFormat::serialize, maxSegmentBytes, writes);
+    }
+
     private SegmentedFileAuditSink(Path directory, ChannelOpener opener, String suffix,
                                    java.util.function.Function<AuditEvent, String> renderer,
                                    long maxSegmentBytes) {
+        this(directory, opener, suffix, renderer, maxSegmentBytes, UninterruptedWrites.SHARED);
+    }
+
+    private SegmentedFileAuditSink(Path directory, ChannelOpener opener, String suffix,
+                                   java.util.function.Function<AuditEvent, String> renderer,
+                                   long maxSegmentBytes, UninterruptedWrites writes) {
+        this.writes = writes;
         this.maxSegmentBytes = maxSegmentBytes;
         this.directory = directory;
         this.opener = opener;
@@ -172,31 +184,39 @@ public final class SegmentedFileAuditSink implements AuditSink, Closeable {
                     new IOException(poisonedBy));
         }
         try {
-            LocalDate date = event.timestamp().atZone(ZoneOffset.UTC).toLocalDate();
-            if (currentDate != null && date.isBefore(currentDate)) {
-                // The clock stepped back across midnight. The segment date never goes backwards:
-                // a writer's consecutive records must not land in an earlier file than their
-                // predecessor, or a directory read in date order would see a false break.
-                date = currentDate;
-            }
-            if (current == null || !date.equals(currentDate)) {
-                switchTo(date, firstIndex(date));
-            }
-            String line = renderer.apply(event);
-            if (maxSegmentBytes > 0) {
-                long bytes = line.getBytes(java.nio.charset.StandardCharsets.UTF_8).length + 1L;
-                if (currentSize > 0 && currentSize + bytes > maxSegmentBytes) {
-                    switchTo(currentDate, currentIndex + 1);
-                }
-                current.recordLine(line);
-                currentSize += bytes;
-                return;
-            }
-            current.recordLine(line);
+            writes.run(() -> recordInternal(event));
         } catch (RuntimeException e) {
             poisonedBy = e;
             throw e;
         }
+    }
+
+    /**
+     * Runs on the internal writer thread, so an interrupt of the caller never reaches a channel. Must stay
+     * unsynchronized: {@code record} holds the monitor while it waits for this.
+     */
+    private void recordInternal(AuditEvent event) {
+        LocalDate date = event.timestamp().atZone(ZoneOffset.UTC).toLocalDate();
+        if (currentDate != null && date.isBefore(currentDate)) {
+            // The clock stepped back across midnight. The segment date never goes backwards:
+            // a writer's consecutive records must not land in an earlier file than their
+            // predecessor, or a directory read in date order would see a false break.
+            date = currentDate;
+        }
+        if (current == null || !date.equals(currentDate)) {
+            switchTo(date, firstIndex(date));
+        }
+        String line = renderer.apply(event);
+        if (maxSegmentBytes > 0) {
+            long bytes = line.getBytes(java.nio.charset.StandardCharsets.UTF_8).length + 1L;
+            if (currentSize > 0 && currentSize + bytes > maxSegmentBytes) {
+                switchTo(currentDate, currentIndex + 1);
+            }
+            current.recordLine(line);
+            currentSize += bytes;
+            return;
+        }
+        current.recordLine(line);
     }
 
     /** Without a cap, always the unindexed segment; with one, the highest index already on disk for the day. */
@@ -241,7 +261,7 @@ public final class SegmentedFileAuditSink implements AuditSink, Closeable {
                 FileAuditSink.closeQuietly(channel);
                 throw e;
             }
-            current = new FileAuditSink(segment, channel);
+            current = new FileAuditSink(segment, channel, writes);
         } catch (IOException e) {
             throw new FileAuditSink.OpenFailedException("AUDIT_SINK_OPEN_FAILED", segment, e);
         }
