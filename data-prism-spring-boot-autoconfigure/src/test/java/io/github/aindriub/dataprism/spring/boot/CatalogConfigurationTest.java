@@ -106,6 +106,29 @@ class CatalogConfigurationTest {
     }
 
     @Test
+    void a_limit_that_is_not_an_integer_refuses_startup_with_the_stable_code() {
+        context.withPropertyValues("dataprism.catalog.unselected-source-limit=abc").run(result -> {
+            assertThat(result).hasFailed();
+            DataPrismConfigurationException refusal = refusal(result.getStartupFailure());
+            assertThat(refusal.code()).isEqualTo("INVALID_CATALOG_SETTING");
+            assertThat(refusal.getMessage()).contains("dataprism.catalog.unselected-source-limit")
+                    .doesNotContain("abc");
+        });
+    }
+
+    @Test
+    void a_description_that_names_the_host_of_a_property_configured_source_refuses_startup() {
+        described("ok").withPropertyValues("dataprism.sources.documented.base-url=https://an-alias:8443")
+                .run(result -> {
+                    assertThat(result).hasFailed();
+                    DataPrismConfigurationException refusal = refusal(result.getStartupFailure());
+                    assertThat(refusal.code()).isEqualTo("SOURCE_DESCRIPTION_LEAKS_NAME");
+                    assertThat(refusal.getMessage()).doesNotContain("an alias description")
+                            .doesNotContain("an-alias");
+                });
+    }
+
+    @Test
     void a_limit_equal_to_max_sources_starts() {
         context.withPropertyValues("dataprism.catalog.unselected-source-limit=8")
                 .run(result -> assertThat(result).hasNotFailed());

@@ -16,6 +16,7 @@ dataPrismClusterApprovalStore | io.github.aindriub.dataprism.oversight.ApprovalS
 dataPrismClusterCallerRateLimiter | io.github.aindriub.dataprism.oversight.CallerRateLimiter
 dataPrismClusterOversightState | io.github.aindriub.dataprism.oversight.OversightState
 dataPrismClusterScopeBudget | io.github.aindriub.dataprism.core.limits.ScopeBudget
+dataPrismCompetingBeanLateChecks | io.github.aindriub.dataprism.spring.boot.PrivacyExtensionPoints$LateChecks
 dataPrismContextOrchestrator | io.github.aindriub.dataprism.orchestration.ContextOrchestrator
 dataPrismContractValidator | io.github.aindriub.dataprism.spring.boot.validation.DataPrismContractValidator
 dataPrismCorrelationMdc | io.github.aindriub.dataprism.core.correlation.CorrelationMdc

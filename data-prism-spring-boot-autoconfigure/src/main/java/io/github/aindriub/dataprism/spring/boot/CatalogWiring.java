@@ -23,12 +23,17 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Condition;
+import org.springframework.context.annotation.ConditionContext;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.type.AnnotatedTypeMetadata;
 
+import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -81,7 +86,7 @@ class CatalogWiring {
         checkChainableDeclarations(adapters, engines.getIfUnique());
         SourceCatalog catalog;
         try {
-            catalog = SourceCatalog.build(adapters, hosts.getIfAvailable(SourceHosts::none).byName());
+            catalog = SourceCatalog.build(adapters, sourceHosts(properties, hosts.getIfAvailable(SourceHosts::none)));
         } catch (IllegalArgumentException refused) {
             throw catalogRefusal(refused);
         }
@@ -93,6 +98,30 @@ class CatalogWiring {
         }
         log(catalog);
         return catalog;
+    }
+
+    /**
+     * The host of every configured source: each {@code dataprism.sources.<name>.base-url}, then the hosts the connector
+     * module published, which win for a name in both. A base URL that cannot be read here is left to the property
+     * validation, which refuses it with its own code.
+     */
+    private static Map<String, String> sourceHosts(DataPrismProperties properties, SourceHosts published) {
+        Map<String, String> hosts = new HashMap<>();
+        properties.getSources().forEach((name, source) -> {
+            String baseUrl = source == null ? null : source.getBaseUrl();
+            if (baseUrl != null && !baseUrl.isBlank()) {
+                try {
+                    String host = URI.create(baseUrl.strip()).getHost();
+                    if (host != null) {
+                        hosts.put(name, host);
+                    }
+                } catch (IllegalArgumentException unreadable) {
+                    // Not a URI: INVALID_SOURCE_URL is raised by the property validation.
+                }
+            }
+        });
+        hosts.putAll(published.byName());
+        return hosts;
     }
 
     /**
@@ -149,21 +178,22 @@ class CatalogWiring {
         CatalogProperties settings = properties.getCatalog();
         return OrchestrationOptions.defaults().withCatalog(catalog)
                 .withRealNames(new RealNamesPolicy(settings.getRealNamesScopes()))
-                .withUnselectedSourceLimit(settings.getUnselectedSourceLimit());
+                .withUnselectedSourceLimit(settings.unselectedSourceLimitValue());
     }
 
     /**
-     * The link keys, built only when {@code dataprism.links.key-id} is set: page links need them even while
+     * The link keys, built only when a link key is configured, by the same rule the startup check for an estate larger
+     * than one page uses ({@link LinksProperties#keyConfigured()}): page links need them even while
      * {@code dataprism.links.enabled} is false.
      */
     @Bean
-    @ConditionalOnProperty(prefix = "dataprism.links", name = "key-id")
+    @Conditional(LinkKeyConfigured.class)
     LinkKeys dataPrismLinkKeys(DataPrismProperties properties, ObjectProvider<HmacKeyReferenceResolver> resolver) {
         return LinkKeyResolution.resolve(properties, resolver.getIfAvailable());
     }
 
     @Bean
-    @ConditionalOnProperty(prefix = "dataprism.links", name = "key-id")
+    @Conditional(LinkKeyConfigured.class)
     LinkCodec dataPrismLinkCodec(LinkKeys keys, DataPrismProperties properties, Clock clock) {
         try {
             return new LinkCodec(new LinkSettings(properties.getLinks().getKeyId(), Optional.of(LINK_LIFETIME),
@@ -175,8 +205,9 @@ class CatalogWiring {
 
     /**
      * {@code list_sources} and {@code describe_source}. It asks the context's orchestrator (299), which holds the
-     * scrubber that really scrubs a configured source. Page links are not issued yet: without them a call returns the
-     * whole visible list, and startup has already refused an estate too large for that to be one page.
+     * scrubber that really scrubs a configured source. Page links are not issued yet (task 255): without them a call
+     * returns the whole visible list. Startup refuses an estate larger than one page only while no link key is
+     * configured; with a key configured it does not keep the list to one page until 255 adds the gate.
      */
     @Bean
     CatalogQueries dataPrismCatalogQueries(SourceCatalog catalog, OrchestrationOptions options,
@@ -187,7 +218,19 @@ class CatalogWiring {
         return new CatalogQueries(catalog, options.visibility(), new SourceAliasing(tokens), options.realNames(),
                 orchestrator, List.copyOf(validators),
                 new PagingSettings(paging.getListSources().getPageSize(), paging.getListSources().getMaxPageSize(),
-                        paging.getLifetime()),
+                        paging.lifetimeValue()),
                 null, false, metrics, clock);
+    }
+
+    /**
+     * True when {@code dataprism.links.key-id} has text, which is what {@link LinksProperties#keyConfigured()} says.
+     * {@code @ConditionalOnProperty} is not used: it reads the text {@code false} as "not set".
+     */
+    static final class LinkKeyConfigured implements Condition {
+        @Override
+        public boolean matches(ConditionContext context, AnnotatedTypeMetadata metadata) {
+            String keyId = context.getEnvironment().getProperty("dataprism.links.key-id");
+            return keyId != null && !keyId.isBlank();
+        }
     }
 }

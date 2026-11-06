@@ -887,7 +887,7 @@ public final class DataPrismPropertiesValidator {
      * patterns the real-names policy accepts. Names the property; the policy's rule text names no pattern.
      */
     private void validateCatalog() {
-        int limit = catalog.getUnselectedSourceLimit();
+        int limit = catalog.unselectedSourceLimitValue();
         if (limit < 1) {
             refuse("INVALID_CATALOG_SETTING", "dataprism.catalog.unselected-source-limit must be positive");
         }
@@ -906,12 +906,13 @@ public final class DataPrismPropertiesValidator {
 
     /** {@code dataprism.paging.*}: the rules of {@link PagingSettings}, which name the property and never the value. */
     private void validatePaging() {
-        if (paging.getLifetime() == null) {
+        java.time.Duration lifetime = paging.lifetimeValue();
+        if (lifetime == null) {
             refuse("INVALID_PAGING_SETTING", "dataprism.paging.lifetime must be positive");
         }
         try {
             new PagingSettings(paging.getListSources().getPageSize(), paging.getListSources().getMaxPageSize(),
-                    paging.getLifetime());
+                    lifetime);
         } catch (IllegalArgumentException invalid) {
             refuse("INVALID_PAGING_SETTING", ruleOf(invalid.getMessage(), PagingSettings.INVALID));
         }

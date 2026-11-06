@@ -117,6 +117,24 @@ class PagingConfigurationTest {
                 .run(result -> assertThat(result).hasNotFailed());
     }
 
+    @Test
+    void a_link_key_id_of_false_is_a_configured_key_and_is_refused_not_ignored() {
+        manySources(25).withPropertyValues("dataprism.links.key-id=false").run(result -> {
+            assertThat(result).hasFailed();
+            assertThat(refusal(result.getStartupFailure()).code()).isEqualTo("LINK_KEY_UNRESOLVED");
+        });
+    }
+
+    @Test
+    void a_lifetime_that_is_not_a_duration_refuses_startup_with_the_stable_code() {
+        context.withPropertyValues("dataprism.paging.lifetime=banana").run(result -> {
+            assertThat(result).hasFailed();
+            DataPrismConfigurationException refusal = refusal(result.getStartupFailure());
+            assertThat(refusal.code()).isEqualTo("INVALID_PAGING_SETTING");
+            assertThat(refusal.getMessage()).contains("dataprism.paging.lifetime").doesNotContain("banana");
+        });
+    }
+
     /** The reviewed customer adapter plus {@code extra} more, each with the source entry it must have. */
     private WebApplicationContextRunner manySources(int extra) {
         WebApplicationContextRunner runner = context;

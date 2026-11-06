@@ -1,16 +1,19 @@
 package io.github.aindriub.dataprism.spring.boot;
 
-import org.springframework.beans.factory.BeanFactoryUtils;
 import org.springframework.beans.factory.FactoryBean;
 import org.springframework.beans.factory.ListableBeanFactory;
+import org.springframework.beans.factory.SmartInitializingSingleton;
+import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
-import org.springframework.beans.factory.config.InstantiationAwareBeanPostProcessor;
+import org.springframework.beans.factory.support.BeanDefinitionRegistry;
+import org.springframework.beans.factory.support.RootBeanDefinition;
 
 import java.util.Arrays;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Supplier;
 
 /**
@@ -148,65 +151,89 @@ public final class PrivacyExtensionPoints {
         return BEANS.keySet();
     }
 
-    /** Set while a guard's late check runs, so that the creation of a raw factory it triggers cannot re-enter. */
-    private static final ThreadLocal<Boolean> CHECKING = new ThreadLocal<>();
+    /** The name of the one bean that runs every guard's late check; see {@link #refuseCompetingBeans}. */
+    private static final String LATE_CHECKS = "dataPrismCompetingBeanLateChecks";
 
     /**
      * Refuses startup when a bean definition other than {@code ownName} produces {@code type}, with the refusal
-     * {@code refusal} builds. Two checks, because Spring can answer the question at only one of two moments for a
-     * {@link FactoryBean} registered without a generic type (a raw one): its product type is unknown until it is
-     * created, {@code getBeanNamesForType(type, true, false)} never matches it, and Spring creates it for a type
-     * check only once the bean factory's configuration is frozen, which is after every
-     * {@code BeanFactoryPostProcessor} has run.
+     * {@code refusal} builds. Three checks, because Spring cannot read the type of a
+     * bean whose type is not declared (a raw {@link FactoryBean}, or a method declared to return {@code Object}):
+     * its type is unknown until it is created.
      *
      * <ol>
      * <li>Now, for every definition whose type is declared: the refusal comes before any singleton is created.
-     * <li>At the first bean instantiation after the configuration is frozen, once: for a raw factory. Only a factory
-     * whose type cannot be read without creating it is created for this.
+     * <li>As each bean is created, whatever it was declared to be: the refusal comes before anything is injected
+     * with it, so it is the refusal and not a "found 2 matching beans" error that the application sees.
+     * <li>After every singleton is instantiated ({@link SmartInitializingSingleton}), for the beans that really
+     * exist: a raw factory, or a bean declared as {@code Object}, wherever it is declared and whichever bean is
+     * created first. Startup fails before the context finishes refreshing, so before a server accepts a request.
+     * A bean that is lazy, or created on demand, is not seen by this check.
      * </ol>
      */
     static void refuseCompetingBeans(ConfigurableListableBeanFactory factory, Class<?> type, String ownName,
                                      Supplier<? extends RuntimeException> refusal) {
-        if (competing(factory, type, ownName, false)) {
+        if (competing(factory, type, ownName)) {
             throw refusal.get();
         }
-        factory.addBeanPostProcessor(new InstantiationAwareBeanPostProcessor() {
-            private final AtomicBoolean checked = new AtomicBoolean();
-
+        factory.addBeanPostProcessor(new BeanPostProcessor() {
             @Override
-            public Object postProcessBeforeInstantiation(Class<?> beanClass, String beanName) {
-                // Creating a raw factory for another guard's check calls back in here; that nested call must
-                // neither run nor use up this guard's one check, because the factory is still being created.
-                if (!factory.isConfigurationFrozen() || CHECKING.get() != null || checked.get()) {
-                    return null;
+            public Object postProcessAfterInitialization(Object bean, String beanName) {
+                if (!ownName.equals(beanName) && produces(bean, type)) {
+                    throw refusal.get();
                 }
-                CHECKING.set(Boolean.TRUE);
-                try {
-                    checked.set(true);
-                    if (competing(factory, type, ownName, true)) {
-                        throw refusal.get();
-                    }
-                } finally {
-                    CHECKING.remove();
-                }
-                return null;
+                return bean;
+            }
+        });
+        lateChecks(factory).add(() -> {
+            if (competing(factory, type, ownName)) {
+                throw refusal.get();
             }
         });
     }
 
-    private static boolean competing(ListableBeanFactory factory, Class<?> type, String ownName, boolean raw) {
-        Set<String> names = new LinkedHashSet<>(Arrays.asList(factory.getBeanNamesForType(type, true, false)));
-        if (raw) {
-            for (String factoryName : factory.getBeanNamesForType(FactoryBean.class, true, false)) {
-                String name = BeanFactoryUtils.transformedBeanName(factoryName);
-                if (!names.contains(name) && factory.getType(name, false) == null) {
-                    Class<?> product = factory.getType(name, true);
-                    if (product != null && type.isAssignableFrom(product)) {
-                        names.add(name);
-                    }
-                }
-            }
+    /** Whether {@code bean} is, or is a factory for, a {@code type}; reads a factory's declared product type only. */
+    private static boolean produces(Object bean, Class<?> type) {
+        if (bean instanceof FactoryBean<?> factoryBean) {
+            Class<?> product = factoryBean.getObjectType();
+            return product != null && type.isAssignableFrom(product);
         }
+        return type.isInstance(bean);
+    }
+
+    /** The checks of the one bean that runs them; the first guard of a context registers it. */
+    @SuppressWarnings("unchecked")
+    private static List<Runnable> lateChecks(ConfigurableListableBeanFactory factory) {
+        if (!(factory instanceof BeanDefinitionRegistry registry)) {
+            throw new IllegalStateException("the bean factory cannot register the privacy guards' late check");
+        }
+        if (registry.containsBeanDefinition(LATE_CHECKS)) {
+            return (List<Runnable>) registry.getBeanDefinition(LATE_CHECKS).getAttribute(LATE_CHECKS);
+        }
+        List<Runnable> checks = new CopyOnWriteArrayList<>();
+        RootBeanDefinition definition = new RootBeanDefinition(LateChecks.class, () -> new LateChecks(checks));
+        // Not lazy, whatever else the application sets: a lazy check would never run.
+        definition.setLazyInit(false);
+        definition.setAttribute(LATE_CHECKS, checks);
+        registry.registerBeanDefinition(LATE_CHECKS, definition);
+        return checks;
+    }
+
+    /** Runs every guard's check once all singletons exist. */
+    static final class LateChecks implements SmartInitializingSingleton {
+        private final List<Runnable> checks;
+
+        LateChecks(List<Runnable> checks) {
+            this.checks = checks;
+        }
+
+        @Override
+        public void afterSingletonsInstantiated() {
+            checks.forEach(Runnable::run);
+        }
+    }
+
+    private static boolean competing(ListableBeanFactory factory, Class<?> type, String ownName) {
+        Set<String> names = new LinkedHashSet<>(Arrays.asList(factory.getBeanNamesForType(type, true, false)));
         names.remove(ownName);
         return !names.isEmpty();
     }

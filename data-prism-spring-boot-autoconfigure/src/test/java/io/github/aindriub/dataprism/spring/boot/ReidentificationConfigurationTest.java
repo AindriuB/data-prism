@@ -114,13 +114,13 @@ class ReidentificationConfigurationTest {
         });
     }
 
-    @Test void the_service_exists_when_enabled_and_the_tool_list_is_unchanged() {
+    @Test void the_service_exists_when_enabled_and_the_tool_list_is_the_four_tools() {
         runner("embedded", all(INDEX, ENABLED, OPERATOR)).run(result -> {
             assertThat(result).hasNotFailed();
             assertThat(result).hasSingleBean(ReidentificationService.class);
             assertThat(result.getBean(McpSyncServer.class).listTools())
                     .extracting(McpSchema.Tool::name)
-                    .containsExactlyInAnyOrder("get_entity_context", "compare_entity_sources");
+                    .containsExactlyInAnyOrder("get_entity_context", "compare_entity_sources", "list_sources", "describe_source");
         });
     }
 }

@@ -52,6 +52,41 @@ class FactoryBeanPreflightTest {
         });
     }
 
+    private final WebApplicationContextRunner bare = new WebApplicationContextRunner()
+            .withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
+            .withPropertyValues(valid());
+
+    /** A raw factory declared by the first configuration class cannot be read when the one-shot check would run. */
+    @Test
+    void a_raw_factory_on_the_first_configuration_class_is_refused() {
+        bare.withUserConfiguration(RawLimitsFactory.class, ReviewedIntegrations.class).run(result -> {
+            assertThat(result).hasFailed();
+            assertThat(code(result.getStartupFailure())).isEqualTo("FORBIDDEN_PRIVACY_OVERRIDE");
+        });
+    }
+
+    @Test
+    void a_bean_declared_as_object_that_is_request_limits_is_refused_on_the_first_and_the_second_class() {
+        for (Class<?>[] order : new Class<?>[][] {{ObjectLimits.class, ReviewedIntegrations.class},
+                {ReviewedIntegrations.class, ObjectLimits.class}}) {
+            bare.withUserConfiguration(order).run(result -> {
+                assertThat(result).hasFailed();
+                assertThat(code(result.getStartupFailure())).isEqualTo("FORBIDDEN_PRIVACY_OVERRIDE");
+            });
+        }
+    }
+
+    @Test
+    void a_raw_factory_behind_a_bean_declared_as_object_is_refused_on_the_first_and_the_second_class() {
+        for (Class<?>[] order : new Class<?>[][] {{ObjectRawFactory.class, ReviewedIntegrations.class},
+                {ReviewedIntegrations.class, ObjectRawFactory.class}}) {
+            bare.withUserConfiguration(order).run(result -> {
+                assertThat(result).hasFailed();
+                assertThat(code(result.getStartupFailure())).isEqualTo("FORBIDDEN_PRIVACY_OVERRIDE");
+            });
+        }
+    }
+
     @Test
     void an_unrelated_raw_factory_bean_does_not_stop_startup() {
         context.withUserConfiguration(RawUnrelatedFactory.class).run(result -> assertThat(result).hasNotFailed());
@@ -132,6 +167,22 @@ class FactoryBeanPreflightTest {
             PrivacyPolicyResolver passThrough = (field, ctx) -> new EffectivePrivacyPolicy(PrivacyAction.PASS_THROUGH,
                     PrivacyNamespace.NONE, true, "PASS_THROUGH_UNSAFE", EffectivePrivacyPolicy.Decided.PROFILE_RULE);
             return new RawFactory(passThrough, PrivacyPolicyResolver.class);
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class ObjectLimits {
+        @Bean
+        Object limits() {
+            return RequestLimits.DEFAULT;
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class ObjectRawFactory {
+        @Bean
+        Object hiddenFactory() {
+            return new RawFactory(RequestLimits.DEFAULT, RequestLimits.class);
         }
     }
 

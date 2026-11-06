@@ -1,23 +1,36 @@
 package io.github.aindriub.dataprism.spring.boot;
 
+import org.springframework.boot.convert.DurationStyle;
+
 import java.time.Duration;
 
 /** {@code dataprism.paging.*}: how {@code list_sources} pages, and how long a page link lives. */
 public class PagingProperties {
     private final ListSources listSources = new ListSources();
     /** How long a page link stays valid after it was issued. Positive. */
-    private Duration lifetime = Duration.ofMinutes(15);
+    private String lifetime = "15m";
 
     public ListSources getListSources() {
         return listSources;
     }
 
-    public Duration getLifetime() {
+    public String getLifetime() {
         return lifetime;
     }
 
-    public void setLifetime(Duration v) {
+    /** Bound as text so that a value that is not a duration refuses with the stable code, not a binding error. */
+    public void setLifetime(String v) {
         lifetime = v;
+    }
+
+    /** @throws DataPrismConfigurationException {@code INVALID_PAGING_SETTING} if the setting is not a duration */
+    public Duration lifetimeValue() {
+        try {
+            return lifetime == null || lifetime.isBlank() ? null : DurationStyle.detectAndParse(lifetime.strip());
+        } catch (IllegalArgumentException notADuration) {
+            throw new DataPrismConfigurationException("INVALID_PAGING_SETTING",
+                    "dataprism.paging.lifetime must be a positive duration");
+        }
     }
 
     /** {@code dataprism.paging.list-sources.*}. */
