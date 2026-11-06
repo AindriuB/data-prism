@@ -715,6 +715,19 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         int omittedLinks;
     }
 
+    /**
+     * What a follow has decided to answer with, before the finishing step has validated, measured and audited it.
+     * {@code followChecked} can return nothing else, so no path can leave without that step.
+     */
+    private record FollowPending(String entityType, String label, SourceResult result, ArrayNode assembled,
+                                 Set<String> prohibited, Set<String> emitted, Set<String> declared) {
+        /** An answer that is a status alone: no tree, so nothing for the validators to read. */
+        static FollowPending statusOnly(String entityType, String label, SourceResult result) {
+            return new FollowPending(entityType, label, result, JsonNodeFactory.instance.arrayNode(),
+                    Set.of(), Set.of(), Set.of());
+        }
+    }
+
     /** One key's read: its position in the fingerprint order, its outcome, and the scrubbed tree if it answered. */
     private record FollowItem(int index, SourceOutcome outcome, ObjectNode tree, Object record) {
     }
@@ -732,7 +745,9 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                 SourceLabels.effectiveKind(options.realNames(), investigationContext, context).name());
         ContextResponse response;
         try {
-            response = followChecked(request, context, investigationContext, correlationId, state);
+            FollowPending pending = followChecked(request, context, investigationContext, correlationId, state);
+            // The one successful exit: every answer, whatever its status, is validated and measured here.
+            response = followFinish(pending, context, correlationId, state);
         } catch (RuntimeException failure) {
             if (failure instanceof PrivacyRefusedException) {
                 metrics.increment(Metric.PRIVACY_FAILCLOSED);
@@ -779,7 +794,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         return new PrivacyRefusedException(refused.clientCode(), "link", refused.message());
     }
 
-    private ContextResponse followChecked(FollowRequest request, PrivacyContext context,
+    private FollowPending followChecked(FollowRequest request, PrivacyContext context,
                                           InvestigationContext caller, String correlationId, FollowState state) {
         if (follower == null) {
             throw followRefusal(state, LinkFollower.refused(LinkReason.RELATION_UNDECLARED));
@@ -825,7 +840,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                 SourceOutcome.Status status = outcome instanceof ResolverOutcome.Empty
                         ? SourceOutcome.Status.NO_DATA : SourceOutcome.Status.RESOLVER_FAILED;
                 state.sources.add(new SourceOutcome(name, status, Duration.ZERO, null));
-                return followEnvelope(entityType, label, SourceResult.of(status), correlationId, state);
+                return FollowPending.statusOnly(entityType, label, SourceResult.of(status));
             }
         }
 
@@ -843,9 +858,8 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                 if (i == 0) {
                     // Nothing was read, so this is not NO_DATA: the client sees the timeout the fan-out reports.
                     state.sources.add(new SourceOutcome(name, SourceOutcome.Status.TIMED_OUT, Duration.ZERO, null));
-                    return followEnvelope(entityType, label,
-                            SourceResult.ofItems(SourceOutcome.Status.TIMED_OUT, List.of(), true),
-                            correlationId, state);
+                    return FollowPending.statusOnly(entityType, label,
+                            SourceResult.ofItems(SourceOutcome.Status.TIMED_OUT, List.of(), true));
                 }
                 truncated = true;
                 break;
@@ -869,9 +883,8 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                 // The reservation took the rest of the follow's time; no read was started.
                 if (i == 0) {
                     state.sources.add(new SourceOutcome(name, SourceOutcome.Status.TIMED_OUT, Duration.ZERO, null));
-                    return followEnvelope(entityType, label,
-                            SourceResult.ofItems(SourceOutcome.Status.TIMED_OUT, List.of(), true),
-                            correlationId, state);
+                    return FollowPending.statusOnly(entityType, label,
+                            SourceResult.ofItems(SourceOutcome.Status.TIMED_OUT, List.of(), true));
                 }
                 truncated = true;
                 break;
@@ -920,7 +933,6 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                 assembled.add(linkNode(entry.getValue().links()));
             }
         });
-        requireValid(assembled, prohibited, emitted, declared, context);
 
         SourceResult result;
         List<SourceResult.Item> resultItems = new ArrayList<>();
@@ -948,8 +960,19 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
             result = SourceResult.ofItems(SourceOutcome.Status.valueOf(LinkFollower.outerStatus(statuses)),
                     resultItems, truncated);
         }
-        // The response that leaves, with its real label, is what is measured.
-        ContextResponse measured = followEnvelope(entityType, label, result, correlationId, state);
+        return new FollowPending(entityType, label, result, assembled, prohibited, emitted, declared);
+    }
+
+    /**
+     * The finishing step of every successful follow, in this order: the final validation, then the record and
+     * byte limits on the response that leaves (with its real label). A refusal here is audited as a denial by
+     * {@link #follow}; the allow audit follows in the same exit.
+     */
+    private ContextResponse followFinish(FollowPending pending, PrivacyContext context, String correlationId,
+                                         FollowState state) {
+        requireValid(pending.assembled(), pending.prohibited(), pending.emitted(), pending.declared(), context);
+        ContextResponse measured = new ContextResponse(pending.entityType(), state.subject,
+                Map.of(pending.label(), pending.result()), List.of(), Map.of(), correlationId);
         if (ResponseSize.records(measured) > limits.maxRecords()) {
             throw new PrivacyRefusedException("TOO_MANY_RECORDS", "$",
                     "response exceeds configured record limit " + limits.maxRecords());
@@ -963,12 +986,6 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
 
     private static String originLabel(boolean direct, String label, FollowItem item) {
         return direct ? label : Integer.toString(item.index());
-    }
-
-    private static ContextResponse followEnvelope(String entityType, String label, SourceResult result,
-                                                  String correlationId, FollowState state) {
-        return new ContextResponse(entityType, state.subject, Map.of(label, result), List.of(), Map.of(),
-                correlationId);
     }
 
     /** As {@link #buildLinks}, failing closed to no links. The class only is logged. */
