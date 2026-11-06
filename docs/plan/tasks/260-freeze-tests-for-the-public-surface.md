@@ -4,7 +4,7 @@
 **Release:** 0.8.0 (must be in place before the 0.9.0 freeze)
 **Base branch:** the 0.8 integration branch once every 0.8 surface task has merged
 **Depends on:** 245, 250, 253, 255 (the 0.8 core surface), 221 (the `.s1` map names and interface codes), 227 (the member-card map and `CLUSTER_KEY_MISMATCH`), 284 and 287 (the trusted-network properties and the codes `PUBLIC_MEMBER_INTERFACE`, `MISSING_TRUSTED_NETWORK` and `INVALID_TRUSTED_RANGE`), 286 (the `clusterSecurity` health contributor), 256 (may add a public accessor to `SensitiveDataScanner` in the `validation` package, which `freeze/spi-signatures.txt` pins)
-**Wave:** 12 (re-planned 2026-10-23 for owner decision (b): 230 and 264 deferred past 1.0, 284, 286 and 287 added)
+**Wave:** 13 (moved from 12 on 2026-11-06; re-planned 2026-10-23 for owner decision (b): 230 and 264 deferred past 1.0, 284, 286 and 287 added)
 **Owns:**
 - data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/freeze/** *(new)*
 - data-prism-architecture/src/test/resources/freeze/** *(new)*

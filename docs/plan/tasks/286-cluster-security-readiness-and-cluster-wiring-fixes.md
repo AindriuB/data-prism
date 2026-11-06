@@ -6,7 +6,7 @@ Filed 2026-10-23 for owner decision (b). Task 230 is deferred past 1.0, but 1.0 
 **Release:** 0.8.0
 **Base branch:** the 0.8 integration branch, at a commit that contains 228, 254, 284, 287 and 290.
 **Depends on:** 228 (pause freshness in `ClusterSecurityStatus`), 287 (both edit `ClusterBackedState.java`), 254 (the previous editor of `PrivacyExtensionPoints.java` and the bean inventories; 255 follows this task), 290 (both edit `docs/plan/design/contract-register.md`; re-planned 2026-10-27: 270 is retired and nothing edits `PropertiesValidation.java` now, so the edge is for the register only), 284 (both edit `ClusterLegacyGaugeTest.java`)
-**Wave:** 10
+**Wave:** 11 (moved from 10 on 2026-11-06, with 253)
 **Owns:**
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/ClusterSecurityHealth.java *(new)*
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PrivacyExtensionPoints.java *(insertions only)*

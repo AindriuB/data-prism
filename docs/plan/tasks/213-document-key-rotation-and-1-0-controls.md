@@ -7,7 +7,7 @@ Renumbered from 198 on 2026-10-19. Reconciled with the pre-0.9 freeze; see `docs
 **Executor:** `scribe` (docs only; no code)
 **Base branch:** the 0.8 integration branch once all dependencies have merged; otherwise `origin/main` after those merges.
 **Depends on:** 208, 210, 211, 261, 225, 227 and 228 (identity and re-identification entries, member cards and the pause document: what 1.0 seals), 284 and 287 (the trusted-network refusals, Spring and plain Java), 285 (unsealed reservations on `HazelcastScopeBudget`), 286 (the `clusterSecurity` readiness contributor). Their Outcomes are this task's sources. Re-wired 2026-10-23 for owner decision (b): the edges to 218-224, 226, 229-231 and 264 are removed; 218 to 223 have landed, 225 is kept (second owner decision, 2026-10-23), and 224, 226, 229 to 231 and 264 are deferred past 1.0 (`docs/plan/tasks/deferred/`). Superseded tasks 204, 205 and 212 are not implementation prerequisites.
-**Wave:** 13, last (re-planned 2026-10-23 for owner decision (b))
+**Wave:** 14, last (moved from 13 on 2026-11-06; re-planned 2026-10-23 for owner decision (b))
 **Owns:**
 - docs/key-rotation.md (new)
 - docs/migration-0.8.md (extend; created by 222's review round)

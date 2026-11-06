@@ -43,3 +43,12 @@
 - A timeout on the wait. A hung disk holds the request; it must not return unaudited.
 - `SourceFanOut.java` (272 owns it in wave 8), `CHANGELOG.md` (291 inserts into it) and `docs/plan/design/contract-register.md` (272 inserts into it; no code or status changes here).
 - Recovering a poisoned sink, and the constructors' open path.
+
+## Outcome (2026-11-06, 0.8; PR #214)
+`record` on both audit sinks now runs the channel work on an internal daemon writer thread (`UninterruptedWrites`). The caller waits uninterruptibly and gets its interrupt flag back, so an interrupt arriving mid-write no longer closes the channel and poisons the sink. The hand-off guard catches `RuntimeException | Error`: a `Thread.start` `OutOfMemoryError` poisons the sink and the recorder rolls its sequence back (attempted sequences 1, 2, 2; no gap). `FileAuditSink.record` is not synchronized, `recordLine` serializes writes, and `record` refuses a poisoned sink before the hand-off (this fixed a deadlock found during the task). `SegmentedFileAuditSink` is not affected by that deadlock.
+
+Accepted: because the write runs on an internal thread, a hung disk holds a request uninterruptibly. That is fail closed and was accepted.
+
+Tests: `AuditSinkInterruptTest` (20 tests, no sleeps, `@Timeout(30)` with `SEPARATE_THREAD`) covers each row of the task table for both sinks, the size-capped rollover with the flag set, `ClosedByInterruptException` poisoning, close behaviour, the flag on failure paths (including a caller interrupted while parked in a write that then fails) and a hand-off `OutOfMemoryError` through a real `AuditRecorder`. Mutations checked: clear-and-restore in the hop fails the mid-write tests; moving the flag restore from `finally` to the normal-return path fails four tests; narrowing the guard to `RuntimeException` fails the OOM test; re-adding `synchronized` fails at the 30 s timeout rather than hanging. `mvn -pl data-prism-core -am test -Dtest='*AuditSink*,InterruptedAppendRestartTest'`: 78 tests, 0 failures. No existing test file changed.
+
+Not changed: `FileAuditCheckpointSink` has the same write pattern (PLAN follow-up). The wave-6 call that the interrupt flag is not restored "to protect the audit sink" lost its reason with this task (PLAN follow-up to reconsider it).

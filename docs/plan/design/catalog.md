@@ -329,12 +329,12 @@ The second entry is a source with no alias description, shown with the generated
 
 ### Audit
 
-One event per call, as every tool:
+One event per call, as every tool. (Task 300, open, makes this true for a schema-invalid call too: until it lands the MCP SDK refuses such a call before the handler runs, so it is neither authenticated nor audited. 300 turns SDK input validation off and validates in the handler.)
 
 | Field | Value |
 |---|---|
 | `tool` | `list_sources` |
-| `entityType` | the filter value, or empty |
+| `entityType` | the filter value if it is a registered entity type, `<unregistered>` for any other value (client text is never audited), or empty when there is no filter |
 | `subjectPseudonym` | empty (there is no subject) |
 | `policyDecision` | `ALLOW`, or `DENY:<code>` (for example `DENY:TOOL_NOT_PERMITTED`) |
 | `sourceSystems` | the real names of the sources returned (size handling in OD-C11) |
@@ -842,6 +842,7 @@ Checked for collisions against `docs/tools.md`, `docs/audit.md`, `docs/configura
 | `dataprism.catalog.source_names.nonconforming` | metric (gauge, count of non-conforming source names) | 0.8 | `dataprism.catalog.descriptions.generated` (sibling) |
 | `catalog` | audit disposition key (values `REFUSED:CATALOG_<REASON>`) | 0.8 | `link` (task 191, sibling) |
 | `CATALOG_UNKNOWN_SOURCE`, `CATALOG_SOURCE_NOT_PERMITTED`, `CATALOG_ENTITY_TYPE_MISMATCH`, `CATALOG_UNKNOWN_ENTITY_TYPE`, `CATALOG_NO_PERMITTED_SOURCE` | audit-only reason codes (shape C) | 0.8; the last two 0.9 | `LINK_<REASON>` (task 191, sibling) |
+| `CATALOG_LABELS_FAILED`, `CATALOG_DESCRIPTION_FAILED`, `CATALOG_DESCRIPTION_REFUSED` | audit-only reason codes (shape C), added by task 250: the labels could not be built, `describe_source` could not describe the source, or the description failed the validators or the schema's caps. The client sees `SOURCE_NOT_AVAILABLE` for all three; an unexpected failure with no reason is `REQUEST_FAILED` | 0.8 | the five reasons above |
 | `names` | reserved audit disposition key (values `REAL`, `ALIAS`) | 0.8 (OD-C2 (a), decided) | none |
 | `dataprism.catalog.unselected-source-limit` | configuration key (default `8`) | 0.8 | `dataprism.limits.max-sources` (OD-C7) |
 | `dataprism.catalog.real-names-scopes` | configuration key (default empty), OD-C3 (c), decided | 0.8 | none |

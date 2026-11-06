@@ -35,3 +35,8 @@ A membership event during `start()` can run a look concurrently with the start t
 - An ordering token on `judge`, or a catch-up look when `running` turns true. The exposure stays within one tick.
 - `PrivacyCluster.java`, `ClusterMembership.java`, `ClusterSecuritySettings.java`, `PrivacyClusterRefusal.java` and every existing hazelcast test (287 owns or edits them in wave 8).
 - Listener registration order in `start()`, and the flakes in `docs/plan/known-flakes.md`.
+
+## Outcome (2026-11-06, 0.8; PR #213)
+`MemberCards.lookSoon` now looks only when `running && !closed`, so a membership event during `start()` cannot run a look beside the start thread's look and let an older look overwrite a newer not-serving status. A package-private `drainExecutorForTest()` sits beside `executorStoppedForTest`. `PrivacyCluster.java` is untouched.
+
+`MemberCardsStartLookTest` (two tests, `@Timeout`, no sleeps; the member is loopback-only, built through the package-private constructor over a listener-capturing wrapper). With the start held in `lookFault` by a latch (only the first entry blocks), the event plus an executor drain leaves exactly one entry, by the start thread. Checked red against `MemberCards.java` as on main (seam only, no `running` check): it failed with "lookFault entered once, expected 1" and fails the assertion rather than hanging. The after-start test (a fired `memberAdded` runs a look, and a hand-called `tick()` runs a look) passes on both. `MemberCardsStartLookTest` and `MemberCardTest` (98/98) passed, one class at a time; `KeylessMemberIsolationTest` was left to CI. Other agents' surefire JVMs were running during the runs. Two test style items are a PLAN follow-up.

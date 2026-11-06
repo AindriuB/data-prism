@@ -93,7 +93,7 @@ The schema replaces the one in `catalog.md` section 3 (the two filters are uncha
 Rules for a call that carries `page`:
 
 1. `entityType`, `keyNamespace` and `pageSize` may be absent, or present and equal to the values the link was issued for. Present and different is refused as an invalid link (the filters are in the sealed payload, section A.4). A client that wants a different listing starts again without `page`.
-2. The maximum length follows `dataprism.links.max-length`; the served schema is generated from the configured value, as for `follow`. A client that ignores the schema gets the same refusal.
+2. The maximum length follows `dataprism.links.max-length`; the served schema is generated from the configured value, as for `follow`. A client that ignores the schema gets the same refusal. (Task 300, open: until it lands the MCP SDK refuses a schema-invalid call before the handler runs, with its own text, no authentication, no audit event and no link-limiter count; 300 validates in the handler so the refusal is the one described here and the attempt is audited and counted.)
 
 ### A.3 Output schema
 

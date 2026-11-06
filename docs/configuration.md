@@ -880,8 +880,9 @@ under `json-sources:` states, and only states:
 A response whose shape no longer matches a source's declared nesting is a
 request-time privacy refusal, not a startup refusal — the catalogue was valid
 at load time; the wire shape drifted from what it declared. `data-prism-connectors-rest`
-raises `NESTED_LEAF_NOT_SCALAR` when a nested catalogue's own leaf field (one
-with no `nested:` of its own) turns up as a structure in the response, and
+raises `NESTED_LEAF_NOT_SCALAR` when a leaf field (one with no `nested:` of
+its own, in a nested catalogue or at the root) turns up as a structure in the
+response, and
 `NESTED_FIELD_NOT_STRUCTURED` when a root field declared `nested:` turns up as
 a scalar instead of the structure the catalogue expects. See
 [`docs/protect-your-own-api.md`](protect-your-own-api.md)'s "A nested

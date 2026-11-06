@@ -43,7 +43,7 @@ review.
 | `security` | `core` | `AuthenticatedCaller`, `AuthorizationService`, `PurposeValidator`, `ScopeResolver`, `PrivacySession`, `SecurityPolicy`, `ReservedArguments`, `ToolInvocation` |
 | `orchestration` | `core` + the above | `ContextOrchestrator`, parallel fan-out, circuit breaker, request and cost limits, correlation and consistency findings |
 | `mcp` | `orchestration`, `security` | Tool definitions, schemas, transport, `DataPrismObjectMapper` |
-| `connectors-rest` | `core` | `RestDataSource`, source configuration, resilience |
+| `connectors-rest` | `core`, `validation`, `orchestration` | `RestDataSource`, source configuration, resilience |
 | `connectors-search` *(planned)* | `core` | Elasticsearch adapter with index and field allowlists |
 | `reidentification` | `core`, `hazelcast`, `security` | The controlled reverse-lookup library: authenticated, purpose-bound, audited, optional four-eyes. No transport; its HTTP surface is served by the standalone server on a separate port, in the same process. The index it reads lives in `hazelcast`, off by default |
 | `spring-boot-autoconfigure` | the privacy/runtime modules | Shared `dataprism.*` binding (one top-level `*Properties` class per concern, under the root `DataPrismProperties`), validation (`spring.boot.validation`), JWT support (`spring.boot.jwt`), privacy-pipeline wiring (`DataPrismAutoConfiguration` declares no bean and imports package-private configuration classes by concern), MCP lifecycle and servlet registration |

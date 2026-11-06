@@ -7,7 +7,7 @@ Re-planned 2026-10-23 for owner decision (b): 1.0 supports multiple instances on
 **Executor:** the owner, or an agent on a dedicated host; not a shared CI runner.
 **Base branch:** the 0.8 integration branch once every dependency has merged
 **Depends on:** 258 (soak mode), 252 (`LinkTimingSoakTest`), 255 (links and catalog wired, and the `MISSING_SHARED_LINK_LIMITER` refusal on joining members), 257 (257 owns `.github/workflows/*.yml`), 227 and 228 (member cards and the pause document), 284 and 287 (a joining member needs `trusted-network: true` and a private interface), 286 (the `clusterSecurity` readiness contributor the hostile-member run watches). Re-wired 2026-10-23: the edges to 231 and 264 are removed (owner decision (b)).
-**Wave:** 12 (re-planned 2026-10-23 for owner decision (b): 231 and 264 deferred past 1.0)
+**Wave:** 13 (moved from 12 on 2026-11-06; re-planned 2026-10-23 for owner decision (b): 231 and 264 deferred past 1.0)
 **Owns:**
 - load-test/soak/** *(new: scenario files, a Compose overlay for the three-member run, and the fault and capture scripts of design 5.2)*
 - docs/plan/perf/soak-0.8.md *(new)*

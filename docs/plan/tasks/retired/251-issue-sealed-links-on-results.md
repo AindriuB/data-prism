@@ -69,3 +69,17 @@ When links are enabled, every `ANSWERED` source result carries one sealed link p
 - [ ] One link per distinct element key with an indexed `field` path (`depots[2]`, `routes[1].depot`); the same key at several indices toward one target collapses to the first index in path order before the cap (OD-14). A field whose declared name would itself be sensitive gets no link.
 - [ ] `target` is the target's label in the effective setting; `expiresAt` is the link's expiry in ISO-8601; the sealed binding uses the session's scope, caller, scope expiry and token expiry, never a value from the request.
 - [ ] The response validators run over the response with links present. Issued tokens are added to the `emitted` exemption set; a token-shaped string that comes from a source record and was not issued still fails validation (test). No validator source file changes.
+
+## Outcome (2026-11-05, 0.8; PR #208)
+When link issuing is configured (off by default; with it off the serialised response is unchanged), `ANSWERED` per-source results carry sealed `_links` and `_linksOmitted`. `LinkBuilder`, `LinkTargets` and `IssuedLink` (in `orchestration.links`) build links from declarations and the raw record only, with no resolver or adapter call: direct on an exact namespace, translated through one declared resolver, direct wins, one link per distinct key at its first index, the cap taken round-robin across targets. `OrchestrationOptions.LinkIssuing` is optional (empty is off). Issued tokens join the `emitted` set and the links are scanned in the final validation pass; no validator changed. `compare_entity_sources` issues no links (OD-08-7 a). Metrics `LINKS_ISSUED` and `LINKS_OMITTED`.
+
+Decided in review:
+- `LinkIssuing.tokenExpiry`, `NO_EXPIRY` and the default are dropped. The binding uses the context's scope expiry, which already includes the caller's token expiry, and an unknown scope expiry issues no link.
+- Two resolvers reaching one source with different `toNamespace` both give a link (the dedupe key in `LinkBuilder` includes the target namespace).
+- A field whose declared name fails a validator gets no link and is not counted in `_linksOmitted`.
+- The validator exemption is exact-value per call. A lookalike of an issued token is ordinary data.
+- `OmitReason.TOO_LONG` is unreachable at legal settings and is kept as a fail-closed branch.
+
+Tests failing first (at 5c086cbd): `twoResolversToOneSourceWithDifferentTargetNamespacesIssueBothLinks` and `noLinkIsIssuedWhenTheScopeEndIsUnknown`. Others pass on base by design because they pin behaviour that already held (the exact-value exemption, a token never launders a raw value, a secret-shaped value still withholds its source). `LinkLeakTest` writes its capture to `logs/` on failure. The whole-component hunt found no leak: the chained value is held only as sealed ciphertext, and the response, audit, metrics, logs and exceptions were checked for it in nine encodings on the success and refused paths. Only targeted tests were run locally; CI ran the full build.
+
+Left open (PLAN follow-ups): `LINKS_ISSUED` is counted before the ALLOW audit write; `resolver.to()` is read live at issue; the catch at `DefaultContextOrchestrator.java:388` is untested; a caller without `FOLLOW` still sees source relationships.
