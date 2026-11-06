@@ -22,3 +22,23 @@ If you wrote a custom `HmacKeyReferenceResolver` that handled provider reference
 `MISSING_KEY_PROVIDER`. A resolver that only ever gets `environment-variable` configuration needs no change.
 
 The packaged server reads environment variables only, so it refuses a `provider-reference` for any of these keys.
+
+## Breaking: a schema-invalid tool call returns `TOOL_INPUT_INVALID`
+
+Before 0.8.0 the MCP SDK checked a call's arguments against the tool's input schema before any Data Prism code
+ran, and answered `Tool (<name>) input validation failed: ...`. Such a call was not authenticated, audited or
+counted. Each tool now checks its own input, after authentication and authorisation, so:
+
+- a schema-invalid call returns the one refusal `TOOL_INPUT_INVALID`, with the call's correlation id. It names no
+  field and no value, and it is the same for every violation;
+- on `list_sources`, a call that carries a `page` key and breaks the schema anywhere (a `page` that is empty,
+  longer than `dataprism.links.max-length`, not a string or `null`, or any other argument) is answered as a forged
+  link, `LINK_INVALID` ("The link is not valid."), and counts once toward the link-attempt limiter;
+- every such call is audited once (`DENY:TOOL_INPUT_INVALID`, or the link refusal) and counted as denied;
+- a role without the tool's capability still gets `TOOL_NOT_PERMITTED`, valid input or not.
+
+A client that matches the old `input validation failed` text must match `TOOL_INPUT_INVALID` instead. A blank
+`entityType` or `subjectId` on `get_entity_context` or `compare_entity_sources` no longer answers "entityType and
+subjectId are both required"; it is `TOOL_INPUT_INVALID`. The served input schemas are unchanged. A request that is
+not a valid `tools/call` (for example `arguments` that is not an object, or an unknown tool name) is still refused
+by the SDK before any handler, and is not audited.
