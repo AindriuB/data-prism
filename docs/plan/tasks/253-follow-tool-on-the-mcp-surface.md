@@ -2,9 +2,9 @@
 
 **Repo:** `.`
 **Release:** 0.8.0 (registered only when links are enabled)
-**Base branch:** `origin/main` once 250 and 252 have merged
-**Depends on:** 252 (`ContextOrchestrator.follow`), 250 (both edit `DataPrismMcpServer` and `ExampleApplication`)
-**Wave:** 10 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
+**Base branch:** `origin/main` once 250, 252 and 254 have merged
+**Depends on:** 252 (`ContextOrchestrator.follow`), 250 (both edit `DataPrismMcpServer` and `ExampleApplication`), 254 (both edit the `stdio(` call in `ExampleApplication`; added 2026-11-05), 300 (shared `ToolInput` validation path; added 2026-11-05)
+**Wave:** 11 (moved from 10 on 2026-11-05, behind 252 and 254)
 **Owns:**
 - data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/FollowTool.java *(new)*
 - data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/DataPrismMcpServer.java *(the `follow` registration and its factory parameter only)*
@@ -32,6 +32,7 @@ Give the agent the `follow` tool: it takes nothing but a link string, authentica
 - [ ] A denial whose audit fails answers `AUDIT_UNAVAILABLE` as 244 established.
 - [ ] `LinkArchitectureTest`'s sanity check asserts a non-zero imported class count for `mcp` and for `connectors` separately; with either package left out of the import the check fails (the Outcome shows it).
 - [ ] `./mvnw -B verify` (full reactor) passes.
+- [ ] `FollowTool` uses the shared `ToolInput` validation path from task 300.
 
 ## Out of scope
 - Spring registration and `dataprism.links.*` (255).

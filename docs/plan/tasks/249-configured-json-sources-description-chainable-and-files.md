@@ -6,17 +6,20 @@
 **Depends on:** 239, 240, 248 (the SPI pieces it implements), 246 and 247 (both edit `ConfiguredJsonSourcesAutoConfiguration`), 271 (the `DescriptorFieldMetadataResolver.descriptors()` accessor, and the `JsonTreeScrubbingEngine.resolver()` and `descriptors()` accessors, all owned by 271; added 2026-10-23, widened 2026-10-26)
 **Decisions:** OD-08-8 decided 2026-10-20 (a): `config-location` takes a list; a source name in two files refuses with `DUPLICATE_JSON_SOURCE`.
 **Wave:** 8 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
+**Wave 8 review (2026-11-05):** lines marked *(2026-11-05)* are coordinator calls, owner-delegated. This brief is consolidated: the text below is the current contract.
 **Owns:**
 - data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSources.java
 - data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSource.java
 - data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonDataSourceAdapter.java
-- data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonScrubbingEngine.java *(the `describe` override only)*
+- data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonScrubbingEngine.java *(`describe` and the fields and helpers behind it; widened 2026-11-05)*
+- data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonNestedLeafShapeGuard.java *(the root-leaf check only; added 2026-11-05)*
 - data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSourcesInitializer.java
 - data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSourcesAutoConfiguration.java *(location binding, description plumbing, and building the `javaFirst` engine at :177 from the injected auto-configured `JsonTreeScrubbingEngine` bean's resolver and map, with its new `ObjectProvider<JsonTreeScrubbingEngine>` parameter, only; the last added 2026-10-23, revised 2026-10-26)*
 - data-prism-connectors-rest/src/test/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonDescriptionTest.java *(new)*
 - data-prism-connectors-rest/src/test/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonChainableTest.java *(new)*
 - data-prism-connectors-rest/src/test/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonDescribeConformanceTest.java *(new)*
 - data-prism-connectors-rest/src/test/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSourceFilesTest.java *(new)*
+- data-prism-connectors-rest/src/test/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonJavaFirstEngineTest.java *(new; added 2026-11-05)*
 - data-prism-connectors-rest/src/test/resources/** *(new fixture files only)*
 
 ## Goal
@@ -32,9 +35,14 @@ A configured JSON source is declared in a `json-sources:` file, not in Java, so 
 ## Acceptance
 - [ ] Tests are written first and fail on the base commit; the Outcome names them.
 - [ ] A `description:` block takes exactly `entity-types`, `alias-description`, `real-description`, `input-keys`, `cost`, `freshness`; any other key refuses with the parser's existing unknown-key refusal. The adapter's `description()` returns it; without the block it returns `SourceDescription.undeclared()`. Description text never appears in a parser message (sentinel).
+- [ ] The YAML parser owns catalog rule 4 (catalog.md section 2): duplicates and bad grammar in the description refuse with `INVALID_SOURCE_DESCRIPTION`. *(2026-11-05)*
 - [ ] In `fields:`, `chainable: true` with `keyNamespace` is accepted only on an entry with `identifier: true`, and on any other entry, or without `keyNamespace`, refuses with a message starting `INVALID_CHAINABLE_FIELD:` naming the source and field. The chainable fields are exposed in the `ChainableField` shape of 240. Scrubbed output and dispositions are unchanged with the flag set (parity test).
-- [ ] `ConfiguredJsonScrubbingEngine.describe` describes every `fields:` entry and nested catalogue as 248 specifies. `ConfiguredJsonDescribeConformanceTest` proves, over the existing fixtures, that every path a scrubbed response contains is described with the protection it was scrubbed under.
-- [ ] Several files, as OD-08-8 decides. Under its option (a): `dataprism.json-sources.config-location` accepts a list of locations (a single value still works unchanged); every file is parsed strictly; a source name declared in two files refuses startup with the code OD-08-8 names, and the message names the source and neither location; the resulting source order does not depend on file order; an unreadable file refuses as today, with the location shown only by the existing `describe(location)` rule.
+- [ ] `ConfiguredJsonScrubbingEngine.describe` describes every `fields:` entry and nested catalogue as 248 specifies. A catalogue does not say whether a property is one value or a list, so both `x` and `x[]` are described. *(2026-11-05)* `ConfiguredJsonDescribeConformanceTest` proves, over the existing fixtures, that every path a scrubbed response contains is described with the protection it was scrubbed under.
+- [ ] A root leaf holding an object is refused by `ConfiguredJsonNestedLeafShapeGuard`, as a nested leaf is, so no described `VERBATIM` field is ever scrubbed (test). *(2026-11-05)*
+- [ ] Several files, as OD-08-8 (a) decides: `dataprism.json-sources.config-location` accepts a list of locations; every file is parsed strictly; a source name declared in two files refuses startup with `DUPLICATE_JSON_SOURCE`, and the message names the source and neither location; the resulting source order does not depend on file order; an unreadable file refuses as today, with the location shown only by the existing `describe(location)` rule.
+  - Only indexed list entries make a list. A single value is never split at commas, because splitting put a credential fragment in a refusal (test). *(2026-11-05)*
+  - At most one file may declare `tls:`. With several files and `tls:`, every source must be https. *(2026-11-05)*
+  - `LocationConfigured` replaces `@ConditionalOnProperty`. *(2026-11-05)*
 - [ ] The base-url host of each configured source is available to the catalog's rule 5 check (an accessor read by 254).
 - [ ] The `javaFirst` `JsonTreeScrubbingEngine` in `ConfiguredJsonSourcesAutoConfiguration` is built with 248's five-argument constructor, pinned to 271's recorded instance. It does not type-test the injected resolver.
   - **"Set"** means the property bound through `Binder.get(environment).bind("dataprism.privacy.descriptor-file", String.class)` is bound and not blank. That is the same `Binder` approach `limitsConfigured` uses in this class, and the same non-blank test as 271.
@@ -54,3 +62,13 @@ A configured JSON source is declared in a `json-sources:` file, not in Java, so 
 - `dataprism.sources.<name>` (transport only, unchanged) and any Spring autoconfigure-module change (254).
 - `docs/configuration.md` (261 documents the `description:` block and the file list).
 - Wildcard or directory scanning of locations, unless OD-08-8 chooses it.
+
+## Appendix: superseded
+
+Agents: do not read this section.
+
+Text replaced by the 2026-11-05 consolidation, kept for the record.
+
+- data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonScrubbingEngine.java *(the `describe` override only)*
+- [ ] `ConfiguredJsonScrubbingEngine.describe` describes every `fields:` entry and nested catalogue as 248 specifies. `ConfiguredJsonDescribeConformanceTest` proves, over the existing fixtures, that every path a scrubbed response contains is described with the protection it was scrubbed under.
+- [ ] Several files, as OD-08-8 decides. Under its option (a): `dataprism.json-sources.config-location` accepts a list of locations (a single value still works unchanged); every file is parsed strictly; a source name declared in two files refuses startup with the code OD-08-8 names, and the message names the source and neither location; the resulting source order does not depend on file order; an unreadable file refuses as today, with the location shown only by the existing `describe(location)` rule.
