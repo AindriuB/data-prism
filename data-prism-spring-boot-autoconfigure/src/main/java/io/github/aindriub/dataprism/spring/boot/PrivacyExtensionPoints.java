@@ -3,19 +3,14 @@ package io.github.aindriub.dataprism.spring.boot;
 import org.springframework.beans.factory.BeanFactoryUtils;
 import org.springframework.beans.factory.FactoryBean;
 import org.springframework.beans.factory.ListableBeanFactory;
-import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.beans.factory.config.InstantiationAwareBeanPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
-import org.springframework.beans.factory.support.BeanDefinitionRegistry;
-import org.springframework.beans.factory.support.RootBeanDefinition;
 
 import java.util.Arrays;
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Supplier;
 
 /**
@@ -153,12 +148,9 @@ public final class PrivacyExtensionPoints {
         return BEANS.keySet();
     }
 
-    /** The name of the one bean that runs every guard's late check; see {@link #refuseCompetingBeans}. */
-    private static final String LATE_CHECKS = "dataPrismCompetingBeanLateChecks";
-
     /**
      * Refuses startup when a bean definition other than {@code ownName} produces {@code type}, with the refusal
-     * {@code refusal} builds. Three checks, because Spring cannot read the type of a
+     * {@code refusal} builds. Two checks, because Spring cannot read the type of a
      * bean whose type is not declared (a raw {@link FactoryBean}, or a method declared to return {@code Object}):
      * its type is unknown until it is created.
      *
@@ -168,10 +160,6 @@ public final class PrivacyExtensionPoints {
      * any bean that turns out to be the type is refused as it is created, whatever it was declared to be. The refusal
      * comes before anything is injected with it, so it is the refusal and not a "found 2 matching beans" error that
      * the application sees.
-     * <li>After every singleton is instantiated ({@link SmartInitializingSingleton}), for the beans that really
-     * exist: a raw factory, or a bean declared as {@code Object}, wherever it is declared and whichever bean is
-     * created first. Startup fails before the context finishes refreshing, so before a server accepts a request.
-     * A bean that is lazy, or created on demand, is not seen by this check.
      * </ol>
      */
     static void refuseCompetingBeans(ConfigurableListableBeanFactory factory, Class<?> type, String ownName,
@@ -180,11 +168,6 @@ public final class PrivacyExtensionPoints {
             throw refusal.get();
         }
         factory.addBeanPostProcessor(new Watcher(factory, type, ownName, refusal));
-        lateChecks(factory).add(() -> {
-            if (competing(factory, type, ownName)) {
-                throw refusal.get();
-            }
-        });
     }
 
     /** Whether {@code bean} is, or is a factory for, a {@code type}; reads a factory's declared product type only. */
@@ -194,24 +177,6 @@ public final class PrivacyExtensionPoints {
             return product != null && type.isAssignableFrom(product);
         }
         return type.isInstance(bean);
-    }
-
-    /** The checks of the one bean that runs them; the first guard of a context registers it. */
-    @SuppressWarnings("unchecked")
-    private static List<Runnable> lateChecks(ConfigurableListableBeanFactory factory) {
-        if (!(factory instanceof BeanDefinitionRegistry registry)) {
-            throw new IllegalStateException("the bean factory cannot register the privacy guards' late check");
-        }
-        if (registry.containsBeanDefinition(LATE_CHECKS)) {
-            return (List<Runnable>) registry.getBeanDefinition(LATE_CHECKS).getAttribute(LATE_CHECKS);
-        }
-        List<Runnable> checks = new CopyOnWriteArrayList<>();
-        RootBeanDefinition definition = new RootBeanDefinition(LateChecks.class, () -> new LateChecks(checks));
-        // Not lazy, whatever else the application sets: a lazy check would never run.
-        definition.setLazyInit(false);
-        definition.setAttribute(LATE_CHECKS, checks);
-        registry.registerBeanDefinition(LATE_CHECKS, definition);
-        return checks;
     }
 
     /**
@@ -280,20 +245,6 @@ public final class PrivacyExtensionPoints {
                 throw refusal.get();
             }
             return bean;
-        }
-    }
-
-    /** Runs every guard's check once all singletons exist. */
-    static final class LateChecks implements SmartInitializingSingleton {
-        private final List<Runnable> checks;
-
-        LateChecks(List<Runnable> checks) {
-            this.checks = checks;
-        }
-
-        @Override
-        public void afterSingletonsInstantiated() {
-            checks.forEach(Runnable::run);
         }
     }
 

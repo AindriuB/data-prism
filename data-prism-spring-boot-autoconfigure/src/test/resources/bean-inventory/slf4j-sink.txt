@@ -13,7 +13,6 @@ dataPrismCatalogPreflight | org.springframework.beans.factory.config.BeanFactory
 dataPrismCatalogQueries | io.github.aindriub.dataprism.orchestration.catalog.CatalogQueries
 dataPrismClientAllowlist | io.github.aindriub.dataprism.security.ClientAllowlist
 dataPrismClock | java.time.Clock
-dataPrismCompetingBeanLateChecks | io.github.aindriub.dataprism.spring.boot.PrivacyExtensionPoints$LateChecks
 dataPrismContextOrchestrator | io.github.aindriub.dataprism.orchestration.ContextOrchestrator
 dataPrismContractValidator | io.github.aindriub.dataprism.spring.boot.validation.DataPrismContractValidator
 dataPrismCorrelationMdc | io.github.aindriub.dataprism.core.correlation.CorrelationMdc

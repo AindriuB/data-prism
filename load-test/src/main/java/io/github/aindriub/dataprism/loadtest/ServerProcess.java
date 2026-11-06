@@ -23,7 +23,7 @@ import java.util.stream.Stream;
  * The real {@code data-prism-server} jar, started as a child process with the configured-JSON-sources
  * extension on its loader path, authentication on, and the scenario's {@code dataprism.limits.*}.
  *
- * <p>The HMAC key is random per run and reaches the server only through the child's environment.
+ * <p>The HMAC key and the page-link key are random per run and reach the server only through the child's environment.
  */
 final class ServerProcess implements AutoCloseable {
 
@@ -31,6 +31,9 @@ final class ServerProcess implements AutoCloseable {
     static final Duration SCOPE_LIFETIME = Duration.ofHours(8);
 
     static final String HMAC_ENV = "DATAPRISM_LOADTEST_HMAC_KEY";
+
+    /** The environment variable of the page-link key: an estate larger than one page of list_sources needs one. */
+    static final String LINK_ENV = "DATAPRISM_LOADTEST_LINK_KEY";
 
     private final Process process;
     private final int port;
@@ -88,6 +91,10 @@ final class ServerProcess implements AutoCloseable {
                 "--dataprism.audit.writer-id=load-test",
                 "--dataprism.audit.entity-types[0]=" + SourceGenerator.ENTITY_TYPE,
                 "--dataprism.metrics.sink=micrometer",
+                "--dataprism.links.key-id=loadtest-links",
+                "--dataprism.links.keys.loadtest-links.environment-variable=" + LINK_ENV,
+                // A call that names no sources may reach as many as it may call, so the fan-out is what is measured.
+                "--dataprism.catalog.unselected-source-limit=" + scenario.limits().maxSources(),
                 "--dataprism.hazelcast.topology=single-node"));
         command.addAll(loggingArguments(log));
         scenario.limits().asProperties().forEach((key, value) -> command.add("--" + key + "=" + value));
@@ -100,6 +107,10 @@ final class ServerProcess implements AutoCloseable {
         byte[] key = new byte[48];
         new SecureRandom().nextBytes(key);
         builder.environment().put(HMAC_ENV, Base64.getEncoder().encodeToString(key));
+        // A generated test value, different on every run and never written anywhere.
+        byte[] linkKey = new byte[48];
+        new SecureRandom().nextBytes(linkKey);
+        builder.environment().put(LINK_ENV, Base64.getEncoder().encodeToString(linkKey));
         // A closer is tracked before the launch, so a signal in the gap between start() and tracking the
         // server still stops the child: whichever of the two happens second kills the process.
         LaunchGuard guard = new LaunchGuard();

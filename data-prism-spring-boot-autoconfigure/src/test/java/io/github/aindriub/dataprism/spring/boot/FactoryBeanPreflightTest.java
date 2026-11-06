@@ -87,6 +87,15 @@ class FactoryBeanPreflightTest {
         }
     }
 
+    /** A bean created before any guard is watching, by a processor that runs first, is found by the check at registration. */
+    @Test
+    void a_bean_declared_as_object_created_before_the_guards_watch_is_still_refused() {
+        bare.withUserConfiguration(ObjectLimits.class, EarlyCreator.class, ReviewedIntegrations.class).run(result -> {
+            assertThat(result).hasFailed();
+            assertThat(code(result.getStartupFailure())).isEqualTo("FORBIDDEN_PRIVACY_OVERRIDE");
+        });
+    }
+
     @Test
     void an_unrelated_raw_factory_bean_does_not_stop_startup() {
         context.withUserConfiguration(RawUnrelatedFactory.class).run(result -> assertThat(result).hasNotFailed());
@@ -183,6 +192,28 @@ class FactoryBeanPreflightTest {
         @Bean
         Object hiddenFactory() {
             return new RawFactory(RequestLimits.DEFAULT, RequestLimits.class);
+        }
+    }
+
+    /** Creates the {@link ObjectLimits} bean ahead of every other processor. */
+    @Configuration(proxyBeanMethods = false)
+    static class EarlyCreator {
+        @Bean
+        static org.springframework.beans.factory.config.BeanFactoryPostProcessor early() {
+            return new EarlyProcessor();
+        }
+    }
+
+    static class EarlyProcessor implements org.springframework.beans.factory.config.BeanFactoryPostProcessor,
+            org.springframework.core.PriorityOrdered {
+        @Override
+        public void postProcessBeanFactory(org.springframework.beans.factory.config.ConfigurableListableBeanFactory f) {
+            f.getBean("limits");
+        }
+
+        @Override
+        public int getOrder() {
+            return org.springframework.core.Ordered.HIGHEST_PRECEDENCE;
         }
     }
 
