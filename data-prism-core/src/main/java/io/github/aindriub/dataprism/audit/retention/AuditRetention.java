@@ -197,8 +197,10 @@ public final class AuditRetention {
         retained.sort(SegmentedFileAuditSink.SEGMENT_ORDER);
         List<Path> deleted = new ArrayList<>();
         Map<String, Shutdown> shutdowns = segments.isEmpty() ? Map.of() : readShutdowns("nothing was deleted");
+        Set<AuditChainVerifier.AcceptedLine> accepted = segments.isEmpty() ? Set.of()
+                : readAcceptedLines("nothing was deleted");
         // A day an earlier run anchored and then failed to finish deleting is finished first, once its remainder verifies on its own.
-        int partial = partlyPurgedDayLength(segments, retained, shutdowns);
+        int partial = partlyPurgedDayLength(segments, retained, shutdowns, accepted);
         String finishedDay = null;
         if (partial > 0) {
             finishedDay = SegmentedFileAuditSink.segmentDate(segments.get(0)).toString();
@@ -215,7 +217,7 @@ public final class AuditRetention {
         if (!segments.isEmpty()) {
             try {
                 hashed = AuditChainVerifier.verifySegmentsHashed(segments, starts, chainKeys, allowUnkeyedWriters,
-                        probesFor(shutdowns));
+                        probesFor(shutdowns), accepted);
             } catch (IOException e) {
                 throw new RetentionException(ANCHOR_FAILED + ": could not read the expiring segments", e);
             }
@@ -274,7 +276,7 @@ public final class AuditRetention {
                 from = to;
             }
             BoundaryScan scan = new BoundaryScan(segments, retained, segmentReader, starts,
-                    hashed.probed(), false);
+                    hashed.probed(), false, accepted);
             BoundaryScan.Refusal refusal = scan.run(tasks);
             if (refusal != null) {
                 verified = refusal.dayStart();
@@ -368,7 +370,8 @@ public final class AuditRetention {
      * must chain from the writer's recorded anchor for it (the day's tail is already gone, so the anchor
      * stands for the last record). Anything else, including a missing or other-day anchor, takes the normal verification path.
      */
-    private int partlyPurgedDayLength(List<Path> segments, List<Path> retained, Map<String, Shutdown> shutdowns) {
+    private int partlyPurgedDayLength(List<Path> segments, List<Path> retained, Map<String, Shutdown> shutdowns,
+                                      Set<AuditChainVerifier.AcceptedLine> accepted) {
         if (segments.isEmpty()) {
             return 0;
         }
@@ -382,7 +385,7 @@ public final class AuditRetention {
         AuditChainVerifier.HashedVerification hashed;
         try {
             hashed = AuditChainVerifier.verifySegmentsHashed(prefix, starts, chainKeys, allowUnkeyedWriters,
-                    probesFor(shutdowns));
+                    probesFor(shutdowns), accepted);
         } catch (IOException e) {
             throw new RetentionException(ANCHOR_FAILED + ": could not read the expiring segments", e);
         }
@@ -432,7 +435,8 @@ public final class AuditRetention {
             tasks.add(new BoundaryScan.Task(0, n, w.getKey(), w.getValue().sequence(), w.getValue().headHash(),
                     0, shutdowns.get(w.getKey())));
         }
-        BoundaryScan scan = new BoundaryScan(segments, retained, segmentReader, starts, hashed.probed(), true);
+        BoundaryScan scan = new BoundaryScan(segments, retained, segmentReader, starts, hashed.probed(), true,
+                accepted);
         return scan.run(tasks) == null ? n : 0;
     }
 
@@ -443,6 +447,27 @@ public final class AuditRetention {
             throw new RetentionException(CHAIN_UNVERIFIED + ": could not read the earlier retention anchors, so "
                     + "the start of the expiring chain cannot be checked; " + deletedNote, e);
         }
+    }
+
+    /**
+     * The lines an operator confirmed as crash lines. Purge tolerates exactly these, matched by segment name,
+     * in-segment offset and the SHA-256 of the line's current bytes.
+     */
+    private Set<AuditChainVerifier.AcceptedLine> readAcceptedLines(String deletedNote) {
+        List<AuditCheckpoint> all;
+        try {
+            all = anchors.crashLinesAccepted();
+        } catch (RuntimeException e) {
+            throw new RetentionException(CHAIN_UNVERIFIED + ": could not read the accepted crash lines, so a line "
+                    + "an operator confirmed cannot be told from one nobody did; " + deletedNote, e);
+        }
+        Set<AuditChainVerifier.AcceptedLine> lines = new HashSet<>();
+        for (AuditCheckpoint cp : all) {
+            if (cp.kind() == AuditCheckpoint.Kind.CRASH_LINE_ACCEPTED) {
+                lines.add(new AuditChainVerifier.AcceptedLine(cp.segmentName(), cp.byteOffset(), cp.headHash()));
+            }
+        }
+        return lines;
     }
 
     /** A writer's {@code SHUTDOWN} checkpoint with the highest sequence; {@code conflict} if two disagree there. */
@@ -612,12 +637,14 @@ public final class AuditRetention {
         private final List<Long> starts;
         private final Map<String, Map<Long, AuditChainVerifier.HashedRecord>> probed;
         private final boolean partial;
+        private final Set<AuditChainVerifier.AcceptedLine> accepted;
         private int refusedDay = Integer.MAX_VALUE;
         private Refusal refusal;
 
         BoundaryScan(List<Path> expiring, List<Path> retained, AuditChainVerifier.SegmentReader reader,
                      List<Long> starts, Map<String, Map<Long, AuditChainVerifier.HashedRecord>> probed,
-                     boolean partial) {
+                     boolean partial, Set<AuditChainVerifier.AcceptedLine> accepted) {
+            this.accepted = accepted;
             this.paths.addAll(expiring);
             this.retainedFrom = expiring.size();
             this.paths.addAll(retained);
@@ -665,7 +692,7 @@ public final class AuditRetention {
                 }
                 List<AuditChainVerifier.BoundaryRecord> records;
                 try {
-                    records = AuditChainVerifier.boundaryRecords(paths.get(p), reader, wanted);
+                    records = AuditChainVerifier.boundaryRecords(paths.get(p), reader, wanted, accepted);
                 } catch (IOException e) {
                     throw new RetentionException(ANCHOR_FAILED + ": could not read " + paths.get(p), e);
                 }
