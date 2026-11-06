@@ -113,6 +113,8 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
     private final SourceCatalog catalog;
     private final LinkBuilder linkBuilder;
     private final LinkFollower follower;
+    /** The clock of link issuing, which follow shares; the system clock when links are off. */
+    private final Clock clock;
 
     /**
      * The standard pipeline: the supplied comparison check, plus the pattern
@@ -172,6 +174,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         this.linkBuilder = options.links()
                 .map(l -> new LinkBuilder(l.codec(), l.maxPerResponse(), l.resolvers(), l.descriptors(), l.clock()))
                 .orElse(null);
+        this.clock = options.links().map(OrchestrationOptions.LinkIssuing::clock).orElse(Clock.systemUTC());
         this.follower = options.follow()
                 .map(f -> new LinkFollower(f.gate(), f.resolvers(), f.keys(), f.invoker(), f.maxTargets(),
                         f.resolverTimeout()))
@@ -777,9 +780,9 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         }
         // The scope's end already includes the token's (ScopeResolver), so it binds both.
         LinkBinding binding = new LinkBinding(context.scopeId(), caller.principalId(), scopeExpiry, scopeExpiry);
-        LinkFollower.Verdict verdict = follower.authorize(request.link(), binding, () -> SourceLabels.forRequest(
+        LinkFollower.Verdict verdict = follower.authorise(request.link(), binding, () -> SourceLabels.forRequest(
                 catalog, options.visibility(), aliasing, options.realNames(), caller, context));
-        if (!(verdict instanceof LinkFollower.Authorized target)) {
+        if (!(verdict instanceof LinkFollower.Authorised target)) {
             throw followRefusal(state, (LinkFollower.Refused) verdict);
         }
         // A synthetic value, like any subject token; never the key.
@@ -795,13 +798,15 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
 
         List<String> keys;
         boolean truncated = false;
+        // One deadline for the whole follow: the resolver and every read after it.
+        Instant deadline = clock.instant().plus(limits.requestTimeout());
         if (direct) {
             keys = List.of(target.key());
         } else {
             LinkKeys.ScopeKeys scopeKeys = follower.scopeKeys(context.scopeId());
             chargeResolver(context, target.key(), entityType);
             ResolutionContext resolution = new ResolutionContext(context.scopeId(), caller.principalId(),
-                    context.purpose(), Instant.now().plus(limits.requestTimeout()));
+                    context.purpose(), deadline);
             ResolverOutcome outcome = follower.resolve(target, resolution);
             if (outcome instanceof ResolverOutcome.Keys resolved) {
                 keys = LinkFollower.ordered(scopeKeys, resolved.keys());
@@ -816,11 +821,19 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         }
 
         Set<String> prohibited = new LinkedHashSet<>();
+        // The chained key and every key the resolver returned are raw values a target record must not echo.
+        prohibited.add(target.key());
+        prohibited.addAll(keys);
         Set<String> emitted = new LinkedHashSet<>();
         Set<String> declared = new LinkedHashSet<>();
         List<FollowItem> items = new ArrayList<>();
         PrivacyRefusedException firstRefusal = null;
         for (int i = 0; i < keys.size(); i++) {
+            if (!direct && !clock.instant().isBefore(deadline)) {
+                // Past the follow's deadline no further read is started.
+                truncated = true;
+                break;
+            }
             DataRequest read = DataRequest.of(entityType, keys.get(i))
                     .withContext(new SourceCallContext(request.externalCorrelationId()))
                     .withKeyNamespace(target.targetNamespace());
@@ -883,7 +896,6 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         requireValid(assembled, prohibited, emitted, declared, context);
 
         SourceResult result;
-        Map<String, SourceResult> probe = new LinkedHashMap<>();
         List<SourceResult.Item> resultItems = new ArrayList<>();
         List<String> statuses = new ArrayList<>();
         for (FollowItem item : items) {
@@ -900,7 +912,6 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
             List<IssuedLink> links = linked == null ? List.of() : linked.links();
             int omitted = linked == null ? 0 : linked.omitted();
             resultItems.add(new SourceResult.Item(status, item.tree(), links, omitted > 0 ? omitted : null));
-            probe.put(Integer.toString(item.index()), SourceResult.answered(item.tree(), links, omitted));
         }
         if (direct) {
             SourceResult.Item only = resultItems.get(0);
@@ -910,8 +921,8 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
             result = SourceResult.ofItems(SourceOutcome.Status.valueOf(LinkFollower.outerStatus(statuses)),
                     resultItems, truncated);
         }
-        ContextResponse measured = new ContextResponse(entityType, state.subject, probe, List.of(), Map.of(),
-                correlationId);
+        // The response that leaves, with its real label, is what is measured.
+        ContextResponse measured = followEnvelope(entityType, label, result, correlationId, state);
         if (ResponseSize.records(measured) > limits.maxRecords()) {
             throw new PrivacyRefusedException("TOO_MANY_RECORDS", "$",
                     "response exceeds configured record limit " + limits.maxRecords());
@@ -920,7 +931,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
             throw new PrivacyRefusedException("RESPONSE_TOO_LARGE", "$",
                     "response exceeds configured byte limit " + limits.maxResponseBytes());
         }
-        return followEnvelope(entityType, label, result, correlationId, state);
+        return measured;
     }
 
     private static String originLabel(boolean direct, String label, FollowItem item) {

@@ -308,7 +308,8 @@ class FollowTest {
             if (followEnabled) {
                 options = options.withFollow(new OrchestrationOptions.FollowSettings(
                         new LinkAttemptGate(codec(), limiter), keys, new KeyResolvers(resolvers),
-                        new ResolverInvoker(metrics), maxTargets, Duration.ofSeconds(2), budgetCost));
+                        new ResolverInvoker(metrics, ResolverInvoker.DEFAULT_MAX_CONCURRENT_CALLS, clock),
+                        maxTargets, Duration.ofSeconds(2), budgetCost));
             }
             var resolver = new DefaultFieldMetadataResolver();
             return new DefaultContextOrchestrator(adapters, scrubber, resolver, validators,

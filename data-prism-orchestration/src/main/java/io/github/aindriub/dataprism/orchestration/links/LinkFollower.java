@@ -43,7 +43,7 @@ public final class LinkFollower {
     private static final String UNAVAILABLE_TEXT = "The link check is unavailable. Try again later.";
 
     /** The answer to a link: authorised to read, or refused. */
-    public sealed interface Verdict permits Authorized, Refused {
+    public sealed interface Verdict permits Authorised, Refused {
     }
 
     /**
@@ -71,12 +71,12 @@ public final class LinkFollower {
      * @param key             the sealed key
      * @param labels          the labels of this call
      */
-    public record Authorized(SourceCatalog.Entry target, String label, LinkRelation relation,
+    public record Authorised(SourceCatalog.Entry target, String label, LinkRelation relation,
                              KeyNamespace keyNamespace, KeyNamespace targetNamespace, KeyResolver resolver,
                              String key, SourceLabels labels) implements Verdict {
         @Override
         public String toString() {
-            return "Authorized[redacted]";
+            return "Authorised[redacted]";
         }
     }
 
@@ -110,7 +110,7 @@ public final class LinkFollower {
      * @param labels the labels of this call; read only after the link authenticated, so a forger learns nothing
      *               from a failure to build them
      */
-    public Verdict authorize(String token, LinkBinding binding, Supplier<SourceLabels> labels) {
+    public Verdict authorise(String token, LinkBinding binding, Supplier<SourceLabels> labels) {
         LinkAttemptGate.GateDecision decision = gate.open(token, binding,
                 Set.of(LinkRelation.DIRECT, LinkRelation.TRANSLATED));
         if (decision instanceof LinkAttemptGate.Refusal refusal) {
@@ -141,7 +141,7 @@ public final class LinkFollower {
         }
         String key = new String(payload.chainedKey(), StandardCharsets.UTF_8);
         if (payload.relation() == LinkRelation.DIRECT) {
-            return new Authorized(entry, payload.target(), LinkRelation.DIRECT, keyNamespace, keyNamespace, null,
+            return new Authorised(entry, payload.target(), LinkRelation.DIRECT, keyNamespace, keyNamespace, null,
                     key, live);
         }
         KeyNamespace to = declared.get().toNamespace();
@@ -150,7 +150,7 @@ public final class LinkFollower {
         if (resolver.isEmpty()) {
             return refused(LinkReason.RELATION_UNDECLARED);
         }
-        return new Authorized(entry, payload.target(), LinkRelation.TRANSLATED, keyNamespace, to, resolver.get(),
+        return new Authorised(entry, payload.target(), LinkRelation.TRANSLATED, keyNamespace, to, resolver.get(),
                 key, live);
     }
 
@@ -168,8 +168,8 @@ public final class LinkFollower {
     }
 
     /** Calls the one resolver, bounded, with the configured cap and timeout. */
-    public ResolverOutcome resolve(Authorized authorized, ResolutionContext context) {
-        return invoker.invoke(authorized.resolver(), authorized.key(), context, maxTargets, timeout);
+    public ResolverOutcome resolve(Authorised authorised, ResolutionContext context) {
+        return invoker.invoke(authorised.resolver(), authorised.key(), context, maxTargets, timeout);
     }
 
     /**
