@@ -24,6 +24,9 @@ import java.util.Map;
  */
 final class ToolInput {
 
+    /** The refusal code for input that breaks the schema, or that cannot be checked. Not retryable; names nothing. */
+    static final String TOOL_INPUT_INVALID = "TOOL_INPUT_INVALID";
+
     private static final Logger LOG = LoggerFactory.getLogger(ToolInput.class);
 
     private final JsonSchemaValidator validator;

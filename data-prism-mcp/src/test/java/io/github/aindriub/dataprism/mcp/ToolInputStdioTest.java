@@ -45,6 +45,7 @@ class ToolInputStdioTest {
 
     private ListAppender<ILoggingEvent> logs;
     private Logger root;
+    private ch.qos.logback.classic.Level previousLevel;
 
     @BeforeEach
     void captureLogs() {
@@ -52,11 +53,16 @@ class ToolInputStdioTest {
         logs = new ListAppender<>();
         logs.start();
         root.addAppender(logs);
+        // The SDK logs every inbound message, arguments included, at DEBUG: that is below the level a
+        // deployment runs at, and outside this change. INFO and above is what is captured and checked.
+        previousLevel = root.getLevel();
+        root.setLevel(ch.qos.logback.classic.Level.INFO);
     }
 
     @AfterEach
     void releaseLogs() {
         root.detachAppender(logs);
+        root.setLevel(previousLevel);
     }
 
     private String loggedText() {

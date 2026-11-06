@@ -91,9 +91,12 @@ class DescribeSourceToolTest {
                 args("source", "x".repeat(129)))) {
             McpSchema.CallToolResult result = call(env.describe.specification(), bad);
             assertThat(result.isError()).isTrue();
-            assertThat(text(result)).isEqualTo("describe_source arguments are not valid");
+            assertThat(text(result)).isEqualTo("TOOL_INPUT_INVALID");
         }
-        assertThat(env.audited).isEmpty();
+        assertThat(env.audited).hasSize(4).allSatisfy(event -> {
+            assertThat(event.policyDecision()).isEqualTo("DENY:TOOL_INPUT_INVALID");
+            assertThat(event.entityType()).isEmpty();
+        });
     }
 
     @Test

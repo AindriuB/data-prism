@@ -508,12 +508,15 @@ class ListSourcesToolTest {
         Env env = new Env(LIST_AND_NAMES, 5);
 
         for (Map<String, Object> bad : List.of(args("pageSize", 0), args("pageSize", "2"), args("pageSize", 1.5),
-                args("entityType", "bad type"), args("keyNamespace", "UPPER"), args("page", 12))) {
+                args("entityType", "bad type"), args("keyNamespace", "UPPER"))) {
             McpSchema.CallToolResult result = call(env.list.specification(), bad);
             assertThat(result.isError()).isTrue();
-            assertThat(text(result)).isEqualTo("list_sources arguments are not valid");
+            assertThat(text(result)).isEqualTo("TOOL_INPUT_INVALID");
         }
-        assertThat(env.audited).isEmpty();
+        assertThat(env.audited).hasSize(5).allSatisfy(event ->
+                assertThat(event.policyDecision()).isEqualTo("DENY:TOOL_INPUT_INVALID"));
+        // a page that is not a string is a forged link, not an invalid input
+        assertThat(text(call(env.list.specification(), args("page", 12)))).isEqualTo("The link is not valid.");
     }
 
     @Test
