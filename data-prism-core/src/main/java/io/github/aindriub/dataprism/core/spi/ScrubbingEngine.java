@@ -39,4 +39,14 @@ public interface ScrubbingEngine {
     default Optional<ModelDescription> describe(Class<?> model, PrivacyContext context, boolean linksEnabled) {
         return Optional.empty();
     }
+
+    /**
+     * As {@link #describe(Class, PrivacyContext, boolean)}, for an engine whose model class does not say
+     * which source it scrubs (a configured source shares one wrapper class with every other). The default
+     * ignores the name and gives the {@code Class} form's answer.
+     */
+    default Optional<ModelDescription> describe(String sourceName, Class<?> model, PrivacyContext context,
+                                                boolean linksEnabled) {
+        return describe(model, context, linksEnabled);
+    }
 }
