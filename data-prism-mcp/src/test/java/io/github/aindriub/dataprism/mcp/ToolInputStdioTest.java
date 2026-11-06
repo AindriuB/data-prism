@@ -53,8 +53,8 @@ class ToolInputStdioTest {
         logs = new ListAppender<>();
         logs.start();
         root.addAppender(logs);
-        // The SDK logs every inbound message, arguments included, at DEBUG: that is below the level a
-        // deployment runs at, and outside this change. INFO and above is what is captured and checked.
+        // The SDK logs every inbound message, arguments included, at DEBUG on stdio only: that is below the
+        // level a deployment runs at, and outside this change. INFO and above is what is captured and checked.
         previousLevel = root.getLevel();
         root.setLevel(ch.qos.logback.classic.Level.INFO);
     }
@@ -189,7 +189,17 @@ class ToolInputStdioTest {
         }
 
         Answer call(String tool, Map<String, Object> arguments) {
-            JsonNode response = request("tools/call", Map.of("name", tool, "arguments", arguments));
+            Map<String, Object> params = new LinkedHashMap<>();
+            params.put("name", tool);
+            if (arguments != null) {
+                params.put("arguments", arguments);
+            }
+            return call(params);
+        }
+
+        /** A raw tools/call: params exactly as given, so a call may carry no arguments member at all. */
+        Answer call(Map<String, Object> params) {
+            JsonNode response = request("tools/call", params);
             assertThat(response.has("error")).as("a tools/call that reaches a handler is not a protocol error")
                     .isFalse();
             ObjectNode result = (ObjectNode) response.get("result");
@@ -299,7 +309,9 @@ class ToolInputStdioTest {
                 assertThat(fx.env.audited).hasSize(events + 1);
                 AuditEvent event = fx.env.audited.get(events);
                 assertThat(event.policyDecision()).isEqualTo("DENY:LINK_INVALID");
-                assertThat(event.fieldDispositions()).containsEntry("link", "REFUSED:LINK_MALFORMED");
+                assertThat(event.fieldDispositions()).containsEntry("link",
+                        page instanceof String text && text.length() > 1024
+                                ? "REFUSED:LINK_TOO_LONG" : "REFUSED:LINK_MALFORMED");
                 assertThat(count(fx, Metric.MCP_DENIED)).isEqualTo(denied + 1);
             }
             // four invalid pages have counted four failures; a fifth failure is within the limit of five ...
@@ -325,7 +337,30 @@ class ToolInputStdioTest {
             assertThat(answer.text()).isEqualTo("The link is not valid.");
         }
         assertThat(fx.env.audited).singleElement().satisfies(event ->
-                assertThat(event.fieldDispositions()).containsEntry("link", "REFUSED:LINK_MALFORMED"));
+                assertThat(event.fieldDispositions()).containsEntry("link", "REFUSED:LINK_VERSION"));
+    }
+
+    @Test
+    @DisplayName("a call with no arguments member, or null arguments, is a valid empty call: audited and counted")
+    void callWithoutArgumentsIsAnEmptyCall() {
+        EveryToolValidatesInputTest.Fixture fx = new EveryToolValidatesInputTest.Fixture(ALL,
+                ListSourcesToolTest.CALLER);
+        Map<String, Object> absent = new LinkedHashMap<>();
+        absent.put("name", "list_sources");
+        Map<String, Object> nulled = new LinkedHashMap<>(absent);
+        nulled.put("arguments", null);
+
+        try (Peer peer = new Peer(fx.wiring)) {
+            for (Map<String, Object> params : List.of(absent, nulled)) {
+                int events = fx.env.audited.size();
+                Answer answer = peer.call(params);
+
+                assertThat(answer.isError()).isFalse();
+                assertThat(fx.env.audited).hasSize(events + 1);
+                assertThat(fx.env.audited.get(events).policyDecision()).isEqualTo("ALLOW");
+            }
+            assertThat(count(fx, Metric.MCP_REQUESTS)).isEqualTo(2);
+        }
     }
 
     @Test

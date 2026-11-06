@@ -119,12 +119,22 @@ public final class ListSourcesTool extends CatalogTool<ListSourcesTool.Arguments
         Object size = arguments.get("pageSize");
         Integer pageSize = null;
         if (size != null) {
-            if (!(size instanceof Integer || size instanceof Long || size instanceof Short || size instanceof Byte
-                    || size instanceof java.math.BigInteger)) {
+            // The served schema says integer, and in draft 2020-12 2.0 is one: an integral double is accepted.
+            java.math.BigInteger whole;
+            if (size instanceof Integer || size instanceof Long || size instanceof Short || size instanceof Byte) {
+                whole = java.math.BigInteger.valueOf(((Number) size).longValue());
+            } else if (size instanceof java.math.BigInteger big) {
+                whole = big;
+            } else if (size instanceof Double || size instanceof Float || size instanceof java.math.BigDecimal) {
+                try {
+                    whole = new java.math.BigDecimal(size.toString()).toBigIntegerExact();
+                } catch (ArithmeticException | NumberFormatException notIntegral) {
+                    return null;
+                }
+            } else {
                 return null;
             }
-            long value = size instanceof java.math.BigInteger big
-                    ? (big.bitLength() > 31 ? Integer.MAX_VALUE : big.longValue()) : ((Number) size).longValue();
+            long value = whole.bitLength() > 31 ? Integer.MAX_VALUE : whole.longValue();
             pageSize = (int) Math.min(value, Integer.MAX_VALUE);
         }
         return new Arguments(new CatalogQueries.ListRequest((String) arguments.get("entityType"),
@@ -134,9 +144,14 @@ public final class ListSourcesTool extends CatalogTool<ListSourcesTool.Arguments
     /** A call with a {@code page} key that breaks the schema is a forged link: it goes to the gate, counted. */
     @Override
     Arguments onInvalid(Map<String, Object> arguments) {
-        return arguments != null && arguments.containsKey("page")
-                ? new Arguments(new CatalogQueries.ListRequest(null, null, null, CatalogQueries.UNREADABLE_PAGE))
-                : null;
+        if (arguments == null || !arguments.containsKey("page")) {
+            return null;
+        }
+        // A string goes to the gate as it is, so the gate's own reason (too long, version, malformed) is the one
+        // audited. The empty string is the one the gate does not count; it stands in as unreadable, so it does.
+        String page = arguments.get("page") instanceof String text && !text.isEmpty()
+                ? text : CatalogQueries.UNREADABLE_PAGE;
+        return new Arguments(new CatalogQueries.ListRequest(null, null, null, page));
     }
 
     @Override
@@ -305,7 +320,8 @@ abstract class CatalogTool<A> {
     private McpSchema.CallToolResult handle(McpSyncServerExchange exchange, McpSchema.CallToolRequest request,
                                             InboundCorrelation inbound) {
         String externalId = inbound.id().map(ExternalCorrelationId::value).orElse("");
-        Map<String, Object> arguments = request.arguments();
+        // A call may omit arguments or send null: that is the empty call, for every tool.
+        Map<String, Object> arguments = request.arguments() == null ? Map.of() : request.arguments();
         Set<String> rejected = ToolCalls.rejectedArguments(arguments);
 
         AuthenticatedCaller caller = callerFrom(exchange);
@@ -314,8 +330,12 @@ abstract class CatalogTool<A> {
         }
         // Checked here, acted on after authorisation and scope: a role without the capability is
         // TOOL_NOT_PERMITTED whether or not its input is valid.
-        A parsed = input.valid(arguments) ? parse(arguments) : null;
-        if (parsed == null) {
+        // Only input that broke the schema may be a forged link; a call that passed it and could not be
+        // converted is plain invalid input, and counts against no limiter.
+        A parsed;
+        if (input.valid(arguments)) {
+            parsed = parse(arguments);
+        } else {
             parsed = onInvalid(arguments);
         }
         String entityType = parsed == null ? invalidEntityType() : auditedEntityType(parsed, entityTypes);

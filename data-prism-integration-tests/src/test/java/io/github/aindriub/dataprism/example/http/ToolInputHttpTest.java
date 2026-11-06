@@ -319,12 +319,33 @@ class ToolInputHttpTest {
                 assertThat(withoutCorrelation(result)).isEqualTo(withoutCorrelation(forged));
                 assertThat(audited).hasSize(events + 1);
                 assertThat(audited.get(events).policyDecision()).isEqualTo("DENY:LINK_INVALID");
-                assertThat(audited.get(events).fieldDispositions()).containsEntry("link", "REFUSED:LINK_MALFORMED");
+                assertThat(audited.get(events).fieldDispositions()).containsEntry("link",
+                        page instanceof String text && text.length() > 1024
+                                ? "REFUSED:LINK_TOO_LONG" : "REFUSED:LINK_MALFORMED");
                 assertThat(denied()).isEqualTo(before + 1);
             }
             // One forged link and four invalid pages are five counted failures, the limit; the next is over it.
             McpSchema.CallToolResult exhausted = call(client, "list_sources", args("page", 7));
             assertThat(text(exhausted)).isEqualTo("LINK_ATTEMPTS_EXHAUSTED");
+        } finally {
+            client.closeGracefully();
+        }
+    }
+
+    @Test
+    @DisplayName("a list_sources call with no arguments, or null arguments, is a valid empty call")
+    void callWithoutArgumentsIsAnEmptyCall() throws Exception {
+        int port = start();
+        McpSyncClient client = client(port, "investigator");
+        try {
+            for (Map<String, Object> arguments : java.util.Arrays.<Map<String, Object>>asList(null, Map.of())) {
+                int events = audited.size();
+                McpSchema.CallToolResult result = call(client, "list_sources", arguments);
+
+                assertThat(result.isError()).isNotEqualTo(Boolean.TRUE);
+                assertThat(audited).hasSize(events + 1);
+                assertThat(audited.get(events).policyDecision()).isEqualTo("ALLOW");
+            }
         } finally {
             client.closeGracefully();
         }

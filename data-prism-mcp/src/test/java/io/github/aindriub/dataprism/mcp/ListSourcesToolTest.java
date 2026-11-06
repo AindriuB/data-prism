@@ -430,6 +430,21 @@ class ListSourcesToolTest {
     }
 
     @Test
+    @DisplayName("a pageSize of 2.0 is the integer 2: a genuine link with it resumes the walk, uncounted")
+    void integralDoublePageSizeIsAnInteger() {
+        Env env = new Env(LIST_AND_NAMES, 5);
+        McpSchema.CallToolResult first = call(env.list.specification(), args("pageSize", 2));
+        String next = (String) page(first).get("next");
+
+        for (int i = 0; i < 8; i++) {
+            McpSchema.CallToolResult second = call(env.list.specification(), args("page", next, "pageSize", 2.0));
+
+            assertThat(second.isError()).isNotEqualTo(Boolean.TRUE);
+            assertThat(labels(second)).containsExactly("src-003", "src-004");
+        }
+    }
+
+    @Test
     @DisplayName("no client-sent filter, label or page token appears in any audit record or result text")
     void noClientTextIsRecorded() {
         Env env = new Env(LIST_AND_NAMES, 5);
