@@ -36,24 +36,45 @@ public class PagingProperties {
     /** {@code dataprism.paging.list-sources.*}. */
     public static class ListSources {
         /** Entries on a page when the caller asks for no size. Positive and at most max-page-size. */
-        private int pageSize = 25;
+        private String pageSize = "25";
         /** The largest page a caller may ask for; a larger request is served at this size. 1 to 65535. */
-        private int maxPageSize = 100;
+        private String maxPageSize = "100";
 
-        public int getPageSize() {
+        public String getPageSize() {
             return pageSize;
         }
 
-        public void setPageSize(int v) {
+        /** Bound as text so that a value that is not a whole number refuses with the stable code. */
+        public void setPageSize(String v) {
             pageSize = v;
         }
 
-        public int getMaxPageSize() {
+        public String getMaxPageSize() {
             return maxPageSize;
         }
 
-        public void setMaxPageSize(int v) {
+        /** Bound as text, as {@link #setPageSize}. */
+        public void setMaxPageSize(String v) {
             maxPageSize = v;
+        }
+
+        /** @throws DataPrismConfigurationException {@code INVALID_PAGING_SETTING} if the setting is not a whole number */
+        public int pageSizeValue() {
+            return whole(pageSize, "dataprism.paging.list-sources.page-size");
+        }
+
+        /** @throws DataPrismConfigurationException {@code INVALID_PAGING_SETTING} if the setting is not a whole number */
+        public int maxPageSizeValue() {
+            return whole(maxPageSize, "dataprism.paging.list-sources.max-page-size");
+        }
+
+        private static int whole(String text, String property) {
+            try {
+                return Integer.parseInt(text.strip());
+            } catch (RuntimeException notAWholeNumber) {
+                throw new DataPrismConfigurationException("INVALID_PAGING_SETTING",
+                        property + " must be a whole number");
+            }
         }
     }
 }

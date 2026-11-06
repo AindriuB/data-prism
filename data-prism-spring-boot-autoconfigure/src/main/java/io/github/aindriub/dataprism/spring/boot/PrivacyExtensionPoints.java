@@ -3,8 +3,13 @@ package io.github.aindriub.dataprism.spring.boot;
 import org.springframework.beans.factory.BeanFactoryUtils;
 import org.springframework.beans.factory.FactoryBean;
 import org.springframework.beans.factory.ListableBeanFactory;
-import org.springframework.beans.factory.config.InstantiationAwareBeanPostProcessor;
+import org.springframework.beans.factory.SmartInitializingSingleton;
+import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
+import org.springframework.beans.factory.config.InstantiationAwareBeanPostProcessor;
+import org.springframework.beans.factory.support.BeanDefinitionRegistry;
+import org.springframework.beans.factory.support.RootBeanDefinition;
+import org.springframework.context.support.AbstractApplicationContext;
 
 import java.util.Arrays;
 import java.util.LinkedHashSet;
@@ -156,35 +161,82 @@ public final class PrivacyExtensionPoints {
      *
      * <ol>
      * <li>Now, for every definition whose type is declared: the refusal comes before any singleton is created.
-     * <li>As beans are created ({@link Watcher}): a raw factory is read before the next bean is instantiated, and
-     * any bean that turns out to be the type is refused as it is created, whatever it was declared to be. The refusal
-     * comes before anything is injected with it, so it is the refusal and not a "found 2 matching beans" error that
-     * the application sees.
+     * <li>As beans are created ({@link Watcher}): from the point the application context has registered every bean
+     * post-processor and initialised its event multicaster (before {@code onRefresh}, which creates the servlet and
+     * its dependencies), a raw factory is read before the next bean is instantiated, and any bean that turns out to
+     * be the type is refused as it is created, whatever it was declared to be. The refusal comes before anything is
+     * injected with it, so it is the refusal and not a "found 2 matching beans" error that the application sees.
+     * <li>Once every singleton exists ({@link PostCheck}): the real beans of the type are inspected, which catches
+     * what the first two cannot see: a post-processor that swapped a bean after the watcher ran, a definition added
+     * late, a singleton registered by hand. The watcher stops reading at that point.
      * </ol>
+     * A deliberate post-processor that replaces the guarded bean under its own name is not detected: that is
+     * operator code (docs/architecture.md, trust boundary).
      */
     static void refuseCompetingBeans(ConfigurableListableBeanFactory factory, Class<?> type, String ownName,
                                      Supplier<? extends RuntimeException> refusal) {
         if (competing(factory, type, ownName)) {
             throw refusal.get();
         }
-        factory.addBeanPostProcessor(new Watcher(factory, type, ownName, refusal));
+        Watcher watcher = new Watcher(factory, type, ownName, refusal);
+        factory.addBeanPostProcessor(watcher);
+        if (factory instanceof BeanDefinitionRegistry registry) {
+            RootBeanDefinition check = new RootBeanDefinition(PostCheck.class,
+                    () -> new PostCheck(factory, watcher, type, ownName, refusal));
+            check.setRole(BeanDefinition.ROLE_INFRASTRUCTURE);
+            registry.registerBeanDefinition("dataPrismCompetitionCheck." + type.getSimpleName(), check);
+        }
+    }
+
+    /** Once every singleton exists, refuses any real bean of the type other than the settings' own. */
+    static final class PostCheck implements SmartInitializingSingleton {
+        private final ConfigurableListableBeanFactory factory;
+        private final Watcher watcher;
+        private final Class<?> type;
+        private final String ownName;
+        private final Supplier<? extends RuntimeException> refusal;
+
+        PostCheck(ConfigurableListableBeanFactory factory, Watcher watcher, Class<?> type, String ownName,
+                  Supplier<? extends RuntimeException> refusal) {
+            this.factory = factory;
+            this.watcher = watcher;
+            this.type = type;
+            this.ownName = ownName;
+            this.refusal = refusal;
+        }
+
+        @Override
+        public void afterSingletonsInstantiated() {
+            watcher.stop();
+            for (String name : factory.getBeanNamesForType(type, true, true)) {
+                if (!name.equals(ownName)) {
+                    throw refusal.get();
+                }
+            }
+        }
     }
 
     /** Whether {@code bean} is, or is a factory for, a {@code type}; reads a factory's declared product type only. */
     private static boolean produces(Object bean, Class<?> type) {
+        if (type.isInstance(bean)) {
+            return true;
+        }
         if (bean instanceof FactoryBean<?> factoryBean) {
             Class<?> product = factoryBean.getObjectType();
             return product != null && type.isAssignableFrom(product);
         }
-        return type.isInstance(bean);
+        return false;
     }
 
     /**
-     * Looks for a competing bean while beans are being created. Before each bean is instantiated it reads the product
-     * type of every raw factory whose type is still unknown (the factory is created for this, which Spring does
-     * without handing it to any post-processor, and so before anything is injected with its product), until every
-     * factory has been read; a factory on a configuration class that is itself being created is read at a later bean.
-     * After a bean is initialised it refuses one that is a competing type whatever it was declared to be.
+     * Looks for a competing bean while beans are being created. It does nothing until the application context has
+     * registered every bean post-processor (its event multicaster exists, which {@code refresh} initialises after
+     * {@code registerBeanPostProcessors} and before {@code onRefresh}), because reading a raw factory creates it, and
+     * a factory created earlier would be created without the post-processors. From then, before each bean is
+     * instantiated, it reads the product type of every raw factory whose type is still unknown (so before anything is
+     * injected with its product), until every factory has been read or {@link #stop} is called; a factory on a
+     * configuration class that is itself being created is read at a later bean. After a bean is initialised it
+     * refuses one that is a competing type whatever it was declared to be.
      */
     private static final class Watcher implements InstantiationAwareBeanPostProcessor {
         /** Set while a read runs, so that the creation of a raw factory it triggers cannot re-enter. */
@@ -197,6 +249,11 @@ public final class PrivacyExtensionPoints {
         private final Set<String> read = ConcurrentHashMap.newKeySet();
         private volatile boolean allRead;
 
+        /** No further reads: every singleton exists, and {@link PostCheck} inspects the beans themselves. */
+        void stop() {
+            allRead = true;
+        }
+
         Watcher(ConfigurableListableBeanFactory factory, Class<?> type, String ownName,
                 Supplier<? extends RuntimeException> refusal) {
             this.factory = factory;
@@ -207,7 +264,8 @@ public final class PrivacyExtensionPoints {
 
         @Override
         public Object postProcessBeforeInstantiation(Class<?> beanClass, String beanName) {
-            if (allRead || READING.get() != null) {
+            if (allRead || READING.get() != null
+                    || !factory.containsSingleton(AbstractApplicationContext.APPLICATION_EVENT_MULTICASTER_BEAN_NAME)) {
                 return null;
             }
             READING.set(Boolean.TRUE);

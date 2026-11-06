@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.server;
 
 import io.github.aindriub.dataprism.audit.AuditSink;
+import io.github.aindriub.dataprism.core.limits.RequestLimits;
 import io.github.aindriub.dataprism.core.spi.DataRequest;
 import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
@@ -8,7 +9,6 @@ import io.github.aindriub.dataprism.core.spi.IdentityResolver;
 import io.github.aindriub.dataprism.core.spi.PassThroughIdentityResolver;
 import io.github.aindriub.dataprism.spring.boot.DataPrismConfigurationException;
 import io.github.aindriub.dataprism.spring.boot.HmacKeyReferenceResolver;
-import io.github.aindriub.dataprism.core.limits.RequestLimits;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.FactoryBean;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;

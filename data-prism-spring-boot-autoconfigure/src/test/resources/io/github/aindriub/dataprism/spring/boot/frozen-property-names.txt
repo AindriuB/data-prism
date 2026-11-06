@@ -122,8 +122,8 @@ dataprism.oversight.max-pending-per-requester | int | rw | 5
 dataprism.paging | bean | rw
 dataprism.paging.lifetime | java.lang.String | rw | PT15M
 dataprism.paging.list-sources | bean | ro
-dataprism.paging.list-sources.max-page-size | int | rw | 100
-dataprism.paging.list-sources.page-size | int | rw | 25
+dataprism.paging.list-sources.max-page-size | java.lang.String | rw | 100
+dataprism.paging.list-sources.page-size | java.lang.String | rw | 25
 dataprism.privacy | bean | rw
 dataprism.privacy.descriptor-file | java.lang.String | rw | null
 dataprism.privacy.hmac-key | bean | rw

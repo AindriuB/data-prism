@@ -68,6 +68,18 @@ class PagingConfigurationTest {
         });
     }
 
+    @ParameterizedTest
+    @CsvSource({"list-sources.page-size, abc", "list-sources.page-size, 1.5", "list-sources.max-page-size, abc",
+            "list-sources.max-page-size, 1.5"})
+    void a_value_that_is_not_a_whole_number_refuses_startup_with_the_stable_code(String key, String value) {
+        context.withPropertyValues("dataprism.paging." + key + "=" + value).run(result -> {
+            assertThat(result).hasFailed();
+            DataPrismConfigurationException refusal = refusal(result.getStartupFailure());
+            assertThat(refusal.code()).isEqualTo("INVALID_PAGING_SETTING");
+            assertThat(refusal.getMessage()).contains("dataprism.paging." + key).doesNotContain(value);
+        });
+    }
+
     @Test
     void a_page_size_above_the_maximum_refuses_startup() {
         context.withPropertyValues("dataprism.paging.list-sources.page-size=101").run(result -> {

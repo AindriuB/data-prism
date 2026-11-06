@@ -911,7 +911,7 @@ public final class DataPrismPropertiesValidator {
             refuse("INVALID_PAGING_SETTING", "dataprism.paging.lifetime must be positive");
         }
         try {
-            new PagingSettings(paging.getListSources().getPageSize(), paging.getListSources().getMaxPageSize(),
+            new PagingSettings(paging.getListSources().pageSizeValue(), paging.getListSources().maxPageSizeValue(),
                     lifetime);
         } catch (IllegalArgumentException invalid) {
             refuse("INVALID_PAGING_SETTING", ruleOf(invalid.getMessage(), PagingSettings.INVALID));

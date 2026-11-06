@@ -15,6 +15,13 @@ dataPrismCatalogPreflight | org.springframework.beans.factory.config.BeanFactory
 dataPrismCatalogQueries | io.github.aindriub.dataprism.orchestration.catalog.CatalogQueries
 dataPrismClientAllowlist | io.github.aindriub.dataprism.security.ClientAllowlist
 dataPrismClock | java.time.Clock
+dataPrismCompetitionCheck.CatalogQueries | io.github.aindriub.dataprism.spring.boot.PrivacyExtensionPoints$PostCheck
+dataPrismCompetitionCheck.LinkCodec | io.github.aindriub.dataprism.spring.boot.PrivacyExtensionPoints$PostCheck
+dataPrismCompetitionCheck.LinkKeys | io.github.aindriub.dataprism.spring.boot.PrivacyExtensionPoints$PostCheck
+dataPrismCompetitionCheck.OrchestrationOptions | io.github.aindriub.dataprism.spring.boot.PrivacyExtensionPoints$PostCheck
+dataPrismCompetitionCheck.PrivacyPolicyResolver | io.github.aindriub.dataprism.spring.boot.PrivacyExtensionPoints$PostCheck
+dataPrismCompetitionCheck.RequestLimits | io.github.aindriub.dataprism.spring.boot.PrivacyExtensionPoints$PostCheck
+dataPrismCompetitionCheck.SourceCatalog | io.github.aindriub.dataprism.spring.boot.PrivacyExtensionPoints$PostCheck
 dataPrismContextOrchestrator | io.github.aindriub.dataprism.orchestration.ContextOrchestrator
 dataPrismContractValidator | io.github.aindriub.dataprism.spring.boot.validation.DataPrismContractValidator
 dataPrismCorrelationMdc | io.github.aindriub.dataprism.core.correlation.CorrelationMdc

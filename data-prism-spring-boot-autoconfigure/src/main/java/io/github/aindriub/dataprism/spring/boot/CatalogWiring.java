@@ -91,7 +91,7 @@ class CatalogWiring {
             throw catalogRefusal(refused);
         }
         PagingProperties.ListSources paging = properties.getPaging().getListSources();
-        if (catalog.entries().size() > paging.getPageSize() && !properties.getLinks().keyConfigured()) {
+        if (catalog.entries().size() > paging.pageSizeValue() && !properties.getLinks().keyConfigured()) {
             throw new DataPrismConfigurationException("MISSING_PAGING_KEY",
                     "more sources are registered than dataprism.paging.list-sources.page-size; "
                             + "dataprism.links.key-id is required to page list_sources");
@@ -217,7 +217,7 @@ class CatalogWiring {
         PagingProperties paging = properties.getPaging();
         return new CatalogQueries(catalog, options.visibility(), new SourceAliasing(tokens), options.realNames(),
                 orchestrator, List.copyOf(validators),
-                new PagingSettings(paging.getListSources().getPageSize(), paging.getListSources().getMaxPageSize(),
+                new PagingSettings(paging.getListSources().pageSizeValue(), paging.getListSources().maxPageSizeValue(),
                         paging.lifetimeValue()),
                 null, false, metrics, clock);
     }
