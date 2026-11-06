@@ -1,9 +1,10 @@
 package io.github.aindriub.dataprism.spring.boot;
 
+import org.springframework.beans.factory.BeanFactoryUtils;
 import org.springframework.beans.factory.FactoryBean;
 import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.beans.factory.SmartInitializingSingleton;
-import org.springframework.beans.factory.config.BeanPostProcessor;
+import org.springframework.beans.factory.config.InstantiationAwareBeanPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.RootBeanDefinition;
@@ -13,6 +14,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Supplier;
 
@@ -162,8 +164,10 @@ public final class PrivacyExtensionPoints {
      *
      * <ol>
      * <li>Now, for every definition whose type is declared: the refusal comes before any singleton is created.
-     * <li>As each bean is created, whatever it was declared to be: the refusal comes before anything is injected
-     * with it, so it is the refusal and not a "found 2 matching beans" error that the application sees.
+     * <li>As beans are created ({@link Watcher}): a raw factory is read before the next bean is instantiated, and
+     * any bean that turns out to be the type is refused as it is created, whatever it was declared to be. The refusal
+     * comes before anything is injected with it, so it is the refusal and not a "found 2 matching beans" error that
+     * the application sees.
      * <li>After every singleton is instantiated ({@link SmartInitializingSingleton}), for the beans that really
      * exist: a raw factory, or a bean declared as {@code Object}, wherever it is declared and whichever bean is
      * created first. Startup fails before the context finishes refreshing, so before a server accepts a request.
@@ -175,15 +179,7 @@ public final class PrivacyExtensionPoints {
         if (competing(factory, type, ownName)) {
             throw refusal.get();
         }
-        factory.addBeanPostProcessor(new BeanPostProcessor() {
-            @Override
-            public Object postProcessAfterInitialization(Object bean, String beanName) {
-                if (!ownName.equals(beanName) && produces(bean, type)) {
-                    throw refusal.get();
-                }
-                return bean;
-            }
-        });
+        factory.addBeanPostProcessor(new Watcher(factory, type, ownName, refusal));
         lateChecks(factory).add(() -> {
             if (competing(factory, type, ownName)) {
                 throw refusal.get();
@@ -216,6 +212,75 @@ public final class PrivacyExtensionPoints {
         definition.setAttribute(LATE_CHECKS, checks);
         registry.registerBeanDefinition(LATE_CHECKS, definition);
         return checks;
+    }
+
+    /**
+     * Looks for a competing bean while beans are being created. Before each bean is instantiated it reads the product
+     * type of every raw factory whose type is still unknown (the factory is created for this, which Spring does
+     * without handing it to any post-processor, and so before anything is injected with its product), until every
+     * factory has been read; a factory on a configuration class that is itself being created is read at a later bean.
+     * After a bean is initialised it refuses one that is a competing type whatever it was declared to be.
+     */
+    private static final class Watcher implements InstantiationAwareBeanPostProcessor {
+        /** Set while a read runs, so that the creation of a raw factory it triggers cannot re-enter. */
+        private static final ThreadLocal<Boolean> READING = new ThreadLocal<>();
+
+        private final ConfigurableListableBeanFactory factory;
+        private final Class<?> type;
+        private final String ownName;
+        private final Supplier<? extends RuntimeException> refusal;
+        private final Set<String> read = ConcurrentHashMap.newKeySet();
+        private volatile boolean allRead;
+
+        Watcher(ConfigurableListableBeanFactory factory, Class<?> type, String ownName,
+                Supplier<? extends RuntimeException> refusal) {
+            this.factory = factory;
+            this.type = type;
+            this.ownName = ownName;
+            this.refusal = refusal;
+        }
+
+        @Override
+        public Object postProcessBeforeInstantiation(Class<?> beanClass, String beanName) {
+            if (allRead || READING.get() != null) {
+                return null;
+            }
+            READING.set(Boolean.TRUE);
+            try {
+                boolean unread = false;
+                for (String factoryName : factory.getBeanNamesForType(FactoryBean.class, true, false)) {
+                    String name = BeanFactoryUtils.transformedBeanName(factoryName);
+                    if (read.contains(name)) {
+                        continue;
+                    }
+                    if (factory.getType(name, false) != null) {
+                        read.add(name);
+                        continue;
+                    }
+                    Class<?> product = factory.getType(name, true);
+                    if (product == null) {
+                        unread = true;
+                        continue;
+                    }
+                    read.add(name);
+                    if (!name.equals(ownName) && type.isAssignableFrom(product)) {
+                        throw refusal.get();
+                    }
+                }
+                allRead = !unread;
+            } finally {
+                READING.remove();
+            }
+            return null;
+        }
+
+        @Override
+        public Object postProcessAfterInitialization(Object bean, String beanName) {
+            if (!ownName.equals(beanName) && produces(bean, type)) {
+                throw refusal.get();
+            }
+            return bean;
+        }
     }
 
     /** Runs every guard's check once all singletons exist. */

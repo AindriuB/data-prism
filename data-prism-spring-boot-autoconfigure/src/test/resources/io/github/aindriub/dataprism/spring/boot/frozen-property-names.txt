@@ -31,7 +31,7 @@ dataprism.audit.sink | java.lang.String | rw | null
 dataprism.audit.writer-id | java.lang.String | rw | null
 dataprism.catalog | bean | rw
 dataprism.catalog.real-names-scopes | java.util.List<java.lang.String> | rw | []
-dataprism.catalog.unselected-source-limit | int | rw | 8
+dataprism.catalog.unselected-source-limit | java.lang.String | rw | 8
 dataprism.correlation | bean | rw
 dataprism.correlation.inbound | bean | ro
 dataprism.correlation.inbound.format | java.lang.String | rw | opaque
@@ -120,7 +120,7 @@ dataprism.oversight.caller-rate-limit.requests | java.lang.Integer | rw | null
 dataprism.oversight.caller-rate-limit.window | java.time.Duration | rw | PT1M
 dataprism.oversight.max-pending-per-requester | int | rw | 5
 dataprism.paging | bean | rw
-dataprism.paging.lifetime | java.time.Duration | rw | PT15M
+dataprism.paging.lifetime | java.lang.String | rw | PT15M
 dataprism.paging.list-sources | bean | ro
 dataprism.paging.list-sources.max-page-size | int | rw | 100
 dataprism.paging.list-sources.page-size | int | rw | 25

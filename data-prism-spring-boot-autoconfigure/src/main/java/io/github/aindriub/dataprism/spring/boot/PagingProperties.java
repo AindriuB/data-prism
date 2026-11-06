@@ -8,7 +8,7 @@ import java.time.Duration;
 public class PagingProperties {
     private final ListSources listSources = new ListSources();
     /** How long a page link stays valid after it was issued. Positive. */
-    private String lifetime = "15m";
+    private String lifetime = "PT15M";
 
     public ListSources getListSources() {
         return listSources;
