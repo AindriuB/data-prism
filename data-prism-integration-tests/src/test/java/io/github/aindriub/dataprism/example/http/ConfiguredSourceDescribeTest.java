@@ -212,7 +212,7 @@ class ConfiguredSourceDescribeTest {
     private static PrivacyContext privacy() {
         return new PrivacyContext("SCOPE-299", PrivacyScopeType.INVESTIGATION, "DEFAULT", "investigation",
                 Instant.parse("2035-01-01T00:00:00Z"),
-                PseudonymisationVersion.HMAC_SHA256_V1.withKey("v1").withVocabulary("und"));
+                PseudonymisationVersion.HMAC_SHA256_V1.withKey("example-v1").withVocabulary("generic-v1#9136656a"));
     }
 
     private static void leaves(JsonNode node, String path, List<String> into) {
