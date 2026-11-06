@@ -52,3 +52,22 @@ Every configured source shares one model class, `ConfiguredJsonPayload`, so 250'
 - Never read `~/.m2/settings.xml`, `~/.m2/settings-security.xml`, `~/.gnupg`, `.env` files or any other credential file.
 - No `mvn install`, no `git stash`, no force-push, no `pkill` or `killall` by pattern.
 - Never route around a hook or a permission denial. Stop and report it.
+
+## Outcome (2026-11-06, 0.8; PR #216)
+
+- `ScrubbingEngine` gains a default `describe(sourceName, model, ctx, links)` delegating to the `Class` form. `ConfiguredJsonScrubbingEngine` overrides it and routes on model type first: `ConfiguredJsonPayload` describes the named source (unknown name is empty), any other model goes to the delegate.
+- `ContextOrchestrator` gains a default by-name `describe` (empty). `DefaultContextOrchestrator` overrides it with its own scrubber and the named adapter's response type; unknown name is empty. Adapters supply no description; the engine stays the only authority.
+- `CatalogQueries` now takes the orchestrator instead of the scrubber and adapter list. Refusals and audit reasons are unchanged. Existing 250 tests changed only at constructor call sites and stubs.
+
+### Tests first (red on the base commit, commit e64b2eb3)
+Compile failures on the missing API in `DefaultContextOrchestratorDescribeTest` (new), `ConfiguredJsonDescribeConformanceTest` routing rows, `CatalogQueriesTest`, `CatalogPageLinkTest`, `ListSourcesToolTest`. `ConfiguredSourceDescribeTest` (new, real auto-configured context over a TLS upstream) covers: a configured source describes non-empty from the `ContextOrchestrator` bean; `dataPrismScrubber` cannot describe it; every path of a real scrubbed response is described with the protection it was scrubbed under.
+
+### Mutants (both killed)
+- Routing on the name first (`sources.containsKey(name)` in place of the model-type check): `byNameRoutesPayloadClassToTheNamedSource` and `javaFirstModelNamedLikeAConfiguredSourceGoesToTheDelegate` fail.
+- Describing from the Java-first engine (what `dataPrismScrubber` is) instead of the configured one: `configuredSourceDescribesFromTheOrchestratorBean` fails and `everyScrubbedPathIsDescribedWithItsProtection` errors (no description).
+
+### Verified locally
+Targeted classes in core/orchestration/connectors-rest/mcp plus the integration test, with `-pl <module> -am`: all green. The full `verify` is left to CI.
+
+### Noted
+`ConfiguredJsonPayload` is package-private, so the integration test reaches its class through the adapter's `responseType()`.
