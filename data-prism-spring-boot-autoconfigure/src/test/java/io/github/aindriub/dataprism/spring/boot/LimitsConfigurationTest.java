@@ -60,13 +60,60 @@ class LimitsConfigurationTest {
     }
 
     @Test
-    void a_per_source_timeout_above_the_default_deadline_starts_with_the_deadline_raised_to_match() {
-        context.withPropertyValues("dataprism.limits.per-source-timeout=15s").run(result -> {
-            assertThat(result).hasNotFailed();
-            RequestLimits limits = orchestratorLimits(result.getBean(ContextOrchestrator.class));
-            assertThat(limits.perSourceTimeout()).isEqualTo(Duration.ofSeconds(15));
-            assertThat(limits.requestTimeout()).isEqualTo(Duration.ofSeconds(15));
+    void the_defaults_of_the_two_deadline_keys_are_the_decided_ones() {
+        context.run(result -> {
+            RequestLimits limits = result.getBean("dataPrismRequestLimits", RequestLimits.class);
+            assertThat(limits.requestTimeout()).isEqualTo(Duration.ofSeconds(10));
+            assertThat(limits.scopeTotalReadBudget()).isEqualTo(50_000);
         });
+    }
+
+    @Test
+    void request_timeout_is_bound_and_reaches_the_request_limits() {
+        context.withPropertyValues("dataprism.limits.request-timeout=25s").run(result -> {
+            assertThat(result).hasNotFailed();
+            assertThat(result.getBean("dataPrismRequestLimits", RequestLimits.class).requestTimeout())
+                    .isEqualTo(Duration.ofSeconds(25));
+            assertThat(orchestratorLimits(result.getBean(ContextOrchestrator.class)).requestTimeout())
+                    .isEqualTo(Duration.ofSeconds(25));
+        });
+    }
+
+    @Test
+    void scope_total_read_budget_is_bound_and_reaches_the_request_limits() {
+        context.withPropertyValues("dataprism.limits.scope-total-read-budget=1234").run(result -> {
+            assertThat(result).hasNotFailed();
+            assertThat(result.getBean("dataPrismRequestLimits", RequestLimits.class).scopeTotalReadBudget())
+                    .isEqualTo(1234);
+        });
+    }
+
+    @ParameterizedTest
+    @CsvSource({"request-timeout, 0s", "request-timeout, -7s", "scope-total-read-budget, 0",
+            "scope-total-read-budget, -7"})
+    void a_non_positive_deadline_or_total_refuses_startup_naming_only_the_property(String key, String value) {
+        context.withPropertyValues("dataprism.limits." + key + "=" + value).run(result -> {
+            assertThat(result).hasFailed();
+            DataPrismConfigurationException refusal = refusal(result.getStartupFailure());
+            assertThat(refusal.code()).isEqualTo("INVALID_REQUEST_LIMITS");
+            assertThat(refusal.getMessage()).contains("dataprism.limits." + key).doesNotContain("-7");
+        });
+    }
+
+    @Test
+    void a_deadline_below_the_per_source_timeout_refuses_startup_naming_the_property() {
+        context.withPropertyValues("dataprism.limits.per-source-timeout=15s").run(result -> {
+            assertThat(result).hasFailed();
+            DataPrismConfigurationException refusal = refusal(result.getStartupFailure());
+            assertThat(refusal.code()).isEqualTo("INVALID_REQUEST_LIMITS");
+            assertThat(refusal.getMessage()).contains("dataprism.limits.request-timeout").doesNotContain("15");
+        });
+    }
+
+    @Test
+    void a_deadline_equal_to_the_per_source_timeout_starts() {
+        context.withPropertyValues("dataprism.limits.per-source-timeout=15s", "dataprism.limits.request-timeout=15s")
+                .run(result -> assertThat(result).hasNotFailed());
     }
 
     @Test
