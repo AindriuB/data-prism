@@ -1,0 +1,12 @@
+json-sources:
+  alpha-service:
+    base-url: https://alpha.example.internal
+    path: /alpha/{subject}
+    timeout: PT2S
+    model-version: alpha-v1
+    subject-json-path: ref
+    fields:
+      ref:
+        identifier: true
+      state:
+        nonSensitive: "Enumerated lifecycle state"

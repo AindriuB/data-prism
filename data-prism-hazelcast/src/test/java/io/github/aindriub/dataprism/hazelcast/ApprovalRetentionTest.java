@@ -336,7 +336,7 @@ class ApprovalRetentionTest {
         Config config = ClusterMembership.tcpIp(TestMembers.uniqueName("sweep-schedule"),
                 List.of("127.0.0.1:" + port)).withPort(port).withInterface("127.0.0.1").toConfig();
         PrivacyCluster scheduled = PrivacyCluster.embedded(config, false, OptionalInt.empty(), Duration.ofSeconds(1),
-                TestMembers.KEYS);
+                TestMembers.KEYS, TestMembers.TRUSTED);
         try {
             assertThat(scheduled.approvalSweepInterval()).isEqualTo(Duration.ofSeconds(1));
             var scheduledStore = new HazelcastApprovalStore(scheduled, Duration.ofMillis(300));
@@ -360,13 +360,14 @@ class ApprovalRetentionTest {
             ClusterMembership membership = ClusterMembership.tcpIp(TestMembers.uniqueName("sweep-bounds"),
                     List.of("127.0.0.1:" + port)).withPort(port).withInterface("127.0.0.1");
             try (PrivacyCluster built = PrivacyCluster.embedded(membership, false, OptionalInt.empty(), good,
-                    TestMembers.KEYS)) {
+                    TestMembers.KEYS, TestMembers.TRUSTED)) {
                 assertThat(built.approvalSweepInterval()).isEqualTo(good);
             }
             int otherPort = FreePorts.consecutive(1);
             try (PrivacyCluster other = TestMembers.member(TestMembers.uniqueName("sweep-using"), otherPort,
                     List.of("127.0.0.1:" + otherPort), OptionalInt.empty());
-                 PrivacyCluster wrapped = PrivacyCluster.using(other.instance(), false, good, TestMembers.KEYS)) {
+                 PrivacyCluster wrapped = PrivacyCluster.using(other.instance(), false, good, TestMembers.KEYS,
+                         TestMembers.TRUSTED)) {
                 assertThat(wrapped.approvalSweepInterval()).isEqualTo(good);
             }
         }
@@ -379,7 +380,8 @@ class ApprovalRetentionTest {
                     .isInstanceOf(IllegalArgumentException.class);
             assertThatThrownBy(() -> PrivacyCluster.embedded(membership.toConfig(), false, OptionalInt.empty(), bad))
                     .isInstanceOf(IllegalArgumentException.class);
-            assertThatThrownBy(() -> PrivacyCluster.using(cluster.instance(), false, bad, TestMembers.KEYS))
+            assertThatThrownBy(() -> PrivacyCluster.using(cluster.instance(), false, bad, TestMembers.KEYS,
+                    TestMembers.TRUSTED))
                     .isInstanceOf(IllegalArgumentException.class);
         }
         assertThatThrownBy(() -> PrivacyCluster.embedded(
@@ -394,7 +396,7 @@ class ApprovalRetentionTest {
                 .withPort(port).withInterface("127.0.0.1").toConfig();
         config.setProperty("dataprism.approval.pending.sweep-" + "seconds", "not-a-number");
         try (PrivacyCluster built = PrivacyCluster.embedded(config, false, OptionalInt.empty(),
-                TestMembers.KEYS)) {
+                PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED)) {
             assertThat(built.approvalSweepInterval()).isEqualTo(Duration.ofMinutes(5));
         }
     }

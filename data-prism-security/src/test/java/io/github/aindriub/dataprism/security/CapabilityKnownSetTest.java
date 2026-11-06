@@ -39,4 +39,11 @@ class CapabilityKnownSetTest {
         assertThat(declared).isNotEmpty();
         assertThat(Capability.KNOWN).isEqualTo(declared);
     }
+
+    @Test
+    @DisplayName("Capability.KNOWN pins the catalog tools' capabilities and FOLLOW")
+    void knownHoldsTheCatalogAndFollowCapabilities() {
+        assertThat(Capability.KNOWN).containsExactlyInAnyOrder("EXPOSE_SOURCE_NAMES", "GET_ENTITY_CONTEXT",
+                "COMPARE_ENTITY_SOURCES", "DESCRIBE_ENTITY_MODEL", "LIST_SOURCES", "DESCRIBE_SOURCE", "FOLLOW");
+    }
 }

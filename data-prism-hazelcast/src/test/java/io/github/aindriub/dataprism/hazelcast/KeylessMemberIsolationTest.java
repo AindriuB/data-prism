@@ -99,7 +99,8 @@ class KeylessMemberIsolationTest {
         int port = FreePorts.consecutive(1);
         String name = TestMembers.uniqueName("keyed");
         Config config = keylessConfig(name, port);
-        try (PrivacyCluster keyed = PrivacyCluster.embedded(config, false, OptionalInt.empty(), TestMembers.KEYS)) {
+        try (PrivacyCluster keyed = PrivacyCluster.embedded(config, false, OptionalInt.empty(),
+                PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED)) {
             assertThat(keyed.instance().getConfig().getClusterName()).isEqualTo(name);
             assertThat(keyed.instance().getConfig().getNetworkConfig().getInterfaces().getInterfaces())
                     .containsExactly("127.0.0.1");
@@ -172,7 +173,8 @@ class KeylessMemberIsolationTest {
         assertThat(ids.next()).isEmpty();
         assertThat(ids.previous()).contains("p");
         try (PrivacyCluster solo = PrivacyCluster.embedded(ClusterMembership.none(TestMembers.uniqueName("ids"))
-                .withPort(FreePorts.consecutive(1)), false, TestMembers.KEYS)) {
+                .withPort(FreePorts.consecutive(1)), false, OptionalInt.empty(), PendingSweeper.DEFAULT_INTERVAL,
+                        TestMembers.KEYS, TestMembers.TRUSTED)) {
             PrivacyCluster.KeyIds held = solo.keyIds().orElseThrow();
             assertThat(held.current()).isEqualTo("test-cluster-1");
             assertThat(held.next()).isEmpty();
@@ -466,7 +468,8 @@ class KeylessMemberIsolationTest {
     void aKeyedWrapperIsNotClosedWhenItGetsAMember() {
         HazelcastInstance real = soloInstance();
         List<MembershipListener> listeners = new ArrayList<>();
-        PrivacyCluster wrapped = PrivacyCluster.using(capturing(real, listeners), false, TestMembers.KEYS);
+        PrivacyCluster wrapped = PrivacyCluster.using(capturing(real, listeners), false,
+                PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
         memberJoins(real, listeners);
         assertThat(wrapped.isRefused()).isFalse();
         assertThat(wrapped.instance()).isNotNull();
@@ -826,7 +829,7 @@ class KeylessMemberIsolationTest {
                 ClusterMembership none = ClusterMembership.none(TestMembers.uniqueName("keyedlocalhost"))
                         .withPort(FreePorts.consecutive(1));
                 Throwable keyed = catchThrowable(() -> PrivacyCluster.embedded(none, false, OptionalInt.empty(),
-                        Duration.ofMinutes(1), TestMembers.KEYS));
+                        Duration.ofMinutes(1), TestMembers.KEYS, TestMembers.TRUSTED));
                 assertThat(keyed).isInstanceOf(PrivacyClusterRefusal.class);
                 assertThat(((PrivacyClusterRefusal) keyed).code()).isEqualTo(Code.INVALID_CLUSTER_INTERFACE);
                 assertThat(Hazelcast.getAllHazelcastInstances()).isEmpty();
@@ -879,25 +882,24 @@ class KeylessMemberIsolationTest {
     // ---- a keyed member's interface is not overridden ---------------------------------------------------
 
     /**
-     * Hazelcast reads a Config property before a system property, so setting both bind-any properties on the Config
-     * is what keeps {@code -Dhazelcast.socket.server.bind.any=true} from overriding {@code member.interface}; the
-     * read-back in {@code bindToInterface} refuses the configuration if a setting still wins. The system property
-     * therefore never takes effect, and the member is started and listens on its interface only.
+     * A system property that binds every interface would override {@code member.interface}, so a declared keyed
+     * member refuses it before the member starts, with {@code PUBLIC_MEMBER_INTERFACE}, and nothing is left running.
      */
     @Test
-    void aSystemPropertyThatBindsEveryInterfaceDoesNotOverrideAKeyedMembersInterface() {
+    void aSystemPropertyThatBindsEveryInterfaceRefusesAKeyedMembersStart() {
         for (String property : List.of("hazelcast.socket.server.bind.any", "hazelcast.socket.bind.any")) {
             withSystemProperty(property, "true", () -> {
                 int port = FreePorts.consecutive(1);
                 ClusterMembership membership = ClusterMembership
                         .tcpIp(TestMembers.uniqueName("keyedbindany"), List.of("127.0.0.1:" + port))
                         .withPort(port).withInterface("127.0.0.1");
-                try (PrivacyCluster keyed = PrivacyCluster.embedded(membership, false, OptionalInt.empty(),
-                        Duration.ofMinutes(1), TestMembers.KEYS)) {
-                    assertListensOnLoopbackOnly(keyed, port);
-                } catch (Exception failed) {
-                    throw new AssertionError(property, failed);
-                }
+                // Task 287: a declared joining member refuses at once on a bind-any system property.
+                Throwable refused = catchThrowable(() -> PrivacyCluster.embedded(
+                        membership, false, OptionalInt.empty(), Duration.ofMinutes(1), TestMembers.KEYS,
+                        TestMembers.TRUSTED));
+                assertThat(refused).as(property).isInstanceOf(PrivacyClusterRefusal.class);
+                assertThat(((PrivacyClusterRefusal) refused).code()).as(property)
+                        .isEqualTo(Code.PUBLIC_MEMBER_INTERFACE);
             });
             assertThat(Hazelcast.getAllHazelcastInstances()).as("no member is left running").isEmpty();
         }
@@ -920,7 +922,7 @@ class KeylessMemberIsolationTest {
             ClusterMembership none = ClusterMembership.none(TestMembers.uniqueName("keyedsolo"))
                     .withPort(FreePorts.consecutive(1));
             Throwable keyed = catchThrowable(() -> PrivacyCluster.embedded(none, false, OptionalInt.empty(),
-                    Duration.ofMinutes(1), TestMembers.KEYS));
+                    Duration.ofMinutes(1), TestMembers.KEYS, TestMembers.TRUSTED));
             assertThat(keyed).isInstanceOf(PrivacyClusterRefusal.class);
             assertThat(((PrivacyClusterRefusal) keyed).code()).isEqualTo(Code.INVALID_CLUSTER_INTERFACE);
             Throwable keyless = catchThrowable(() -> PrivacyCluster.embedded(none, false));

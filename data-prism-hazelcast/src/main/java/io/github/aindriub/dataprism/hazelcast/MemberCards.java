@@ -727,6 +727,11 @@ public final class MemberCards {
         return executor == null || executor.isShutdown();
     }
 
+    /** Waits until everything queued on this wrapper's executor so far has run, for tests. */
+    void drainExecutorForTest() throws Exception {
+        executor.submit(() -> { }).get();
+    }
+
     /** Whether this wrapper holds a membership listener, for tests. */
     boolean listenerRegisteredForTest() {
         synchronized (state) {
@@ -1018,7 +1023,7 @@ public final class MemberCards {
     private void lookSoon() {
         try {
             executor.execute(() -> {
-                if (!closed) {
+                if (running && !closed) {
                     look(clock.instant());
                 }
             });
