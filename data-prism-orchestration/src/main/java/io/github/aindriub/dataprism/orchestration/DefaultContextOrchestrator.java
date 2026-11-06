@@ -16,6 +16,7 @@ import io.github.aindriub.dataprism.core.spi.FieldMetadataResolver;
 import io.github.aindriub.dataprism.core.spi.IdentityResolver;
 import io.github.aindriub.dataprism.core.model.InvestigationContext;
 import io.github.aindriub.dataprism.core.metrics.Metric;
+import io.github.aindriub.dataprism.core.model.ModelDescription;
 import io.github.aindriub.dataprism.core.model.PrivacyContext;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
@@ -55,6 +56,7 @@ import java.util.stream.Collectors;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -636,6 +638,14 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         } catch (RuntimeException e) {
             LOG.warn("could not settle a read reservation: {}", e.getClass().getSimpleName());
         }
+    }
+
+    /** Describes the named source through this orchestrator's own scrubber, the one that scrubs it. */
+    @Override
+    public Optional<ModelDescription> describe(String sourceName, PrivacyContext context, boolean linksEnabled) {
+        Objects.requireNonNull(sourceName, "sourceName");
+        return adapters.stream().filter(adapter -> adapter.sourceName().equals(sourceName)).findFirst()
+                .flatMap(adapter -> scrubber.describe(sourceName, adapter.responseType(), context, linksEnabled));
     }
 
     /**

@@ -174,7 +174,7 @@ class ConfiguredJsonDescribeConformanceTest {
         ScrubResult scrubbed = engine.scrub(
                 new ConfiguredJsonPayload(source.transport().name(), (ObjectNode) JSON.readTree(body)), context);
         ModelDescription description =
-                engine.describe(source.transport().name(), context, true).orElseThrow();
+                engine.describe(source.transport().name(), ConfiguredJsonPayload.class, context, true).orElseThrow();
         Map<String, FieldProtection> byPath = new HashMap<>();
         description.fields().forEach(f -> byPath.put(f.path(), f));
 
@@ -264,5 +264,52 @@ class ConfiguredJsonDescribeConformanceTest {
         for (String profile : new String[] {"DEFAULT", "STRICT"}) {
             assertConforms(engine, source, SHARED_BODY, profile);
         }
+    }
+
+    private static final ModelDescription JAVA_FIRST_ANSWER = new ModelDescription(
+            java.util.List.of(new FieldProtection("marker", Protection.VERBATIM, null, null)),
+            ModelDescription.Undeclared.REFUSE);
+
+    private record Thing(String id) {
+    }
+
+    /** Answers {@link #JAVA_FIRST_ANSWER} to the Class form only: what the delegate says is visible. */
+    private static ConfiguredJsonScrubbingEngine engineWithJavaFirstAnswer(Map<String, ConfiguredJsonSource> sources) {
+        io.github.aindriub.dataprism.core.spi.ScrubbingEngine javaFirst =
+                new io.github.aindriub.dataprism.core.spi.ScrubbingEngine() {
+                    @Override
+                    public ScrubResult scrub(Object source, PrivacyContext context) {
+                        throw new AssertionError("not reached");
+                    }
+
+                    @Override
+                    public Optional<ModelDescription> describe(Class<?> model, PrivacyContext context,
+                                                               boolean linksEnabled) {
+                        return Optional.of(JAVA_FIRST_ANSWER);
+                    }
+                };
+        return new ConfiguredJsonScrubbingEngine(javaFirst, sources, policy(),
+                new HmacSyntheticGenerator(KEYS, VOCABULARY), new HmacValueTokenSource(KEYS));
+    }
+
+    @Test
+    @DisplayName("by name and payload class: a configured name is described; an unknown name is empty")
+    void byNameRoutesPayloadClassToTheNamedSource() {
+        ConfiguredJsonSource source = ConfiguredJsonDescriptionTest.parse(PARCELS);
+        ConfiguredJsonScrubbingEngine engine = engineWithJavaFirstAnswer(Map.of("parcel-service", source));
+
+        assertThat(engine.describe("parcel-service", ConfiguredJsonPayload.class, context("DEFAULT"), false))
+                .isNotEmpty().get().isNotEqualTo(JAVA_FIRST_ANSWER);
+        assertThat(engine.describe("elsewhere", ConfiguredJsonPayload.class, context("DEFAULT"), false)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a Java-first model named like a configured source goes to the delegate, not to the source")
+    void javaFirstModelNamedLikeAConfiguredSourceGoesToTheDelegate() {
+        ConfiguredJsonSource source = ConfiguredJsonDescriptionTest.parse(PARCELS);
+        ConfiguredJsonScrubbingEngine engine = engineWithJavaFirstAnswer(Map.of("parcel-service", source));
+
+        assertThat(engine.describe("parcel-service", Thing.class, context("DEFAULT"), false))
+                .contains(JAVA_FIRST_ANSWER);
     }
 }

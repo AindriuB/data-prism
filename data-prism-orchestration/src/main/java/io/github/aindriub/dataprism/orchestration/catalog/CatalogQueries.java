@@ -16,10 +16,9 @@ import io.github.aindriub.dataprism.core.model.FieldProtection;
 import io.github.aindriub.dataprism.core.model.InvestigationContext;
 import io.github.aindriub.dataprism.core.model.ModelDescription;
 import io.github.aindriub.dataprism.core.model.PrivacyContext;
-import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.spi.KeyNamespace;
-import io.github.aindriub.dataprism.core.spi.ScrubbingEngine;
 import io.github.aindriub.dataprism.core.spi.SourceDescription;
+import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.SourceAliasing;
 import io.github.aindriub.dataprism.validation.LlmResponseValidator;
 import io.github.aindriub.dataprism.validation.ValidationResult;
@@ -35,7 +34,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -145,8 +143,7 @@ public final class CatalogQueries {
     private final SourceVisibility visibility;
     private final SourceAliasing aliasing;
     private final RealNamesPolicy realNames;
-    private final ScrubbingEngine scrubber;
-    private final Map<String, Class<?>> modelBySource;
+    private final ContextOrchestrator orchestrator;
     private final List<LlmResponseValidator> validators;
     private final PagingSettings paging;
     private final PageLinks links;
@@ -156,24 +153,21 @@ public final class CatalogQueries {
     private final SecureRandom random = new SecureRandom();
 
     /**
-     * @param adapters         the registered sources, for the model each describes
+     * @param orchestrator     describes a source by name, through the scrubber that scrubs it
      * @param links            {@code null} when no link codec is configured
      * @param chainableEnabled whether {@code dataprism.links.enabled} is true: only then does a description
      *                         carry {@code chainable}
      */
     public CatalogQueries(SourceCatalog catalog, SourceVisibility visibility, SourceAliasing aliasing,
-                          RealNamesPolicy realNames, ScrubbingEngine scrubber,
-                          List<DataSourceAdapter<?>> adapters, List<LlmResponseValidator> validators,
+                          RealNamesPolicy realNames, ContextOrchestrator orchestrator,
+                          List<LlmResponseValidator> validators,
                           PagingSettings paging, PageLinks links, boolean chainableEnabled,
                           PrivacyMetrics metrics, Clock clock) {
         this.catalog = Objects.requireNonNull(catalog, "catalog");
         this.visibility = Objects.requireNonNull(visibility, "visibility");
         this.aliasing = Objects.requireNonNull(aliasing, "aliasing");
         this.realNames = Objects.requireNonNull(realNames, "realNames");
-        this.scrubber = Objects.requireNonNull(scrubber, "scrubber");
-        Map<String, Class<?>> models = new HashMap<>();
-        adapters.forEach(adapter -> models.put(adapter.sourceName(), adapter.responseType()));
-        this.modelBySource = Map.copyOf(models);
+        this.orchestrator = Objects.requireNonNull(orchestrator, "orchestrator");
         this.validators = List.copyOf(validators);
         if (this.validators.isEmpty()) {
             throw new IllegalArgumentException("at least one response validator is required");
@@ -434,9 +428,7 @@ public final class CatalogQueries {
         }
         Set<String> real = Set.of(entry.name());
         try {
-            Class<?> model = modelBySource.get(entry.name());
-            Optional<ModelDescription> described = model == null ? Optional.empty()
-                    : scrubber.describe(model, context, chainableEnabled);
+            Optional<ModelDescription> described = orchestrator.describe(entry.name(), context, chainableEnabled);
             if (described == null || described.isEmpty()) {
                 return unavailable("CATALOG_DESCRIPTION_FAILED", real, dispositions, kind);
             }
