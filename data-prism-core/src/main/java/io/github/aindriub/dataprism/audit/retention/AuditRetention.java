@@ -200,7 +200,7 @@ public final class AuditRetention {
         Set<AuditChainVerifier.AcceptedLine> accepted = segments.isEmpty() ? Set.of()
                 : readAcceptedLines("nothing was deleted");
         // A day an earlier run anchored and then failed to finish deleting is finished first, once its remainder verifies on its own.
-        int partial = partlyPurgedDayLength(segments, retained, shutdowns);
+        int partial = partlyPurgedDayLength(segments, retained, shutdowns, accepted);
         String finishedDay = null;
         if (partial > 0) {
             finishedDay = SegmentedFileAuditSink.segmentDate(segments.get(0)).toString();
@@ -368,9 +368,11 @@ public final class AuditRetention {
      * with no break, no structural anomaly, no unterminated tail and no unhashed complete record, each writer's first remaining
      * record must start at GENESIS or follow an earlier anchor, and each writer's next record after the day
      * must chain from the writer's recorded anchor for it (the day's tail is already gone, so the anchor
-     * stands for the last record). Anything else, including a missing or other-day anchor, takes the normal verification path.
+     * stands for the last record). An exact accepted crash line (segment name, offset and hash) in the
+     * remainder is not a structural anomaly; any other fragment is. Anything else, including a missing or other-day anchor, takes the normal verification path.
      */
-    private int partlyPurgedDayLength(List<Path> segments, List<Path> retained, Map<String, Shutdown> shutdowns) {
+    private int partlyPurgedDayLength(List<Path> segments, List<Path> retained, Map<String, Shutdown> shutdowns,
+                                      Set<AuditChainVerifier.AcceptedLine> accepted) {
         if (segments.isEmpty()) {
             return 0;
         }
@@ -384,7 +386,7 @@ public final class AuditRetention {
         AuditChainVerifier.HashedVerification hashed;
         try {
             hashed = AuditChainVerifier.verifySegmentsHashed(prefix, starts, chainKeys, allowUnkeyedWriters,
-                    probesFor(shutdowns));
+                    probesFor(shutdowns), accepted);
         } catch (IOException e) {
             throw new RetentionException(ANCHOR_FAILED + ": could not read the expiring segments", e);
         }
@@ -418,7 +420,7 @@ public final class AuditRetention {
         // partial deletion leaves no break, no structural anomaly (a duplicate sequence, say: a rewritten
         // sequence number shows up as one), no unterminated tail (its last record is never hashed), no
         // unhashed complete record and no unanchored start.
-        if (firstBadOffset(hashed) >= 0 || hashed.report().hasStructuralAnomaly()
+        if (firstBadOffset(hashed) >= 0 || structuralBeyondAccepted(hashed, prefix, starts, accepted)
                 || hashed.report().tail().isPresent() || firstUnanchoredStart(hashed, n, earlier) >= 0) {
             return 0;
         }
@@ -436,6 +438,56 @@ public final class AuditRetention {
         }
         BoundaryScan scan = new BoundaryScan(segments, retained, segmentReader, starts, hashed.probed(), true);
         return scan.run(tasks) == null ? n : 0;
+    }
+
+    /**
+     * True if the report holds a structural finding other than an accepted crash line: a writer that does not
+     * start at GENESIS, or any anomaly that is not an interrupted-write fragment on a line exactly accepted
+     * (segment name, in-segment offset and SHA-256 of the line's on-disk bytes, as the verifier matches it).
+     */
+    private static boolean structuralBeyondAccepted(AuditChainVerifier.HashedVerification hashed, List<Path> prefix,
+                                                    List<Long> starts,
+                                                    Set<AuditChainVerifier.AcceptedLine> accepted) {
+        AuditChainVerifier.VerificationReport report = hashed.report();
+        if (report.writers().stream().anyMatch(w -> w.nonGenesisStart().isPresent())) {
+            return true;
+        }
+        for (AuditChainVerifier.StructuralAnomaly a : report.anomalies()) {
+            if (a.type() == AuditChainVerifier.AnomalyType.INTERRUPTED_WRITE_FRAGMENT && !accepted.isEmpty()) {
+                int seg = segmentAt(starts, a.primaryOffset());
+                long local = a.primaryOffset() - starts.get(seg);
+                String name = prefix.get(seg).getFileName().toString();
+                try {
+                    String sha = lineSha256(Files.readAllBytes(prefix.get(seg)), local);
+                    if (sha != null && accepted.stream().anyMatch(x -> x.segment().equals(name)
+                            && x.offset() == local && x.sha256().equalsIgnoreCase(sha))) {
+                        continue;
+                    }
+                } catch (IOException e) {
+                    throw new RetentionException(ANCHOR_FAILED + ": could not read the expiring segments", e);
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /** The SHA-256 (hex) of the line starting at {@code offset}, up to its newline, or null if no line starts there. */
+    private static String lineSha256(byte[] segment, long offset) {
+        if (offset < 0 || offset >= segment.length || (offset > 0 && segment[(int) offset - 1] != '\n')) {
+            return null;
+        }
+        int end = (int) offset;
+        while (end < segment.length && segment[end] != '\n') {
+            end++;
+        }
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            md.update(segment, (int) offset, end - (int) offset);
+            return java.util.HexFormat.of().formatHex(md.digest());
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     private List<AuditCheckpoint> earlierAnchors(String deletedNote) {

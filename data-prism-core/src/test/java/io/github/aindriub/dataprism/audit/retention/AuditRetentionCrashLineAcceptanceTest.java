@@ -627,6 +627,91 @@ class AuditRetentionCrashLineAcceptanceTest {
         assertThat(lab.names()).contains(D1, "audit-2026-03-01.0001.log");
     }
 
+    // -- a partly deleted day whose remainder holds the accepted line -----------------------------------
+
+    private static final String D1_1 = "audit-2026-03-01.0001.log";
+
+    /**
+     * D1.log holds a's records 1-2, c's 1 and a's accepted crash line (record 3, CR LF terminated); D1.0001 holds
+     * c's 2; D2 holds c's 3. The purge deletes D1.0001, then the delete of D1.log fails once. Returns the lab after that failure.
+     */
+    private CrashLab partlyDeletedWithAcceptedLine(boolean keyed) throws IOException {
+        CrashLab lab = new CrashLab(tempDir, keyed);
+        AuditRecorder a = lab.writer("a", true);
+        AuditRecorder c = lab.writer("c", false);
+        List<AuditEvent> ea = lab.rec(a, "2026-03-01T01:00:00Z", "2026-03-01T02:00:00Z", "2026-03-01T05:00:00Z");
+        List<AuditEvent> ec = lab.rec(c, "2026-03-01T03:00:00Z", "2026-03-01T04:00:00Z",
+                "2026-03-02T01:00:00Z");
+        lab.rec(lab.writer("o", false), "2026-09-09T01:00:00Z");
+        lab.closeSink();
+        lab.write(D2, lab.line(ec.get(2)) + "\n");
+        lab.write(D1, lab.line(ea.get(0)) + "\n" + lab.line(ea.get(1)) + "\n" + lab.line(ec.get(0)) + "\n"
+                + lab.line(ea.get(2)) + "\r\n");
+        lab.write(D1_1, lab.line(ec.get(1)) + "\n");
+        Run run = lab.accept(D1, lab.lineOffset(D1, 3));
+        assertThat(run.code()).as(run.all()).isEqualTo(0);
+
+        AuditRetention failing = lab.retention();
+        int[] failures = {0};
+        failing.deleter = segment -> {
+            if (segment.getFileName().toString().equals(D1) && failures[0]++ == 0) {
+                throw new IOException("injected");
+            }
+            Files.delete(segment);
+        };
+        RuntimeException thrown = lab.purgeThrown(failing);
+        assertThat(thrown).hasMessageContaining("AUDIT_RETENTION_DELETE_FAILED");
+        assertThat(lab.names()).contains(D1).doesNotContain(D1_1);
+        return lab;
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void aPartlyDeletedDayWhoseRemainderHoldsAnAcceptedLineIsFinishedOnRetry(boolean keyed) throws IOException {
+        CrashLab lab = partlyDeletedWithAcceptedLine(keyed);
+
+        assertThat(lab.purgeThrown(lab.retention())).isNull();
+
+        assertThat(lab.names()).containsExactly(D9);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void anUnacceptedFragmentInTheSameShapeStillRefuses(boolean keyed) throws IOException {
+        CrashLab lab = partlyDeletedWithAcceptedLine(keyed);
+        List<String> kept = new ArrayList<>();
+        for (String l : Files.readAllLines(lab.store)) {
+            if (!l.contains("CRASH_LINE_ACCEPTED")) {
+                kept.add(l);
+            }
+        }
+        Files.write(lab.store, (String.join("\n", kept) + "\n").getBytes(StandardCharsets.UTF_8));
+
+        refusedAt(lab.purgeThrown(lab.retention()), D1);
+        assertThat(lab.names()).contains(D1);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void anUnparseableFragmentAtTheAcceptedOffsetWithOtherBytesStillRefuses(boolean keyed) throws IOException {
+        CrashLab lab = partlyDeletedWithAcceptedLine(keyed);
+        // a fragment that does not parse is no unhashed complete record; only the structural check can refuse it
+        lab.replaceLine(D1, 3, "torn fragment\r\n");
+
+        refusedAt(lab.purgeThrown(lab.retention()), D1);
+        assertThat(lab.names()).contains(D1);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void aCutRemainderOfTheAcceptedLinesSegmentStillRefuses(boolean keyed) throws IOException {
+        CrashLab lab = partlyDeletedWithAcceptedLine(keyed);
+        lab.dropFirstLines(D1, 1);
+
+        refusedAt(lab.purgeThrown(lab.retention()), D1);
+        assertThat(lab.names()).contains(D1);
+    }
+
     // -- the verifier is otherwise unchanged ----------------------------------------------------------
 
     @ParameterizedTest
