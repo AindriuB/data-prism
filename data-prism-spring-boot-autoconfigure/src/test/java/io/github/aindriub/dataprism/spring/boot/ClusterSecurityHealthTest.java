@@ -169,24 +169,35 @@ class ClusterSecurityHealthTest {
      * The serving gate stays open while the pause document is stale, so recovery can happen; the contributor reads
      * the freshness from the oversight state, which the cluster's own status does not carry.
      */
-    @Test void a_stale_pause_document_is_down_while_the_cluster_gate_is_open() {
+    @Test void the_pause_freshness_is_read_from_the_hazelcast_oversight_state() {
+        // A pause lease is at least five seconds and no test here sleeps, so a stale document is covered by the
+        // withPause(false, ..) status test above; this one checks which status is read.
         embedded().run(result -> {
             assertThat(result).hasNotFailed();
             PrivacyCluster cluster = result.getBean(PrivacyCluster.class);
             OversightState oversight = result.getBean(OversightState.class);
             assertThat(oversight).isInstanceOf(HazelcastOversightState.class);
-            ClusterSecurityStatus status = ClusterSecurityHealth.statusOf(cluster, oversight);
             assertThat(cluster.securityStatus().serving()).isTrue();
-            assertThat(status).isEqualTo(((HazelcastOversightState) oversight).securityStatus());
-            if (status.serving()) {
-                // The document has just been accepted; age it past the lease is a clock matter, not tested here.
-                assertThat(status.pauseFresh()).isTrue();
-            } else {
-                assertThat(status.reason()).isEqualTo(Reason.PAUSE_NOT_FRESH);
-                assertThat(result.getBean(BEAN, HealthIndicator.class).health().getDetails())
-                        .containsEntry("reason", "PAUSE_NOT_FRESH");
-            }
+            ClusterSecurityStatus read = ((HazelcastOversightState) oversight).securityStatus();
+            assertThat(ClusterSecurityHealth.statusOf(cluster, oversight).reason()).isEqualTo(read.reason());
+            assertThat(result.getBean(BEAN, HealthIndicator.class).health().getDetails())
+                    .containsEntry("reason", read.reason().name());
         });
+    }
+
+    @Test void another_oversight_state_falls_back_to_the_cluster_status() {
+        embedded().run(result -> {
+            PrivacyCluster cluster = result.getBean(PrivacyCluster.class);
+            OversightState other = org.mockito.Mockito.mock(OversightState.class);
+            assertThat(ClusterSecurityHealth.statusOf(cluster, other)).isEqualTo(cluster.securityStatus());
+            assertThat(ClusterSecurityHealth.statusOf(cluster, null)).isEqualTo(cluster.securityStatus());
+        });
+    }
+
+    @Test void no_cluster_and_no_hazelcast_oversight_state_is_not_serving() {
+        ClusterSecurityStatus status = ClusterSecurityHealth.statusOf(null, null);
+        assertThat(status.serving()).isFalse();
+        assertThat(status.reason()).isEqualTo(Reason.CARDS_UNAVAILABLE);
     }
 
     // ---- one rule for "the starter's cluster" ----------------------------------------------------
