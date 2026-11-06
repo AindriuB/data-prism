@@ -339,3 +339,41 @@ After 292, a real crash that leaves an unhashed line that parses keeps its day a
 - Editing, moving or truncating audit files, in the command or in retention.
 - Follow-up, for the scribe to file: a `VerificationReport` field for acceptances whose `bootWaived` is true, so embedders calling `verify()` see waivers without reading the store (172-5).
 - Spring wiring and metrics. The Spring retention bean already uses `FileAuditCheckpointSink`, so it gets the read-back method with no wiring change.
+
+## Outcome (2026-11-06, 0.8; PR #217)
+
+`AuditChainVerifierCli accept-crash-line` records a `CRASH_LINE_ACCEPTED` checkpoint (segment name, byte offset, SHA-256 of the on-disk line bytes, optional `bootWaived`). Purge tolerates exactly that line in the rule 4 hashed verification (`verifySegmentsHashed`) and nowhere else. Exit code 6 on refusal; conditions 1-8 and branches (i)-(iii) as in the brief. Tests were written first and run red (116 of 116 failing) before the command existed; then green.
+
+#### Design change in review round 1 (supersedes the task file)
+The rule-6 skip is dropped. The brief's premise (task line 50) was false: a genuine accepted N+1 never trips rule 6 (c), because `feed` accepts it (its `previousHash` is the day's last hash) and never sees a same-day line. The skip only loosened checks: after acceptance, cutting w's records 2-3 from D1 with the crash line first on D2 purged and deleted D1, where without the skip rule 6 (a) refuses. `boundaryRecords` now takes no acceptance set; the 4-argument overload, `isAccepted`, and the `BoundaryScan` acceptance field and parameters are removed. Acceptance stays for rule 4 and, from review round 2, for the partial-day verification (below).
+
+Superseded in the task file for the scribe: line 50 (rule 6 skip premise), line 215, line 228 (the "partly deleted anchored day" scenario as written cannot occur: `deleteDay` removes the highest index first; the reachable shape is tested instead) and line 304.
+
+New tests: `aCutTailAfterAcceptanceStillStopsRule6` (red at e3400c79, green now) and `aCrashLineAfterAPartlyDeletedAnchoredDayIsAcceptedOnceTheDayIsFinished` (D1 holds 1-2, anchor at 4, crash line first on D2: command refuses at condition 5 (i) check 3, purge finishes D1 and refuses at D2, command then accepts on branch (iii), purge deletes D2). Removed: `anAcceptedLineInALaterSegmentIsSkippedByTheNextRecordSearchOfRule6` (used a hand-forged N+2 `AuditRecorder` cannot produce). Kept: `anAcceptedLastLineOfTheDayDoesNotStopRule6AndThreeDaysPurge`.
+
+BOOT in every fixture: every positive and every negative aimed at 7(b)/8 gives the line's instance a BOOT; fixtures without one are the 7(a) and flag cases only.
+
+#### Deviations to review
+- Scale: sequences 99/100/50 are scaled to 3/4/5 (same relations).
+- Seq 0 / -1: the test asserts condition 5 (ii) check 2 if the line parses, else condition 2.
+
+#### Review round 2: accepted line in a partly deleted remainder
+This closes the Low "an accepted line in a partly deleted remainder blocks purge permanently". Round 1 removed the acceptance from `partlyPurgedDayLength` as dead code; that was wrong for this case, because an accepted fragment still raises the report's structural anomaly (INTERRUPTED_WRITE_FRAGMENT), which the partial-day check refuses. The acceptance set is now passed into the partial-day verification, and `structuralBeyondAccepted` tolerates an interrupted-write anomaly only on a line matching an accepted line exactly (segment name, offset, SHA-256 of the on-disk bytes, as rule 4 matches it). A writer not starting at GENESIS, or any other anomaly, still refuses. Rule 6 is untouched; the skip stays removed.
+New tests (`AuditRetentionCrashLineAcceptanceTest`): `aPartlyDeletedDayWhoseRemainderHoldsAnAcceptedLineIsFinishedOnRetry` (D1.log holds the accepted line, D1.0001 deleted, delete of D1.log fails once, next purge finishes the day; red at 050d601d), `anUnacceptedFragmentInTheSameShapeStillRefuses`, `anUnparseableFragmentAtTheAcceptedOffsetWithOtherBytesStillRefuses`, `aCutRemainderOfTheAcceptedLinesSegmentStillRefuses`.
+Mutations: passing an empty set fails the retry test; accepting any interrupted-write fragment fails the unparseable-fragment test. The unaccepted parseable fragment is also refused by the unhashed-complete check, so only the unparseable variant isolates the new code.
+
+#### Mutation proofs (run, each reverted)
+Killed by the named tests: M1 SHA dropped: ByteEdited. M2 later-record: shape D. M3 applyCheckpoints: recovery, verifier-unchanged, notice tests. M4/M5/M9/M10 7(b): attack cases / at-the-checkpoint / highest / SHUTDOWN-over-PERIODIC. M6 cond 2: parsed-newline negative. M7 NON_GENESIS_START. M8 seq 51. M13 segment name dropped (verify path): same-offset copy. M14-M23 branch checks, selection, anchor, predecessor on sole line. M24 own-hash gating: cut cases. M25-M29 forger shape, BOOT, waiver, flag scope.
+Removed with the design change: M11 (rule 4 only), M12 (off-chain) and M13b (segment name in the boundary-scan matcher) no longer exist, since the boundary scan has no acceptance code. Round 1: restoring the rule-6 skip is killed by `aCutTailAfterAcceptanceStillStopsRule6` (shown failing at e3400c79).
+
+#### Follow-ups (Lows)
+- A second different line for the same instance and sequence is accepted.
+
+#### For the scribe / contract register (254 owns it)
+Rows: kind `CRASH_LINE_ACCEPTED` (fields segmentName, byteOffset, bootWaived), subcommand `accept-crash-line`, exit code 6, `AuditCheckpointSink.crashLinesAccepted()`. Paragraph for `docs/audit.md` (213): see the CHANGELOG entry.
+
+### Decisions recorded by the coordinator (owner's standing instruction)
+
+- Acceptance applies to rule 4 only (and, from round 2, to the partial-day recovery). The rule-6 skip was dropped, because a genuine accepted line never trips rule 6, so the skip only loosened checks. This supersedes lines 50, 215, 228 and 304 of this brief (the skip's premise, the rule-6 matching, the "partly deleted anchored day" scenario as written, and the matching test list).
+- Partial-day recovery tolerates only an exact accepted line, by segment name, offset and hash, so a failed delete cannot block purge for ever (external review finding).
+

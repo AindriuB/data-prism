@@ -10,6 +10,7 @@ import io.github.aindriub.dataprism.security.AuthorizationService;
 import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.SecurityRefusedException;
 import io.modelcontextprotocol.json.McpJsonMapper;
+import io.modelcontextprotocol.json.schema.JsonSchemaValidator;
 import io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpServerFeatures;
@@ -147,6 +148,8 @@ public final class DataPrismMcpServer {
     static McpSyncServer syncServer(Wiring wiring, McpServerTransportProvider transport) {
         return McpServer.sync(transport)
                 .jsonMapper(wiring.json())
+                // Each handler checks its own input, after authentication: the SDK's check answers first.
+                .validateToolInputs(false)
                 .serverInfo("data-prism", VERSION)
                 .instructions(INSTRUCTIONS)
                 .capabilities(McpSchema.ServerCapabilities.builder().tools(true).build())
@@ -158,6 +161,8 @@ public final class DataPrismMcpServer {
     static McpSyncServer syncServer(Wiring wiring, McpStreamableServerTransportProvider transport) {
         return McpServer.sync(transport)
                 .jsonMapper(wiring.json())
+                // Each handler checks its own input, after authentication: the SDK's check answers first.
+                .validateToolInputs(false)
                 .serverInfo("data-prism", VERSION)
                 .instructions(INSTRUCTIONS)
                 .capabilities(McpSchema.ServerCapabilities.builder().tools(true).build())
@@ -255,15 +260,17 @@ public final class DataPrismMcpServer {
                          AuthenticatedCaller developmentCaller, ToolOptions options, CatalogQueries catalog,
                          int pageMaxLength) {
             JsonMapper mapper = DataPrismObjectMapper.create();
+            // One validator on the shared mapper, for every tool.
+            JsonSchemaValidator validator = ToolInput.validatorFor(mapper);
             return new Wiring(mapper, new JacksonMcpJsonMapper(mapper),
                     new GetEntityContextTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
-                            audit, clock, developmentCaller, options),
+                            audit, clock, developmentCaller, options, validator),
                     new CompareEntitySourcesTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
-                            audit, clock, developmentCaller, options),
+                            audit, clock, developmentCaller, options, validator),
                     catalog == null ? null : new ListSourcesTool(catalog, pageMaxLength, authorizationService,
-                            scopeResolver, mapper, metrics, audit, clock, developmentCaller, options),
+                            scopeResolver, mapper, metrics, audit, clock, developmentCaller, options, validator),
                     catalog == null ? null : new DescribeSourceTool(catalog, authorizationService, scopeResolver,
-                            mapper, metrics, audit, clock, developmentCaller, options));
+                            mapper, metrics, audit, clock, developmentCaller, options, validator));
         }
 
         /** The tools to register: the two entity tools, and the two catalog tools when a catalog was given. */

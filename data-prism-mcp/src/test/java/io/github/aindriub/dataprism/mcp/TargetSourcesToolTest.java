@@ -248,7 +248,7 @@ class TargetSourcesToolTest {
             requests.clear();
             McpSchema.CallToolResult tooLong = call(handlers.get(i), TOOLS[i], args(List.of("a".repeat(129))));
             assertThat(tooLong.isError()).as(TOOLS[i]).isEqualTo(true);
-            assertThat(text(tooLong)).isEqualTo("targetSources is not valid");
+            assertThat(text(tooLong)).isEqualTo("TOOL_INPUT_INVALID");
             assertThat(requests).isEmpty();
         }
     }
