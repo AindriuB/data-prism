@@ -28,11 +28,14 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigureBefore;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.bind.BindException;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Condition;
+import org.springframework.context.annotation.ConditionContext;
+import org.springframework.context.annotation.Conditional;
+import org.springframework.core.type.AnnotatedTypeMetadata;
 import org.springframework.core.env.Environment;
 import org.springframework.web.client.RestClient;
 
@@ -132,7 +135,7 @@ public class ConfiguredJsonSourcesAutoConfiguration {
      * dependency, optional or otherwise, on this module.
      */
     @Bean(name = CONFIGURED_JSON_SOURCE_NAMES_BEAN)
-    @ConditionalOnProperty(name = CONFIG_LOCATION_PROPERTY)
+    @Conditional(LocationConfigured.class)
     Set<String> configuredJsonSourceNames(Environment environment) {
         return ConfiguredJsonSourcesInitializer.loadConfig(environment).sources().keySet();
     }
@@ -163,18 +166,48 @@ public class ConfiguredJsonSourcesAutoConfiguration {
         }
     }
 
+    /** The condition {@code @ConditionalOnProperty} cannot express: the location may be a list. */
+    static final class LocationConfigured implements Condition {
+        @Override
+        public boolean matches(ConditionContext context, AnnotatedTypeMetadata metadata) {
+            return !ConfiguredJsonSourcesInitializer.locations(context.getEnvironment()).isEmpty();
+        }
+    }
+
+    /**
+     * With {@code dataprism.privacy.descriptor-file} set, the Java-first engine takes the resolver and the
+     * descriptors of the auto-configured engine, which the starter has already checked are the ones built from
+     * that file. Without the starter there is no such engine and startup refuses. Without the file, the injected
+     * resolver and no descriptors, as before.
+     */
+    static JsonTreeScrubbingEngine javaFirst(Environment environment,
+            ObjectProvider<JsonTreeScrubbingEngine> engines, FieldMetadataResolver metadata,
+            PrivacyPolicyResolver policy, SyntheticValueSource synthetics, ValueTokenSource tokens) {
+        String file = Binder.get(environment).bind("dataprism.privacy.descriptor-file", String.class).orElse(null);
+        if (file == null || file.isBlank()) {
+            return new JsonTreeScrubbingEngine(metadata, policy, synthetics, tokens);
+        }
+        JsonTreeScrubbingEngine engine = engines.getIfUnique();
+        if (engine == null) {
+            throw new IllegalStateException("MODEL_DESCRIPTOR_RESOLVER_REPLACED: dataprism.privacy.descriptor-file is"
+                    + " set but the FieldMetadataResolver bean is not the one built from it, or an engine does not"
+                    + " use it");
+        }
+        return new JsonTreeScrubbingEngine(engine.resolver(), policy, synthetics, tokens, engine.descriptors());
+    }
+
     @Bean
-    @ConditionalOnProperty(name = CONFIG_LOCATION_PROPERTY)
+    @Conditional(LocationConfigured.class)
     @ConditionalOnMissingBean(ContextOrchestrator.class)
     ContextOrchestrator configuredJsonSourcesContextOrchestrator(Environment environment,
             List<DataSourceAdapter<?>> adapters, IdentityResolver identities, FieldMetadataResolver metadata,
             List<LlmResponseValidator> validators, SyntheticValueSource synthetics, ValueTokenSource tokens,
             SecretKeyProvider keys, AuditRecorder audit, ScopeBudget budget, PrivacyMetrics metrics, Clock clock,
             PrivacyPolicyResolver policy, ObjectProvider<CorrelationMdc> correlationMdc,
-            ObjectProvider<RequestLimits> limits) {
+            ObjectProvider<RequestLimits> limits, ObjectProvider<JsonTreeScrubbingEngine> engines) {
         ConfiguredJsonSourcesConfig config = ConfiguredJsonSourcesInitializer.loadConfig(environment);
 
-        JsonTreeScrubbingEngine javaFirst = new JsonTreeScrubbingEngine(metadata, policy, synthetics, tokens);
+        JsonTreeScrubbingEngine javaFirst = javaFirst(environment, engines, metadata, policy, synthetics, tokens);
         ScrubbingEngine scrubber =
                 new ConfiguredJsonScrubbingEngine(javaFirst, config.sources(), policy, synthetics, tokens);
 

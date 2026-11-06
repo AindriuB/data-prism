@@ -1,0 +1,10 @@
+json-sources:
+  plain-one:
+    base-url: http://127.0.0.1:1
+    path: /plain/{subject}
+    timeout: PT2S
+    model-version: plain-v1
+    subject-json-path: ref
+    fields:
+      ref:
+        identifier: true

@@ -1,0 +1,11 @@
+json-sources:
+  beta-service:
+    base-url: https://beta.example.internal
+    path: /beta/{subject}
+    timeout: PT2S
+    model-version: beta-v1
+    subject-json-path: ref
+    surprise: true
+    fields:
+      ref:
+        identifier: true

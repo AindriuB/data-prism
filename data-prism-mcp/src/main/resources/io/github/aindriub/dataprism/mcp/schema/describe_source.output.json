@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "describe_source output",
+  "type": "object",
+  "properties": {
+    "correlationId": {
+      "type": "string"
+    },
+    "labels": {
+      "enum": [
+        "ALIAS",
+        "REAL"
+      ]
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "$comment": "64 from 0.9, with INVALID_SOURCE_NAME; OD-200-4, OD-C18 (c)"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "entityTypes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+      },
+      "uniqueItems": true
+    },
+    "inputKeys": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/keyNamespace"
+      },
+      "uniqueItems": true,
+      "maxItems": 8
+    },
+    "cost": {
+      "enum": [
+        "LOW",
+        "MEDIUM",
+        "HIGH"
+      ]
+    },
+    "freshness": {
+      "enum": [
+        "LIVE",
+        "NEAR_LIVE",
+        "HOURLY",
+        "DAILY",
+        "PERIODIC"
+      ]
+    },
+    "undeclared": {
+      "description": "What happens to a property the model does not declare: the response is refused, the property is renamed to a placeholder, or it is dropped.",
+      "enum": [
+        "REFUSE",
+        "RENAME",
+        "DROP"
+      ]
+    },
+    "fields": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/field"
+      }
+    }
+  },
+  "required": [
+    "correlationId",
+    "labels",
+    "source",
+    "description",
+    "inputKeys",
+    "undeclared",
+    "fields"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "keyNamespace": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,31}$"
+    },
+    "field": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "description": "The field as it appears in a response; an array element is written with [].",
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\[\\])?(\\.[A-Za-z_][A-Za-z0-9_]*(\\[\\])?)*$"
+        },
+        "protection": {
+          "enum": [
+            "VERBATIM",
+            "SYNTHETIC",
+            "TOKEN",
+            "MARKER",
+            "BUCKET",
+            "ABSENT"
+          ]
+        },
+        "valueNamespace": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+        },
+        "chainable": {
+          "const": true
+        },
+        "keyNamespace": {
+          "$ref": "#/$defs/keyNamespace"
+        }
+      },
+      "required": [
+        "path",
+        "protection"
+      ],
+      "dependentRequired": {
+        "chainable": [
+          "keyNamespace"
+        ],
+        "keyNamespace": [
+          "chainable"
+        ]
+      },
+      "additionalProperties": false
+    }
+  }
+}

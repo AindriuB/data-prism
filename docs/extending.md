@@ -372,7 +372,10 @@ fixture source shares a single id:
     `SourceModels.require` on every response type before serving, because that is
     where an unreadable record is refused. Adapter code, and the objects it
     builds, are trusted: a callback in such an object can stall a request or
-    exhaust memory but cannot bypass the scrub (see the
+    exhaust memory but cannot bypass the scrub. The walk of a value is stopped,
+    and that source refused, once it exceeds 1,000,000 nodes; this is not a memory
+    limit: memory can still run out before the cap is reached, and a single large
+    value counts as one node (see the
     [trust model for source adapters](architecture.md#boundaries-that-must-not-be-crossed)).
     The message names the place (`Model.component`, or the class) and the
     annotation's simple name, never a value.

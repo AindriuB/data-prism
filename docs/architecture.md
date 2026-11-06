@@ -133,7 +133,7 @@ not encrypted or authenticated, so isolating it is the deployer's job; see
 optimisation and losing it changes no answer; the read budget and the
 re-identification index are not, and are treated differently for that reason.
 
-**Concurrency.** Virtual threads for the blocking fan-out, with per-source
+**Concurrency.** Adapter calls run on bounded dedicated platform threads, with per-source
 timeouts, circuit breakers, bulkheads and a bounded pool. An LLM in a retry loop
 is the realistic overload, not an attacker.
 
@@ -214,7 +214,7 @@ the boundary is crossed; catching a violation depends on review.
    throws, that source alone is refused (`SOURCE_VALUE_READ_FAILED`) and the other
    sources still answer. Collecting the raw values for the cross-source leak check
    never throws (except a JVM error such as `OutOfMemoryError`) and is bounded in
-   depth, not in size. The residual: a callback of the adapter's own reached
+   depth and in node count (1,000,000 nodes per source value), not in bytes. The residual: a callback of the adapter's own reached
    through a JDK object it built runs during the read. The known carriers are a
    `JsonNode` built over the adapter's own map or list, a `URL` with a custom
    `URLStreamHandler`, a `Calendar` with a custom `TimeZone`, `LongAccumulator` and
@@ -223,8 +223,12 @@ the boundary is crossed; catching a violation depends on review.
    adapter's functions, and an overriding `getCause()` on an exception the
    adapter's code throws during the read, which the engine calls to look for its
    own refusal. Such a callback can stall a request or exhaust the process's memory
-   (an iterator that never ends), it can make the read throw, which refuses that
-   source, and a value it changes between reads can escape the cross-source leak
+   (an iterator that never ends). The node cap stops a walk growing past 1,000,000
+   nodes and refuses that source with `SOURCE_TREE_TOO_LARGE`; it is not a memory
+   limit: a walk can still exhaust a small or busy heap before reaching the cap,
+   concurrent walks add up, and a single large value counts as one node (and the
+   read copies binary arrays). A callback can still stall a request. It can make
+   the read throw, which refuses that source, and a value it changes between reads can escape the cross-source leak
    check; it cannot release data unscrubbed. Example: a deployer's
    `ExampleOrderAdapter`, for `https://api.example.invalid`, that returns a list
    over its own iterator stays inside this residual.
