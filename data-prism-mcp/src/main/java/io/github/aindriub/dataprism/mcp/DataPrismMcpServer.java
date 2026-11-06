@@ -116,17 +116,33 @@ public final class DataPrismMcpServer {
                                       boolean singlePrincipalDevelopmentMode, boolean productionDeployment,
                                       PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
                                       ToolOptions options, CatalogQueries catalog, int pageMaxLength) {
+        return stdio(orchestrator, authorizationService, scopeResolver, developmentCaller,
+                singlePrincipalDevelopmentMode, productionDeployment, metrics, audit, clock, options, catalog,
+                pageMaxLength, false);
+    }
+
+    /**
+     * As above, also serving {@code follow} when {@code linksEnabled}; with {@code false} the tool is not
+     * registered at all. {@code pageMaxLength} bounds the {@code link} argument of {@code follow} too.
+     */
+    public static McpSyncServer stdio(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
+                                      ScopeResolver scopeResolver, AuthenticatedCaller developmentCaller,
+                                      boolean singlePrincipalDevelopmentMode, boolean productionDeployment,
+                                      PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
+                                      ToolOptions options, CatalogQueries catalog, int pageMaxLength,
+                                      boolean linksEnabled) {
         Objects.requireNonNull(options, "options");
         return build(orchestrator, authorizationService, scopeResolver, developmentCaller,
                 singlePrincipalDevelopmentMode, productionDeployment, metrics, audit, clock, options, catalog,
-                pageMaxLength);
+                pageMaxLength, linksEnabled);
     }
 
     private static McpSyncServer build(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
                                        ScopeResolver scopeResolver, AuthenticatedCaller developmentCaller,
                                        boolean singlePrincipalDevelopmentMode, boolean productionDeployment,
                                        PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
-                                       ToolOptions options, CatalogQueries catalog, int pageMaxLength) {
+                                       ToolOptions options, CatalogQueries catalog, int pageMaxLength,
+                                       boolean linksEnabled) {
         if (!singlePrincipalDevelopmentMode || productionDeployment) {
             throw new SecurityRefusedException("STDIO_DEVELOPMENT_ONLY",
                     "stdio is a single-principal development transport and refuses to start "
@@ -135,7 +151,7 @@ public final class DataPrismMcpServer {
         Objects.requireNonNull(developmentCaller, "developmentCaller");
 
         Wiring wiring = Wiring.of(orchestrator, authorizationService, scopeResolver, metrics, audit, clock,
-                developmentCaller, options, catalog, pageMaxLength);
+                developmentCaller, options, catalog, pageMaxLength, linksEnabled);
         var transport = new StdioServerTransportProvider(wiring.json());
 
         return syncServer(wiring, transport);
@@ -211,9 +227,22 @@ public final class DataPrismMcpServer {
                                                String endpointPath,
                                                PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
                                                ToolOptions options, CatalogQueries catalog, int pageMaxLength) {
+        return streamableHttp(orchestrator, authorizationService, scopeResolver, contextExtractor, endpointPath,
+                metrics, audit, clock, options, catalog, pageMaxLength, false);
+    }
+
+    /** As above, also serving {@code follow} when {@code linksEnabled}; otherwise it is not registered. */
+    public static HttpTransport streamableHttp(ContextOrchestrator orchestrator,
+                                               AuthorizationService authorizationService,
+                                               ScopeResolver scopeResolver,
+                                               McpTransportContextExtractor<HttpServletRequest> contextExtractor,
+                                               String endpointPath,
+                                               PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
+                                               ToolOptions options, CatalogQueries catalog, int pageMaxLength,
+                                               boolean linksEnabled) {
         Objects.requireNonNull(options, "options");
         return build(orchestrator, authorizationService, scopeResolver, contextExtractor, endpointPath,
-                metrics, audit, clock, options, catalog, pageMaxLength);
+                metrics, audit, clock, options, catalog, pageMaxLength, linksEnabled);
     }
 
     private static HttpTransport build(ContextOrchestrator orchestrator,
@@ -221,12 +250,12 @@ public final class DataPrismMcpServer {
                                        McpTransportContextExtractor<HttpServletRequest> contextExtractor,
                                        String endpointPath, PrivacyMetrics metrics, AuditRecorder audit,
                                        Clock clock, ToolOptions options, CatalogQueries catalog,
-                                       int pageMaxLength) {
+                                       int pageMaxLength, boolean linksEnabled) {
         Objects.requireNonNull(contextExtractor, "contextExtractor");
         Objects.requireNonNull(endpointPath, "endpointPath");
 
         Wiring wiring = Wiring.of(orchestrator, authorizationService, scopeResolver, metrics, audit, clock,
-                null, options, catalog, pageMaxLength);
+                null, options, catalog, pageMaxLength, linksEnabled);
         HttpServletStreamableServerTransportProvider transport = HttpServletStreamableServerTransportProvider
                 .builder()
                 .jsonMapper(wiring.json())
@@ -245,7 +274,8 @@ public final class DataPrismMcpServer {
      * keeps every byte a model sees on the engine's mapper.
      */
     record Wiring(JsonMapper mapper, McpJsonMapper json, GetEntityContextTool get,
-                  CompareEntitySourcesTool compare, ListSourcesTool list, DescribeSourceTool describe) {
+                  CompareEntitySourcesTool compare, ListSourcesTool list, DescribeSourceTool describe,
+                  FollowTool follow) {
 
         static Wiring of(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
                          ScopeResolver scopeResolver, PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
@@ -259,6 +289,15 @@ public final class DataPrismMcpServer {
                          ScopeResolver scopeResolver, PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
                          AuthenticatedCaller developmentCaller, ToolOptions options, CatalogQueries catalog,
                          int pageMaxLength) {
+            return of(orchestrator, authorizationService, scopeResolver, metrics, audit, clock, developmentCaller,
+                    options, catalog, pageMaxLength, false);
+        }
+
+        /** @param linksEnabled {@code false} registers no {@code follow} */
+        static Wiring of(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
+                         ScopeResolver scopeResolver, PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
+                         AuthenticatedCaller developmentCaller, ToolOptions options, CatalogQueries catalog,
+                         int pageMaxLength, boolean linksEnabled) {
             JsonMapper mapper = DataPrismObjectMapper.create();
             // One validator on the shared mapper, for every tool.
             JsonSchemaValidator validator = ToolInput.validatorFor(mapper);
@@ -270,10 +309,12 @@ public final class DataPrismMcpServer {
                     catalog == null ? null : new ListSourcesTool(catalog, pageMaxLength, authorizationService,
                             scopeResolver, mapper, metrics, audit, clock, developmentCaller, options, validator),
                     catalog == null ? null : new DescribeSourceTool(catalog, authorizationService, scopeResolver,
-                            mapper, metrics, audit, clock, developmentCaller, options, validator));
+                            mapper, metrics, audit, clock, developmentCaller, options, validator),
+                    linksEnabled ? new FollowTool(orchestrator, pageMaxLength, authorizationService, scopeResolver,
+                            mapper, metrics, audit, clock, developmentCaller, options, validator) : null);
         }
 
-        /** The tools to register: the two entity tools, and the two catalog tools when a catalog was given. */
+        /** The tools to register: the two entity tools, the two catalog tools when a catalog was given, and follow when links are on. */
         McpServerFeatures.SyncToolSpecification[] specifications() {
             List<McpServerFeatures.SyncToolSpecification> specs = new ArrayList<>();
             specs.add(get.specification());
@@ -283,6 +324,9 @@ public final class DataPrismMcpServer {
             }
             if (describe != null) {
                 specs.add(describe.specification());
+            }
+            if (follow != null) {
+                specs.add(follow.specification());
             }
             return specs.toArray(new McpServerFeatures.SyncToolSpecification[0]);
         }

@@ -116,6 +116,17 @@ class OversightConfigurationTest {
     @Test void refuses_an_unknown_approval_required_tool() {
         refuses("UNKNOWN_OVERSIGHT_TOOL", concat(OPERATOR, "dataprism.oversight.approval-required-tools[0]=reidentify"));
     }
+    @Test void accepts_every_tool_that_passes_through_admission_as_approval_required() {
+        for (String tool : List.of("get_entity_context", "compare_entity_sources", "follow", "list_sources",
+                "describe_source")) {
+            runner("single-node", concat(OPERATOR, "dataprism.oversight.approval-required-tools[0]=" + tool))
+                    .run(result -> assertThat(result).as(tool).hasNotFailed());
+        }
+    }
+    @Test void still_refuses_an_unknown_tool_beside_a_known_one() {
+        refuses("UNKNOWN_OVERSIGHT_TOOL", concat(OPERATOR, "dataprism.oversight.approval-required-tools[0]=follow",
+                "dataprism.oversight.approval-required-tools[1]=reidentify"));
+    }
     @Test void refuses_a_non_positive_rate_limit() {
         refuses("INVALID_OVERSIGHT_LIMIT", concat(OPERATOR, "dataprism.oversight.caller-rate-limit.requests=0"));
     }

@@ -547,7 +547,8 @@ public final class DataPrismPropertiesValidator {
         for (String tool : oversight.getApprovalRequiredTools()) {
             if (!OVERSIGHT_TOOLS.contains(tool)) {
                 refuse("UNKNOWN_OVERSIGHT_TOOL",
-                        "dataprism.oversight.approval-required-tools must name get_entity_context or compare_entity_sources");
+                        "dataprism.oversight.approval-required-tools must name get_entity_context, compare_entity_sources, follow, "
+                                + "list_sources or describe_source");
             }
         }
         positive(oversight.getApprovalTtl(), "dataprism.oversight.approval-ttl");
@@ -610,7 +611,8 @@ public final class DataPrismPropertiesValidator {
         }
     }
 
-    private static final Set<String> OVERSIGHT_TOOLS = Set.of("get_entity_context", "compare_entity_sources");
+    private static final Set<String> OVERSIGHT_TOOLS = Set.of("get_entity_context", "compare_entity_sources",
+            "follow", "list_sources", "describe_source");
 
     private static void positive(Duration v, String property) {
         if (v == null || v.isZero() || v.isNegative()) {

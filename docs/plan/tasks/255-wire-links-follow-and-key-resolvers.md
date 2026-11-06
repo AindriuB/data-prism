@@ -58,6 +58,7 @@ Turn the agent-led surface on through configuration: `dataprism.links.*` (sealed
 - [ ] Over the HTTP example with links enabled and one chainable field: `PiiLogScanTest` and `AuditFilePiiScanTest` cover calls to `list_sources` (two pages), `describe_source`, `get_entity_context` with `_links`, a valid `follow`, and an invalid `follow`, and find no raw identifier, link token or description text. Each scan is shown non-vacuous by a recorded mutation (for example, logging the token) that makes it fail. `AuditFieldDispositionTest` covers the `names`, `catalog` and `link` keys.
 - [ ] `docs/configuration.md` has a row for each new key with its default and every refusal code above.
 - [ ] `ConfigurationMetadataDocumentedTest`, `PropertyNamesFrozenTest`, `AutoConfiguredBeanClassificationTest`, `AutoConfiguredBeanInventoryTest` and `PrivacyExtensionPointsTest` pass, with only this task's lines in their lists.
+- [ ] When `dataprism.links.enabled=true` and any tool that can issue a link is in `dataprism.oversight.approval-required-tools`, `follow` must be in it too; otherwise startup refuses in `validateLinks` with a stable code, named in `docs/configuration.md`, that names the property and never a value. A test each way: one row refused for each issuing tool that is listed without `follow`, and one row started with `follow` listed. (Added 2026-11-06, from the 253 review (design P5).)
 - [ ] `./mvnw -B verify` (full reactor) passes.
 
 ## Out of scope

@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.orchestration.links;
 
 import io.github.aindriub.dataprism.orchestration.DefaultContextOrchestrator;
+import io.github.aindriub.dataprism.orchestration.FollowRequest;
 import io.github.aindriub.dataprism.orchestration.links.FollowTest.FollowRig;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;

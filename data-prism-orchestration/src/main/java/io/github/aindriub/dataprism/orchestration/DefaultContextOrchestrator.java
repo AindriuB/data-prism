@@ -53,7 +53,6 @@ import io.github.aindriub.dataprism.core.link.LinkRelation;
 import io.github.aindriub.dataprism.core.spi.KeyNamespace;
 import io.github.aindriub.dataprism.core.spi.ResolutionContext;
 import io.github.aindriub.dataprism.audit.AuditedEntityTypes;
-import io.github.aindriub.dataprism.orchestration.links.FollowRequest;
 import io.github.aindriub.dataprism.orchestration.links.LinkFollower;
 import io.github.aindriub.dataprism.orchestration.links.ResolverOutcome;
 
@@ -782,7 +781,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
 
     private void auditFollow(FollowRequest request, FollowState state, String fingerprint, PrivacyContext context,
                              InvestigationContext investigationContext, String decision, String correlationId) {
-        audit(request.toolName(), AuditedEntityTypes.UNREGISTERED, Set.of(), request.approvalId(),
+        audit(request.toolName(), AuditedEntityTypes.UNREGISTERED, request.rejectedArguments(), request.approvalId(),
                 request.approverId(), request.externalCorrelationId(), state.subject, fingerprint, context,
                 investigationContext, decision, state.sources, correlationId, state.dispositions);
     }

@@ -34,6 +34,7 @@ import java.util.List;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Sealed-link boundaries (sealed-links.md section 7, item 25), built from predicates so a nested fixture can
@@ -215,6 +216,21 @@ class LinkArchitectureTest {
         return root.resolve("data-prism-core").resolve("target").resolve("classes").toAbsolutePath().normalize();
     }
 
+    private static final String MCP_PACKAGE = "io.github.aindriub.dataprism.mcp..";
+    private static final String CONNECTORS_PACKAGE = "io.github.aindriub.dataprism.connectors..";
+
+    /**
+     * The sanity check of {@link #mcpAndConnectorsDoNotDependOnLink}: each package contributes a class of its own,
+     * counted separately, so the rule cannot pass because one of the two was never imported.
+     */
+    private static void assertEachPackageImported(Iterable<JavaClass> imported) {
+        for (String packageName : List.of(MCP_PACKAGE, CONNECTORS_PACKAGE)) {
+            long count = java.util.stream.StreamSupport.stream(imported.spliterator(), false)
+                    .filter(JavaClass.Predicates.resideInAPackage(packageName)).count();
+            assertThat(count).as("classes imported from " + packageName).isPositive();
+        }
+    }
+
     // ---- the rules, on the real graph ----
 
     @Test
@@ -237,7 +253,7 @@ class LinkArchitectureTest {
     void thePredicatesMatchRealClasses() {
         assertThat(CLASSES.contain("io.github.aindriub.dataprism.core.link.LinkCodec")).isTrue();
         assertThat(CLASSES.stream().filter(inLink()).count()).isPositive();
-        assertThat(CLASSES.stream().filter(inMcpOrConnectors()).count()).isPositive();
+        assertEachPackageImported(CLASSES);
         JavaClass sealer = CLASSES.get("io.github.aindriub.dataprism.hazelcast.seal.Sealer");
         JavaClass codec = CLASSES.get("io.github.aindriub.dataprism.core.link.LinkCodec");
         assertThat(outsideTheSealers().test(sealer)).isFalse();
@@ -375,6 +391,18 @@ class LinkArchitectureTest {
                 FixtureDependsOnHazelcast.class).hasViolation()).isTrue();
         assertThat(evaluate(linkDoesNotDependOn(named(FixtureNeutral.class), forbidden), FixtureNeutral.class)
                 .hasViolation()).isFalse();
+    }
+
+    @Test
+    void sanityCheckFailsWhenEitherPackageIsLeftOutOfTheImport() {
+        List<JavaClass> withoutConnectors = CLASSES.stream()
+                .filter(c -> !JavaClass.Predicates.resideInAPackage(CONNECTORS_PACKAGE).test(c)).toList();
+        List<JavaClass> withoutMcp = CLASSES.stream()
+                .filter(c -> !JavaClass.Predicates.resideInAPackage(MCP_PACKAGE).test(c)).toList();
+
+        assertThatThrownBy(() -> assertEachPackageImported(withoutConnectors)).hasMessageContaining("connectors");
+        assertThatThrownBy(() -> assertEachPackageImported(withoutMcp)).hasMessageContaining("mcp");
+        assertEachPackageImported(CLASSES);
     }
 
     @Test

@@ -35,7 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class EveryToolValidatesInputTest {
 
     static final Set<String> ALL = Set.of("GET_ENTITY_CONTEXT", "COMPARE_ENTITY_SOURCES", "LIST_SOURCES",
-            "DESCRIBE_SOURCE");
+            "DESCRIBE_SOURCE", "FOLLOW");
 
     /** The wiring the server builds, over the catalog fixture of {@link ListSourcesToolTest}. */
     static final class Fixture {
@@ -53,15 +53,23 @@ class EveryToolValidatesInputTest {
                     PseudonymisationVersion.HMAC_SHA256_V1.withKey("key-1").withVocabulary("vocab-1"),
                     Duration.ofHours(8), new PurposeValidator(Set.of("demonstration")),
                     CaseAuthorizer.tokenTrusted());
+            ContextOrchestrator followOnly = FollowToolTest.realOrchestrator(env.audit, FollowToolTest.limiter(100));
             ContextOrchestrator never = new ContextOrchestrator() {
                 @Override
                 public ContextResponse buildContext(ContextRequest request, PrivacyContext privacy,
                                                     InvestigationContext caller) {
                     throw new AssertionError("an invalid call never reaches the orchestrator");
                 }
+
+                @Override
+                public ContextResponse follow(io.github.aindriub.dataprism.orchestration.FollowRequest request,
+                                              PrivacyContext privacy, InvestigationContext caller) {
+                    // A call with a link member reaches the gate as a forged link; the real one refuses and audits it.
+                    return followOnly.follow(request, privacy, caller);
+                }
             };
             wiring = DataPrismMcpServer.Wiring.of(never, authz, scopes, env.metrics, env.audit,
-                    ListSourcesToolTest.FIXED, developmentCaller, options, env.queries, 1024);
+                    ListSourcesToolTest.FIXED, developmentCaller, options, env.queries, 1024, true);
         }
     }
 
@@ -91,15 +99,15 @@ class EveryToolValidatesInputTest {
             }
         }
         assertThat(seen).contains("get_entity_context.targetSources", "compare_entity_sources.subjectId",
-                "list_sources.page", "describe_source.source");
+                "list_sources.page", "describe_source.source", "follow.link");
     }
 
     @Test
-    @DisplayName("the wiring registers all four tools, so the test above covers them")
-    void allFourToolsAreCovered() {
+    @DisplayName("the wiring registers all five tools, so the test above covers them")
+    void allFiveToolsAreCovered() {
         Fixture fx = new Fixture(ALL, ListSourcesToolTest.CALLER);
 
         assertThat(List.of(fx.wiring.specifications()).stream().map(s -> s.tool().name()))
-                .containsExactly("get_entity_context", "compare_entity_sources", "list_sources", "describe_source");
+                .containsExactly("get_entity_context", "compare_entity_sources", "list_sources", "describe_source", "follow");
     }
 }
