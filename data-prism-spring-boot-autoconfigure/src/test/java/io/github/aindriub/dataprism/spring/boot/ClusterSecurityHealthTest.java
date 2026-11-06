@@ -219,8 +219,14 @@ class ClusterSecurityHealthTest {
      */
     @Test void a_stale_pause_document_is_down_while_the_cluster_itself_still_serves() {
         try (StalePauseFixture fixture = new StalePauseFixture(ClusterConfigurationTest.uniqueName())) {
-            ClusterSecurityHealth.Contributor contributor = new ClusterSecurityHealth.Contributor(
-                    () -> ClusterSecurityHealth.statusOf(fixture.cluster(), fixture.state()));
+            // Through the production bean method, so a bean that ignored the oversight state would fail here.
+            org.springframework.beans.factory.support.StaticListableBeanFactory beans =
+                    new org.springframework.beans.factory.support.StaticListableBeanFactory();
+            beans.addBean("cluster", fixture.cluster());
+            beans.addBean("oversight", fixture.state());
+            ClusterSecurityHealth.Contributor contributor = new ClusterSecurityHealth()
+                    .clusterSecurityHealthIndicator(beans.getBeanProvider(PrivacyCluster.class),
+                            beans.getBeanProvider(OversightState.class));
             assertThat(contributor.health().getStatus()).as("before the lease lapses").isEqualTo(Status.UP);
             fixture.advancePastLease();
             assertThat(fixture.cluster().securityStatus().serving()).isTrue();
