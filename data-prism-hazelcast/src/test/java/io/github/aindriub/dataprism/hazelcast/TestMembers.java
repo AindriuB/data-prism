@@ -23,6 +23,10 @@ final class TestMembers {
     /** The keyed map and lock keys of the members above: what a test recomputes a raw key from. */
     static final ScopeKeys SCOPE_KEYS = new ScopeKeys(new KeyedNames(KEYS));
 
+    /** The trusted-network declaration a joining or multi-member test instance is built with (task 287). */
+    static final ClusterSecuritySettings TRUSTED = ClusterSecuritySettings.defaults()
+            .withTrustedNetwork(true, List.of(), true);
+
     private TestMembers() {
     }
 
@@ -44,7 +48,7 @@ final class TestMembers {
     static PrivacyCluster member(String clusterName, int port, List<String> peers, OptionalInt quorum) {
         Config config = ClusterMembership.tcpIp(clusterName, peers).withPort(port)
                 .withInterface("127.0.0.1").toConfig();
-        return PrivacyCluster.embedded(config, false, quorum, KEYS);
+        return PrivacyCluster.embedded(config, false, quorum, PendingSweeper.DEFAULT_INTERVAL, KEYS, TRUSTED);
     }
 
     /** Two members that join each other. */

@@ -45,6 +45,9 @@ class IdentityPoisoningTest {
         config.getJetConfig().setEnabled(false);
         config.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
         config.getNetworkConfig().getJoin().getTcpIpConfig().setEnabled(false);
+        config.getNetworkConfig().getInterfaces().setEnabled(true).addInterface("127.0.0.1");
+        config.setProperty("hazelcast.socket.bind.any", "false");
+        config.setProperty("hazelcast.socket.server.bind.any", "false");
         cluster = PrivacyCluster.embedded(config, true, OptionalInt.empty(), TestMembers.KEYS);
         return cluster;
     }

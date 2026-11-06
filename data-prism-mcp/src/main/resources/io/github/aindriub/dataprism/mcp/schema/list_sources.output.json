@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "list_sources output (0.8 with paging)",
+  "type": "object",
+  "properties": {
+    "correlationId": {
+      "type": "string"
+    },
+    "labels": {
+      "description": "Whether the source labels below are aliases or real names (the effective setting).",
+      "enum": [
+        "ALIAS",
+        "REAL"
+      ]
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    },
+    "page": {
+      "$ref": "#/$defs/page"
+    }
+  },
+  "required": [
+    "correlationId",
+    "labels",
+    "sources",
+    "page"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "keyNamespace": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,31}$"
+    },
+    "entry": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "$comment": "64 from 0.9, with INVALID_SOURCE_NAME; OD-200-4, OD-C18 (c)"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "entityTypes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+          },
+          "uniqueItems": true
+        },
+        "inputKeys": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/keyNamespace"
+          },
+          "uniqueItems": true,
+          "maxItems": 8
+        },
+        "cost": {
+          "enum": [
+            "LOW",
+            "MEDIUM",
+            "HIGH"
+          ]
+        },
+        "freshness": {
+          "enum": [
+            "LIVE",
+            "NEAR_LIVE",
+            "HOURLY",
+            "DAILY",
+            "PERIODIC"
+          ]
+        }
+      },
+      "required": [
+        "source",
+        "description",
+        "inputKeys"
+      ],
+      "additionalProperties": false
+    },
+    "page": {
+      "type": "object",
+      "properties": {
+        "size": {
+          "description": "The page size that applied (after the ceiling). Not the number of entries returned.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "last": {
+          "description": "True when no entry follows this page. The end-of-collection marker.",
+          "type": "boolean"
+        },
+        "next": {
+          "description": "Sealed link to the next page. Present exactly when last is false.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "expiresAt": {
+          "description": "When next stops being accepted. Present exactly when next is present.",
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "size",
+        "last"
+      ],
+      "additionalProperties": false,
+      "if": {
+        "properties": {
+          "last": {
+            "const": false
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "next",
+          "expiresAt"
+        ]
+      },
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "next"
+              ]
+            },
+            {
+              "required": [
+                "expiresAt"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  }
+}

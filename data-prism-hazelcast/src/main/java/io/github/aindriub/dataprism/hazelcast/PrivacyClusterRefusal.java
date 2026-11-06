@@ -24,7 +24,13 @@ public final class PrivacyClusterRefusal extends IllegalStateException {
         MISSING_CLUSTER_KEY,
         CLUSTER_KEY_MISMATCH,
         /** A wrapper's pause lease, clock skew tolerance or cluster key ids differ from the instance's first (228). */
-        CLUSTER_SETTINGS_MISMATCH
+        CLUSTER_SETTINGS_MISMATCH,
+        /** A joining member listens on, or advertises, an address beyond the private and trusted blocks (287). */
+        PUBLIC_MEMBER_INTERFACE,
+        /** A member that joins others was started without the trusted-network declaration (287). */
+        MISSING_TRUSTED_NETWORK,
+        /** A declared trusted range is not an IPv4 CIDR block, or is neither private nor at most a /24 (287). */
+        INVALID_TRUSTED_RANGE
     }
 
     private final Code code;

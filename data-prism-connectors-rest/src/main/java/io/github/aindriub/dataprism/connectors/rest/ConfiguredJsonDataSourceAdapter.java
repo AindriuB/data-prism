@@ -3,6 +3,7 @@ package io.github.aindriub.dataprism.connectors.rest;
 import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.core.spi.DataRequest;
 import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
+import io.github.aindriub.dataprism.core.spi.SourceDescription;
 import org.springframework.web.client.RestClient;
 
 import java.util.Objects;
@@ -28,17 +29,24 @@ import java.util.Objects;
 public final class ConfiguredJsonDataSourceAdapter implements DataSourceAdapter<ConfiguredJsonPayload> {
 
     private final String sourceName;
+    private final SourceDescription description;
     private final RestDataSourceAdapter<ObjectNode> delegate;
 
     public ConfiguredJsonDataSourceAdapter(ConfiguredJsonSource source, RestClient client) {
         Objects.requireNonNull(source, "source");
         this.sourceName = source.transport().name();
+        this.description = source.description();
         this.delegate = new RestDataSourceAdapter<>(source.transport(), client, ObjectNode.class);
     }
 
     @Override
     public String sourceName() {
         return sourceName;
+    }
+
+    @Override
+    public SourceDescription description() {
+        return description;
     }
 
     @Override

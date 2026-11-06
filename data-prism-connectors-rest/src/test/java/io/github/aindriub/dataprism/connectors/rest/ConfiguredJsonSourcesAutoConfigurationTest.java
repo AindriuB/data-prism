@@ -85,6 +85,19 @@ class ConfiguredJsonSourcesAutoConfigurationTest {
         });
     }
 
+    @Test
+    @DisplayName("with a descriptor file set and no auto-configured engine, startup refuses rather than building a bare engine")
+    void descriptorFileWithoutAnEngineRefuses() {
+        runner.withPropertyValues(
+                        "dataprism.json-sources.config-location=classpath:/task20-json-sources.yaml",
+                        "dataprism.privacy.descriptor-file=classpath:/synthetic-descriptors.yaml")
+                .run((AssertableApplicationContext context) -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasStackTraceContaining("MODEL_DESCRIPTOR_RESOLVER_REPLACED");
+                });
+    }
+
     /**
      * Task 69: the allow-list {@code DataPrismContractValidator} narrows its
      * exemption to. Derived from the same parsed catalogue {@link

@@ -23,7 +23,10 @@ public record SourceOutcome(String sourceName, Status status, Duration took, Str
         NO_DATA,
         /** The source did not answer inside its timeout. */
         TIMED_OUT,
-        /** The source answered with an error. */
+        /**
+         * The source answered with an error. Also covers "not called: no call slot was free (detail
+         * {@code UNAVAILABLE})".
+         */
         FAILED,
         /** Not called: the source is failing and its breaker is open. */
         CIRCUIT_OPEN,

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "describe_source input",
+  "type": "object",
+  "properties": {
+    "source": {
+      "description": "A source label exactly as returned by list_sources.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "$comment": "64 from 0.9, with INVALID_SOURCE_NAME; OD-200-4, OD-C18 (c)"
+    }
+  },
+  "required": [
+    "source"
+  ]
+}

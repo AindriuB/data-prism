@@ -551,10 +551,11 @@ class PauseSplitBrainTest {
         String a = "127.0.0.1:" + port;
         String b = "127.0.0.1:" + (port + 1);
         side = PrivacyCluster.embedded(shortMergeDelays(ClusterMembership.tcpIp(name, List.of(a, b))
-                .withPort(port).withInterface("127.0.0.1").toConfig()), false, OptionalInt.empty(), TestMembers.KEYS);
+                .withPort(port).withInterface("127.0.0.1").toConfig()), false, OptionalInt.empty(),
+                        PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
         other = PrivacyCluster.embedded(shortMergeDelays(ClusterMembership.tcpIp(name, List.of(b))
                 .withPort(port + 1).withInterface("127.0.0.1").toConfig()), false, OptionalInt.empty(),
-                TestMembers.KEYS);
+                        PendingSweeper.DEFAULT_INTERVAL, TestMembers.KEYS, TestMembers.TRUSTED);
         try {
             assertThat(side.instance().getCluster().getMembers()).hasSize(1);
             assertThat(other.instance().getCluster().getMembers()).hasSize(1);

@@ -138,6 +138,8 @@ public final class LinkCodec {
         out.writeBytes(nonce);
         out.writeBytes(ciphertext);
         String token = ENCODER.encodeToString(out.toByteArray());
+        // Defensive: unreachable at legal settings, because the maxLength floor equals the worst-case follow
+        // link. Kept so that a layout change can never issue an over-length link (fail closed).
         if (token.length() > settings.maxLength()) {
             return new SealResult.Omitted(SealResult.OmitReason.TOO_LONG);
         }
