@@ -295,6 +295,37 @@ class ToolInputHttpTest {
     }
 
     @Test
+    @DisplayName("a genuine link beside a schema-invalid argument is refused: one DENY, one counted failure, no page")
+    void genuineLinkWithInvalidSiblingIsRefused() throws Exception {
+        int port = start();
+        McpSyncClient client = client(port, "investigator");
+        try {
+            McpSchema.CallToolResult first = call(client, "list_sources", args());
+            @SuppressWarnings("unchecked")
+            String next = (String) ((Map<String, Object>) ((Map<String, Object>) first.structuredContent())
+                    .get("page")).get("next");
+            for (Map<String, Object> extra : List.<Map<String, Object>>of(args("pageSize", 0),
+                    args("unknownProperty", "x", "pageSize", 0), args("scopeId", "other-scope", "pageSize", 0))) {
+                audited.clear();
+                int before = denied();
+                Map<String, Object> bad = new HashMap<>(extra);
+                bad.put("page", next);
+
+                McpSchema.CallToolResult result = call(client, "list_sources", bad);
+
+                assertThat(result.isError()).as(extra.toString()).isTrue();
+                assertThat(text(result)).isEqualTo("The link is not valid.");
+                assertThat(result.structuredContent()).isNull();
+                assertThat(audited).hasSize(1);
+                assertThat(audited.get(0).policyDecision()).isEqualTo("DENY:LINK_INVALID");
+                assertThat(denied()).isEqualTo(before + 1);
+            }
+        } finally {
+            client.closeGracefully();
+        }
+    }
+
+    @Test
     @DisplayName("a call with a page key, however invalid, is a forged link: LINK_INVALID, counted once each")
     void invalidPageIsAForgedLink() throws Exception {
         int port = start();

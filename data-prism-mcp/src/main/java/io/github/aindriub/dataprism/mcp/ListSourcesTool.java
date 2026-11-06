@@ -97,6 +97,8 @@ public final class ListSourcesTool extends CatalogTool<ListSourcesTool.Arguments
         this.pageMaxLength = pageMaxLength;
     }
 
+    private static final java.util.regex.Pattern PAGE_PATTERN = java.util.regex.Pattern.compile("[A-Za-z0-9_-]+");
+
     public McpServerFeatures.SyncToolSpecification specification() {
         McpSchema.Tool tool = McpSchema.Tool.builder()
                 .name(NAME)
@@ -147,11 +149,18 @@ public final class ListSourcesTool extends CatalogTool<ListSourcesTool.Arguments
         if (arguments == null || !arguments.containsKey("page")) {
             return null;
         }
-        // A string goes to the gate as it is, so the gate's own reason (too long, version, malformed) is the one
-        // audited. The empty string is the one the gate does not count; it stands in as unreadable, so it does.
-        String page = arguments.get("page") instanceof String text && !text.isEmpty()
+        // A string whose own length or pattern breaks the schema goes to the gate as it is, so the gate's reason
+        // (too long, malformed) is the one audited; a genuine link never breaks either, so it cannot open that way.
+        // Any other page value is schema-valid: another field made the call invalid, and it must not be opened,
+        // so it stands in as unreadable. The empty string is the one the gate does not count; it stands in too.
+        String page = arguments.get("page") instanceof String text && !text.isEmpty() && breaksPageSchema(text)
                 ? text : CatalogQueries.UNREADABLE_PAGE;
         return new Arguments(new CatalogQueries.ListRequest(null, null, null, page));
+    }
+
+    /** The {@code page} bounds of the served schema: the configured length and the pattern of the input file. */
+    private boolean breaksPageSchema(String page) {
+        return page.length() > pageMaxLength || !PAGE_PATTERN.matcher(page).matches();
     }
 
     @Override

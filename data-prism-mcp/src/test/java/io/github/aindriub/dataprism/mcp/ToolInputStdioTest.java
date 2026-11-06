@@ -337,7 +337,7 @@ class ToolInputStdioTest {
             assertThat(answer.text()).isEqualTo("The link is not valid.");
         }
         assertThat(fx.env.audited).singleElement().satisfies(event ->
-                assertThat(event.fieldDispositions()).containsEntry("link", "REFUSED:LINK_VERSION"));
+                assertThat(event.fieldDispositions()).containsEntry("link", "REFUSED:LINK_MALFORMED"));
     }
 
     @Test
