@@ -2,8 +2,8 @@ package io.github.aindriub.dataprism.connectors.rest;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
-import io.github.aindriub.dataprism.core.engine.ChainableField;
-import io.github.aindriub.dataprism.core.engine.ChainableView;
+import io.github.aindriub.dataprism.core.spi.ChainableField;
+import io.github.aindriub.dataprism.core.spi.ChainableView;
 import io.github.aindriub.dataprism.core.link.InMemoryLinkAttemptLimiter;
 import io.github.aindriub.dataprism.core.link.LinkAttemptGate;
 import io.github.aindriub.dataprism.core.link.LinkCodec;
@@ -272,6 +272,10 @@ class ConfiguredJsonLinksTest {
         ConfiguredJsonSource source = ConfiguredJsonSources
                 .fromYaml(new ByteArrayInputStream(yaml().getBytes(StandardCharsets.UTF_8)), true).sources()
                 .get("parcel-service");
+        return engineOver(Map.of("parcel-service", source));
+    }
+
+    private ConfiguredJsonScrubbingEngine engineOver(Map<String, ConfiguredJsonSource> sources) throws IOException {
         StaticSecretKeyProvider keys = StaticSecretKeyProvider.of("task-301-links-test-key-not-for-any-real-data-32b");
         ProfilePrivacyPolicyResolver policy;
         try (var in = ConfiguredJsonLinksTest.class.getResourceAsStream("/privacy-profiles-default.yaml")) {
@@ -279,7 +283,7 @@ class ConfiguredJsonLinksTest {
         }
         return new ConfiguredJsonScrubbingEngine((o, c) -> {
             throw new AssertionError("java-first delegate must not be reached");
-        }, Map.of("parcel-service", source), policy,
+        }, sources, policy,
                 new HmacSyntheticGenerator(keys, VocabularyRegistry.withBuiltIns().resolve("und")),
                 new HmacValueTokenSource(keys));
     }
@@ -304,5 +308,48 @@ class ConfiguredJsonLinksTest {
         assertThat(unknown.orElseThrow().fields()).isEmpty();
         assertThat(engine.chainableView("parcel-service", "not a payload")).isEmpty();
         assertThat(own.orElseThrow().toString()).doesNotContain("P-1");
+    }
+
+    @Test
+    @DisplayName("a payload of one known source, asked for under another known source's name, gives no fields")
+    void aKnownSourceNameDoesNotAnswerForAnotherKnownSourcesPayload() throws IOException {
+        String twoChainable = """
+                json-sources:
+                  parcel-service:
+                    base-url: http://127.0.0.1:1
+                    path: /parcels/{subject}
+                    timeout: PT2S
+                    model-version: parcel-v1
+                    subject-json-path: parcel
+                    fields:
+                      parcel:
+                        identifier: true
+                        chainable: true
+                        keyNamespace: parcel-ref
+                  hub-service:
+                    base-url: http://127.0.0.1:1
+                    path: /hub/{subject}
+                    timeout: PT2S
+                    model-version: hub-v1
+                    subject-json-path: hub
+                    fields:
+                      hub:
+                        identifier: true
+                        chainable: true
+                        keyNamespace: depot-ref
+                """;
+        Map<String, ConfiguredJsonSource> sources = ConfiguredJsonSources
+                .fromYaml(new ByteArrayInputStream(twoChainable.getBytes(StandardCharsets.UTF_8)), true).sources();
+        ConfiguredJsonScrubbingEngine engine = engineOver(sources);
+        ObjectNode body = (ObjectNode) JsonMapper.builder().build().readTree("{\"parcel\":\"P-1\"}");
+
+        Optional<ChainableView> crossed = engine.chainableView("hub-service",
+                new ConfiguredJsonPayload("parcel-service", body));
+        Optional<ChainableView> own = engine.chainableView("hub-service",
+                new ConfiguredJsonPayload("hub-service", body));
+
+        assertThat(crossed.orElseThrow().fields()).isEmpty();
+        assertThat(own.orElseThrow().fields())
+                .containsExactly(new ChainableField("hub", new KeyNamespace("depot-ref"), false));
     }
 }

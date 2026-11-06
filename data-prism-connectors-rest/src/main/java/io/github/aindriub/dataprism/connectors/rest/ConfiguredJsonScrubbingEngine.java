@@ -2,8 +2,8 @@ package io.github.aindriub.dataprism.connectors.rest;
 
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
-import io.github.aindriub.dataprism.core.engine.ChainableField;
-import io.github.aindriub.dataprism.core.engine.ChainableView;
+import io.github.aindriub.dataprism.core.spi.ChainableField;
+import io.github.aindriub.dataprism.core.spi.ChainableView;
 import io.github.aindriub.dataprism.core.engine.JsonTreeScrubbingEngine;
 import io.github.aindriub.dataprism.core.model.FieldMetadata;
 import io.github.aindriub.dataprism.core.model.FieldProtection;

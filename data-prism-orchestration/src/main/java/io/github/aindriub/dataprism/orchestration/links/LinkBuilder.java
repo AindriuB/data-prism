@@ -1,9 +1,9 @@
 package io.github.aindriub.dataprism.orchestration.links;
 
 import io.github.aindriub.dataprism.core.descriptor.ModelDescriptor;
-import io.github.aindriub.dataprism.core.engine.ChainableField;
+import io.github.aindriub.dataprism.core.spi.ChainableField;
 import io.github.aindriub.dataprism.core.engine.ChainableFields;
-import io.github.aindriub.dataprism.core.engine.ChainableView;
+import io.github.aindriub.dataprism.core.spi.ChainableView;
 import io.github.aindriub.dataprism.core.engine.SourceTree;
 import io.github.aindriub.dataprism.core.link.FollowPayload;
 import io.github.aindriub.dataprism.core.link.LinkBinding;

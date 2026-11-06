@@ -1,6 +1,6 @@
 package io.github.aindriub.dataprism.core.spi;
 
-import io.github.aindriub.dataprism.core.engine.ChainableView;
+import io.github.aindriub.dataprism.core.spi.ChainableView;
 import io.github.aindriub.dataprism.core.model.ModelDescription;
 import io.github.aindriub.dataprism.core.model.PrivacyContext;
 import io.github.aindriub.dataprism.core.model.ScrubResult;

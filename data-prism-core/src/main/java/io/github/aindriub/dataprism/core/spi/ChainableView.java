@@ -1,4 +1,4 @@
-package io.github.aindriub.dataprism.core.engine;
+package io.github.aindriub.dataprism.core.spi;
 
 import tools.jackson.databind.JsonNode;
 
