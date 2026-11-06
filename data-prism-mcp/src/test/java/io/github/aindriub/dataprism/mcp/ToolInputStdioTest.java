@@ -85,6 +85,21 @@ class ToolInputStdioTest {
             chunks.add(new byte[0]);
         }
 
+        /** Returns what is there, rather than the default's wait for a full buffer. */
+        @Override
+        public int read(byte[] into, int offset, int length) throws IOException {
+            int first = read();
+            if (first < 0) {
+                return -1;
+            }
+            into[offset] = (byte) first;
+            int n = 1;
+            while (n < length && position < current.length) {
+                into[offset + n++] = current[position++];
+            }
+            return n;
+        }
+
         @Override
         public int read() throws IOException {
             while (position >= current.length) {
@@ -140,7 +155,7 @@ class ToolInputStdioTest {
             mapper = wiring.mapper();
             server = DataPrismMcpServer.syncServer(wiring,
                     new StdioServerTransportProvider(wiring.json(), in, out));
-            request("initialize", Map.of("protocolVersion", McpSchema.LATEST_PROTOCOL_VERSION,
+            request("initialize", Map.of("protocolVersion", "2025-06-18",
                     "capabilities", Map.of(), "clientInfo", Map.of("name", "stdio-test", "version", "1")));
             in.feed("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}");
         }
