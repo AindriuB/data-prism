@@ -5,7 +5,6 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 import com.sun.net.httpserver.HttpsConfigurator;
 import com.sun.net.httpserver.HttpsServer;
-import io.github.aindriub.dataprism.connectors.rest.ConfiguredJsonPayload;
 import io.github.aindriub.dataprism.core.model.FieldProtection;
 import io.github.aindriub.dataprism.core.model.FieldProtection.Protection;
 import io.github.aindriub.dataprism.core.model.InvestigationContext;
@@ -13,6 +12,7 @@ import io.github.aindriub.dataprism.core.model.ModelDescription;
 import io.github.aindriub.dataprism.core.model.PrivacyContext;
 import io.github.aindriub.dataprism.core.model.PrivacyScopeType;
 import io.github.aindriub.dataprism.core.model.PseudonymisationVersion;
+import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.spi.ScrubbingEngine;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.ContextRequest;
@@ -248,7 +248,10 @@ class ConfiguredSourceDescribeTest {
     void dataPrismScrubberCannotDescribeAConfiguredSource() {
         ScrubbingEngine dataPrismScrubber = context.getBean("dataPrismScrubber", ScrubbingEngine.class);
 
-        assertThat(dataPrismScrubber.describe(SOURCE, ConfiguredJsonPayload.class, privacy(), false)).isEmpty();
+        Class<?> model = context.getBeansOfType(DataSourceAdapter.class).values().stream()
+                .filter(a -> a.sourceName().equals(SOURCE)).findFirst().orElseThrow().responseType();
+
+        assertThat(dataPrismScrubber.describe(SOURCE, model, privacy(), false)).isEmpty();
     }
 
     @Test
