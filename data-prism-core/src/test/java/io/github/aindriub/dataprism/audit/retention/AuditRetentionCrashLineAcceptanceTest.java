@@ -215,6 +215,39 @@ class AuditRetentionCrashLineAcceptanceTest {
         assertThat(lab.cps.retentionAnchors().size()).isGreaterThan(anchorsBefore); // u's anchor, not w's
     }
 
+    /**
+     * w's 1-4 were anchored at 4 on D1 and a failed run left only 1-2 in D1; w's record 5 is the crash line,
+     * first on D2. The command refuses at first (the remainder does not reach the anchor), purge finishes D1 and
+     * refuses at D2, then the command accepts on the anchor branch and purge deletes D2.
+     */
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void aCrashLineAfterAPartlyDeletedAnchoredDayIsAcceptedOnceTheDayIsFinished(boolean keyed) throws IOException {
+        CrashLab lab = new CrashLab(tempDir, keyed);
+        AuditRecorder w = lab.writer("w", true);
+        List<AuditEvent> ev = new ArrayList<>(lab.rec(w, "2026-03-01T01:00:00Z", "2026-03-01T02:00:00Z",
+                "2026-03-01T03:00:00Z", "2026-03-01T04:00:00Z"));
+        ev.add(lab.rec(w, "2026-03-02T00:30:00Z"));
+        lab.rec(lab.writer("o", false), "2026-03-02T01:00:00Z");
+        lab.rec(lab.writer("o2", false), "2026-09-09T01:00:00Z");
+        lab.closeSink();
+        lab.write(D1, lab.line(ev.get(0)) + "\n" + lab.line(ev.get(1)) + "\n");
+        lab.replaceLine(D2, 0, lab.line(ev.get(4)) + "\r\n");
+        lab.anchor(ev.get(0).instanceId(), 4, ev.get(3).eventHash(), "2026-03-01", "2026-09-02T00:00:00Z");
+
+        Run early = lab.accept(D2, 0);
+        assertThat(early.code()).as(early.all()).isNotEqualTo(0);
+        assertThat(lab.cps.crashLinesAccepted()).isEmpty();
+
+        refusedAt(lab.purgeThrown(lab.retention()), D2);
+        assertThat(lab.names()).doesNotContain(D1).contains(D2);
+
+        Run run = lab.accept(D2, 0);
+        assertThat(run.code()).as(run.all()).isEqualTo(0);
+        assertThat(lab.purgeThrown(lab.retention())).isNull();
+        assertThat(lab.names()).containsExactly(D9);
+    }
+
     // -- cut crash lines ------------------------------------------------------------------------------
 
     private static String cutInsideField(AuditEvent e, int index) {
@@ -367,17 +400,27 @@ class AuditRetentionCrashLineAcceptanceTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
-    void anAcceptedLineInALaterSegmentIsSkippedByTheNextRecordSearchOfRule6(boolean keyed) throws IOException {
-        Rule6 r = rule6(keyed, true);
-        CrashLab lab = r.lab();
-        Run run = lab.accept(r.segment(), r.offset());
+    void aCutTailAfterAcceptanceStillStopsRule6(boolean keyed) throws IOException {
+        CrashLab lab = new CrashLab(tempDir, keyed);
+        AuditRecorder w = lab.writer("w", true);
+        List<AuditEvent> ev = new ArrayList<>(lab.rec(w, "2026-03-01T01:00:00Z", "2026-03-01T02:00:00Z",
+                "2026-03-01T03:00:00Z"));
+        ev.add(lab.rec(w, "2026-03-02T00:30:00Z"));
+        lab.rec(lab.writer("x", false), "2026-03-02T01:00:00Z");
+        lab.rec(lab.writer("o", false), "2026-09-09T01:00:00Z");
+        lab.closeSink();
+        lab.replaceLine(D2, 0, lab.line(ev.get(3)) + "\r\n");
+        Run run = lab.accept(D2, 0);
         assertThat(run.code()).as(run.all()).isEqualTo(0);
-        // w's next record after the day, N+2, links to the last hashed record: it is on the chain
-        lab.append(D9, lab.forge(r.w().get(3), r.w().get(0).instanceId(), 5, r.w().get(2).eventHash(), Hash.MODE)
-                + "\n");
+        // w's records 2 and 3 are cut from D1 after the acceptance; the crash line is still first on D2
+        lab.write(D1, lab.line(ev.get(0)) + "\n");
+        Map<String, String> before = lab.snapshot();
 
-        assertThat(lab.purgeThrown(lab.retention())).isNull();
-        assertThat(lab.names()).containsExactly(D9);
+        RuntimeException thrown = lab.purgeThrown(lab.retention());
+
+        refusedAt(thrown, D1);
+        assertThat(lab.names()).contains(D1, D2);
+        assertThat(lab.snapshot()).isEqualTo(before);
     }
 
     @ParameterizedTest
@@ -577,7 +620,7 @@ class AuditRetentionCrashLineAcceptanceTest {
         CrashLab lab = p.lab();
         String accepted = lab.read(D1).substring((int) p.offset(), lab.read(D1).indexOf('\n', (int) p.offset()) + 1);
         assertThat(lab.accept(D1, p.offset()).code()).isEqualTo(0);
-        // a torn fragment pads the copy to the very same offset, so only the segment name tells them apart
+        // a torn fragment pads the copy to the very same offset, so only the segment name tells them apart (rule 4)
         lab.write("audit-2026-03-01.0001.log", "x".repeat((int) p.offset() - 2) + "\r\n" + accepted);
 
         refusedAt(lab.purgeThrown(lab.retention()), "audit-2026-03-01");

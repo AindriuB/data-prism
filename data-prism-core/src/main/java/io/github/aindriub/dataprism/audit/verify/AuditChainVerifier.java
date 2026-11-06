@@ -326,18 +326,7 @@ public final class AuditChainVerifier {
      */
     public static List<BoundaryRecord> boundaryRecords(Path segment, SegmentReader reader,
                                                        java.util.Set<String> instanceIds) throws IOException {
-        return boundaryRecords(segment, reader, instanceIds, java.util.Set.of());
-    }
-
-    /**
-     * As {@link #boundaryRecords(Path, SegmentReader, java.util.Set)}, except that an accepted line (segment name,
-     * offset and SHA-256 of its current bytes all matching) is not returned.
-     */
-    public static List<BoundaryRecord> boundaryRecords(Path segment, SegmentReader reader,
-                                                       java.util.Set<String> instanceIds,
-                                                       java.util.Set<AcceptedLine> accepted) throws IOException {
         byte[] bytes = reader.read(segment);
-        String segmentName = segment.getFileName().toString();
         List<BoundaryRecord> found = new ArrayList<>();
         int start = 0;
         for (int i = 0; i < bytes.length; i++) {
@@ -349,7 +338,7 @@ public final class AuditChainVerifier {
             if (cr) {
                 line = line.substring(0, line.length() - 1);
             }
-            if (!line.isEmpty() && !isAccepted(bytes, segmentName, start, accepted)) {
+            if (!line.isEmpty()) {
                 try {
                     AuditEvent event = AuditRecordFormat.parse(line);
                     if (instanceIds.contains(event.instanceId())) {
@@ -363,16 +352,6 @@ public final class AuditChainVerifier {
             start = i + 1;
         }
         return found;
-    }
-
-    private static boolean isAccepted(byte[] segmentBytes, String segmentName, long offset,
-                                      java.util.Set<AcceptedLine> accepted) {
-        for (AcceptedLine a : accepted) {
-            if (a.segment().equals(segmentName) && a.offset() == offset && lineMatches(segmentBytes, a)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /** True if {@code a.offset()} starts a line of {@code segment} whose on-disk bytes hash to {@code a.sha256()}. */
