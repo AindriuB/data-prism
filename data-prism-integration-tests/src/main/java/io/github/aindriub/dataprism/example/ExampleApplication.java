@@ -100,7 +100,7 @@ public final class ExampleApplication {
                         .correlationRequirement(CorrelationRequirement.OPTIONAL)
                         .entityTypes(AuditedEntityTypes.of(List.of("CUSTOMER")))
                         .build(),
-                assembly.catalogQueries(), PAGE_MAX_LENGTH);
+                assembly.catalogQueries(), PAGE_MAX_LENGTH, false);
     }
 
     /**

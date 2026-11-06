@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "follow input (0.8)",
+  "type": "object",
+  "properties": {
+    "link": {
+      "description": "A link taken exactly as it was returned in a result's _links. Nothing else is accepted.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    }
+  },
+  "required": ["link"],
+  "additionalProperties": false
+}

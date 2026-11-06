@@ -108,15 +108,21 @@ class DataPrismMcpServerTest {
     }
 
     @Test
-    @DisplayName("the transport's JSON mapper and both tools share one mapper instance")
+    @DisplayName("the transport's JSON mapper and every tool, follow included, share one mapper instance")
     void transportAndBothToolsShareOneMapper() throws Exception {
         DataPrismMcpServer.Wiring wiring = DataPrismMcpServer.Wiring.of(new NeverCalledOrchestrator(),
                 authorizationServiceGranting(Set.of("GET_ENTITY_CONTEXT")), scopeResolver(),
                 PrivacyMetrics.none(), audit(), FIXED, developmentCaller(Set.of()),
                 ToolOptions.defaults().noAdmission().build());
 
+        DataPrismMcpServer.Wiring linkedWiring = DataPrismMcpServer.Wiring.of(new NeverCalledOrchestrator(),
+                authorizationServiceGranting(Set.of("GET_ENTITY_CONTEXT")), scopeResolver(),
+                PrivacyMetrics.none(), audit(), FIXED, developmentCaller(Set.of()),
+                ToolOptions.defaults().noAdmission().build(), null, 1024, true);
+
         assertThat(mapperOf(wiring.get())).isSameAs(wiring.mapper());
         assertThat(mapperOf(wiring.compare())).isSameAs(wiring.mapper());
+        assertThat(mapperOf(linkedWiring.follow())).isSameAs(linkedWiring.mapper());
         assertThat(((io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper) wiring.json()).getJsonMapper())
                 .isSameAs(wiring.mapper());
     }
