@@ -70,10 +70,11 @@ public final class LinkFollower {
      * @param resolver        the one resolver; null when direct
      * @param key             the sealed key
      * @param labels          the labels of this call
+     * @param entityType      the entity type the read carries, from the target's declaration
      */
     public record Authorised(SourceCatalog.Entry target, String label, LinkRelation relation,
                              KeyNamespace keyNamespace, KeyNamespace targetNamespace, KeyResolver resolver,
-                             String key, SourceLabels labels) implements Verdict {
+                             String key, SourceLabels labels, String entityType) implements Verdict {
         @Override
         public String toString() {
             return "Authorised[redacted]";
@@ -133,7 +134,7 @@ public final class LinkFollower {
         SourceCatalog.Entry entry = found.entry();
         String resolverName = payload.resolverName().orElse(null);
         Optional<LinkTargets.Target> declared = LinkTargets.forNamespace(keyNamespace, "", live, resolvers).stream()
-                .filter(t -> t.name().equals(entry.name()) && t.relation() == payload.relation()
+                .filter(t -> t.eligible() && t.name().equals(entry.name()) && t.relation() == payload.relation()
                         && Objects.equals(t.resolverName(), resolverName))
                 .findFirst();
         if (declared.isEmpty()) {
@@ -142,7 +143,7 @@ public final class LinkFollower {
         String key = new String(payload.chainedKey(), StandardCharsets.UTF_8);
         if (payload.relation() == LinkRelation.DIRECT) {
             return new Authorised(entry, payload.target(), LinkRelation.DIRECT, keyNamespace, keyNamespace, null,
-                    key, live);
+                    key, live, declared.get().entityType());
         }
         KeyNamespace to = declared.get().toNamespace();
         Optional<KeyResolver> resolver = resolvers.from(keyNamespace).stream()
@@ -151,7 +152,7 @@ public final class LinkFollower {
             return refused(LinkReason.RELATION_UNDECLARED);
         }
         return new Authorised(entry, payload.target(), LinkRelation.TRANSLATED, keyNamespace, to, resolver.get(),
-                key, live);
+                key, live, declared.get().entityType());
     }
 
     private static String textFor(String clientCode) {

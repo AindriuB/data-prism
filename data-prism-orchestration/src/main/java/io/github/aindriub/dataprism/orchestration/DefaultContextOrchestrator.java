@@ -692,9 +692,6 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
 
     // ---- follow ----
 
-    /** The entity type of a followed read when the target declares none. */
-    private static final String FOLLOW_DEFAULT_ENTITY_TYPE = "entity";
-
     /** What one follow call has done so far, so that a refusal can audit it. */
     private static final class FollowState {
         String subject = "";
@@ -790,8 +787,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         String name = target.target().name();
         DataSourceAdapter<?> adapter = adapters.stream().filter(a -> a.sourceName().equals(name)).findFirst()
                 .orElseThrow(() -> followRefusal(state, LinkFollower.refused(LinkReason.TARGET_NOT_PERMITTED)));
-        String entityType = target.target().description().entityTypes().stream().sorted().findFirst()
-                .orElse(FOLLOW_DEFAULT_ENTITY_TYPE);
+        String entityType = target.entityType();
         boolean direct = target.relation() == LinkRelation.DIRECT;
         SourceLabels labels = target.labels();
         String label = target.label();

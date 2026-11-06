@@ -152,11 +152,19 @@ class FollowTest {
          * {@code defaultRecord} for every key, and with entries it answers null (no data) for a key not in them.
          */
         public FollowRig source(String name, Object defaultRecord, String... inputKeys) {
+            return typedSource(name, defaultRecord, Set.of(), Map.of(), inputKeys);
+        }
+
+        /** A target source that declares entity types and which namespace answers which type. */
+        public FollowRig typedSource(String name, Object defaultRecord, Set<String> types,
+                                     Map<String, String> namespaceTypes, String... inputKeys) {
             List<KeyNamespace> inputs = new ArrayList<>();
             for (String key : inputKeys) {
                 inputs.add(new KeyNamespace(key));
             }
-            SourceDescription description = new SourceDescription(Set.of(), null, null, inputs, null, null);
+            Map<KeyNamespace, String> mapping = new java.util.HashMap<>();
+            namespaceTypes.forEach((namespace, type) -> mapping.put(new KeyNamespace(namespace), type));
+            SourceDescription description = new SourceDescription(types, null, null, inputs, null, null, mapping);
             adapters.add(new DataSourceAdapter<Object>() {
                 @Override
                 public String sourceName() {
@@ -369,6 +377,61 @@ class FollowTest {
         assertThat(rig.requests.get(0).keyNamespace()).contains(new KeyNamespace("parcel-ref"));
         assertThat(rig.lastAudit().policyDecision()).isEqualTo("ALLOW");
         assertThat(rig.lastAudit().tool()).isEqualTo("follow");
+    }
+
+    @Test
+    void aMappedMultiTypeSourceIsReadAsTheTypeMappedToTheNamespace() {
+        FollowRig rig = new FollowRig().typedSource("hub-api", new LinkBuilderTest.Plain("alpha"),
+                Set.of("DEPOT", "PARCEL"), Map.of("depot-code", "DEPOT", "parcel-ref", "PARCEL"),
+                "depot-code", "parcel-ref");
+
+        ContextResponse response = rig.follow(rig.direct("hub-api", "parcel-ref", "P-1"));
+
+        assertThat(rig.requests).hasSize(1);
+        assertThat(rig.requests.get(0).entityType()).isEqualTo("PARCEL");
+        assertThat(rig.requests.get(0).keyNamespace()).contains(new KeyNamespace("parcel-ref"));
+        assertThat(response.entityType()).isEqualTo("PARCEL");
+    }
+
+    @Test
+    void aTranslatedReadIsTypedByTheNamespaceItIsReadIn() {
+        FollowRig rig = new FollowRig().typedSource("hub-api", new LinkBuilderTest.Plain("alpha"),
+                Set.of("DEPOT", "PARCEL"), Map.of("depot-code", "DEPOT", "route-code", "PARCEL"),
+                "depot-code", "route-code")
+                .resolver("p-to-r", "parcel-ref", "route-code", key -> new KeyResolver.Resolution(List.of("R-1"), false));
+
+        rig.follow(rig.translated("hub-api", "parcel-ref", "p-to-r", "P-1"));
+
+        assertThat(rig.requests).hasSize(1);
+        assertThat(rig.requests.get(0).entityType()).isEqualTo("PARCEL");
+        assertThat(rig.requests.get(0).keyNamespace()).contains(new KeyNamespace("route-code"));
+    }
+
+    @Test
+    void aSingleDeclaredTypeIsUsedWithoutAMappingAndAnUndeclaredSourceIsReadAsEntity() {
+        FollowRig rig = new FollowRig()
+                .typedSource("one-api", new LinkBuilderTest.Plain("alpha"), Set.of("PARCEL"), Map.of(), "parcel-ref")
+                .source("none-api", new LinkBuilderTest.Plain("beta"), "parcel-ref");
+
+        rig.follow(rig.direct("one-api", "parcel-ref", "P-1"));
+        rig.follow(rig.direct("none-api", "parcel-ref", "P-1"));
+
+        assertThat(rig.requests).extracting(DataRequest::entityType).containsExactly("PARCEL", "entity");
+    }
+
+    @Test
+    void aSourceThatLosesItsMappingAfterIssueIsRefusedAsUndeclaredAndNothingIsRead() {
+        FollowRig mapped = new FollowRig().typedSource("hub-api", new LinkBuilderTest.Plain("alpha"),
+                Set.of("DEPOT", "PARCEL"), Map.of("parcel-ref", "PARCEL"), "depot-code", "parcel-ref");
+        String link = mapped.direct("hub-api", "parcel-ref", "P-1");
+        FollowRig unmapped = new FollowRig().typedSource("hub-api", new LinkBuilderTest.Plain("alpha"),
+                Set.of("DEPOT", "PARCEL"), Map.of(), "depot-code", "parcel-ref");
+
+        PrivacyRefusedException refused = refusal(unmapped, link);
+
+        assertThat(refused.code()).isEqualTo("LINK_INVALID");
+        assertThat(unmapped.lastAudit().fieldDispositions()).containsEntry("link", "REFUSED:LINK_RELATION_UNDECLARED");
+        assertThat(unmapped.fetches.get()).isZero();
     }
 
     @Test
