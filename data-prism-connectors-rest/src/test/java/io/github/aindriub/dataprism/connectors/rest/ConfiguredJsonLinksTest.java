@@ -187,8 +187,7 @@ class ConfiguredJsonLinksTest {
                     .withLinks(new OrchestrationOptions.LinkIssuing(codec, 50, resolvers, Map.of(), clock))
                     .withFollow(OrchestrationOptions.FollowSettings.of(
                             new LinkAttemptGate(codec, new InMemoryLinkAttemptLimiter(3, Duration.ofMinutes(10), clock)),
-                            keys, resolvers, new ResolverInvoker(PrivacyMetrics.none(),
-                                    ResolverInvoker.DEFAULT_MAX_CONCURRENT_CALLS, clock)));
+                            keys, resolvers, new ResolverInvoker(PrivacyMetrics.none())));
         }
 
         @Bean
