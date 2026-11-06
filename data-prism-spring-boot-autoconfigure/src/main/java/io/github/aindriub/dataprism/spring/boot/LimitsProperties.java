@@ -1,25 +1,18 @@
 package io.github.aindriub.dataprism.spring.boot;
 
 import io.github.aindriub.dataprism.core.limits.RequestLimits;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.util.unit.DataSize;
 
 import java.time.Duration;
 
 /**
- * {@code dataprism.limits.*}: six of the eight {@link RequestLimits} fields. Every default is the value of
- * the framework defaults; only a positive value is accepted, and a refusal names the property, never the value.
+ * {@code dataprism.limits.*}: the eight {@link RequestLimits} fields. Every default is the value of the framework
+ * defaults; only a positive value is accepted, and a refusal names the property, never the value.
  *
- * <p>The other two are not bound yet (task 254). The overall request deadline is the framework default,
- * {@code PT10S}, or {@code per-source-timeout} where that is longer, because a deadline shorter than one call's
- * own timeout is refused; the deadline is raised at startup and logged once. The per-scope total of source reads
- * is the framework default. {@code per-source-timeout} is the time one call may take, measured from when that
- * call starts, not from the start of the request.
+ * <p>{@code per-source-timeout} is the time one call may take, measured from when that call starts, not from the
+ * start of the request. {@code request-timeout} is the deadline for the whole request and may not be shorter.
  */
 public class LimitsProperties {
-    private static final Logger LOG = LoggerFactory.getLogger(LimitsProperties.class);
-
     static final String CODE = "INVALID_REQUEST_LIMITS";
 
     /** Most sources one request may call. A request that selects more is refused, not silently cut short. */
@@ -34,6 +27,10 @@ public class LimitsProperties {
     private int maxConcurrency = 4;
     /** Reads of one subject allowed within one privacy scope before further reads are refused. */
     private int scopeReadBudget = 100;
+    /** The deadline for the whole of one request, from its start; it may not be shorter than per-source-timeout. */
+    private Duration requestTimeout = Duration.ofSeconds(10);
+    /** Source reads allowed within one privacy scope across all subjects before further reads are refused. */
+    private int scopeTotalReadBudget = 50_000;
 
     public int getMaxSources() {
         return maxSources;
@@ -83,6 +80,22 @@ public class LimitsProperties {
         scopeReadBudget = v;
     }
 
+    public Duration getRequestTimeout() {
+        return requestTimeout;
+    }
+
+    public void setRequestTimeout(Duration v) {
+        requestTimeout = v;
+    }
+
+    public int getScopeTotalReadBudget() {
+        return scopeTotalReadBudget;
+    }
+
+    public void setScopeTotalReadBudget(int v) {
+        scopeTotalReadBudget = v;
+    }
+
     /**
      * The validated limits.
      *
@@ -99,24 +112,15 @@ public class LimitsProperties {
         }
         positive(maxConcurrency, "max-concurrency");
         positive(scopeReadBudget, "scope-read-budget");
-        return new RequestLimits(maxSources, maxRecords, (int) maxResponseSize.toBytes(), perSourceTimeout,
-                maxConcurrency, scopeReadBudget, requestTimeout(),
-                RequestLimits.DEFAULT.scopeTotalReadBudget());
-    }
-
-    /**
-     * The overall deadline, until it is bound from configuration (task 254): the default, or the
-     * per-source timeout where that is longer, so a raised {@code per-source-timeout} still starts.
-     * Said once, at INFO, when it is raised.
-     */
-    private Duration requestTimeout() {
-        Duration floor = RequestLimits.DEFAULT.requestTimeout();
-        if (perSourceTimeout.compareTo(floor) <= 0) {
-            return floor;
+        if (requestTimeout == null || requestTimeout.isZero() || requestTimeout.isNegative()) {
+            throw refusal("request-timeout", "must be positive");
         }
-        LOG.info("dataprism.limits.per-source-timeout is above the default request deadline of {}; "
-                + "the request deadline is raised to match it until it can be set", floor);
-        return perSourceTimeout;
+        if (requestTimeout.compareTo(perSourceTimeout) < 0) {
+            throw refusal("request-timeout", "must not be shorter than dataprism.limits.per-source-timeout");
+        }
+        positive(scopeTotalReadBudget, "scope-total-read-budget");
+        return new RequestLimits(maxSources, maxRecords, (int) maxResponseSize.toBytes(), perSourceTimeout,
+                maxConcurrency, scopeReadBudget, requestTimeout, scopeTotalReadBudget);
     }
 
     private static void positive(int value, String name) {

@@ -1,7 +1,22 @@
 package io.github.aindriub.dataprism.spring.boot;
 
+import org.springframework.beans.factory.BeanFactoryUtils;
+import org.springframework.beans.factory.FactoryBean;
+import org.springframework.beans.factory.ListableBeanFactory;
+import org.springframework.beans.factory.SmartInitializingSingleton;
+import org.springframework.beans.factory.config.BeanDefinition;
+import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
+import org.springframework.beans.factory.config.InstantiationAwareBeanPostProcessor;
+import org.springframework.beans.factory.support.BeanDefinitionRegistry;
+import org.springframework.beans.factory.support.RootBeanDefinition;
+import org.springframework.context.support.AbstractApplicationContext;
+
+import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 
 /**
  * Checked-in classification of every {@code @Bean} method declared by
@@ -87,6 +102,14 @@ public final class PrivacyExtensionPoints {
             // Carries the scope read budget, so it is not replaceable: a second RequestLimits bean is refused.
             entry("dataPrismRequestLimits", Classification.PRIVACY_CRITICAL, Guard.COMPETING_BEAN_REFUSAL),
             entry("dataPrismRequestLimitsPreflight", Classification.REPLACEABLE, Guard.NONE),
+            // The catalog decides which source names a caller may see and what each source says about itself; the
+            // options carry the real-names policy. None can be replaced: a competing bean is refused at startup.
+            entry("dataPrismSourceCatalog", Classification.PRIVACY_CRITICAL, Guard.COMPETING_BEAN_REFUSAL),
+            entry("dataPrismOrchestrationOptions", Classification.PRIVACY_CRITICAL, Guard.COMPETING_BEAN_REFUSAL),
+            entry("dataPrismCatalogQueries", Classification.PRIVACY_CRITICAL, Guard.COMPETING_BEAN_REFUSAL),
+            entry("dataPrismLinkKeys", Classification.PRIVACY_CRITICAL, Guard.COMPETING_BEAN_REFUSAL),
+            entry("dataPrismLinkCodec", Classification.PRIVACY_CRITICAL, Guard.COMPETING_BEAN_REFUSAL),
+            entry("dataPrismCatalogPreflight", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismContextOrchestrator", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismStdioTransportRefused", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismMcpTransportPreflight", Classification.REPLACEABLE, Guard.NONE),
@@ -128,6 +151,165 @@ public final class PrivacyExtensionPoints {
     /** Every bean method name this registry has a row for, for the sweep's exhaustiveness check. */
     public static Set<String> classifiedBeanNames() {
         return BEANS.keySet();
+    }
+
+    /**
+     * Refuses startup when a bean definition other than {@code ownName} produces {@code type}, with the refusal
+     * {@code refusal} builds. Two checks, because Spring cannot read the type of a
+     * bean whose type is not declared (a raw {@link FactoryBean}, or a method declared to return {@code Object}):
+     * its type is unknown until it is created.
+     *
+     * <ol>
+     * <li>Now, for every definition whose type is declared: the refusal comes before any singleton is created.
+     * <li>As beans are created ({@link Watcher}): from the point the application context has registered every bean
+     * post-processor and initialised its event multicaster (before {@code onRefresh}, which creates the servlet and
+     * its dependencies), a raw factory is read before the next bean is instantiated, and any bean that turns out to
+     * be the type is refused as it is created, whatever it was declared to be. The refusal comes before anything is
+     * injected with it, so it is the refusal and not a "found 2 matching beans" error that the application sees.
+     * <li>Once every singleton exists ({@link PostCheck}): the real beans of the type are inspected, which catches
+     * what the first two cannot see: a post-processor that swapped a bean after the watcher ran, a definition added
+     * late, a singleton registered by hand. The watcher stops reading at that point.
+     * </ol>
+     * A deliberate post-processor that replaces the guarded bean under its own name is not detected: that is
+     * operator code (docs/architecture.md, trust boundary).
+     */
+    static void refuseCompetingBeans(ConfigurableListableBeanFactory factory, Class<?> type, String ownName,
+                                     Supplier<? extends RuntimeException> refusal) {
+        if (competing(factory, type, ownName)) {
+            throw refusal.get();
+        }
+        Watcher watcher = new Watcher(factory, type, ownName, refusal);
+        factory.addBeanPostProcessor(watcher);
+        if (factory instanceof BeanDefinitionRegistry registry) {
+            RootBeanDefinition check = new RootBeanDefinition(PostCheck.class,
+                    () -> new PostCheck(factory, watcher, type, ownName, refusal));
+            check.setRole(BeanDefinition.ROLE_INFRASTRUCTURE);
+            registry.registerBeanDefinition("dataPrismCompetitionCheck." + type.getSimpleName(), check);
+        }
+    }
+
+    /** Once every singleton exists, refuses any real bean of the type other than the settings' own. */
+    static final class PostCheck implements SmartInitializingSingleton {
+        private final ConfigurableListableBeanFactory factory;
+        private final Watcher watcher;
+        private final Class<?> type;
+        private final String ownName;
+        private final Supplier<? extends RuntimeException> refusal;
+
+        PostCheck(ConfigurableListableBeanFactory factory, Watcher watcher, Class<?> type, String ownName,
+                  Supplier<? extends RuntimeException> refusal) {
+            this.factory = factory;
+            this.watcher = watcher;
+            this.type = type;
+            this.ownName = ownName;
+            this.refusal = refusal;
+        }
+
+        @Override
+        public void afterSingletonsInstantiated() {
+            watcher.stop();
+            for (String name : factory.getBeanNamesForType(type, true, true)) {
+                if (!name.equals(ownName)) {
+                    throw refusal.get();
+                }
+            }
+        }
+    }
+
+    /** Whether {@code bean} is, or is a factory for, a {@code type}; reads a factory's declared product type only. */
+    private static boolean produces(Object bean, Class<?> type) {
+        if (type.isInstance(bean)) {
+            return true;
+        }
+        if (bean instanceof FactoryBean<?> factoryBean) {
+            Class<?> product = factoryBean.getObjectType();
+            return product != null && type.isAssignableFrom(product);
+        }
+        return false;
+    }
+
+    /**
+     * Looks for a competing bean while beans are being created. It does nothing until the application context has
+     * registered every bean post-processor (its event multicaster exists, which {@code refresh} initialises after
+     * {@code registerBeanPostProcessors} and before {@code onRefresh}), because reading a raw factory creates it, and
+     * a factory created earlier would be created without the post-processors. From then, before each bean is
+     * instantiated, it reads the product type of every raw factory whose type is still unknown (so before anything is
+     * injected with its product), until every factory has been read or {@link #stop} is called; a factory on a
+     * configuration class that is itself being created is read at a later bean. After a bean is initialised it
+     * refuses one that is a competing type whatever it was declared to be.
+     */
+    private static final class Watcher implements InstantiationAwareBeanPostProcessor {
+        /** Set while a read runs, so that the creation of a raw factory it triggers cannot re-enter. */
+        private static final ThreadLocal<Boolean> READING = new ThreadLocal<>();
+
+        private final ConfigurableListableBeanFactory factory;
+        private final Class<?> type;
+        private final String ownName;
+        private final Supplier<? extends RuntimeException> refusal;
+        private final Set<String> read = ConcurrentHashMap.newKeySet();
+        private volatile boolean allRead;
+
+        /** No further reads: every singleton exists, and {@link PostCheck} inspects the beans themselves. */
+        void stop() {
+            allRead = true;
+        }
+
+        Watcher(ConfigurableListableBeanFactory factory, Class<?> type, String ownName,
+                Supplier<? extends RuntimeException> refusal) {
+            this.factory = factory;
+            this.type = type;
+            this.ownName = ownName;
+            this.refusal = refusal;
+        }
+
+        @Override
+        public Object postProcessBeforeInstantiation(Class<?> beanClass, String beanName) {
+            if (allRead || READING.get() != null
+                    || !factory.containsSingleton(AbstractApplicationContext.APPLICATION_EVENT_MULTICASTER_BEAN_NAME)) {
+                return null;
+            }
+            READING.set(Boolean.TRUE);
+            try {
+                boolean unread = false;
+                for (String factoryName : factory.getBeanNamesForType(FactoryBean.class, true, false)) {
+                    String name = BeanFactoryUtils.transformedBeanName(factoryName);
+                    if (read.contains(name)) {
+                        continue;
+                    }
+                    if (factory.getType(name, false) != null) {
+                        read.add(name);
+                        continue;
+                    }
+                    Class<?> product = factory.getType(name, true);
+                    if (product == null) {
+                        unread = true;
+                        continue;
+                    }
+                    read.add(name);
+                    if (!name.equals(ownName) && type.isAssignableFrom(product)) {
+                        throw refusal.get();
+                    }
+                }
+                allRead = !unread;
+            } finally {
+                READING.remove();
+            }
+            return null;
+        }
+
+        @Override
+        public Object postProcessAfterInitialization(Object bean, String beanName) {
+            if (!ownName.equals(beanName) && produces(bean, type)) {
+                throw refusal.get();
+            }
+            return bean;
+        }
+    }
+
+    private static boolean competing(ListableBeanFactory factory, Class<?> type, String ownName) {
+        Set<String> names = new LinkedHashSet<>(Arrays.asList(factory.getBeanNamesForType(type, true, false)));
+        names.remove(ownName);
+        return !names.isEmpty();
     }
 
     private static Map.Entry<String, BeanContract> entry(String name, Classification classification, Guard guard) {

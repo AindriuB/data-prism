@@ -256,9 +256,9 @@ class OversightConfigurationTest {
         });
     }
 
-    @Test void the_tool_list_is_the_two_existing_tools() {
+    @Test void the_tool_list_is_the_four_tools() {
         run(new String[0], context -> assertThat(context.getBean(McpSyncServer.class).listTools())
                 .extracting(McpSchema.Tool::name)
-                .containsExactlyInAnyOrder("get_entity_context", "compare_entity_sources"));
+                .containsExactlyInAnyOrder("get_entity_context", "compare_entity_sources", "list_sources", "describe_source"));
     }
 }

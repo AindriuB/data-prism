@@ -47,6 +47,8 @@ public final class ExampleApplication {
     private static final String DEVELOPMENT_PURPOSE = "demonstration";
     private static final String DEVELOPMENT_CASE = "CASE-DEMO-1";
     private static final String DEVELOPMENT_ROLE = "developer";
+    /** The longest page link the served {@code page} argument allows: the default {@code dataprism.links.max-length}. */
+    private static final int PAGE_MAX_LENGTH = 1024;
 
     /**
      * The one profile name that refuses stdio. Matched case-insensitively
@@ -64,7 +66,8 @@ public final class ExampleApplication {
         McpSyncServer server = buildServer(activeProfiles());
 
         Runtime.getRuntime().addShutdownHook(new Thread(server::closeGracefully));
-        System.err.println("data-prism listening on stdio; tools: get_entity_context, compare_entity_sources");
+        System.err.println("data-prism listening on stdio; tools: get_entity_context, compare_entity_sources, "
+                + "list_sources, describe_source");
 
         Thread.currentThread().join();
     }
@@ -96,13 +99,15 @@ public final class ExampleApplication {
                         .admission(ToolAdmission.none(), assembly.parameterFingerprinter())
                         .correlationRequirement(CorrelationRequirement.OPTIONAL)
                         .entityTypes(AuditedEntityTypes.of(List.of("CUSTOMER")))
-                        .build());
+                        .build(),
+                assembly.catalogQueries(), PAGE_MAX_LENGTH);
     }
 
     /**
      * The shipped stdio development policy: one role, {@code developer}, holding
-     * exactly {@link Capability#GET_ENTITY_CONTEXT} and
-     * {@link Capability#COMPARE_ENTITY_SOURCES} — never
+     * exactly {@link Capability#GET_ENTITY_CONTEXT},
+     * {@link Capability#COMPARE_ENTITY_SOURCES}, {@link Capability#LIST_SOURCES} and
+     * {@link Capability#DESCRIBE_SOURCE} — never
      * {@link Capability#EXPOSE_SOURCE_NAMES}. A named factory rather than a
      * value built inline in {@link #buildServer}, so {@code ShippedDefaultsTest}
      * can assert on the same policy {@code main} actually runs, instead of a
@@ -110,7 +115,8 @@ public final class ExampleApplication {
      */
     static SecurityPolicy shippedSecurityPolicy() {
         return new SecurityPolicy(Set.of(DEVELOPMENT_PURPOSE),
-                Map.of(DEVELOPMENT_ROLE, Set.of(Capability.GET_ENTITY_CONTEXT, Capability.COMPARE_ENTITY_SOURCES)));
+                Map.of(DEVELOPMENT_ROLE, Set.of(Capability.GET_ENTITY_CONTEXT, Capability.COMPARE_ENTITY_SOURCES,
+                        Capability.LIST_SOURCES, Capability.DESCRIBE_SOURCE)));
     }
 
     /**

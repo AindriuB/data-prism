@@ -37,24 +37,27 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ShippedDefaultsTest {
 
     @Test
-    @DisplayName("the shipped investigation context holds exactly GET_ENTITY_CONTEXT and COMPARE_ENTITY_SOURCES, "
-            + "never EXPOSE_SOURCE_NAMES")
+    @DisplayName("the shipped investigation context holds exactly the two entity capabilities and the two catalog "
+            + "ones, never EXPOSE_SOURCE_NAMES")
     void standardAssemblyContextIsMasked() {
         var context = DataPrismAssembly.standard().investigationContext();
 
         assertThat(context.capabilities())
-                .isEqualTo(Set.of(Capability.GET_ENTITY_CONTEXT, Capability.COMPARE_ENTITY_SOURCES));
+                .isEqualTo(Set.of(Capability.GET_ENTITY_CONTEXT, Capability.COMPARE_ENTITY_SOURCES,
+                        Capability.LIST_SOURCES, Capability.DESCRIBE_SOURCE));
         assertThat(context.has(Capability.EXPOSE_SOURCE_NAMES)).isFalse();
     }
 
     @Test
-    @DisplayName("the shipped developer role holds exactly GET_ENTITY_CONTEXT and COMPARE_ENTITY_SOURCES")
+    @DisplayName("the shipped developer role holds exactly the two entity capabilities and LIST_SOURCES and "
+            + "DESCRIBE_SOURCE")
     void shippedDeveloperRoleIsNarrow() {
         SecurityPolicy policy = ExampleApplication.shippedSecurityPolicy();
 
         Set<String> capabilities = policy.capabilitiesFor(Set.of("developer"));
 
-        assertThat(capabilities).isEqualTo(Set.of(Capability.GET_ENTITY_CONTEXT, Capability.COMPARE_ENTITY_SOURCES));
+        assertThat(capabilities).isEqualTo(Set.of(Capability.GET_ENTITY_CONTEXT, Capability.COMPARE_ENTITY_SOURCES,
+                Capability.LIST_SOURCES, Capability.DESCRIBE_SOURCE));
         assertThat(capabilities).doesNotContain(Capability.EXPOSE_SOURCE_NAMES);
     }
 

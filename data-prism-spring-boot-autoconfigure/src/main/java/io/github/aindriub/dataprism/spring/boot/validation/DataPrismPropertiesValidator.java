@@ -1,8 +1,11 @@
 package io.github.aindriub.dataprism.spring.boot.validation;
 
 import io.github.aindriub.dataprism.spring.boot.AuditProperties;
+import io.github.aindriub.dataprism.spring.boot.CatalogProperties;
 import io.github.aindriub.dataprism.spring.boot.CorrelationProperties;
 import io.github.aindriub.dataprism.spring.boot.HazelcastProperties;
+import io.github.aindriub.dataprism.spring.boot.LimitsProperties;
+import io.github.aindriub.dataprism.spring.boot.PagingProperties;
 import io.github.aindriub.dataprism.spring.boot.MetricsProperties;
 import io.github.aindriub.dataprism.spring.boot.OperatorProperties;
 import io.github.aindriub.dataprism.spring.boot.OversightProperties;
@@ -13,6 +16,8 @@ import io.github.aindriub.dataprism.spring.boot.SecurityPolicyProperties;
 import io.github.aindriub.dataprism.spring.boot.SourceProperties;
 import io.github.aindriub.dataprism.spring.boot.TransportProperties;
 import io.github.aindriub.dataprism.core.model.Capability;
+import io.github.aindriub.dataprism.orchestration.catalog.PagingSettings;
+import io.github.aindriub.dataprism.orchestration.catalog.RealNamesPolicy;
 import io.github.aindriub.dataprism.security.ReservedArguments;
 import io.github.aindriub.dataprism.spring.boot.DataPrismConfigurationException;
 import io.github.aindriub.dataprism.spring.boot.DataPrismProperties;
@@ -45,6 +50,9 @@ public final class DataPrismPropertiesValidator {
     private final OversightProperties oversight;
     private final ReidentificationProperties reidentification;
     private final OperatorProperties operator;
+    private final LimitsProperties limits;
+    private final CatalogProperties catalog;
+    private final PagingProperties paging;
 
     public DataPrismPropertiesValidator(DataPrismProperties p) {
         transport = p.getTransport();
@@ -59,6 +67,9 @@ public final class DataPrismPropertiesValidator {
         oversight = p.getOversight();
         reidentification = p.getReidentification();
         operator = p.getOperator();
+        limits = p.getLimits();
+        catalog = p.getCatalog();
+        paging = p.getPaging();
     }
 
     public void validate() {
@@ -88,6 +99,8 @@ public final class DataPrismPropertiesValidator {
         validateAuditSegmentSize();
         validateSources(fixture);
         validateOversight();
+        validateCatalog();
+        validatePaging();
     }
 
     private static final java.util.regex.Pattern HEADER_TOKEN =
@@ -867,6 +880,47 @@ public final class DataPrismPropertiesValidator {
         if (blank(v)) {
             refuse(c, p + " must be set");
         }
+    }
+
+    /**
+     * {@code dataprism.catalog.*}: a positive limit no higher than {@code dataprism.limits.max-sources}, and scope
+     * patterns the real-names policy accepts. Names the property; the policy's rule text names no pattern.
+     */
+    private void validateCatalog() {
+        int limit = catalog.unselectedSourceLimitValue();
+        if (limit < 1) {
+            refuse("INVALID_CATALOG_SETTING", "dataprism.catalog.unselected-source-limit must be positive");
+        }
+        if (limits.getMaxSources() > 0 && limit > limits.getMaxSources()) {
+            refuse("INVALID_CATALOG_SETTING",
+                    "dataprism.catalog.unselected-source-limit must not exceed dataprism.limits.max-sources");
+        }
+        try {
+            new RealNamesPolicy(catalog.getRealNamesScopes());
+        } catch (IllegalArgumentException malformed) {
+            // The cause is dropped: the policy names the rule and never the pattern, but a copy would be one more place.
+            refuse("INVALID_CATALOG_SETTING", "dataprism.catalog.real-names-scopes "
+                    + ruleOf(malformed.getMessage(), RealNamesPolicy.INVALID));
+        }
+    }
+
+    /** {@code dataprism.paging.*}: the rules of {@link PagingSettings}, which name the property and never the value. */
+    private void validatePaging() {
+        java.time.Duration lifetime = paging.lifetimeValue();
+        if (lifetime == null) {
+            refuse("INVALID_PAGING_SETTING", "dataprism.paging.lifetime must be positive");
+        }
+        try {
+            new PagingSettings(paging.getListSources().pageSizeValue(), paging.getListSources().maxPageSizeValue(),
+                    lifetime);
+        } catch (IllegalArgumentException invalid) {
+            refuse("INVALID_PAGING_SETTING", ruleOf(invalid.getMessage(), PagingSettings.INVALID));
+        }
+    }
+
+    private static String ruleOf(String message, String codePrefix) {
+        return message != null && message.startsWith(codePrefix) ? message.substring(codePrefix.length())
+                : "is not valid";
     }
 
     private static void refuse(String c, String d) {

@@ -26,12 +26,14 @@ import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
 
 import java.time.Clock;
 import java.util.List;
 
-/** Correlation MDC and the context orchestrator. */
+/** Correlation MDC and the context orchestrator. The catalog it serves is wired by {@link CatalogWiring}. */
 @Configuration(proxyBeanMethods = false)
+@Import(CatalogWiring.class)
 class OrchestrationWiring {
     /** Off unless {@code dataprism.correlation.mdc-key} is set; validated by {@link DataPrismProperties#validate()}. */
     @Bean @ConditionalOnMissingBean
@@ -52,12 +54,10 @@ class OrchestrationWiring {
     /** Resolve this before singleton creation, same reasoning as {@code dataPrismPrivacyPolicyResolverPreflight}. */
     @Bean
     static BeanFactoryPostProcessor dataPrismRequestLimitsPreflight() {
-        return factory -> {
-            if (factory.getBeanNamesForType(RequestLimits.class, true, false).length > 1) {
-                throw new DataPrismConfigurationException("FORBIDDEN_PRIVACY_OVERRIDE",
-                        "an application RequestLimits bean cannot replace the configured request limits");
-            }
-        };
+        // Also refuses a raw FactoryBean: its product type is only known once it is created.
+        return factory -> PrivacyExtensionPoints.refuseCompetingBeans(factory, RequestLimits.class,
+                "dataPrismRequestLimits", () -> new DataPrismConfigurationException("FORBIDDEN_PRIVACY_OVERRIDE",
+                        "an application RequestLimits bean cannot replace the configured request limits"));
     }
 
     @Bean @ConditionalOnMissingBean
@@ -65,11 +65,11 @@ class OrchestrationWiring {
             JsonTreeScrubbingEngine scrubber, FieldMetadataResolver metadata, List<LlmResponseValidator> validators,
             SyntheticValueSource synthetics, ValueTokenSource tokens, SecretKeyProvider keys, AuditRecorder audit,
             ScopeBudget budget, PrivacyMetrics metrics, Clock clock, ParameterFingerprinter fingerprinter,
-            CorrelationMdc correlationMdc, RequestLimits limits) {
+            CorrelationMdc correlationMdc, RequestLimits limits, OrchestrationOptions options) {
         return new DefaultContextOrchestrator(adapters, scrubber, metadata, List.copyOf(validators), synthetics,
                 fingerprinter, audit, identities,
                 new SourceFanOut(SourceCircuitBreaker.disabled(), clock,
                         new SourceFanOutOptions(metrics, correlationMdc)), budget, limits,
-                new NamespaceCorrelationService(metadata), new SourceAliasing(tokens), metrics, OrchestrationOptions.defaults());
+                new NamespaceCorrelationService(metadata), new SourceAliasing(tokens), metrics, options);
     }
 }

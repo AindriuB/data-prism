@@ -167,6 +167,7 @@ class McpHttpEndToEndTest {
                 // jwk-set-uri already set there.
                 .run(
                         "--server.port=0",
+                        "--dataprism.catalog.real-names-scopes[0]=case:" + CASE_ID,
                         "--dataprism.security.jwt.jwk-set-uri=https://127.0.0.1:" + jwksPort + "/jwks");
         port = ((ServletWebServerApplicationContext) context).getWebServer().getPort();
     }
@@ -385,19 +386,18 @@ class McpHttpEndToEndTest {
     }
 
     @Test
-    @DisplayName("a caller with EXPOSE_SOURCE_NAMES still sees aliases while no scope permits real names")
-    void callerWithExposeCapabilityStillSeesAliasesWhileRealNamesScopesIsEmpty() throws Exception {
+    @DisplayName("a caller with EXPOSE_SOURCE_NAMES sees real source names in a scope listed in "
+            + "dataprism.catalog.real-names-scopes")
+    void callerWithExposeCapabilitySeesRealSourceNames() throws Exception {
         String token = mintToken(Set.of("privileged-investigator"), CONFIGURED_PURPOSE, CASE_ID);
         McpSyncClient client = clientWithToken(token);
         try {
             McpSchema.CallToolResult result = callGetEntityContext(client, "123");
             assertThat(result.isError()).isNotEqualTo(Boolean.TRUE);
 
-            // Task 247: real names need the scope setting as well as the capability, and the setting is empty
-            // by default. Formerly callerWithExposeCapabilitySeesRealSourceNames: task 254 restores the
-            // real-name assertion (contains "customer-api") once dataprism.catalog.real-names-scopes is bound.
-            assertThat(text(result)).doesNotContain("customer-api");
-            assertAliasedAnswer(result);
+            // Task 247: real names need the scope setting as well as the capability. The application is started
+            // with dataprism.catalog.real-names-scopes naming this scope (task 254).
+            assertThat(text(result)).contains("customer-api");
         } finally {
             client.closeGracefully();
         }

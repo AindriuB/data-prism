@@ -9,6 +9,7 @@ import io.github.aindriub.dataprism.mcp.DataPrismMcpServer;
 import io.github.aindriub.dataprism.mcp.ToolOptions;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
+import io.github.aindriub.dataprism.orchestration.catalog.CatalogQueries;
 import io.github.aindriub.dataprism.security.AuthorizationService;
 import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.ToolAdmission;
@@ -80,7 +81,8 @@ class McpTransportWiring {
     DataPrismMcpServer.HttpTransport dataPrismHttpTransport(ContextOrchestrator orchestrator, AuthorizationService authorization,
             ScopeResolver scopeResolver, McpTransportContextExtractor<HttpServletRequest> extractor,
             PrivacyMetrics metrics, AuditRecorder audit, Clock clock, DataPrismProperties properties,
-            ToolAdmission admission, ParameterFingerprinter fingerprinter, CorrelationMdc correlationMdc) {
+            ToolAdmission admission, ParameterFingerprinter fingerprinter, CorrelationMdc correlationMdc,
+            CatalogQueries catalogQueries) {
         AuditedEntityTypes entityTypes = AuditedEntityTypes.of(properties.getAudit().getEntityTypes());
         if (entityTypes.isShapeMode()) {
             // Not a WARN: leaving the list unset is a supported mode, but the shape cannot tell ACC123 from CUSTOMER.
@@ -97,7 +99,8 @@ class McpTransportWiring {
                 .entityTypes(entityTypes)
                 .build();
         return DataPrismMcpServer.streamableHttp(orchestrator, authorization, scopeResolver, extractor,
-                properties.getTransport().getHttp().getPath(), metrics, audit, clock, options);
+                properties.getTransport().getHttp().getPath(), metrics, audit, clock, options, catalogQueries,
+                CatalogWiring.PAGE_MAX_LENGTH);
     }
 
     @Bean(destroyMethod = "closeGracefully")

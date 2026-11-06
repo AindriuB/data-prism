@@ -85,7 +85,7 @@ class OperatorSurfaceTest {
     void theOperatorSurfaceIsNotAnMcpTool() throws Exception {
         try (McpSyncClient client = app.mcpClient(app.mcpToken("analyst-tools", "CASE-TOOLS"))) {
             assertThat(client.listTools().tools()).extracting(t -> t.name())
-                    .containsExactlyInAnyOrder("get_entity_context", "compare_entity_sources");
+                    .containsExactlyInAnyOrder("get_entity_context", "compare_entity_sources", "list_sources", "describe_source");
         }
     }
 

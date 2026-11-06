@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.server;
 
 import io.github.aindriub.dataprism.audit.AuditSink;
+import io.github.aindriub.dataprism.core.limits.RequestLimits;
 import io.github.aindriub.dataprism.core.spi.DataRequest;
 import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
@@ -9,6 +10,9 @@ import io.github.aindriub.dataprism.core.spi.PassThroughIdentityResolver;
 import io.github.aindriub.dataprism.spring.boot.DataPrismConfigurationException;
 import io.github.aindriub.dataprism.spring.boot.HmacKeyReferenceResolver;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.FactoryBean;
+import org.springframework.beans.factory.support.BeanDefinitionRegistry;
+import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.web.server.servlet.context.ServletWebServerApplicationContext;
@@ -223,6 +227,52 @@ class ServerStartupTest {
         });
 
         assertConfigurationFailure(failure, "MISSING_IDENTITY_RESOLVER");
+    }
+
+    /**
+     * A bean declared as {@code Object} that is a {@code RequestLimits}, and a raw factory for one, are invisible to
+     * the type check before startup and are refused all the same, on a real servlet start (task 254).
+     */
+    @Test
+    void anObjectDeclaredRequestLimitsBeanRefusesServletStartup() {
+        Throwable failure = catchThrowable(() -> {
+            try (var ignored = startWithDefinition("hiddenLimits",
+                    new RootBeanDefinition(Object.class, () -> RequestLimits.DEFAULT))) { }
+        });
+
+        assertConfigurationFailure(failure, "FORBIDDEN_PRIVACY_OVERRIDE");
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    @Test
+    void aRawFactoryForRequestLimitsRefusesServletStartup() {
+        Throwable failure = catchThrowable(() -> {
+            try (var ignored = startWithDefinition("hiddenFactory", new RootBeanDefinition(FactoryBean.class,
+                    () -> (FactoryBean) new FactoryBean<Object>() {
+                        @Override public Object getObject() { return RequestLimits.DEFAULT; }
+                        @Override public Class<?> getObjectType() { return RequestLimits.class; }
+                    }))) { }
+        });
+
+        assertConfigurationFailure(failure, "FORBIDDEN_PRIVACY_OVERRIDE");
+    }
+
+    private static ConfigurableApplicationContext startWithDefinition(String name, RootBeanDefinition definition) {
+        return new SpringApplicationBuilder(DataPrismServerApplication.class)
+                .web(WebApplicationType.SERVLET)
+                .logStartupInfo(false)
+                .initializers(context -> {
+                    var beans = context.getBeanFactory();
+                    beans.registerSingleton("testKeys", (HmacKeyReferenceResolver) (keyId, reference) ->
+                            "task-17-test-only-key-material-longer-than-thirty-two-bytes"
+                                    .getBytes(StandardCharsets.UTF_8));
+                    beans.registerSingleton("testAudit", (AuditSink) event -> { });
+                    beans.registerSingleton("testMetrics", PrivacyMetrics.none());
+                    beans.registerSingleton("testIdentityResolver", (IdentityResolver) new PassThroughIdentityResolver());
+                    beans.registerSingleton("testCustomerAdapter", testAdapter());
+                    ((BeanDefinitionRegistry) beans).registerBeanDefinition(name, definition);
+                })
+                .run(validConfiguration());
     }
 
     private static ConfigurableApplicationContext start(boolean withAdapter, String[] configuration) {

@@ -2,6 +2,9 @@ package io.github.aindriub.dataprism.spring.boot;
 
 import io.github.aindriub.dataprism.hazelcast.seal.ClusterKeys;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -275,5 +278,72 @@ class ClusterKeyResolutionTest {
                 () -> ClusterKeyResolution.resolve(p, () -> changing));
         assertThat(refused.getMessage()).startsWith("CLUSTER_KEY_SHARED:");
         assertThat(calls).containsEntry("AUDIT_REF", 1).containsEntry("RETIRED_REF", 1);
+    }
+
+    // ---- the page-link key (task 254): compared by key id and by material, like the audit key ----
+
+    /** The cluster test properties with a current link key {@code link-1} and a retiring one {@code link-0}. */
+    private static DataPrismProperties keyedLink() {
+        DataPrismProperties p = properties();
+        Binder binder = new Binder(new MapConfigurationPropertySource(Map.of(
+                "dataprism.links.key-id", "link-1",
+                "dataprism.links.keys.link-1.environment-variable", "LINK_REF",
+                "dataprism.links.keys.link-0.environment-variable", "OLD_LINK_REF")));
+        binder.bind("dataprism", Bindable.ofInstance(p));
+        return p;
+    }
+
+    private static HmacKeyReferenceResolver linkResolver(Map<String, byte[]> overrides) {
+        Map<String, byte[]> keys = new HashMap<>(Map.of("HMAC_REF", bytes('h'), "CLUSTER_REF", bytes('c'),
+                "NAME_REF", bytes('n'), "LINK_REF", bytes('l'), "OLD_LINK_REF", bytes('o')));
+        keys.putAll(overrides);
+        return (id, reference) -> keys.get(reference);
+    }
+
+    @Test
+    void distinctLinkKeysDoNotStopTheClusterKeys() {
+        assertThat(ClusterKeyResolution.resolve(keyedLink(), () -> linkResolver(Map.of()))).isPresent();
+    }
+
+    @Test
+    void aClusterKeyWithTheMaterialOfTheLinkKeyOrARetiringOneIsRefused() {
+        for (char shared : new char[] {'l', 'o'}) {
+            DataPrismConfigurationException refused = catchThrowableOfType(DataPrismConfigurationException.class,
+                    () -> ClusterKeyResolution.resolve(keyedLink(), () -> linkResolver(Map.of("CLUSTER_REF", bytes(shared)))));
+            assertThat(refused.getMessage()).startsWith("CLUSTER_KEY_SHARED:").doesNotContain("LINK_REF");
+        }
+    }
+
+    @Test
+    void aNameKeyWithTheMaterialOfTheLinkKeyOrARetiringOneIsRefused() {
+        for (char shared : new char[] {'l', 'o'}) {
+            DataPrismConfigurationException refused = catchThrowableOfType(DataPrismConfigurationException.class,
+                    () -> ClusterKeyResolution.resolve(keyedLink(), () -> linkResolver(Map.of("NAME_REF", bytes(shared)))));
+            assertThat(refused.getMessage()).startsWith("NAME_KEY_SHARED:").doesNotContain("LINK_REF");
+        }
+    }
+
+    @Test
+    void aClusterOrNameKeyWithTheKeyIdOfTheLinkKeyOrARetiringOneIsRefused() {
+        for (String id : List.of("link-1", "link-0")) {
+            DataPrismProperties clusterShared = keyedLink();
+            clusterShared.getHazelcast().getSecurity().getClusterKey().setKeyId(id);
+            assertThat(catchThrowableOfType(DataPrismConfigurationException.class,
+                    () -> ClusterKeyResolution.resolve(clusterShared, () -> linkResolver(Map.of()))).getMessage())
+                    .startsWith("CLUSTER_KEY_SHARED:");
+            DataPrismProperties nameShared = keyedLink();
+            nameShared.getHazelcast().getSecurity().getNameKey().setKeyId(id);
+            assertThat(catchThrowableOfType(DataPrismConfigurationException.class,
+                    () -> ClusterKeyResolution.resolve(nameShared, () -> linkResolver(Map.of()))).getMessage())
+                    .startsWith("NAME_KEY_SHARED:");
+        }
+    }
+
+    @Test
+    void aLinkKeyThatCannotBeResolvedHereIsLeftToTheLinkCodecToRefuse() {
+        // The cluster check compares what it can resolve; an unresolvable link key is LINK_KEY_UNRESOLVED, raised
+        // where the link keys are built, so this check does not turn it into a cluster-key refusal.
+        assertThat(ClusterKeyResolution.resolve(keyedLink(), () -> linkResolver(Map.of("LINK_REF", new byte[0]))))
+                .isPresent();
     }
 }

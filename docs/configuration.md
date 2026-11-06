@@ -133,7 +133,10 @@ for the relevant group.
 | `dataprism.privacy.hmac-key` | `key-id` and one provider reference/environment-variable name are required; the selected key is pinned for each scope | **Yes, by reference** | Refuse startup if a literal key is configured, the reference is blank/unresolvable, the key is too weak, or `key-id` cannot be resolved; never fall back to a generated key |
 | `dataprism.audit` | `sink` is required in production, one of `approved-sink`, `slf4j`, `hash-chained`; `writer-id` is required for every sink, not only a hash-chained one; `file-path` is required only when `sink: hash-chained` | Sink credentials are **yes, by reference** | Refuse startup for an unknown sink, missing required sink reference, a hash-chained sink's file path missing or unusable, or missing/invalid writer identity; do not downgrade to no or `slf4j` auditing; `entity-types` is optional, empty by default (see [`dataprism.audit`](#dataprismaudit)); an entry that does not match `[A-Za-z][A-Za-z0-9_-]{0,63}` refuses with `INVALID_AUDIT_ENTITY_TYPE` |
 | `dataprism.correlation` | All optional. `inbound.header` is unset, which disables the feature; `inbound.format` `opaque`; `inbound.pattern` the strict default; `inbound.required` `false`; `outbound.header` unset. See [`dataprism.correlation`](#dataprismcorrelation) | No | Refuse startup for the refusals listed under [`dataprism.correlation`](#dataprismcorrelation) |
-| `dataprism.limits` | All optional; each default is the framework default. See [`dataprism.limits`](#dataprismlimits) | No | Refuse startup for a zero or negative value, or a response size that does not fit in an `int`, with `INVALID_REQUEST_LIMITS`; and for an application `RequestLimits` bean (`FORBIDDEN_PRIVACY_OVERRIDE`) |
+| `dataprism.limits` | All optional; each default is the framework default. See [`dataprism.limits`](#dataprismlimits) | No | Refuse startup for a zero or negative value, a response size that does not fit in an `int`, or a `request-timeout` shorter than `per-source-timeout`, with `INVALID_REQUEST_LIMITS`; and for an application `RequestLimits` bean, including one registered as a raw `FactoryBean` (`FORBIDDEN_PRIVACY_OVERRIDE`) |
+| `dataprism.catalog` | All optional. `unselected-source-limit` is `8`; `real-names-scopes` is empty. See [`dataprism.catalog`](#dataprismcatalog) | No | Refuse startup for a non-positive limit, a limit above `dataprism.limits.max-sources`, or a malformed scope pattern (`INVALID_CATALOG_SETTING`); for a source description that breaks a catalog rule (`INVALID_SOURCE_DESCRIPTION`, `SOURCE_DESCRIPTION_LEAKS_NAME`); for a bad chainable declaration (`INVALID_CHAINABLE_FIELD`); and for an application catalog, options or query bean (`FORBIDDEN_PRIVACY_OVERRIDE`) |
+| `dataprism.paging` | All optional. `list-sources.page-size` is `25`, `list-sources.max-page-size` is `100`, `lifetime` is `PT15M`. See [`dataprism.paging`](#dataprismpaging) | No | Refuse startup for a non-positive value, or a page size above the maximum (`INVALID_PAGING_SETTING`), and for more registered sources than one default page with no `dataprism.links.key-id` (`MISSING_PAGING_KEY`) |
+| `dataprism.links` | `key-id` and `keys.<key-id>.*` are optional here: the link key that page links need. See [`dataprism.links`](#dataprismlinks) | **Yes, by reference** | Refuse startup for a key that does not resolve (`LINK_KEY_UNRESOLVED`), is under 32 bytes (`LINK_KEY_WEAK`), or has the id or the material of the pseudonymisation key (`LINK_KEY_SHARED`), a key id outside 1 to 16 characters of `A-Z`, `a-z`, `0-9`, `_` and `-` (`INVALID_LINK_LIMIT`), and, for a cluster or name key with the id or material of a link key, `CLUSTER_KEY_SHARED` or `NAME_KEY_SHARED` |
 | `dataprism.metrics` | Defaults to the framework's no-op implementation only for fixture development; production requires an approved sink/registry binding | Sink credentials are **yes, by reference** when applicable | Refuse startup in production for an unknown or absent required sink; metrics failures after startup remain fail-safe and cannot change a privacy decision |
 | `dataprism.hazelcast` | `topology` is required for a protected deployment and is one of two honest choices, never a default: `embedded` shares the read budget, pause state, approvals and rate limits across members that have joined one cluster, and is the one a multi-instance deployment must choose; `single-node` is a real, supported choice too, but its state is per process, so a configured budget of 100 becomes 100 times the number of running processes. With `embedded`, `cluster-name` (never `dev`), `join.mode` (`tcp-ip`, `kubernetes` or `none`), `join.members`, `join.kubernetes.namespace`, `join.kubernetes.service-name` or `service-dns`, `member.port` (default 5701), `member.interface` and `approval-minimum-members` are the cluster properties, `lock-timeout` (default `PT2S`) bounds every cluster lock wait, and `approval-sweep-interval` (default `PT5M`) sets how often each member sweeps pending approvals; see [`dataprism.hazelcast`](#dataprismhazelcast). Identity-cache TTL follows the privacy scope regardless of topology; re-identification index defaults to `false`; persistence/MapStore defaults to disabled | No | Refuse startup for a missing topology (`MISSING_CLUSTER_TOPOLOGY`), an unknown topology (`UNSUPPORTED_HAZELCAST_TOPOLOGY`), `embedded` with the optional Hazelcast dependency absent from the classpath (`MISSING_SHARED_BUDGET`, never a silent fall back to the per-process budget), persistence/MapStore enablement without an explicit reviewed configuration (`UNSAFE_HAZELCAST_PERSISTENCE`), TLS references (`HAZELCAST_TLS_UNSUPPORTED`: member TLS is not available in the open-source distribution), a missing or reserved cluster name (`MISSING_CLUSTER_NAME`, `RESERVED_CLUSTER_NAME`), a missing or unsupported join mode (`MISSING_CLUSTER_JOIN`, `UNSUPPORTED_CLUSTER_JOIN`), invalid members, Kubernetes join, port or interface (an invalid `member.interface`, or a `hazelcast.*` address property that makes a single member reachable; `INVALID_CLUSTER_MEMBERS`, `INVALID_KUBERNETES_JOIN`, `INVALID_CLUSTER_PORT`, `INVALID_CLUSTER_INTERFACE`), a member port shared with another listener (`CLUSTER_PORT_SHARED`), cluster settings that would be ignored (`CLUSTER_SETTINGS_IGNORED`), a non-positive TTL (`INVALID_HAZELCAST_TTL`), a lock timeout outside `PT100MS` to `PT30S` (`INVALID_LOCK_TIMEOUT`), an approval sweep interval outside `PT1S` to `P1D` (`INVALID_APPROVAL_SWEEP_INTERVAL`), an approval minimum that is below 1, above the listed members or set with `none`, or, with approvals in use, a `tcp-ip` member that cannot be counted (`INVALID_APPROVAL_QUORUM`), or, with approvals in use (approval-required tools set or re-identification enabled), `kubernetes` or a `tcp-ip` hostname member and no minimum (`MISSING_APPROVAL_QUORUM`), or an enabled index without its required controls (`MISSING_REIDENTIFICATION_CONTROLS`) |
 | `dataprism.oversight` | All optional. `approval-required-tools` defaults to empty; `approval-ttl` `PT15M`; `caller-rate-limit.requests` unset (no limit); `caller-rate-limit.window` `PT1M`; `max-pending-per-requester` `5` | No | Refuse startup for an unknown tool name (`UNKNOWN_OVERSIGHT_TOOL`), a non-positive limit, window, TTL or cap (`INVALID_OVERSIGHT_LIMIT`), or approval-required tools or a rate limit without `dataprism.operator.enabled` (`OVERSIGHT_REQUIRES_OPERATOR_SURFACE`) |
@@ -652,13 +655,76 @@ apply wherever the orchestrator is built, including with
 | `dataprism.limits.max-response-size` | `512KB` | The largest compact body returned to the client for one request, as a size such as `512KB` or `1MB`. It bounds what the client receives (every returned source's tree, the source statuses and the findings, and for `compare_entity_sources` its projection too), not one source's response and not the MCP envelope. A larger body refuses the whole call with `RESPONSE_TOO_LARGE`; equality is allowed. It must fit in an `int` number of bytes. |
 | `dataprism.limits.per-source-timeout` | `3s` | The time allowed to the sources of one request, measured from the start of the fan-out and not from the start of each call. A source called late in the fan-out therefore has less time than one called first. |
 | `dataprism.limits.max-concurrency` | `4` | The most downstream calls in flight at once across one request. |
-| `dataprism.limits.scope-read-budget` | `100` | The reads of one subject allowed within one privacy scope. The next read is refused with `SCOPE_READ_BUDGET`. With `dataprism.hazelcast.topology: single-node` the count is per process. |
+| `dataprism.limits.scope-read-budget` | `100` | The source reads of one subject allowed within one privacy scope. The next read is refused with `SCOPE_READ_BUDGET`. With `dataprism.hazelcast.topology: single-node` the count is per process. |
+| `dataprism.limits.request-timeout` | `PT10S` | The deadline for the whole of one request, from its start. It may not be shorter than `per-source-timeout`: a deployment that raises `per-source-timeout` above `PT10S` must raise this too, or startup is refused. |
+| `dataprism.limits.scope-total-read-budget` | `50000` | The source reads allowed within one privacy scope across all subjects. The next read is refused. |
 
-A zero or negative value, or a response size that does not fit in an `int`,
-refuses startup with `INVALID_REQUEST_LIMITS`. The message names the property
-and not the value. The limits are one bean, `dataPrismRequestLimits`, built from
+A zero or negative value, a response size that does not fit in an `int`, or a
+`request-timeout` shorter than `per-source-timeout` refuses startup with
+`INVALID_REQUEST_LIMITS`. The message names the property and not the value. The limits are one bean, `dataPrismRequestLimits`, built from
 these keys. It carries the read budget, so an application cannot supply its own
-`RequestLimits` bean: startup is refused with `FORBIDDEN_PRIVACY_OVERRIDE`.
+`RequestLimits` bean: startup is refused with `FORBIDDEN_PRIVACY_OVERRIDE`, also when
+the bean is registered as a raw `FactoryBean` (one with no generic type) whose
+product is a `RequestLimits`. The `PrivacyPolicyResolver` guard refuses a raw
+`FactoryBean` the same way.
+
+### `dataprism.catalog`
+
+What a call that names no sources may reach, and which scopes may be shown real
+source names. The catalog behind `list_sources` and `describe_source` is built
+once at startup from every `DataSourceAdapter` bean and the base-url host of
+every configured source (`dataprism.json-sources.config-location`), and the
+configured orchestrator uses the same catalog and the same settings.
+
+| Property | Default | Meaning |
+|---|---|---|
+| `dataprism.catalog.unselected-source-limit` | `8` | The most permitted sources a call without `targetSources` may ask. Positive, and at most `dataprism.limits.max-sources`. |
+| `dataprism.catalog.real-names-scopes` | empty | Privacy scope ids that may be shown real source names. An entry is an exact scope id, or a prefix ending in one `*`. A caller also needs `EXPOSE_SOURCE_NAMES`; with the list empty no scope shows real names. |
+
+A non-positive limit, a limit above `dataprism.limits.max-sources`, or a malformed
+scope pattern refuses startup with `INVALID_CATALOG_SETTING`. A description that
+breaks a catalog rule refuses startup with `INVALID_SOURCE_DESCRIPTION`, or with
+`SOURCE_DESCRIPTION_LEAKS_NAME` when an alias description names a source, an adapter
+class or a configured base-url host. A bad chainable declaration refuses with
+`INVALID_CHAINABLE_FIELD`. No message carries description text. Startup logs one
+INFO line giving how many sources use the generated fallback description, with their
+real names, and one WARN line giving only how many source names do not follow
+`[a-z][a-z0-9-]{0,63}`. The catalog, the options built from these keys and the
+queries are not replaceable: an application bean of those types is refused with
+`FORBIDDEN_PRIVACY_OVERRIDE`.
+
+### `dataprism.paging`
+
+How `list_sources` pages.
+
+| Property | Default | Meaning |
+|---|---|---|
+| `dataprism.paging.list-sources.page-size` | `25` | Entries on a page when the caller asks for no size. Positive, and at most `max-page-size`. |
+| `dataprism.paging.list-sources.max-page-size` | `100` | The largest page a caller may ask for. 1 to 65535. |
+| `dataprism.paging.lifetime` | `PT15M` | How long a page link stays valid. Positive. |
+
+A non-positive value, or a page size above the maximum, refuses startup with
+`INVALID_PAGING_SETTING`. When more sources are registered than the default page size
+and `dataprism.links.key-id` is not set, startup is refused with `MISSING_PAGING_KEY`;
+at exactly the page size it starts.
+
+### `dataprism.links`
+
+Only the link key is bound so far. Page links need it even while links are off.
+
+| Property | Default | Meaning |
+|---|---|---|
+| `dataprism.links.key-id` | unset | The id of the key that seals new links: 1 to 16 characters of `A-Z`, `a-z`, `0-9`, `_` and `-`. It must be a key of `keys` below. |
+| `dataprism.links.keys.<key-id>.environment-variable` | none | The environment variable holding that key. Exactly one of this and `provider-reference`. |
+| `dataprism.links.keys.<key-id>.provider-reference` | none | As above, resolved by the `HmacKeyReferenceResolver` (`resolveProviderReference`). |
+
+`keys` holds the current key and any key being retired: each is held for
+verification, and only `key-id` seals. A reference that does not resolve refuses
+startup with `LINK_KEY_UNRESOLVED`, material under 32 bytes with `LINK_KEY_WEAK`, and
+the pseudonymisation key's id or bytes (compared in constant time, for every key
+in `keys`) with `LINK_KEY_SHARED`. A key id outside the allowed shape is
+`INVALID_LINK_LIMIT`. No message contains a reference or a key byte. The link keys
+and the codec built from them are not replaceable (`FORBIDDEN_PRIVACY_OVERRIDE`).
 
 ### `dataprism.hazelcast`
 
@@ -747,8 +813,9 @@ The first failing check is the one reported, and the checks run in this order:
 | 8 | `HMAC_KEY_UNRESOLVED` | The privacy HMAC key cannot be resolved again to compare the cluster keys with it |
 | 9 | `CLUSTER_KEY_SHARED`, `NAME_KEY_SHARED` | A cluster key (current, `next`, `previous`), then the name key, has the key id or the material of the privacy HMAC key |
 | 10 | `AUDIT_HMAC_KEY_UNRESOLVED`, `AUDIT_HMAC_KEY_TOO_SHORT`, `CLUSTER_KEY_SHARED`, `NAME_KEY_SHARED` | Only with `dataprism.audit.hmac-key` set. An audit key (current or retired) does not resolve or is shorter than 32 bytes; then a cluster key (current, `next`, `previous`), then the name key, has the key id or the material of an audit key (current or retired) |
-| 11 | `NAME_KEY_SHARED` | The name key has the material of a cluster key |
-| 12 | `DUPLICATE_CLUSTER_KEY_ID` | The `current`, `next`, `previous` and name key ids are not pairwise distinct |
+| 11 | `CLUSTER_KEY_SHARED`, `NAME_KEY_SHARED` | Only with `dataprism.links.keys` set. A cluster key (current, `next`, `previous`), then the name key, has the key id or the material of a link key (current or retiring). A link key that does not resolve here is left to `LINK_KEY_UNRESOLVED` |
+| 12 | `NAME_KEY_SHARED` | The name key has the material of a cluster key |
+| 13 | `DUPLICATE_CLUSTER_KEY_ID` | The `current`, `next`, `previous` and name key ids are not pairwise distinct |
 
 The full property list, every refusal code, the Compose and Kubernetes examples
 and the network isolation you must supply are on
