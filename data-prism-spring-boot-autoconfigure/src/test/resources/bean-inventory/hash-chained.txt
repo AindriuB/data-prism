@@ -11,6 +11,8 @@ dataPrismAuditRetention | io.github.aindriub.dataprism.audit.retention.AuditRete
 dataPrismAuthorizationService | io.github.aindriub.dataprism.security.AuthorizationService
 dataPrismCallerRateLimiter | io.github.aindriub.dataprism.oversight.CallerRateLimiter
 dataPrismCaseAuthorizer | io.github.aindriub.dataprism.security.CaseAuthorizer
+dataPrismCatalogPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
+dataPrismCatalogQueries | io.github.aindriub.dataprism.orchestration.catalog.CatalogQueries
 dataPrismClientAllowlist | io.github.aindriub.dataprism.security.ClientAllowlist
 dataPrismClock | java.time.Clock
 dataPrismContextOrchestrator | io.github.aindriub.dataprism.orchestration.ContextOrchestrator
@@ -24,6 +26,7 @@ dataPrismIdentityResolverPreflight | org.springframework.beans.factory.config.Be
 dataPrismMcpServlet | org.springframework.boot.web.servlet.ServletRegistrationBean<io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider>
 dataPrismMcpSyncServer | io.modelcontextprotocol.server.McpSyncServer
 dataPrismMcpTransportPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
+dataPrismOrchestrationOptions | io.github.aindriub.dataprism.orchestration.OrchestrationOptions
 dataPrismOversightPolicy | io.github.aindriub.dataprism.security.OversightPolicy
 dataPrismOversightState | io.github.aindriub.dataprism.oversight.OversightState
 dataPrismParameterFingerprinter | io.github.aindriub.dataprism.orchestration.ParameterFingerprinter
@@ -44,6 +47,7 @@ dataPrismSecurityPolicy | io.github.aindriub.dataprism.security.SecurityPolicy
 dataPrismSecurityPolicyPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
 dataPrismSensitivePatternValidator | io.github.aindriub.dataprism.validation.LlmResponseValidator
 dataPrismSharedBudgetPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
+dataPrismSourceCatalog | io.github.aindriub.dataprism.orchestration.catalog.SourceCatalog
 dataPrismStdioTransportRefused | java.lang.Object
 dataPrismSyntheticValueSource | io.github.aindriub.dataprism.core.spi.SyntheticValueSource
 dataPrismToolAdmission | io.github.aindriub.dataprism.security.ToolAdmission

@@ -8,6 +8,8 @@ dataPrismAuditRecorder | io.github.aindriub.dataprism.audit.AuditRecorder
 dataPrismAuditRecorderKeyPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
 dataPrismAuthorizationService | io.github.aindriub.dataprism.security.AuthorizationService
 dataPrismCaseAuthorizer | io.github.aindriub.dataprism.security.CaseAuthorizer
+dataPrismCatalogPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
+dataPrismCatalogQueries | io.github.aindriub.dataprism.orchestration.catalog.CatalogQueries
 dataPrismClientAllowlist | io.github.aindriub.dataprism.security.ClientAllowlist
 dataPrismClock | java.time.Clock
 dataPrismClusterApprovalStore | io.github.aindriub.dataprism.oversight.ApprovalStore
@@ -24,6 +26,7 @@ dataPrismIdentityResolverPreflight | org.springframework.beans.factory.config.Be
 dataPrismMcpServlet | org.springframework.boot.web.servlet.ServletRegistrationBean<io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider>
 dataPrismMcpSyncServer | io.modelcontextprotocol.server.McpSyncServer
 dataPrismMcpTransportPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
+dataPrismOrchestrationOptions | io.github.aindriub.dataprism.orchestration.OrchestrationOptions
 dataPrismOversightPolicy | io.github.aindriub.dataprism.security.OversightPolicy
 dataPrismParameterFingerprinter | io.github.aindriub.dataprism.orchestration.ParameterFingerprinter
 dataPrismPrivacyCluster | io.github.aindriub.dataprism.hazelcast.PrivacyCluster
@@ -46,6 +49,7 @@ dataPrismSecurityPolicy | io.github.aindriub.dataprism.security.SecurityPolicy
 dataPrismSecurityPolicyPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
 dataPrismSensitivePatternValidator | io.github.aindriub.dataprism.validation.LlmResponseValidator
 dataPrismSharedBudgetPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
+dataPrismSourceCatalog | io.github.aindriub.dataprism.orchestration.catalog.SourceCatalog
 dataPrismStdioTransportRefused | java.lang.Object
 dataPrismSuppliedClusterGauge | org.springframework.beans.factory.SmartInitializingSingleton
 dataPrismSyntheticValueSource | io.github.aindriub.dataprism.core.spi.SyntheticValueSource

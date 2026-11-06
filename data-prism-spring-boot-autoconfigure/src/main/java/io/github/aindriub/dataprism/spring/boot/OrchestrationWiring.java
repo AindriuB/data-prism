@@ -54,13 +54,10 @@ class OrchestrationWiring {
     /** Resolve this before singleton creation, same reasoning as {@code dataPrismPrivacyPolicyResolverPreflight}. */
     @Bean
     static BeanFactoryPostProcessor dataPrismRequestLimitsPreflight() {
-        return factory -> {
-            // Counts a raw FactoryBean too: its product type is only known once it is created.
-            if (PrivacyExtensionPoints.definitionsOfType(factory, RequestLimits.class).size() > 1) {
-                throw new DataPrismConfigurationException("FORBIDDEN_PRIVACY_OVERRIDE",
-                        "an application RequestLimits bean cannot replace the configured request limits");
-            }
-        };
+        // Also refuses a raw FactoryBean: its product type is only known once it is created.
+        return factory -> PrivacyExtensionPoints.refuseCompetingBeans(factory, RequestLimits.class,
+                "dataPrismRequestLimits", () -> new DataPrismConfigurationException("FORBIDDEN_PRIVACY_OVERRIDE",
+                        "an application RequestLimits bean cannot replace the configured request limits"));
     }
 
     @Bean @ConditionalOnMissingBean

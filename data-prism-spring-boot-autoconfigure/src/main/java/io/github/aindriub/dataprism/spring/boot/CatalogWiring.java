@@ -22,6 +22,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
+import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -63,12 +64,10 @@ class CatalogWiring {
         };
     }
 
-    private static void refuseCompeting(org.springframework.beans.factory.ListableBeanFactory factory, Class<?> type,
-                                        String ownName) {
-        if (PrivacyExtensionPoints.definitionsOfType(factory, type).stream().anyMatch(name -> !name.equals(ownName))) {
-            throw new DataPrismConfigurationException("FORBIDDEN_PRIVACY_OVERRIDE",
-                    "an application " + type.getSimpleName() + " bean cannot replace the framework's");
-        }
+    private static void refuseCompeting(ConfigurableListableBeanFactory factory, Class<?> type, String ownName) {
+        PrivacyExtensionPoints.refuseCompetingBeans(factory, type, ownName,
+                () -> new DataPrismConfigurationException("FORBIDDEN_PRIVACY_OVERRIDE",
+                        "an application " + type.getSimpleName() + " bean cannot replace the framework's"));
     }
 
     /**

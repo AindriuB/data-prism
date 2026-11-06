@@ -84,13 +84,11 @@ class Preflights {
     /** Resolve this before singleton creation, same reasoning as {@link #dataPrismIdentityResolverPreflight()}. */
     @Bean
     static BeanFactoryPostProcessor dataPrismPrivacyPolicyResolverPreflight() {
-        return factory -> {
-            // Counts a raw FactoryBean too: its product type is only known once it is created.
-            if (PrivacyExtensionPoints.definitionsOfType(factory, PrivacyPolicyResolver.class).size() > 1) {
-                throw new DataPrismConfigurationException("FORBIDDEN_PRIVACY_OVERRIDE",
-                        "an application PrivacyPolicyResolver bean cannot replace the framework's profile-backed resolver");
-            }
-        };
+        // Also refuses a raw FactoryBean: its product type is only known once it is created.
+        return factory -> PrivacyExtensionPoints.refuseCompetingBeans(factory, PrivacyPolicyResolver.class,
+                "dataPrismPrivacyPolicyResolver", () -> new DataPrismConfigurationException(
+                        "FORBIDDEN_PRIVACY_OVERRIDE",
+                        "an application PrivacyPolicyResolver bean cannot replace the framework's profile-backed resolver"));
     }
 
     /**

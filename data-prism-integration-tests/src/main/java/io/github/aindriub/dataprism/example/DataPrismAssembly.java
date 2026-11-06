@@ -33,7 +33,10 @@ import io.github.aindriub.dataprism.orchestration.SourceFanOutOptions;
 import io.github.aindriub.dataprism.validation.SensitivePatternValidator;
 import io.github.aindriub.dataprism.orchestration.DefaultContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.OrchestrationOptions;
+import io.github.aindriub.dataprism.orchestration.catalog.CatalogQueries;
+import io.github.aindriub.dataprism.orchestration.catalog.PagingSettings;
 import io.github.aindriub.dataprism.orchestration.catalog.RealNamesPolicy;
+import io.github.aindriub.dataprism.orchestration.catalog.SourceCatalog;
 import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
 import io.github.aindriub.dataprism.orchestration.SourceAliasing;
 import io.github.aindriub.dataprism.pseudonymisation.HmacSyntheticGenerator;
@@ -69,6 +72,7 @@ public final class DataPrismAssembly {
     private static final String DEV_KEY = "development-only-key-not-for-any-real-data";
 
     private final ContextOrchestrator orchestrator;
+    private final CatalogQueries catalogQueries;
     private final PrivacyContext privacyContext;
     private final InvestigationContext investigationContext;
     private final PseudonymisationVersion pseudonymisationVersion;
@@ -120,16 +124,25 @@ public final class DataPrismAssembly {
 
         this.fingerprinter = new ParameterFingerprinter(keys);
 
+        // The one catalog of this assembly: the orchestrator and the catalog tools both use it.
+        SourceCatalog catalog = SourceCatalog.build(adapters, Map.of());
+        // The example shows real names to a caller holding EXPOSE_SOURCE_NAMES in every scope; a
+        // deployment lists the scopes in dataprism.catalog.real-names-scopes (empty by default).
+        RealNamesPolicy realNames = new RealNamesPolicy(List.of("*"));
+        OrchestrationOptions options = OrchestrationOptions.defaults().withCatalog(catalog).withRealNames(realNames);
+        List<LlmResponseValidator> validators = List.of(validator, new SensitivePatternValidator());
+
         // The standard pipeline, spelled out so the fan-out can carry the MDC.
         this.orchestrator = new DefaultContextOrchestrator(adapters, scrubber, resolver,
-                List.of(validator, new SensitivePatternValidator()), synthetics, fingerprinter,
+                validators, synthetics, fingerprinter,
                 new AuditRecorder(sink, clock, "example-1"), new PassThroughIdentityResolver(),
                 new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), SourceFanOutOptions.defaults().withMdc(mdc)),
                 new InMemoryScopeBudget(), RequestLimits.DEFAULT, new NamespaceCorrelationService(resolver),
-                new SourceAliasing(tokens), PrivacyMetrics.none(),
-                // The example shows real names to a caller holding EXPOSE_SOURCE_NAMES in every scope; a
-                // deployment lists the scopes in dataprism.catalog.real-names-scopes (empty by default).
-                OrchestrationOptions.defaults().withRealNames(new RealNamesPolicy(List.of("*"))));
+                new SourceAliasing(tokens), PrivacyMetrics.none(), options);
+        // No page links in the stdio example: a call returns the whole visible list, which three sources fit.
+        this.catalogQueries = new CatalogQueries(catalog, options.visibility(), new SourceAliasing(tokens),
+                realNames, this.orchestrator, validators, PagingSettings.defaults(), null, false,
+                PrivacyMetrics.none(), clock);
 
         this.pseudonymisationVersion =
                 PseudonymisationVersion.HMAC_SHA256_V1.withVocabulary(vocabulary.id());
@@ -151,12 +164,13 @@ public final class DataPrismAssembly {
         // (task 06). No EXPOSE_SOURCE_NAMES: this factory hands the context to
         // anything that asks (WorkedExampleTest, EndToEndTest), so it mints the
         // same masked default a real deployment ships, rather than an unmasking
-        // grant nothing here re-checks who is asking for. GET_ENTITY_CONTEXT and
-        // COMPARE_ENTITY_SOURCES only, mirroring ExampleApplication's shipped
-        // developer role.
+        // grant nothing here re-checks who is asking for. GET_ENTITY_CONTEXT,
+        // COMPARE_ENTITY_SOURCES, LIST_SOURCES and DESCRIBE_SOURCE only, mirroring
+        // ExampleApplication's shipped developer role.
         this.investigationContext = new InvestigationContext(
                 "stdio-development", "stdio-development", "CASE-DEMO-1",
-                Set.of(Capability.GET_ENTITY_CONTEXT, Capability.COMPARE_ENTITY_SOURCES));
+                Set.of(Capability.GET_ENTITY_CONTEXT, Capability.COMPARE_ENTITY_SOURCES,
+                        Capability.LIST_SOURCES, Capability.DESCRIBE_SOURCE));
 
         this.clock = clock;
     }
@@ -178,6 +192,11 @@ public final class DataPrismAssembly {
 
     public ContextOrchestrator orchestrator() {
         return orchestrator;
+    }
+
+    /** {@code list_sources} and {@code describe_source}, answering for {@link #orchestrator()}. */
+    public CatalogQueries catalogQueries() {
+        return catalogQueries;
     }
 
     public PrivacyContext privacyContext() {

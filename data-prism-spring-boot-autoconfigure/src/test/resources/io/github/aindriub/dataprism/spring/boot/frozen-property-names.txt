@@ -29,6 +29,9 @@ dataprism.audit.retired-hmac-keys.*.provider-reference | java.lang.String | rw |
 dataprism.audit.segment-max-size | org.springframework.util.unit.DataSize | rw | null
 dataprism.audit.sink | java.lang.String | rw | null
 dataprism.audit.writer-id | java.lang.String | rw | null
+dataprism.catalog | bean | rw
+dataprism.catalog.real-names-scopes | java.util.List<java.lang.String> | rw | []
+dataprism.catalog.unselected-source-limit | int | rw | 8
 dataprism.correlation | bean | rw
 dataprism.correlation.inbound | bean | ro
 dataprism.correlation.inbound.format | java.lang.String | rw | opaque
@@ -92,7 +95,14 @@ dataprism.limits.max-records | int | rw | 500
 dataprism.limits.max-response-size | org.springframework.util.unit.DataSize | rw | 524288B
 dataprism.limits.max-sources | int | rw | 8
 dataprism.limits.per-source-timeout | java.time.Duration | rw | PT3S
+dataprism.limits.request-timeout | java.time.Duration | rw | PT10S
 dataprism.limits.scope-read-budget | int | rw | 100
+dataprism.limits.scope-total-read-budget | int | rw | 50000
+dataprism.links | bean | rw
+dataprism.links.key-id | java.lang.String | rw | null
+dataprism.links.keys | java.util.Map<java.lang.String,bean> | rw | {}
+dataprism.links.keys.*.environment-variable | java.lang.String | rw | null
+dataprism.links.keys.*.provider-reference | java.lang.String | rw | null
 dataprism.metrics | bean | rw
 dataprism.metrics.registry-reference | java.lang.String | rw | null
 dataprism.metrics.sink | java.lang.String | rw | null
@@ -109,6 +119,11 @@ dataprism.oversight.caller-rate-limit | bean | ro
 dataprism.oversight.caller-rate-limit.requests | java.lang.Integer | rw | null
 dataprism.oversight.caller-rate-limit.window | java.time.Duration | rw | PT1M
 dataprism.oversight.max-pending-per-requester | int | rw | 5
+dataprism.paging | bean | rw
+dataprism.paging.lifetime | java.time.Duration | rw | PT15M
+dataprism.paging.list-sources | bean | ro
+dataprism.paging.list-sources.max-page-size | int | rw | 100
+dataprism.paging.list-sources.page-size | int | rw | 25
 dataprism.privacy | bean | rw
 dataprism.privacy.descriptor-file | java.lang.String | rw | null
 dataprism.privacy.hmac-key | bean | rw

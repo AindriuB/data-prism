@@ -3,11 +3,15 @@ package io.github.aindriub.dataprism.spring.boot;
 import org.springframework.beans.factory.BeanFactoryUtils;
 import org.springframework.beans.factory.FactoryBean;
 import org.springframework.beans.factory.ListableBeanFactory;
+import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
+import org.springframework.beans.factory.config.InstantiationAwareBeanPostProcessor;
 
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 
 /**
  * Checked-in classification of every {@code @Bean} method declared by
@@ -144,25 +148,67 @@ public final class PrivacyExtensionPoints {
         return BEANS.keySet();
     }
 
+    /** Set while a guard's late check runs, so that the creation of a raw factory it triggers cannot re-enter. */
+    private static final ThreadLocal<Boolean> CHECKING = new ThreadLocal<>();
+
     /**
-     * The names of the bean definitions that produce {@code type}, for the competing-bean guards. Includes a
-     * {@link FactoryBean} registered without a generic type: its product type is unknown until it is created, so
-     * {@code getBeanNamesForType(type, true, false)} never matches it, and a guard that relied on that alone would
-     * be passed by a raw factory. Only a factory whose type cannot be read without creating it is created here.
+     * Refuses startup when a bean definition other than {@code ownName} produces {@code type}, with the refusal
+     * {@code refusal} builds. Two checks, because Spring can answer the question at only one of two moments for a
+     * {@link FactoryBean} registered without a generic type (a raw one): its product type is unknown until it is
+     * created, {@code getBeanNamesForType(type, true, false)} never matches it, and Spring creates it for a type
+     * check only once the bean factory's configuration is frozen, which is after every
+     * {@code BeanFactoryPostProcessor} has run.
+     *
+     * <ol>
+     * <li>Now, for every definition whose type is declared: the refusal comes before any singleton is created.
+     * <li>At the first bean instantiation after the configuration is frozen, once: for a raw factory. Only a factory
+     * whose type cannot be read without creating it is created for this.
+     * </ol>
      */
-    static Set<String> definitionsOfType(ListableBeanFactory factory, Class<?> type) {
-        Set<String> names = new LinkedHashSet<>(Arrays.asList(factory.getBeanNamesForType(type, true, false)));
-        for (String factoryName : factory.getBeanNamesForType(FactoryBean.class, true, false)) {
-            String name = BeanFactoryUtils.transformedBeanName(factoryName);
-            if (names.contains(name) || factory.getType(name, false) != null) {
-                continue;
+    static void refuseCompetingBeans(ConfigurableListableBeanFactory factory, Class<?> type, String ownName,
+                                     Supplier<? extends RuntimeException> refusal) {
+        if (competing(factory, type, ownName, false)) {
+            throw refusal.get();
+        }
+        factory.addBeanPostProcessor(new InstantiationAwareBeanPostProcessor() {
+            private final AtomicBoolean checked = new AtomicBoolean();
+
+            @Override
+            public Object postProcessBeforeInstantiation(Class<?> beanClass, String beanName) {
+                // Creating a raw factory for another guard's check calls back in here; that nested call must
+                // neither run nor use up this guard's one check, because the factory is still being created.
+                if (!factory.isConfigurationFrozen() || CHECKING.get() != null || checked.get()) {
+                    return null;
+                }
+                CHECKING.set(Boolean.TRUE);
+                try {
+                    checked.set(true);
+                    if (competing(factory, type, ownName, true)) {
+                        throw refusal.get();
+                    }
+                } finally {
+                    CHECKING.remove();
+                }
+                return null;
             }
-            Class<?> product = factory.getType(name, true);
-            if (product != null && type.isAssignableFrom(product)) {
-                names.add(name);
+        });
+    }
+
+    private static boolean competing(ListableBeanFactory factory, Class<?> type, String ownName, boolean raw) {
+        Set<String> names = new LinkedHashSet<>(Arrays.asList(factory.getBeanNamesForType(type, true, false)));
+        if (raw) {
+            for (String factoryName : factory.getBeanNamesForType(FactoryBean.class, true, false)) {
+                String name = BeanFactoryUtils.transformedBeanName(factoryName);
+                if (!names.contains(name) && factory.getType(name, false) == null) {
+                    Class<?> product = factory.getType(name, true);
+                    if (product != null && type.isAssignableFrom(product)) {
+                        names.add(name);
+                    }
+                }
             }
         }
-        return names;
+        names.remove(ownName);
+        return !names.isEmpty();
     }
 
     private static Map.Entry<String, BeanContract> entry(String name, Classification classification, Guard guard) {
