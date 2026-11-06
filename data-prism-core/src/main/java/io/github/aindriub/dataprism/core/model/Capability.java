@@ -16,8 +16,13 @@ public final class Capability {
     public static final String COMPARE_ENTITY_SOURCES = "COMPARE_ENTITY_SOURCES";
     public static final String DESCRIBE_ENTITY_MODEL = "DESCRIBE_ENTITY_MODEL";
 
+    public static final String LIST_SOURCES = "LIST_SOURCES";
+    public static final String DESCRIBE_SOURCE = "DESCRIBE_SOURCE";
+    public static final String FOLLOW = "FOLLOW";
+
     public static final Set<String> KNOWN =
-            Set.of(EXPOSE_SOURCE_NAMES, GET_ENTITY_CONTEXT, COMPARE_ENTITY_SOURCES, DESCRIBE_ENTITY_MODEL);
+            Set.of(EXPOSE_SOURCE_NAMES, GET_ENTITY_CONTEXT, COMPARE_ENTITY_SOURCES, DESCRIBE_ENTITY_MODEL,
+                    LIST_SOURCES, DESCRIBE_SOURCE, FOLLOW);
 
     private Capability() {}
 }
