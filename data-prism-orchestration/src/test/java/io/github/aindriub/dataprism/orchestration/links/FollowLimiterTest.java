@@ -42,7 +42,6 @@ class FollowLimiterTest {
         return rig;
     }
 
-    private static final String FORGED = "AQ" + "A".repeat(80);
 
     private static void assertRefusal(FollowRig rig, String link, String code, String audit) {
         PrivacyRefusedException refused = FollowTest.refusal(rig, link);
@@ -69,7 +68,7 @@ class FollowLimiterTest {
         limiter.record = () -> LinkAttemptLimiter.Admission.OVER_LIMIT;
         FollowRig rig = rig(limiter);
 
-        assertRefusal(rig, FORGED, "LINK_ATTEMPTS_EXHAUSTED", "REFUSED:LINK_ATTEMPTS_OVER_LIMIT");
+        assertRefusal(rig, rig.forged(), "LINK_ATTEMPTS_EXHAUSTED", "REFUSED:LINK_ATTEMPTS_OVER_LIMIT");
         assertThat(limiter.recordCalls.get()).isEqualTo(1);
     }
 
@@ -79,7 +78,7 @@ class FollowLimiterTest {
         limiter.record = () -> LinkAttemptLimiter.Admission.CEILING;
         FollowRig rig = rig(limiter);
 
-        assertRefusal(rig, FORGED, "LINK_ATTEMPTS_EXHAUSTED", "REFUSED:LINK_ATTEMPTS_CEILING");
+        assertRefusal(rig, rig.forged(), "LINK_ATTEMPTS_EXHAUSTED", "REFUSED:LINK_ATTEMPTS_CEILING");
     }
 
     @Test
@@ -113,7 +112,7 @@ class FollowLimiterTest {
             limiter.record = record;
             FollowRig rig = rig(limiter);
 
-            assertRefusal(rig, FORGED, "LINK_CHECK_UNAVAILABLE", "REFUSED:LINK_ATTEMPTS_LIMITER_UNAVAILABLE");
+            assertRefusal(rig, rig.forged(), "LINK_CHECK_UNAVAILABLE", "REFUSED:LINK_ATTEMPTS_LIMITER_UNAVAILABLE");
         }
     }
 
@@ -122,7 +121,7 @@ class FollowLimiterTest {
         StubLimiter limiter = new StubLimiter();
         FollowRig rig = rig(limiter);
         String link = rig.direct("parcel-api", "parcel-ref", "P-1");
-        PrivacyRefusedException forged = FollowTest.refusal(rig, FORGED);
+        PrivacyRefusedException forged = FollowTest.refusal(rig, rig.forged());
         assertThat(rig.lastAudit().fieldDispositions()).containsEntry("link", "REFUSED:LINK_AUTH_FAILED");
         rig.clockFails = true; // the opener throws
 
@@ -150,7 +149,7 @@ class FollowLimiterTest {
         StubLimiter limiter = new StubLimiter();
         FollowRig rig = rig(limiter);
 
-        assertRefusal(rig, FORGED, "LINK_INVALID", "REFUSED:LINK_AUTH_FAILED");
+        assertRefusal(rig, rig.forged(), "LINK_INVALID", "REFUSED:LINK_AUTH_FAILED");
 
         assertThat(limiter.recordCalls.get()).isEqualTo(1);
     }

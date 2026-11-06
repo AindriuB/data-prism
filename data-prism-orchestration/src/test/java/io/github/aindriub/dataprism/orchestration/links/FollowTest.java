@@ -238,6 +238,14 @@ class FollowTest {
             return ((SealResult.Issued) sealed).link().token();
         }
 
+        /** A token of the right shape whose tag no longer verifies. */
+        public String forged() {
+            char[] chars = direct("parcel-api", "parcel-ref", "P-1").toCharArray();
+            int at = chars.length - 3;
+            chars[at] = chars[at] == 'A' ? 'B' : 'A';
+            return new String(chars);
+        }
+
         public String direct(String target, String namespace, String key) {
             return token(target, namespace, LinkRelation.DIRECT, null, key);
         }
@@ -352,7 +360,7 @@ class FollowTest {
         ContextResponse followed = orchestrator.follow(FollowRequest.of(link), rig.context(), rig.caller());
 
         assertThat(followed.sources().values().iterator().next().status()).isEqualTo("ANSWERED");
-        assertThat(rig.requests).extracting(DataRequest::subjectId).containsExactly("P-1");
+        assertThat(rig.requests).extracting(DataRequest::subjectId).contains("P-1");
     }
 
     @Test

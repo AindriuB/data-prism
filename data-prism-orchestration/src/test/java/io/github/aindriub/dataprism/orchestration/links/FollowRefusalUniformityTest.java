@@ -27,7 +27,7 @@ class FollowRefusalUniformityTest {
     private static Map<String, Function<FollowRig, String>> linksByReason() {
         Map<String, Function<FollowRig, String>> links = new LinkedHashMap<>();
         links.put("MALFORMED", r -> "");
-        links.put("AUTH_FAILED", r -> "AQ" + "A".repeat(80));
+        links.put("AUTH_FAILED", FollowRig::forged);
         links.put("EXPIRED", r -> {
             String link = r.direct("parcel-api", "parcel-ref", "P-1");
             r.now = NOW.plus(Duration.ofHours(2));

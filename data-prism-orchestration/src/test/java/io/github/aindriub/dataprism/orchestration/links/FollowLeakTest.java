@@ -163,7 +163,7 @@ class FollowLeakTest {
         assertClean(scrub, scrubToken, "", scrubFailure);
 
         FollowRig invalid = translated();
-        String forged = "AQ" + "A".repeat(80);
+        String forged = invalid.forged();
         Throwable invalidFailure = catchThrowable(() -> invalid.follow(forged));
         assertClean(invalid, forged, "", invalidFailure);
 
