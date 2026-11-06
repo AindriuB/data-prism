@@ -53,6 +53,8 @@ public final class AuditChainVerifierCli {
      * checkpointed writer has no surviving records. Only returned when no break was found.
      */
     public static final int EXIT_CHECKPOINT_MISMATCH = 5;
+    /** {@code accept-crash-line} refused: a condition did not hold, and nothing was written. */
+    public static final int EXIT_ACCEPT_REFUSED = 6;
 
     private static final String LIMITATION_HEAD =
             "LIMITATION: this verifier detects an edit or a deletion of a record already written, replayed "
