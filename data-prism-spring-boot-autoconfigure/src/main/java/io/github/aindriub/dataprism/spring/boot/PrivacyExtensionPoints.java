@@ -1,5 +1,11 @@
 package io.github.aindriub.dataprism.spring.boot;
 
+import org.springframework.beans.factory.BeanFactoryUtils;
+import org.springframework.beans.factory.FactoryBean;
+import org.springframework.beans.factory.ListableBeanFactory;
+
+import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -87,6 +93,14 @@ public final class PrivacyExtensionPoints {
             // Carries the scope read budget, so it is not replaceable: a second RequestLimits bean is refused.
             entry("dataPrismRequestLimits", Classification.PRIVACY_CRITICAL, Guard.COMPETING_BEAN_REFUSAL),
             entry("dataPrismRequestLimitsPreflight", Classification.REPLACEABLE, Guard.NONE),
+            // The catalog decides which source names a caller may see and what each source says about itself; the
+            // options carry the real-names policy. None can be replaced: a competing bean is refused at startup.
+            entry("dataPrismSourceCatalog", Classification.PRIVACY_CRITICAL, Guard.COMPETING_BEAN_REFUSAL),
+            entry("dataPrismOrchestrationOptions", Classification.PRIVACY_CRITICAL, Guard.COMPETING_BEAN_REFUSAL),
+            entry("dataPrismCatalogQueries", Classification.PRIVACY_CRITICAL, Guard.COMPETING_BEAN_REFUSAL),
+            entry("dataPrismLinkKeys", Classification.PRIVACY_CRITICAL, Guard.COMPETING_BEAN_REFUSAL),
+            entry("dataPrismLinkCodec", Classification.PRIVACY_CRITICAL, Guard.COMPETING_BEAN_REFUSAL),
+            entry("dataPrismCatalogPreflight", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismContextOrchestrator", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismStdioTransportRefused", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismMcpTransportPreflight", Classification.REPLACEABLE, Guard.NONE),
@@ -128,6 +142,27 @@ public final class PrivacyExtensionPoints {
     /** Every bean method name this registry has a row for, for the sweep's exhaustiveness check. */
     public static Set<String> classifiedBeanNames() {
         return BEANS.keySet();
+    }
+
+    /**
+     * The names of the bean definitions that produce {@code type}, for the competing-bean guards. Includes a
+     * {@link FactoryBean} registered without a generic type: its product type is unknown until it is created, so
+     * {@code getBeanNamesForType(type, true, false)} never matches it, and a guard that relied on that alone would
+     * be passed by a raw factory. Only a factory whose type cannot be read without creating it is created here.
+     */
+    static Set<String> definitionsOfType(ListableBeanFactory factory, Class<?> type) {
+        Set<String> names = new LinkedHashSet<>(Arrays.asList(factory.getBeanNamesForType(type, true, false)));
+        for (String factoryName : factory.getBeanNamesForType(FactoryBean.class, true, false)) {
+            String name = BeanFactoryUtils.transformedBeanName(factoryName);
+            if (names.contains(name) || factory.getType(name, false) != null) {
+                continue;
+            }
+            Class<?> product = factory.getType(name, true);
+            if (product != null && type.isAssignableFrom(product)) {
+                names.add(name);
+            }
+        }
+        return names;
     }
 
     private static Map.Entry<String, BeanContract> entry(String name, Classification classification, Guard guard) {

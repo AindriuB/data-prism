@@ -85,7 +85,8 @@ class Preflights {
     @Bean
     static BeanFactoryPostProcessor dataPrismPrivacyPolicyResolverPreflight() {
         return factory -> {
-            if (factory.getBeanNamesForType(PrivacyPolicyResolver.class, true, false).length > 1) {
+            // Counts a raw FactoryBean too: its product type is only known once it is created.
+            if (PrivacyExtensionPoints.definitionsOfType(factory, PrivacyPolicyResolver.class).size() > 1) {
                 throw new DataPrismConfigurationException("FORBIDDEN_PRIVACY_OVERRIDE",
                         "an application PrivacyPolicyResolver bean cannot replace the framework's profile-backed resolver");
             }

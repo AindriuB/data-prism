@@ -45,6 +45,12 @@ public class DataPrismProperties {
     private OperatorProperties operator = new OperatorProperties();
     @NestedConfigurationProperty
     private LimitsProperties limits = new LimitsProperties();
+    @NestedConfigurationProperty
+    private CatalogProperties catalog = new CatalogProperties();
+    @NestedConfigurationProperty
+    private PagingProperties paging = new PagingProperties();
+    @NestedConfigurationProperty
+    private LinksProperties links = new LinksProperties();
     /** Named source entries, one per configured Java-first REST adapter, each with base-url, timeout and mTLS or credential references. */
     private Map<String, SourceProperties> sources = new LinkedHashMap<>();
 
@@ -150,6 +156,30 @@ public class DataPrismProperties {
 
     public void setLimits(LimitsProperties v) {
         limits = v == null ? new LimitsProperties() : v;
+    }
+
+    public CatalogProperties getCatalog() {
+        return catalog;
+    }
+
+    public void setCatalog(CatalogProperties v) {
+        catalog = v == null ? new CatalogProperties() : v;
+    }
+
+    public PagingProperties getPaging() {
+        return paging;
+    }
+
+    public void setPaging(PagingProperties v) {
+        paging = v == null ? new PagingProperties() : v;
+    }
+
+    public LinksProperties getLinks() {
+        return links;
+    }
+
+    public void setLinks(LinksProperties v) {
+        links = v == null ? new LinksProperties() : v;
     }
 
     public Map<String, SourceProperties> getSources() {

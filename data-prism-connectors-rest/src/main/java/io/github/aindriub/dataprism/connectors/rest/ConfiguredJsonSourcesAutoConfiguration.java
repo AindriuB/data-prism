@@ -23,6 +23,7 @@ import io.github.aindriub.dataprism.orchestration.SourceAliasing;
 import io.github.aindriub.dataprism.orchestration.SourceCircuitBreaker;
 import io.github.aindriub.dataprism.orchestration.SourceFanOut;
 import io.github.aindriub.dataprism.orchestration.SourceFanOutOptions;
+import io.github.aindriub.dataprism.orchestration.catalog.SourceHosts;
 import io.github.aindriub.dataprism.validation.LlmResponseValidator;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -40,7 +41,9 @@ import org.springframework.core.env.Environment;
 import org.springframework.web.client.RestClient;
 
 import java.time.Clock;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -141,6 +144,19 @@ public class ConfiguredJsonSourcesAutoConfiguration {
     }
 
     /**
+     * The host of each configured source's base URL, for the catalog's check that a description does not name it.
+     * The starter cannot see {@link ConfiguredJsonSource}, so it reads this type from the orchestration module.
+     */
+    @Bean
+    @Conditional(LocationConfigured.class)
+    SourceHosts dataPrismConfiguredSourceHosts(Environment environment) {
+        Map<String, String> hosts = new HashMap<>();
+        ConfiguredJsonSourcesInitializer.loadConfig(environment).sources()
+                .forEach((name, source) -> hosts.put(name, source.baseUrlHost()));
+        return new SourceHosts(hosts);
+    }
+
+    /**
      * The context's {@link RequestLimits} bean. Without one the deployment cannot be honouring
      * {@code dataprism.limits.*}, so if any such property is set the answer is a refusal, never the defaults.
      */
@@ -204,7 +220,8 @@ public class ConfiguredJsonSourcesAutoConfiguration {
             List<LlmResponseValidator> validators, SyntheticValueSource synthetics, ValueTokenSource tokens,
             SecretKeyProvider keys, AuditRecorder audit, ScopeBudget budget, PrivacyMetrics metrics, Clock clock,
             PrivacyPolicyResolver policy, ObjectProvider<CorrelationMdc> correlationMdc,
-            ObjectProvider<RequestLimits> limits, ObjectProvider<JsonTreeScrubbingEngine> engines) {
+            ObjectProvider<RequestLimits> limits, ObjectProvider<JsonTreeScrubbingEngine> engines,
+            ObjectProvider<OrchestrationOptions> options) {
         ConfiguredJsonSourcesConfig config = ConfiguredJsonSourcesInitializer.loadConfig(environment);
 
         JsonTreeScrubbingEngine javaFirst = javaFirst(environment, engines, metadata, policy, synthetics, tokens);
@@ -215,6 +232,8 @@ public class ConfiguredJsonSourcesAutoConfiguration {
                 new ParameterFingerprinter(keys), audit, identities,
                 new SourceFanOut(SourceCircuitBreaker.disabled(), clock, new SourceFanOutOptions(metrics,
                         correlationMdc.getIfAvailable(CorrelationMdc::off))), budget, requestLimits(limits, environment),
-                new NamespaceCorrelationService(metadata), new SourceAliasing(tokens), metrics, OrchestrationOptions.defaults());
+                new NamespaceCorrelationService(metadata), new SourceAliasing(tokens), metrics,
+                // The starter's catalog, real-names scopes and limit; the defaults only without the starter.
+                options.getIfAvailable(OrchestrationOptions::defaults));
     }
 }

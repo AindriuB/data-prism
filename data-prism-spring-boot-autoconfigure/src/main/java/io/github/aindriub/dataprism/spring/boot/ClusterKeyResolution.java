@@ -6,6 +6,7 @@ import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
 
@@ -84,6 +85,11 @@ final class ClusterKeyResolution {
                 sharedWithAudit(key, auditKeys);
             }
             sharedWithAudit(nameKey, auditKeys);
+            List<LinkFingerprint> linkKeys = linkFingerprints(properties, resolver);
+            for (Resolved key : clusterKeys) {
+                sharedWithLink(key, linkKeys);
+            }
+            sharedWithLink(nameKey, linkKeys);
             for (Resolved key : clusterKeys) {
                 if (MessageDigest.isEqual(nameKey.material, key.material)) {
                     throw new DataPrismConfigurationException("NAME_KEY_SHARED",
@@ -213,6 +219,59 @@ final class ClusterKeyResolution {
                         key.ref.property() + " must differ from dataprism.audit.hmac-key and"
                                 + " dataprism.audit.retired-hmac-keys");
             }
+        }
+    }
+
+    /** A link key's id and the SHA-256 of its material: enough to compare against, with nothing to leak. */
+    private record LinkFingerprint(String keyId, byte[] sha256) {
+    }
+
+    /**
+     * The link keys (the current one and any retiring), resolved only to be compared. One that cannot be resolved,
+     * or is too short to equal a cluster key, is left out: the link key check refuses it as
+     * {@code LINK_KEY_UNRESOLVED} or {@code LINK_KEY_WEAK} where the link keys are built.
+     */
+    private static List<LinkFingerprint> linkFingerprints(DataPrismProperties properties,
+                                                          HmacKeyReferenceResolver resolver) {
+        List<LinkFingerprint> out = new ArrayList<>();
+        for (Map.Entry<String, LinksProperties.Key> entry : properties.getLinks().getKeys().entrySet()) {
+            LinksProperties.Key key = entry.getValue();
+            boolean environment = key != null && key.getEnvironmentVariable() != null
+                    && !key.getEnvironmentVariable().isBlank();
+            boolean provider = key != null && key.getProviderReference() != null
+                    && !key.getProviderReference().isBlank();
+            if (environment == provider) {
+                continue;
+            }
+            byte[] received;
+            try {
+                received = HmacKeyReferences.resolve(resolver, !environment, entry.getKey(),
+                        environment ? key.getEnvironmentVariable() : key.getProviderReference());
+            } catch (RuntimeException unresolved) {
+                continue;
+            }
+            if (received != null && received.length >= ClusterKeys.MIN_KEY_BYTES) {
+                out.add(new LinkFingerprint(entry.getKey(), sha256(received)));
+            }
+        }
+        return out;
+    }
+
+    private static void sharedWithLink(Resolved key, List<LinkFingerprint> linkKeys) {
+        byte[] digest = sha256(key.material);
+        for (LinkFingerprint link : linkKeys) {
+            if (key.ref.keyId().equals(link.keyId()) || MessageDigest.isEqual(link.sha256(), digest)) {
+                throw new DataPrismConfigurationException(key.ref.area() + "_SHARED",
+                        key.ref.property() + " must differ from dataprism.links.keys");
+            }
+        }
+    }
+
+    private static byte[] sha256(byte[] material) {
+        try {
+            return MessageDigest.getInstance("SHA-256").digest(material);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 unavailable", e);
         }
     }
 
