@@ -53,3 +53,25 @@
 ## Out of scope
 - The MCP `follow` tool and its schema (253); Spring properties and beans (255).
 - `follow_bulk`, collection pages and group links (0.9).
+
+## Outcome (2026-11-06, 0.8; PR #219)
+
+`ContextOrchestrator` gains `follow` (the default refuses), implemented in `DefaultContextOrchestrator` through the new `LinkFollower` and `FollowRequest`. New: `OrchestrationOptions.FollowSettings` and `withFollow`, `SourceResult.items`/`itemsTruncated`/`Item`, and the per-source status `RESOLVER_FAILED` (added to `source-status-codes.txt`). Fetch, scrub, validate and the final validation were extracted from `buildContext` and are shared with it.
+
+Tests first (red on the base commit, which did not compile): `FollowTest`, `FollowRefusalUniformityTest`, `FollowLimiterTest`, `FollowTranslatedTest`, `FollowBudgetTest`, `FollowLeakTest`, `FollowStatusOnlySizeTest` and `LinkTimingSoakTest`. The soak is tagged `timing` and runs only with `-Ddataprism.timing=true`; it was not run in the PR, and 263 runs it. No PIT run.
+
+Decisions made in review:
+
+- A source may declare `SourceDescription.namespaceTypes` (each key in `inputKeys`, each value in `entityTypes`, refused at construction otherwise; the six-argument constructor stays; `UNDECLARED_ENTITY_TYPE = "entity"`). `LinkTargets` resolves the entity type per target from the namespace it is read in (`to` when translated): none declared gives `entity`, one gives that type, several gives the mapping, and several with no mapping is `eligible=false`: no link at issue (counted as omitted) and `RELATION_UNDECLARED` at follow, with the uniform `LINK_INVALID`. This overrides `key-resolvers.md:67,138`, `sealed-links.md:441` and `catalog.md:54,314-315`. A multi-type configured source becomes a non-target until 301 lets YAML declare the mapping.
+- A low-entropy chained key equal to a `@NonSensitive` value refuses. It is the only fail-closed reading.
+- The chained key and the resolver's output keys are prohibited values, so a target record that echoes one is refused by `RawValueLeakValidator`, direct or translated. The response `subject` and the audit pseudonym are the synthetic value of the chained key, never the key.
+- One finishing step for every successful return: `followChecked` returns only a `FollowPending`, and `follow` passes it through `followFinish` (final validation, then the record limit, then the byte limit) inside the same try. A status-only answer (no keys, a failed resolver, a timeout before the first read) is therefore size-checked too. A reflection test guards that only `follow` and `followFinish` return a `ContextResponse`.
+- A deadline that passes before any read reports `TIMED_OUT` (`itemsTruncated` kept, zero fetches, audited `name:TIMED_OUT`), not `NO_DATA`. A one-to-many follow has one overall deadline. For a translated follow the deadline holds across the budget reservation: if it has passed when `budget.reserve` returns, the reservation is released and no read starts. A read that does start is bound by the time left (`SourceFanOut.execute(plan, limits, window)`). `budget.reserve` itself takes no deadline. A direct follow gets the normal request timeout.
+- The budget subject for a read is the raw key string, as `get_entity_context` does with `subjectId` (OD-08-15 (a)). `HazelcastScopeBudget` keys through `ScopeKeys.budget`; only the in-process budget holds raw keys, on the heap.
+- The followed read's entity type is the target's declared type, else `entity`. `ResponseSize` counts items and `itemsTruncated` (exact for ordinary JSON), and the record count includes item entities.
+
+`Owns` additions: `ResponseSize.java`, `ResponseSizeTest.java`, `FollowSizeTest.java`, `LinkBuilderArchitectureTest.java`, `FollowStatusOnlySizeTest.java`. An architecture rule forbids `mcp` from reaching `LinkFollower.Authorised#key`. `Authorized` and `authorize` became `Authorised` and `authorise`.
+
+Mutants killed include: key not prohibited, resolved keys not prohibited, no deadline, items/flag/item records not sized, early return in `followFinish`, alphabetical-first type, `eligible` dropped from the follower filter, `from` instead of `to`, and the reservation recheck, the window and the release removed.
+
+Follow-ups: 253 must settle `entityType` in the follow response (`followEnvelope` was removed; the response is built in `followFinish`) against the follow output schema, which lists none. A multi-type configured source has no way to declare a mapping (301). `budget.reserve` can wait without bound. `SourceLabels.Collision` is not handled in follow (about `DefaultContextOrchestrator.java:780`). `LinkKeyResolution.java:56` drops a retiring key id's shape silently. Budget `settle` and `continue` tests (mutants M09, M13) are missing. Whether the in-process budget should key as the shared one does is open.

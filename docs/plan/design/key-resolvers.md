@@ -64,8 +64,8 @@ Registration: a resolver is a Spring bean (or registered through the builder in 
 
 The pair `(from(), to())` is the declaration. The link builder reads declarations only; it does not call `resolve` at issue. At issue it computes, for a chainable field in namespace N:
 
-- direct targets: every permitted source with an input key in namespace N;
-- translated targets: for every resolver R with `from() == N`, every permitted source with an input key in `R.to()`.
+- direct targets: every permitted source with an input key in namespace N that is a link target for N (see "Type eligibility" below);
+- translated targets: for every resolver R with `from() == N`, every permitted source with an input key in `R.to()` that is a link target for `R.to()`.
 
 Not calling `resolve` at issue means that issuing links does no I/O, cannot fail because a backing service is down, cannot leak a mapping through timing, and does not charge the budget. The cost is that a translated link is a promise that may turn out empty at follow time (status `NO_DATA`, below).
 
@@ -138,6 +138,8 @@ For a chainable field in namespace N, and a source S that is permitted for the c
 1. S declares an input key in namespace N exactly (string equality of the validated namespace values; no case folding, trimming, prefix or alias): a **direct** link `rel=direct`.
 2. Otherwise, a declared resolver R with `R.from() == N` and `R.to()` equal to an input namespace of S: a **translated** link `rel=translated`, carrying the namespace and `toNamespace`.
 3. Otherwise no link. Never a guess, a near-match, a chain of two resolvers, or a resolver whose `to()` is itself resolvable onward.
+
+**Type eligibility (task 252, as built; overrides the earlier "every source with an input key" wording of this section and of the declaration above).** A source is a link target for a namespace only if the entity type of a read keyed by that namespace is known. `SourceDescription.namespaceTypes` maps an input namespace to the entity type it answers; the namespace read is `N` for a direct link and `R.to()` for a translated one. A source declaring no entity type is read as the sentinel type `entity`; a source declaring one type needs no mapping; a source declaring several types is a target only for namespaces it maps. A multi-type source with no mapping for the namespace is not a link target: no link is issued (counted as omitted) and a stale link to it is refused at follow with audit reason `RELATION_UNDECLARED` and the uniform `LINK_INVALID`. The type is never guessed (an earlier draft took the alphabetically first type). Rules 1 and 2 above apply to eligible sources only.
 
 When both 1 and 2 apply to the same source, only the direct link is issued. When two resolvers reach the same source, both links are issued only if they differ in `toNamespace`; otherwise startup refuses the duplicate pair.
 
