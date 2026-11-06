@@ -3,10 +3,12 @@ package io.github.aindriub.dataprism.hazelcast.spike;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
 import io.github.aindriub.dataprism.hazelcast.ClusterMembership;
+import io.github.aindriub.dataprism.hazelcast.ClusterSecuritySettings;
 import io.github.aindriub.dataprism.hazelcast.PrivacyCluster;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -117,9 +119,10 @@ class Q05SubsystemSwitchesSpikeTest {
         byte[] name32 = new byte[32];
         java.util.Arrays.fill(cluster32, (byte) 1);
         java.util.Arrays.fill(name32, (byte) 2);
-        cluster = PrivacyCluster.embedded(config, false, java.util.OptionalInt.empty(),
+        cluster = PrivacyCluster.embedded(config, false, java.util.OptionalInt.empty(), Duration.ofMinutes(5),
                 new io.github.aindriub.dataprism.hazelcast.seal.ClusterKeys("spike-cluster", cluster32, null, null,
-                        null, null, "spike-name", name32));
+                        null, null, "spike-name", name32),
+                ClusterSecuritySettings.defaults().withTrustedNetwork(true, List.of(), true));
         assertThat(reading(cluster.instance())).isEqualTo(Map.of("jet", "false", "userCodeDeployment", "false",
                 "userCodeNamespaces", "false", "phoneHome", "false", "sql", "JetDisabledException"));
     }
