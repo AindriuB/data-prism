@@ -112,6 +112,19 @@ public final class ConfiguredJsonScrubbingEngine implements ScrubbingEngine {
     }
 
     /**
+     * Routes on the model type first, as {@code scrub} does: the shared payload class describes the named
+     * configured source, and any other model, whatever the name, goes to the delegate.
+     */
+    @Override
+    public Optional<ModelDescription> describe(String sourceName, Class<?> model, PrivacyContext context,
+                                               boolean linksEnabled) {
+        if (model == ConfiguredJsonPayload.class) {
+            return describe(sourceName, context, linksEnabled);
+        }
+        return javaFirst.describe(sourceName, model, context, linksEnabled);
+    }
+
+    /**
      * Describes one configured source from its {@code fields:} catalogue and nested catalogues, by the
      * plan the scrubber applies: the same policy resolver, the same token-source check and the same
      * {@link JsonTreeScrubbingEngine#describe} rules as a Java-first model.

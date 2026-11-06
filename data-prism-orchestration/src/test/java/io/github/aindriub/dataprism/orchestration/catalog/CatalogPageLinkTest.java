@@ -149,7 +149,7 @@ class CatalogPageLinkTest {
                         new io.github.aindriub.dataprism.pseudonymisation.HmacValueTokenSource(
                                 io.github.aindriub.dataprism.pseudonymisation.StaticSecretKeyProvider.of(
                                         "development-only-key-not-for-any-real-data"))),
-                new RealNamesPolicy(List.of("scope-*")), fx.engine, fx.adapters,
+                new RealNamesPolicy(List.of("scope-*")), CatalogQueriesTest.orchestratorOver(fx.engine, fx.adapters),
                 List.of(new io.github.aindriub.dataprism.validation.SensitivePatternValidator()), settings(),
                 new CatalogQueries.PageLinks(fx.codec, fx.keys,
                         new io.github.aindriub.dataprism.core.link.LinkAttemptGate(fx.codec, fx.limiter)),
