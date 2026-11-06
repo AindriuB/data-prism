@@ -477,7 +477,7 @@ public final class AuditChainVerifierCli {
         out.println("  passes every check in order to get it accepted. The checks refuse a line whose own");
         out.println("  evidence contradicts the store or the keys; they do not defend against someone who can");
         out.println("  write the audit directory, who can delete a writer's records outright.");
-        out.println("  Stop the server first, and run it as the account that owns the anchor store. Re-run purge");
+        out.println("  First stop the server, and run it as the account that owns the anchor store. Re-run purge");
         out.println("  until it refuses only at the crash line's day (a day an earlier purge left partly deleted");
         out.println("  must be finished first), then run this command.");
         out.println("  It refuses when a BOOT, PERIODIC or SHUTDOWN checkpoint shows the writer got past the line");

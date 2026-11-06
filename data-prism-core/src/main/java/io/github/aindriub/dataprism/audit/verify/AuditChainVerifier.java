@@ -685,7 +685,7 @@ public final class AuditChainVerifier {
                     try {
                         if (!other.isEmpty() && AuditRecordFormat.parse(other).instanceId().equals(instance)) {
                             otherRecord = true;
-                            laterRecord |= si > targetIndex || from > offset;
+                            laterRecord |= si > targetIndex || (si == targetIndex && from > offset);
                         }
                     } catch (RuntimeException e) {
                         // not a record: a fragment or a line the verifier reports

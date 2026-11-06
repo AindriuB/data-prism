@@ -570,6 +570,20 @@ class AuditRetentionCrashLineAcceptanceTest {
         assertThat(lab.names()).contains(D1, "audit-2026-03-01.0001.log");
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void aByteIdenticalCopyAtTheSameOffsetOfAnotherSegmentMakesPurgeRefuseAgain(boolean keyed) throws IOException {
+        Probe p = probe(keyed);
+        CrashLab lab = p.lab();
+        String accepted = lab.read(D1).substring((int) p.offset(), lab.read(D1).indexOf('\n', (int) p.offset()) + 1);
+        assertThat(lab.accept(D1, p.offset()).code()).isEqualTo(0);
+        // a torn fragment pads the copy to the very same offset, so only the segment name tells them apart
+        lab.write("audit-2026-03-01.0001.log", "x".repeat((int) p.offset() - 2) + "\r\n" + accepted);
+
+        refusedAt(lab.purgeThrown(lab.retention()), "audit-2026-03-01");
+        assertThat(lab.names()).contains(D1, "audit-2026-03-01.0001.log");
+    }
+
     // -- the verifier is otherwise unchanged ----------------------------------------------------------
 
     @ParameterizedTest
