@@ -230,7 +230,7 @@ public final class FollowTool {
         ContextResponse response = null;
         try {
             response = orchestrator.follow(new FollowRequest(link, NAME, admitted.approvalId(),
-                            admitted.approverPrincipalId(), inbound.id()),
+                            admitted.approverPrincipalId(), rejected, inbound.id()),
                     session.privacyContext(), session.investigationContext());
             return ToolCalls.withCorrelation(McpSchema.CallToolResult.builder()
                     .structuredContent(mapper.convertValue(response, Map.class))

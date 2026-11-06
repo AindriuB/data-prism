@@ -265,20 +265,26 @@ class FollowToolTest {
 
     /** The real orchestrator with follow on, no source and no record: every link it is given is refused. */
     static DefaultContextOrchestrator realOrchestrator(AuditRecorder audit, LinkAttemptLimiter limiter) {
+        return realOrchestrator(List.of(), (source, ctx) -> {
+            throw new AssertionError("a refused link never scrubs");
+        }, audit, limiter);
+    }
+
+    /** The real orchestrator with follow on over the given sources and scrubber. */
+    static DefaultContextOrchestrator realOrchestrator(List<io.github.aindriub.dataprism.core.spi.DataSourceAdapter<?>> adapters,
+                                                       ScrubbingEngine scrubber, AuditRecorder audit,
+                                                       LinkAttemptLimiter limiter) {
         LinkKeys keys = new LinkKeys(new ListSourcesToolTest.MapKeys(), "link-key", "pseudo-key");
         LinkCodec codec = new LinkCodec(
                 new LinkSettings("link-key", java.util.Optional.empty(), 1024, true, Duration.ofSeconds(30)), keys,
                 ListSourcesToolTest.FIXED);
         var resolver = new DefaultFieldMetadataResolver();
-        ScrubbingEngine scrubber = (source, ctx) -> {
-            throw new AssertionError("a refused link never scrubs");
-        };
         OrchestrationOptions options = OrchestrationOptions.defaults().withFollow(
                 new OrchestrationOptions.FollowSettings(new LinkAttemptGate(codec, limiter), keys,
                         new KeyResolvers(List.of()),
                         new ResolverInvoker(PrivacyMetrics.none()),
                         5, Duration.ofSeconds(2), 1));
-        return new DefaultContextOrchestrator(List.of(), scrubber, resolver,
+        return new DefaultContextOrchestrator(adapters, scrubber, resolver,
                 List.of(new SensitivePatternValidator()), (subjectId, namespace, ctx) -> "SUBJ-1",
                 new ParameterFingerprinter(ListSourcesToolTest.KEYS), audit, new PassThroughIdentityResolver(),
                 new SourceFanOut(SourceCircuitBreaker.disabled(), java.time.Clock.systemUTC(),

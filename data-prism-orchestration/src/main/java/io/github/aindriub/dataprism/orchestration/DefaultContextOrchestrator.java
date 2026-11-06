@@ -782,7 +782,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
 
     private void auditFollow(FollowRequest request, FollowState state, String fingerprint, PrivacyContext context,
                              InvestigationContext investigationContext, String decision, String correlationId) {
-        audit(request.toolName(), AuditedEntityTypes.UNREGISTERED, Set.of(), request.approvalId(),
+        audit(request.toolName(), AuditedEntityTypes.UNREGISTERED, request.rejectedArguments(), request.approvalId(),
                 request.approverId(), request.externalCorrelationId(), state.subject, fingerprint, context,
                 investigationContext, decision, state.sources, correlationId, state.dispositions);
     }
