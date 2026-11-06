@@ -827,6 +827,13 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         for (int i = 0; i < keys.size(); i++) {
             if (!direct && !clock.instant().isBefore(deadline)) {
                 // Past the follow's deadline no further read is started.
+                if (i == 0) {
+                    // Nothing was read, so this is not NO_DATA: the client sees the timeout the fan-out reports.
+                    state.sources.add(new SourceOutcome(name, SourceOutcome.Status.TIMED_OUT, Duration.ZERO, null));
+                    return followEnvelope(entityType, label,
+                            SourceResult.ofItems(SourceOutcome.Status.TIMED_OUT, List.of(), true),
+                            correlationId, state);
+                }
                 truncated = true;
                 break;
             }

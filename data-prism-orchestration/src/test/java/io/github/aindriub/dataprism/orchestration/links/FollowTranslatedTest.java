@@ -271,4 +271,25 @@ class FollowTranslatedTest {
         assertThat(result.itemsTruncated()).isTrue();
         assertThat(rig.lastAudit().policyDecision()).isEqualTo("ALLOW");
     }
+
+    @Test
+    void aDeadlinePassingBeforeTheFirstReadIsATimeoutNotNoData() {
+        FollowRig rig = new FollowRig().source("parcel-api", new LinkBuilderTest.Plain("alpha"), "parcel-ref")
+                .source("depot-api", new LinkBuilderTest.Plain("unused"), "depot-ref");
+        rig.resolver("parcel-to-depot", "parcel-ref", "depot-ref", key -> {
+            rig.now = rig.now.plus(Duration.ofSeconds(10));
+            return new KeyResolver.Resolution(KEYS.subList(0, 2), false);
+        });
+        for (int i = 0; i < KEYS.size(); i++) {
+            rig.records.put(KEYS.get(i), new LinkBuilderTest.Plain("note-" + i));
+        }
+
+        SourceResult result = rig.follow(link(rig)).sources().get(rig.label("depot-api"));
+
+        assertThat(result.status()).isEqualTo("TIMED_OUT");
+        assertThat(result.items()).isEmpty();
+        assertThat(result.itemsTruncated()).isTrue();
+        assertThat(rig.fetches.get()).isZero();
+        assertThat(rig.lastAudit().sourceSystems()).anyMatch(s -> s.endsWith(":TIMED_OUT"));
+    }
 }

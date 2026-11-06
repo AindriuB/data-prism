@@ -82,9 +82,8 @@ class LinkBuilderArchitectureTest {
     }
 
     @Test
-    void noMcpClassReachesTheChainedKeyOfAnAuthorisedLink() {
-        noReachToTheChainedKey(JavaClass.Predicates.resideInAnyPackage("io.github.aindriub.dataprism.mcp.."))
-                .check(CLASSES);
+    void noMcpOrConnectorsClassReachesTheChainedKeyOfAnAuthorisedLink() {
+        noReachToTheChainedKey(inMcpOrConnectors()).check(CLASSES);
     }
 
     // ---- fixtures: the rule must be able to fail ----
@@ -92,6 +91,12 @@ class LinkBuilderArchitectureTest {
     static final class FixtureReadsTheChainedKey {
         String read(LinkFollower.Authorised authorised) {
             return authorised.key();
+        }
+    }
+
+    static final class FixtureReferencesTheChainedKey {
+        java.util.function.Function<LinkFollower.Authorised, String> read() {
+            return LinkFollower.Authorised::key;
         }
     }
 
@@ -127,6 +132,12 @@ class LinkBuilderArchitectureTest {
     void theChainedKeyRuleFailsForAClassThatReadsTheKey() {
         assertThat(evaluate(noReachToTheChainedKey(named(FixtureReadsTheChainedKey.class)),
                 FixtureReadsTheChainedKey.class, LinkFollower.Authorised.class).hasViolation()).isTrue();
+    }
+
+    @Test
+    void theChainedKeyRuleFailsForAMethodReferenceToTheKey() {
+        assertThat(evaluate(noReachToTheChainedKey(named(FixtureReferencesTheChainedKey.class)),
+                FixtureReferencesTheChainedKey.class, LinkFollower.Authorised.class).hasViolation()).isTrue();
     }
 
     @Test
