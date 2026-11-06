@@ -235,7 +235,7 @@ Surface: the tool result text and the audit `policyDecision` `DENY:<code>` (docs
 
 | Code | State | Release | Source | Docs | Meaning, note |
 |---|---|---|---|---|---|
-| `NESTED_LEAF_NOT_SCALAR` | shipped | 0.3.0 | connectors-rest:ConfiguredJsonNestedLeafShapeGuard.java:31 | yes |  |
+| `NESTED_LEAF_NOT_SCALAR` | shipped | 0.3.0 | connectors-rest:ConfiguredJsonNestedLeafShapeGuard.java:41 | yes | from 0.8 (task 249) it also covers a root leaf: a structure at a root leaf refuses with this code, where 0.7 refused it as `UNCLASSIFIED_STRUCTURE`. A root leaf the profile removes (action `REMOVE`) is exempt |
 | `NESTED_FIELD_NOT_STRUCTURED` | shipped | 0.3.0 | connectors-rest:ConfiguredJsonNestedLeafShapeGuard.java:45 | yes |  |
 | `UNKNOWN_CONFIGURED_SOURCE` | shipped | 0.1.0 | connectors-rest:ConfiguredJsonScrubbingEngine.java:91 | no |  |
 | `MODEL_NOT_EXPOSED` | shipped | 0.1.0 | core:JsonTreeScrubbingEngine.java:93 | no |  |
@@ -255,7 +255,7 @@ Surface: the tool result text and the audit `policyDecision` `DENY:<code>` (docs
 | `SOURCE_MODEL_FOREIGN_NODE` | proposed | 0.8 | core:SourceModels.java:90 | task 288 Outcome | a `JsonNode` that is not made of Jackson's own node classes, exactly (a `POJONode`, a non-Jackson node class, or a number node over a user number) |
 | `SOURCE_TREE_NOT_COMPONENT_EXACT` | proposed | 0.8 | core:SourceModels.java:93 | task 288 Outcome | a built record node whose property names are not exactly the record's component names (defence in depth) |
 | `SOURCE_VALUE_READ_FAILED` | proposed | 0.8 | core:SourceModels.java:96 | task 288 Outcome | reading a source value threw (an exception from the adapter's own collection, map or other object, or an Error or checked exception); that source alone is refused, the others still answer, and the fix is in the adapter's own code; detail "a value could not be read"; logged once at ERROR with code, path and throwable class only |
-| `SOURCE_TREE_TOO_LARGE` | proposed | 0.8 | added by 291 (task 291, "The cap") | task 291 brief | a source value has more nodes than the engine's fixed cap; path `$`; message "the source value has more nodes than the engine reads"; scrub time; that source alone is refused. Exempt from the code-string check until 291 lands; the coordinator removes the row at the release cut if 291 slips past 0.8.0 or is withdrawn |
+| `SOURCE_TREE_TOO_LARGE` | proposed | 0.8 | core:SourceTree.java:94 (thrown at SourceRecordWalker.java:674) | task 291 | built, unreleased. A source value has more nodes than the engine's fixed cap (1,000,000 positions, not bytes; not a memory limit); path `$`; message "the source value has more nodes than the engine reads"; scrub time; that source alone is refused (a lenient walk stops whole and does not throw). The coordinator removes the row at the release cut only if the code is withdrawn |
 | `GENERALIZE_TYPE_MISMATCH` | shipped | 0.1.0 | core:Generalizer.java:36 | no |  |
 | `INVALID_REFUSAL_CODE` | shipped | 0.4.0 | core:RefusalCodes.java:17 | yes |  |
 | `NO_TOKEN_SOURCE` | shipped | 0.1.0 | core:ValueTokenSource.java:49 | no |  |
@@ -292,6 +292,7 @@ Proposed call refusals (refusal codes in the design closing tables, and the task
 | `SOURCE_SELECTION_REQUIRED` | proposed | 0.8 | design/catalog.md:829 | catalog OD-C1..C19 (delegated) | refusal code. none |
 | `SOURCE_SELECTION_TOO_LARGE` | proposed | 0.8 | design/catalog.md:830 | catalog OD-C1..C19 (delegated) | refusal code. `SKIPPED_OVER_LIMIT` (a status, not a refusal) |
 | `SOURCE_NOT_AVAILABLE` | proposed | 0.8 | design/catalog.md:831 | catalog OD-C1..C19 (delegated) | refusal code. none |
+| `PAGING_UNAVAILABLE` | proposed | 0.8 | orchestration:CatalogQueries.java:70 | task 250 | refusal code of `list_sources`: a next-page link could not be issued, so the page is not served rather than served without its link |
 | `ENTITY_MODEL_NOT_AVAILABLE` | proposed | 0.9 | design/catalog.md:832 | catalog OD-C1..C19 (delegated) | refusal code. none |
 | `SOURCE_LABEL_COLLISION` | proposed | 0.8 | design/catalog.md:833 | catalog OD-C1..C19 (delegated) | refusal code. none |
 | `BATCH_TOO_LARGE` | proposed | 0.9 | design/batch-and-bulk-follow.md:1132 | batch OD-B1..B24 (delegated) | refusal code. `SOURCE_SELECTION_TOO_LARGE` (catalog; sources, not items) |
@@ -555,7 +556,9 @@ Proposed startup refusals (closing tables, then task briefs):
 | `INVALID_ISOLATION_ATTESTATION` | proposed | 0.8 | design/cluster-security.md:867 | cluster-security OD-1..16 (delegated; sealed design confirmed); amended by task 218 | an unknown attestation value |
 | `MISSING_MEMBER_INTERFACE` | proposed | 0.8 | design/cluster-security.md:868 | cluster-security OD-1..16 (delegated; sealed design confirmed); amended by task 218 | `tcp-ip` or `kubernetes` without `member.interface` (cluster-security OD-10) |
 | `UNBOUNDED_MEMBER_INTERFACE` | proposed | 0.8 | design/cluster-security.md:869 | cluster-security OD-1..16 (delegated; sealed design confirmed); amended by task 218 | `member.interface` matches every address (cluster-security OD-10) |
-| `PUBLIC_MEMBER_INTERFACE` | proposed | 0.8 | design/cluster-security.md:870 | cluster-security OD-1..16 (delegated; sealed design confirmed); amended by task 218 | the resolved bind address is globally routable and the attestation is not `mesh-mtls`, `wireguard` or `ipsec`; not built (cluster-security OD-10 (ii)); the name stays reserved |
+| `PUBLIC_MEMBER_INTERFACE` | proposed | 0.8 | hazelcast:PrivacyClusterRefusal.java:29 (rule in hazelcast:PrivacyCluster.java:673) | cluster-security OD-1..16 (delegated; sealed design confirmed); amended by task 218; built by tasks 284 and 287 | built, unreleased. The rule is reachability, not address classification: a member reachable beyond this host (it joins others, or its interface, an advertised address, a bind-any setting or a bound address is outside the private blocks and the declared trusted ranges) is refused. `launch` also judges the addresses the sockets really listen on after the member starts, and a wildcard bind refuses with this code. Attestation values do not exist (cluster-security OD-10 as built) |
+| `MISSING_TRUSTED_NETWORK` | proposed | 0.8 | hazelcast:PrivacyClusterRefusal.java:31 (rule in hazelcast:PrivacyCluster.java:682; Spring in autoconfigure:MemberInterfaceCheck.java:50) | tasks 284 and 287 | built, unreleased. A member reachable beyond this host was started without the trusted-network declaration (`ClusterSecuritySettings.withTrustedNetwork(true, ranges, ...)` in plain Java). A solo loopback-only member needs none |
+| `INVALID_TRUSTED_RANGE` | proposed | 0.8 | hazelcast:PrivacyClusterRefusal.java:33 (rule in hazelcast:PrivacyCluster.java:670; Spring in autoconfigure:MemberInterfaceCheck.java:36) | tasks 284 and 287 | built, unreleased. A declared trusted range is not an IPv4 CIDR block, or is neither inside the private blocks nor /24 or longer |
 | `INVALID_PAUSE_LEASE` | proposed | 0.8 | design/cluster-security.md:871 | cluster-security OD-1..16 (delegated; sealed design confirmed); amended by task 218 | `pause-lease` or `clock-skew-tolerance` outside its range, or skew above half the lease (OD-200-14). The lock timeout is not here: it is the shipped `INVALID_LOCK_TIMEOUT` |
 | `INVALID_UNVERIFIED_MEMBER_POLICY` | proposed | 0.8 | design/cluster-security.md:872 | cluster-security OD-1..16 (delegated; sealed design confirmed); amended by task 218 | `unverified-member.action` or `.grace` outside its range (OD-200-14) |
 | `UNSAFE_HAZELCAST_SERIALIZATION` | proposed | 0.8 | design/cluster-security.md:873 | cluster-security OD-1..16 (delegated; sealed design confirmed); amended by task 218 | a supplied `Config` or instance with no allowlisting `java-serialization-filter`, or with user-code deployment, Jet or SQL enabled |
@@ -618,7 +621,7 @@ Surface: exceptions of the audit sinks, the retention maintenance log line, the 
 | `AUDIT_RETENTION_ANCHOR_FAILED` | shipped | 0.4.0 | core:AuditRetention.java:41 | no |  |
 | `AUDIT_RETENTION_CHAIN_UNVERIFIED` | shipped | 0.4.0 | core:AuditRetention.java:43 | yes |  |
 | `AUDIT_SINK_OPEN_FAILED` | shipped | 0.3.0 | core:FileAuditSink.java:87 | yes |  |
-| `AUDIT_SINK_POISONED` | shipped | 0.3.0 | core:FileAuditSink.java:152 | no |  |
+| `AUDIT_SINK_POISONED` | shipped | 0.3.0 | core:FileAuditSink.java:158 and :173; core:SegmentedFileAuditSink.java:183 | no | the sinks are in `audit/sink/`. Since task 297 the write runs on an internal writer thread and the caller waits uninterruptibly; a hand-off failure (including an `Error`) poisons the sink |
 | `AUDIT_PROJECTION_FAILED` | shipped | 0.5.0 | core:TeeAuditSink.java:77 | yes |  |
 | `AUDIT_RETENTION_FAILED` | shipped | 0.4.0 | spring-boot-autoconfigure:AuditMaintenance.java:71 | no |  |
 | `AUDIT_RETENTION_DELETE_FAILED` | shipped | 0.4.0 | spring-boot-autoconfigure:AuditMaintenance.java:83 | no |  |
@@ -639,6 +642,9 @@ Shape C of `sealed-links OD-13`: a reason is written as a `REFUSED:<code>` dispo
 | `CATALOG_ENTITY_TYPE_MISMATCH` | proposed | 0.8; the last two 0.9 | design/catalog.md:840 | catalog OD-C1..C19 (delegated) | audit-only reason codes (shape C). same closing-table row as `CATALOG_UNKNOWN_SOURCE` |
 | `CATALOG_UNKNOWN_ENTITY_TYPE` | proposed | 0.8; the last two 0.9 | design/catalog.md:840 | catalog OD-C1..C19 (delegated) | audit-only reason codes (shape C). same closing-table row as `CATALOG_UNKNOWN_SOURCE` |
 | `CATALOG_NO_PERMITTED_SOURCE` | proposed | 0.8; the last two 0.9 | design/catalog.md:840 | catalog OD-C1..C19 (delegated) | audit-only reason codes (shape C). same closing-table row as `CATALOG_UNKNOWN_SOURCE` |
+| `CATALOG_LABELS_FAILED` | proposed | 0.8 | orchestration:CatalogQueries.java:427 | task 250 | audit-only reason (shape C): the source labels could not be built; the client sees `SOURCE_NOT_AVAILABLE` |
+| `CATALOG_DESCRIPTION_FAILED` | proposed | 0.8 | orchestration:CatalogQueries.java:441 | task 250 | audit-only reason (shape C): `describe_source` could not describe the source, or threw; the client sees `SOURCE_NOT_AVAILABLE` |
+| `CATALOG_DESCRIPTION_REFUSED` | proposed | 0.8 | orchestration:CatalogQueries.java:446 | task 250 | audit-only reason (shape C): the description failed the validators or the served schema's caps; the client sees `SOURCE_NOT_AVAILABLE` |
 | `LINK_WRONG_TOOL` | proposed | 0.8 | design/batch-and-bulk-follow.md:1118 | batch OD-B1..B24 (delegated) | audit-only reason codes (shape C). the eleven `LINK_<REASON>` codes of task 191 (siblings; `LINK_ORIGIN_DRIFT` and `LINK_EXPIRED` are reused from them) |
 | `LINK_FILTER_MISMATCH` | proposed | 0.8 | design/batch-and-bulk-follow.md:1118 | batch OD-B1..B24 (delegated) | audit-only reason codes (shape C). same closing-table row as `LINK_WRONG_TOOL` |
 | `LINK_LABELS_CHANGED` | proposed | 0.8 | design/batch-and-bulk-follow.md:1118 | batch OD-B1..B24 (delegated) | audit-only reason codes (shape C). same closing-table row as `LINK_WRONG_TOOL` |
@@ -793,7 +799,7 @@ Every metric is one constant of `Metric`, with no free-form tag or value (core:M
 | `dataprism.identity.cache.miss` | shipped | 0.1.0 | core:Metric.java:17 (`IDENTITY_CACHE_MISS`) |  |
 | `dataprism.source.latency` | shipped | 0.1.0 | core:Metric.java:18 (`SOURCE_LATENCY`) |  |
 | `dataprism.source.errors` | shipped | 0.1.0 | core:Metric.java:19 (`SOURCE_ERRORS`) |  |
-| `dataprism.source.calls_saturated` | proposed | 0.8 | core:Metric.java (`SOURCE_CALLS_SATURATED`) | task 272: a source call not made because no call slot was free (the pool's or the source's ceiling); tagged `source`; the outcome is `FAILED` with detail `UNAVAILABLE`, and `dataprism.source.errors` is not incremented |
+| `dataprism.source.calls_saturated` | proposed | 0.8 | core:Metric.java:20 (`SOURCE_CALLS_SATURATED`) | task 272: a source call not made because no call slot was free (the pool's or the source's ceiling); tagged `source`; the outcome is `FAILED` with detail `UNAVAILABLE`, and `dataprism.source.errors` is not incremented |
 | `dataprism.identity.collision` | shipped | 0.1.0 | core:Metric.java:20 (`IDENTITY_COLLISION`) |  |
 | `dataprism.privacy.failclosed` | shipped | 0.1.0 | core:Metric.java:21 (`PRIVACY_FAILCLOSED`) |  |
 | `dataprism.privacy.source.withheld` | shipped* | 0.7.0* | core:Metric.java:22 (`PRIVACY_SOURCE_WITHHELD`) | counts each source withheld from a returned response (D-070-2); `failclosed` counts refused calls only |
@@ -814,6 +820,8 @@ Proposed metrics (closing tables):
 | `dataprism.catalog.source-names.nonconforming` | proposed | 0.8 | design/catalog.md:838 | catalog OD-C1..C19 (delegated) | metric (gauge, count of non-conforming source names). `dataprism.catalog.descriptions.generated` (sibling) |
 | `dataprism.catalog.descriptions.generated` | proposed | 0.8 | design/catalog.md:846 | catalog OD-C1..C19 (delegated) | metric (gauge). `dataprism.links.keys.loaded` (task 191, sibling) |
 | `dataprism.paging.pages` | proposed | 0.8 | design/batch-and-bulk-follow.md:1124 | batch OD-B1..B24 (delegated) | metric (counter, closed labels). `dataprism.links.keys.loaded` (sibling group) |
+| `dataprism.links.issued` | proposed | 0.8 | core:Metric.java:56 (`LINKS_ISSUED`) | task 251 | counts sealed links issued on `ANSWERED` per-source results, once the response is certain to leave (a refused call counts none); counter, no tag |
+| `dataprism.links.omitted` | proposed | 0.8 | core:Metric.java:57 (`LINKS_OMITTED`) | task 251 | counts links that were due but not issued (the per-response cap, a link over `max-length`, an ineligible target), the same total as `_linksOmitted`; counter, no tag |
 | `dataprism.batch.items` | proposed | 0.9 | design/batch-and-bulk-follow.md:1136 | batch OD-B1..B24 (delegated) | metric (closed label `outcome`). none |
 | `dataprism.bulk.links` | proposed | 0.9 | design/batch-and-bulk-follow.md:1149 | batch OD-B1..B24 (delegated) | metric (closed label `status`). none |
 | `dataprism.cluster.seal.tamper` | proposed | 0.8 | design/cluster-security.md:876 | cluster-security OD-1..16 (delegated; sealed design confirmed); OD-200-7, OD-200-15 | metric (counter), one `Metric` constant `CLUSTER_SEAL_TAMPER`, `_` inside a segment. |

@@ -66,3 +66,18 @@ Text replaced by the 2026-11-05 consolidation, kept for the record.
 - [ ] A page link is sealed with relation `0x02` and an empty target. It is refused, with the uniform `LINK_INVALID` text, in another scope, for another caller, after expiry, with different filters or `pageSize`, after the label kind changed, and after the catalog tag changed (a source added, removed, or the visible set narrowed); the audit has `link` = `REFUSED:LINK_<REASON>` for each. Two catalogs with the same entries give the same tag on two instances. A `follow` link passed as `page` is refused (`LINK_WRONG_TOOL`, not counted).
 - [ ] Both outputs pass the response validators (the key-shape and pattern scans) before they leave, as every tool response does.
 - [ ] One audit event per call: `tool` is the tool name, `sourceSystems` the real names of the sources on the page (or of the described source), `names` the effective setting, `DENY:<code>` on refusal. No client-sent label, filter, page token or description text is in any audit record, log line, metric or exception. `PAGING_PAGES` is incremented once per page served.
+
+## Outcome (2026-11-06, 0.8; PR #209)
+Adds `list_sources` (keyset pages; the page link is sealed and opened through `LinkAttemptGate`) and `describe_source`, their schemas, the capabilities `LIST_SOURCES`, `DESCRIBE_SOURCE` and `FOLLOW`, and wiring through new factory overloads (the old ones are unchanged; the catalog tools are registered only when a `CatalogQueries` is passed). `CatalogQueries`, `CatalogPage` and `PagingSettings` are new.
+
+Decided in review:
+- Only ALIAS labels are in `emitted`. A real name with a sensitive shape is refused, not exempted.
+- Unexpected failures answer `REQUEST_FAILED` (no validator ran, so not `VALIDATION_FAILED`). A page link that cannot be issued answers `PAGING_UNAVAILABLE`.
+- Generated descriptions stay within 240 characters.
+- Audit reasons added: `CATALOG_LABELS_FAILED`, `CATALOG_DESCRIPTION_FAILED`, `CATALOG_DESCRIPTION_REFUSED`. `entityType` is audited as the registered value or `<unregistered>`, never client text.
+- `LinkLayout.MAX_LABEL` (64 UTF-8 bytes) applies: a page ends at a label the link can carry, extending per batch A.4. Tests cover `[L1,L2,a,b]` with page size 2 and all-long names.
+- With human approval on, each page of a walk needs its own approval, bound through the keyed parameter fingerprint (never the raw token) to the exact page token. A first-page approval does not cover a continuation.
+
+Tests failing first (at e2ba6790): `CatalogQueriesTest.aLabelWithASensitiveShapeIsNotRefused`, `aBodyOverTheSchemaCapsIsRefused`, `validationFailureUsesTheExistingCode`; `ListSourcesToolTest.outputOverTheSchemaIsRefusedBeforeTheAudit`, `noClientTextIsRecorded`, `linkRefusalText`. The new classes did not exist on main, so the PR's own tests did not compile there; `CapabilityKnownSetTest` compiles on main and fails by assertion.
+
+Not done here and owned elsewhere: `ExampleApplication` and `DataPrismAssembly` are not wired (task 254); schema-invalid arguments return an unaudited error because the SDK refuses them first (task 300); `describe_source` for a configured source (task 299). `get_entity_context` and `compare_entity_sources` still audit client `entityType` in shape mode (PLAN follow-up). Full verify was left to CI.

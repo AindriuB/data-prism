@@ -637,7 +637,7 @@ secret (OD-215-3 (a)).
 | `INVALID_ISOLATION_ATTESTATION` | An unknown attestation value |
 | `MISSING_MEMBER_INTERFACE` | `tcp-ip` or `kubernetes` without `member.interface`. Subject to OD-10 |
 | `UNBOUNDED_MEMBER_INTERFACE` | `member.interface` matches every address. Subject to OD-10 |
-| `PUBLIC_MEMBER_INTERFACE` | The resolved bind address is globally routable and the attestation is not `mesh-mtls`, `wireguard` or `ipsec`. Subject to OD-10 |
+| `PUBLIC_MEMBER_INTERFACE` | As built (tasks 284 and 287, see OD-10): a member reachable beyond this host has a member interface, an advertised address, a bind-any setting or a bound address outside the private blocks and the declared trusted ranges, or listens on a wildcard. There is no attestation. The original wording was: the resolved bind address is globally routable and the attestation is not `mesh-mtls`, `wireguard` or `ipsec` |
 | `INVALID_PAUSE_LEASE` | `pause-lease` or `clock-skew-tolerance` outside its range, or skew above half the lease |
 | `INVALID_UNVERIFIED_MEMBER_POLICY` | `unverified-member.action` or `.grace` outside its range |
 | `UNSAFE_HAZELCAST_SERIALIZATION` | A supplied `Config` or instance with no allowlisting `java-serialization-filter`, or with user-code deployment, Jet or SQL enabled |
@@ -1057,6 +1057,7 @@ On 2026-10-09 the owner delegated every decision below to the recommendation ("i
 - (ii) Only the first two; address classification is a heuristic.
 - (iii) None; documentation only.
 - **Recommend (ii)** until the spike shows address classification is reliable on the supported platforms. A false refusal on a legitimate cloud address is a support cost; a wrong accept is a false assurance.
+- **As built (tasks 284 and 287; this supersedes the choice above).** All three checks ship, and `PUBLIC_MEMBER_INTERFACE` is not a heuristic classification of the resolved address against an attestation. The owner's isolation assertion `trusted-network: true` decides, and the rule fires on whether the member is *reachable beyond this host*, not on whether it joins others. A member that is reachable beyond this host (a joiner, or any member whose interface or bind-any setting is not loopback-only) needs the declaration (`MISSING_TRUSTED_NETWORK`) and every address it listens on or advertises must be private or in a declared range of /24 or longer (`PUBLIC_MEMBER_INTERFACE`, `INVALID_TRUSTED_RANGE`). On the plain-Java path `launch` also judges the addresses the sockets really listen on after the member starts, and a wildcard bind refuses with `PUBLIC_MEMBER_INTERFACE`. An isolated loopback-only member needs no declaration. `trusted-network` states an assertion about the network; the code only stops the common misconfigurations.
 
 **OD-11. Scope and order of the 0.8 build.**
 **Decided (owner delegated, 2026-10-09): option (ii), the recommended one.**

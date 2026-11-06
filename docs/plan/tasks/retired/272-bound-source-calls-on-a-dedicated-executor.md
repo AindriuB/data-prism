@@ -145,3 +145,12 @@ How a saturated call appears to the client.
 - A new per-source status; OD-272-1 decided against one.
 - Enabling the circuit breaker in `OrchestrationWiring`, `ConfiguredJsonSourcesAutoConfiguration` or `DefaultContextOrchestrator` (a follow-up named in the Outcome).
 - `docs/tools.md` and `docs/migration-0.8.md` (261).
+
+## Outcome (2026-11-05, 0.8; PR #206)
+Source calls run on dedicated platform daemon threads (a fresh thread per call, named `dataprism-source-<n>`), bounded by a 128-slot pool and a 32-slot per-source ceiling (`SourceCallSlots`). A per-source virtual thread still waits for the bulkhead permit, watches the call and forwards interrupts. A full pool or ceiling reports the source `FAILED` with detail `UNAVAILABLE` without calling it, counted in the new metric `dataprism.source.calls_saturated`. A thread start failure releases the slots, reports `UNAVAILABLE` and logs one ERROR. Adapter calls keep the requester's context class loader and open MDC from the call's own request.
+
+For the migration notes (261): no `ThreadLocal` or `InheritableThreadLocal` carries into an adapter call. At most 32 calls are in flight per source, and four hung sources fill the 128-slot pool until a hung call returns. Only the circuit breaker would limit this, and it is disabled in every shipped wiring.
+
+Owner decision: the plain-socket interrupt residual is accepted. A forwarded interrupt does not stop an adapter blocked on a plain `java.net.Socket`, so an adapter on a blocking-socket client must set a read timeout; without one a stalled peer holds that call's slot and bulkhead permit until it closes. The default `RestClient` is not affected and the quickstart already sets a read timeout.
+
+Follow-ups: bind the pool and ceiling sizes from `dataprism.limits` (254); enable the breaker in shipped wiring. Local checks: all orchestration tests plus `PrivacyMetricsTest` (103). The new tests need the new constructor, so they were not shown failing on base, and mutant checks were not run. The Lows from the first review are not written in the PR body or its threads; PLAN says so.
