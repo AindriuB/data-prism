@@ -172,7 +172,8 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         this.options = Objects.requireNonNull(options, "options");
         this.catalog = options.catalog().orElseGet(() -> SourceCatalog.build(this.adapters, Map.of()));
         this.linkBuilder = options.links()
-                .map(l -> new LinkBuilder(l.codec(), l.maxPerResponse(), l.resolvers(), l.descriptors(), l.clock()))
+                .map(l -> new LinkBuilder(l.codec(), l.maxPerResponse(), l.resolvers(), l.descriptors(), l.clock(),
+                        scrubber::chainableView))
                 .orElse(null);
         this.clock = options.links().map(OrchestrationOptions.LinkIssuing::clock).orElse(Clock.systemUTC());
         this.follower = options.follow()

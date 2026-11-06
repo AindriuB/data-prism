@@ -822,7 +822,7 @@ Checked for collisions against `docs/tools.md`, `docs/audit.md`, `docs/configura
 | `SourceCatalog` | startup registry | 0.8 | none |
 | `SourceVisibility` | permission predicate | 0.8 (allow-all until 0.9; OD-C5) | none |
 | `ListSourcesTool`, `DescribeSourceTool`, `DescribeEntityModelTool` | MCP tool classes | 0.8, 0.8, 0.9 | `GetEntityContextTool` (pattern, not a clash) |
-| `description`, `entity-types` (under `description:` only), `alias-description`, `real-description`, `input-keys`, `cost`, `freshness` | `json-sources` entry keys under `description:` | 0.8 | `model-version`, `fields` (siblings; no overlap) |
+| `description`, `entity-types` (under `description:` only), `alias-description`, `real-description`, `input-keys`, `namespace-types`, `cost`, `freshness` | `json-sources` entry keys under `description:` | 0.8 | `model-version`, `fields` (siblings; no overlap) |
 | `labels` | result field (`ALIAS`, `REAL`) | 0.8 | none |
 | `source`, `entityTypes`, `inputKeys`, `cost`, `freshness`, `undeclared`, `fields` | result fields of `list_sources` and `describe_source` | 0.8 | `entityType` (singular, the existing request field); `entityTypes()` on the MCP tool options and `dataprism.audit.entity-types` mean the audited entity types, a different list on the server side, never a result field; `sources` in `get_entity_context` is an object, `sources` here is an array in another tool |
 | `path`, `protection`, `valueNamespace` | `describe_source` field entry keys | 0.8 | `namespace` in descriptors (means `PrivacyNamespace`; `valueNamespace` is the same meaning, `keyNamespace` is the link meaning) |

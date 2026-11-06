@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.core.spi;
 
+import io.github.aindriub.dataprism.core.engine.ChainableView;
 import io.github.aindriub.dataprism.core.model.ModelDescription;
 import io.github.aindriub.dataprism.core.model.PrivacyContext;
 import io.github.aindriub.dataprism.core.model.ScrubResult;
@@ -48,5 +49,15 @@ public interface ScrubbingEngine {
     default Optional<ModelDescription> describe(String sourceName, Class<?> model, PrivacyContext context,
                                                 boolean linksEnabled) {
         return describe(model, context, linksEnabled);
+    }
+
+    /**
+     * The chainable fields of {@code record}, as the source named {@code sourceName} declares them, with the raw
+     * tree they are declared against. The default says nothing, and the caller then decides by the record's class.
+     * An engine whose records share one class (a configured source) overrides it, because the class does not say
+     * which source a record came from.
+     */
+    default Optional<ChainableView> chainableView(String sourceName, Object record) {
+        return Optional.empty();
     }
 }
