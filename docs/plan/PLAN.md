@@ -380,7 +380,7 @@ Follow-ups from wave 2 (landed 2026-10-21), each belonging to the brief named (a
 - 263 (231 is deferred past 1.0): fail if any member logs "Resolving class ... is not allowed" during the soak runs.
 - 213: never restore one process snapshot more than once (GCM nonce reuse); the `using()` breaking change and integrator requirements (`requiredSerializationFilter()`, non-empty `trustedInterfaces`, phone-home off, no memcache, REST `HEALTH_CHECK` only); the `trustedInterfaces` value; REST and memcache off; correct "docs list 5.7.2" to 5.7.0.
 - Design 2.3.7 (next edit of `cluster-security.md`): the unknown-salt derivation limiter turns a forged-salt spray into a bounded loss of availability for new members' entries (`seal.salt_rejected`).
-- 248, 249, 251: `ChainableField` is `io.github.aindriub.dataprism.core.engine.ChainableField`; use `ChainableFields.of(Class, Map<String, ModelDescriptor>)`.
+- 248, 249, 251: `ChainableField` is `io.github.aindriub.dataprism.core.spi.ChainableField`; use `ChainableFields.of(Class, Map<String, ModelDescriptor>)`.
 - Release note required for 0.8 (Breaking in `CHANGELOG.md`): `PrivacyCluster.using()` refuses instances it used to accept.
 - Known residual of 240: an enum constant body's `@Chainable` is not visited.
 

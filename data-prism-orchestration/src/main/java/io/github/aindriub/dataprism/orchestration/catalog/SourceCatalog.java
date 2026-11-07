@@ -2,6 +2,8 @@ package io.github.aindriub.dataprism.orchestration.catalog;
 
 import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.spi.SourceDescription;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -22,6 +24,8 @@ import java.util.Set;
  * are not computed here: they vary by scope.
  */
 public final class SourceCatalog {
+
+    private static final Logger LOG = LoggerFactory.getLogger(SourceCatalog.class);
 
     private static final Comparator<String> BYTE_ORDER = (a, b) ->
             Arrays.compareUnsigned(a.getBytes(StandardCharsets.UTF_8), b.getBytes(StandardCharsets.UTF_8));
@@ -91,6 +95,7 @@ public final class SourceCatalog {
             names.stream().filter(other -> !other.equals(name))
                     .forEach(other -> forbidden.add(SourceDescriptionChecks.normalise(other)));
             checks.check(name, description, forbidden);
+            warnIfUntypedNamespace(name, description);
 
             boolean generated = description.aliasDescription() == null;
             String aliasText = generated ? GeneratedDescriptions.generate(description) : description.aliasDescription();
@@ -98,6 +103,18 @@ public final class SourceCatalog {
             built.add(new Entry(name, description, aliasText, realText, generated));
         }
         return new SourceCatalog(built, SourceNames.nonconformingCount(names));
+    }
+
+    /**
+     * A source with several entity types needs a type for each input namespace, or {@code follow} cannot say what a
+     * read answers and the source is no link target for that namespace. It starts anyway; this only says so.
+     */
+    private static void warnIfUntypedNamespace(String name, SourceDescription description) {
+        if (description.entityTypes().size() > 1
+                && description.inputKeys().stream().anyMatch(key -> !description.namespaceTypes().containsKey(key))) {
+            LOG.warn("source {} declares several entity types and no type for some of its input keys;"
+                    + " it is not a link target for those keys until namespace-types maps them", name);
+        }
     }
 
     /**

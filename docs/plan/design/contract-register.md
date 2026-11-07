@@ -1004,6 +1004,7 @@ From the closing tables, grouped by the group they join. `dataprism.limits.*` an
 | `input-keys` | proposed | 0.8 | design/catalog.md:821 | catalog OD-C1..C19 (delegated) | `json-sources` entry keys under `description:`. same closing-table row as `description` |
 | `cost` | proposed | 0.8 | design/catalog.md:821 | catalog OD-C1..C19 (delegated) | `json-sources` entry keys under `description:`. same closing-table row as `description` |
 | `freshness` | proposed | 0.8 | design/catalog.md:821 | catalog OD-C1..C19 (delegated) | `json-sources` entry keys under `description:`. same closing-table row as `description` |
+| `namespace-types` | proposed | 0.8 | design/catalog.md:825 | task 301 | `json-sources` entry key under `description:`: a mapping of input key to entity type. same closing-table row as `description` |
 | `dataprism.catalog.unselected-source-limit` | proposed | 0.8 | design/catalog.md:842 | catalog OD-C7 (a) | configuration key (default `8`). `dataprism.limits.max-sources` (OD-C7) |
 | `dataprism.catalog.real-names-scopes` | proposed | 0.8 | design/catalog.md:843 | catalog OD-C3 (c) | configuration key (default empty), OD-C3 (c), decided. none |
 | `dataprism.paging.list-sources.page-size` | proposed | 0.8 | design/batch-and-bulk-follow.md:1119 | batch OD-B1..B24 (delegated) | configuration keys. `dataprism.links.lifetime` (the link default; this one caps page links) |
