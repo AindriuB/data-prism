@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.OptionalInt;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.function.DoubleSupplier;
 
@@ -37,7 +38,22 @@ class ClusterLegacyGaugeTest {
         Hazelcast.shutdownAll();
     }
 
-    static final Map<Metric, DoubleSupplier> GAUGES = new ConcurrentHashMap<>();
+    record Registration(Metric metric, DoubleSupplier supplier) { }
+
+    /** Every registration, in order: a map keyed by metric would hide a second one. */
+    static final List<Registration> GAUGES = new CopyOnWriteArrayList<>();
+
+    /** The one registration of the metric; fails on none and on more than one. */
+    static DoubleSupplier gauge(Metric metric) {
+        List<Registration> of = GAUGES.stream().filter(r -> r.metric() == metric).toList();
+        assertThat(of).as("registrations of " + metric).hasSize(1);
+        return of.get(0).supplier();
+    }
+
+    static void assertEveryGaugeRegisteredOnce() {
+        assertThat(GAUGES.stream().map(Registration::metric).toList())
+                .as("every gauge metric once").doesNotHaveDuplicates();
+    }
 
     @Configuration(proxyBeanMethods = false)
     static class RecordingMetrics extends ClusterKeyConfigurationTest.KeyIntegrations {
@@ -47,7 +63,7 @@ class ClusterLegacyGaugeTest {
                 @Override public void increment(Metric metric, String tag) { }
                 @Override public void increment(Metric metric) { }
                 @Override public void gauge(Metric metric, DoubleSupplier supplier) {
-                    GAUGES.put(metric, supplier);
+                    GAUGES.add(new Registration(metric, supplier));
                 }
             };
         }
@@ -88,9 +104,10 @@ class ClusterLegacyGaugeTest {
         GAUGES.clear();
         runner(RecordingMetrics.class).run(result -> {
             assertThat(result).hasNotFailed();
-            DoubleSupplier gauge = GAUGES.get(Metric.CLUSTER_LEGACY_ENTRIES);
+            DoubleSupplier gauge = gauge(Metric.CLUSTER_LEGACY_ENTRIES);
             assertThat(gauge).isNotNull();
             assertThat(gauge.getAsDouble()).isEqualTo(result.getBean(PrivacyCluster.class).legacyEntries());
+            assertEveryGaugeRegisteredOnce();
         });
     }
 
@@ -122,7 +139,7 @@ class ClusterLegacyGaugeTest {
             try (PrivacyCluster peer = PrivacyCluster.embedded(
                     ClusterMembership.tcpIp(name, members).withPort(second).withInterface("127.0.0.1"), false,
                     OptionalInt.of(1), Duration.ofMinutes(5), keys, trusted)) {
-                DoubleSupplier gauge = GAUGES.get(Metric.CLUSTER_LEGACY_ENTRIES);
+                DoubleSupplier gauge = gauge(Metric.CLUSTER_LEGACY_ENTRIES);
                 assertThat(gauge.getAsDouble()).isZero();
                 cluster.instance().getMap("dataprism.identity").put("legacy-key", "legacy-value");
                 try (PrivacyCluster refused = PrivacyCluster.embedded(
@@ -208,7 +225,7 @@ class ClusterLegacyGaugeTest {
         GAUGES.clear();
         suppliedRunner(RecordingMetrics.class).run(result -> {
             assertThat(result).hasNotFailed();
-            DoubleSupplier gauge = GAUGES.get(Metric.CLUSTER_LEGACY_ENTRIES);
+            DoubleSupplier gauge = gauge(Metric.CLUSTER_LEGACY_ENTRIES);
             assertThat(gauge).isNotNull();
             assertThat(gauge.getAsDouble()).isEqualTo(result.getBean(PrivacyCluster.class).legacyEntries());
         });
@@ -232,7 +249,7 @@ class ClusterLegacyGaugeTest {
                 .run(result -> {
                     assertThat(result).hasNotFailed();
                     assertThat(result.getBeansOfType(PrivacyCluster.class)).containsKey("dataPrismPrivacyCluster");
-                    DoubleSupplier gauge = GAUGES.get(Metric.CLUSTER_LEGACY_ENTRIES);
+                    DoubleSupplier gauge = gauge(Metric.CLUSTER_LEGACY_ENTRIES);
                     assertThat(gauge).isNotNull();
                     assertThat(gauge.getAsDouble())
                             .isEqualTo(result.getBean(PrivacyCluster.class).legacyEntries());
@@ -250,7 +267,7 @@ class ClusterLegacyGaugeTest {
                 .withPropertyValues(OversightConfigurationTest.base("embedded"))
                 .run(result -> {
                     assertThat(result).hasNotFailed();
-                    assertThat(GAUGES.get(Metric.CLUSTER_LEGACY_ENTRIES)).isNotNull();
+                    assertThat(gauge(Metric.CLUSTER_LEGACY_ENTRIES)).isNotNull();
                     result.getBean("bareCluster", PrivacyCluster.class).close();
                 });
     }
