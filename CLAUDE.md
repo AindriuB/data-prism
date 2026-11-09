@@ -17,6 +17,7 @@ Spring Boot 4, Maven multi-module. The core carries no business domain.
 | Module map, dependency direction, boundaries, decisions | `docs/architecture.md` |
 | What is open, in priority order | `docs/plan/PLAN.md` |
 | What was built — scan, never open `HISTORY.md` whole | `docs/plan/HISTORY-INDEX.md` |
+| Decisions and accepted residuals | `docs/plan/DECISIONS.md` |
 | One task's full contract | `docs/plan/tasks/<id>.md` |
 | The original specification | `docs/pack.md` |
 | Amendments to it — **these win** where the two disagree | `docs/design-review.md` |
@@ -36,9 +37,6 @@ transcript. Definitions in `~/.claude/agents/`, contracts in `docs/workflow.md`.
 Out of band, any time: `/recon <question>`, `/design <question>`.
 
 ## Rules that hold everywhere
-
-The workspace rules in `../CLAUDE.md` apply here too and are not repeated.
-These three are specific to this repository.
 
 1. **No path from a source adapter to the MCP layer may bypass the privacy
    engine.** If a change makes one possible, it is wrong regardless of tests.
