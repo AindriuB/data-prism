@@ -53,3 +53,13 @@ So streamable HTTP, the production transport, has the same leak.
 - Data Prism's own log statements, and `PiiLogScanTest` (255 extends it).
 - Upgrading or patching the SDK, or wrapping its transports.
 - `CHANGELOG.md` and `docs/migration-0.8.md` (261; the Outcome hands over the line).
+
+## Outcome
+
+Landed in PR #227, merged 2026-11-09, head 02cdc6e9658f0a5f6779109181abb9d4010c887a. This session holds no verify verdict: the owner merged it with CI green. The outcome below is from the PR body.
+
+`io.modelcontextprotocol` is pinned to WARN on both shipped transports: `org.slf4j.simpleLogger.log.io.modelcontextprotocol=warn` in the integration-tests `simplelogger.properties` (plain-Java stdio), and `McpSdkLogPin`, an `EnvironmentPostProcessor` in `spring.factories` that adds `logging.level.io.modelcontextprotocol=WARN` as the lowest-precedence source (the Spring and HTTP path). `docs/configuration.md` has a new `### Logging` section. `StdioSdkLogPinTest` and `McpSdkLogPinTest` were red on the base commit and each has a positive control. For 261: naming that logger at DEBUG or INFO overrides the pin and is unsupported in production.
+
+Measured and not silenced: above the pin, on stdio, a malformed line can put a client token in the ERROR stack trace (Jackson's `Unrecognized token 'X'` message quotes a bare leading token, up to the first non-identifier character). A sentinel inside a string value is redacted. The HTTP transport's `Failed to deserialize message` line carried no client text, but a real HTTP request was not driven. This needs a coordinator decision; stdio is the development-only transport.
+
+Two failures of this PR's CI on Java 25 were the SDK 2.0.1 stdio defect, not 302 (see the wave-11 history entry; PR #228 moved to SDK 2.1.0).

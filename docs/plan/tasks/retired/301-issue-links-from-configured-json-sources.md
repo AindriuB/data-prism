@@ -57,3 +57,11 @@ Every configured source shares `ConfiguredJsonPayload`, so `LinkBuilder`, which 
 - The user docs for `description:` in `docs/configuration.md` (261 owns that block; the Outcome hands it the key).
 - More than one chainable field per configured source, or nested ones: `identifier: true` is still single and top-level.
 - Using `entityType` or the key namespace on a configured read.
+
+## Outcome
+
+Landed in PR #224, merged 2026-11-07, head 57a65e9abaef1e6d12d7c7427229e5f7eb33e2aa. This session holds no verify verdict: the owner merged it with CI green. The outcome below is from the PR body.
+
+Links now follow what the scrubbing engine says about a record, so configured JSON sources, which all share `ConfiguredJsonPayload`, issue links. `ScrubbingEngine.chainableView(sourceName, record)` (default empty) is overridden by `ConfiguredJsonScrubbingEngine` to give the named source's `chainableFields()` over `payload.body()`; another source's payload or an unknown source gives no fields. `LinkBuilder` asks the view first, falls back to the class path on empty, never caches a view, and a throw means no link. `description.namespace-types` parses into the seven-argument `SourceDescription` (`INVALID_CONFIG_SHAPE`, `INVALID_SOURCE_DESCRIPTION`, no value in any message). `SourceCatalog.build` logs one WARN when several entity types are declared and an input key has no mapping; it never refuses. Handoff to 261: the key is `description.namespace-types`, a mapping of input key to entity type, keys in `input-keys`, values in `entity-types`.
+
+Review fix: `ChainableView` and `ChainableField` moved from `core.engine` to `core.spi`, because `ScrubbingEngine` in `core.spi` may not depend on `core.engine`; this was outside `Owns`, approved for the move only. A test was added that one known source does not answer for another's payload (mutant on the source lookup killed it). Only the affected classes were run locally.
