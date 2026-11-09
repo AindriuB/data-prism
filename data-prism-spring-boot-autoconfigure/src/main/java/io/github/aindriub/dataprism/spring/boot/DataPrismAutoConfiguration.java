@@ -32,7 +32,7 @@ import org.springframework.context.annotation.Import;
  *       the order its beans depend on one another.
  * </ol>
  */
-@AutoConfiguration
+@AutoConfiguration(afterName = "org.springframework.boot.health.autoconfigure.actuate.endpoint.AvailabilityProbesAutoConfiguration")
 @EnableConfigurationProperties(DataPrismProperties.class)
 @Import({IdentityResolverSelection.class, AuditSinkSelection.class, AuditIntegrityHealth.class,
         ClusterBackedState.class, ReidentificationWiring.class, Preflights.class, PropertiesValidation.class,

@@ -63,19 +63,8 @@ class PropertiesValidation {
      * the one produced by {@link ClusterBackedState}, so an application bean that happens to share
      * the default name is still the application's.
      */
-    private static boolean isFrameworkCluster(ConfigurableListableBeanFactory beanFactory, String name) {
-        if (!beanFactory.containsBeanDefinition(name)) {
-            return false;
-        }
-        String factoryBean = beanFactory.getBeanDefinition(name).getFactoryBeanName();
-        if (factoryBean == null) {
-            return false;
-        }
-        if (beanFactory.containsBeanDefinition(factoryBean)) {
-            String factoryClass = beanFactory.getBeanDefinition(factoryBean).getBeanClassName();
-            return ClusterBackedState.class.getName().equals(factoryClass);
-        }
-        return false;
+    static boolean isFrameworkCluster(ConfigurableListableBeanFactory beanFactory, String name) {
+        return ClusterBackedState.builtHere(beanFactory, name);
     }
 
     /**

@@ -2,7 +2,8 @@ package io.github.aindriub.dataprism.connectors.rest;
 
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
-import io.github.aindriub.dataprism.core.engine.ChainableField;
+import io.github.aindriub.dataprism.core.spi.ChainableField;
+import io.github.aindriub.dataprism.core.spi.ChainableView;
 import io.github.aindriub.dataprism.core.engine.JsonTreeScrubbingEngine;
 import io.github.aindriub.dataprism.core.model.FieldMetadata;
 import io.github.aindriub.dataprism.core.model.FieldProtection;
@@ -207,6 +208,22 @@ public final class ConfiguredJsonScrubbingEngine implements ScrubbingEngine {
             }
         }
         return Optional.of(new ModelDescription(List.copyOf(found.values()), undeclared));
+    }
+
+    /**
+     * The named source's chainable fields over the response body, for a payload of that source. The body, not
+     * {@code SourceTree.of(payload)}, which nests it under {@code body}, is what the declared paths address. A
+     * payload of another source, or a source this engine holds no catalogue for, gives a view with no fields: the
+     * class path must not answer for a record this engine owns. Any other record is the delegate's to decide.
+     */
+    @Override
+    public Optional<ChainableView> chainableView(String sourceName, Object record) {
+        if (!(record instanceof ConfiguredJsonPayload payload)) {
+            return Optional.empty();
+        }
+        ConfiguredJsonSource source = sourceName == null || !sourceName.equals(payload.sourceName())
+                ? null : sources.get(sourceName);
+        return Optional.of(new ChainableView(source == null ? List.of() : source.chainableFields(), payload.body()));
     }
 
     private static FieldProtection withPath(FieldProtection f, String path) {

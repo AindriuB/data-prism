@@ -3,7 +3,7 @@ package io.github.aindriub.dataprism.connectors.rest;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
-import io.github.aindriub.dataprism.core.engine.ChainableField;
+import io.github.aindriub.dataprism.core.spi.ChainableField;
 import io.github.aindriub.dataprism.core.model.FieldMetadata;
 import io.github.aindriub.dataprism.core.model.StrictYaml;
 import io.github.aindriub.dataprism.core.spi.CostHint;
@@ -60,7 +60,8 @@ public final class ConfiguredJsonSources {
             Set.of("base-url", "path", "timeout", "model-version", "subject-json-path", "fields",
                     "nested-catalogues", "description", OutboundCorrelationHeader.KEY);
     private static final Set<String> DESCRIPTION_KEYS =
-            Set.of("entity-types", "alias-description", "real-description", "input-keys", "cost", "freshness");
+            Set.of("entity-types", "alias-description", "real-description", "input-keys", "cost", "freshness",
+                    "namespace-types");
     private static final Set<String> IDENTIFIER_FIELD_KEYS = Set.of("identifier", "chainable", "keyNamespace");
     private static final Set<String> NON_SENSITIVE_FIELD_KEYS = Set.of("nonSensitive");
     private static final Set<String> SENSITIVE_FIELD_KEYS =
@@ -307,12 +308,25 @@ public final class ConfiguredJsonSources {
                 }
             }
         }
+        Map<KeyNamespace, String> namespaceTypes = new LinkedHashMap<>();
+        Map<String, Object> mapped = StrictYaml.optionalMapping(block, "namespace-types", where);
+        if (mapped != null) {
+            for (Map.Entry<String, Object> entry : mapped.entrySet()) {
+                String type = StrictYaml.text(entry.getValue(), where + ".namespace-types");
+                try {
+                    namespaceTypes.put(new KeyNamespace(entry.getKey()), type);
+                } catch (IllegalArgumentException e) {
+                    throw new IllegalArgumentException(INVALID_DESCRIPTION + ": " + where
+                            + ".namespace-types has a key that is not a key namespace");
+                }
+            }
+        }
         String alias = StrictYaml.optionalString(block, "alias-description", where);
         String real = StrictYaml.optionalString(block, "real-description", where);
         CostHint cost = hint(CostHint.class, block, "cost", where);
         FreshnessHint freshness = hint(FreshnessHint.class, block, "freshness", where);
         try {
-            return new SourceDescription(entityTypes, alias, real, inputKeys, cost, freshness);
+            return new SourceDescription(entityTypes, alias, real, inputKeys, cost, freshness, namespaceTypes);
         } catch (IllegalArgumentException e) {
             // SourceDescription's messages carry no value; this one adds only where.
             throw new IllegalArgumentException(INVALID_DESCRIPTION + ": " + where + " is not valid: " + e.getMessage());

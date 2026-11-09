@@ -11,6 +11,7 @@ import org.springframework.web.client.RestClient;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -129,6 +130,51 @@ class ConfiguredJsonDescriptionTest {
                     .hasMessageContaining("parcel-service")
                     .hasMessageNotContaining("Bad Key")
                     .hasMessageNotContaining("bad type");
+        }
+    }
+
+    @Test
+    @DisplayName("a valid namespace-types reaches description().namespaceTypes()")
+    void namespaceTypesReachTheDescription() {
+        ConfiguredJsonSource source = parse(withDescription("""
+                entity-types: [DEPOT, PARCEL]
+                input-keys: [depot-ref, parcel-ref]
+                namespace-types:
+                  parcel-ref: PARCEL
+                  depot-ref: DEPOT
+                """));
+
+        assertThat(new ConfiguredJsonDataSourceAdapter(source, RestClient.create()).description().namespaceTypes())
+                .isEqualTo(Map.of(new KeyNamespace("parcel-ref"), "PARCEL", new KeyNamespace("depot-ref"), "DEPOT"));
+    }
+
+    @Test
+    @DisplayName("a namespace-types that is not a mapping refuses with INVALID_CONFIG_SHAPE")
+    void namespaceTypesMustBeAMapping() {
+        for (String block : new String[] {"namespace-types: [parcel-ref]\n", "namespace-types: " + SENTINEL + "\n"}) {
+            assertThatThrownBy(() -> parse(withDescription("entity-types: [PARCEL]\ninput-keys: [parcel-ref]\n" + block)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageStartingWith("INVALID_CONFIG_SHAPE")
+                    .hasMessageNotContaining(SENTINEL);
+        }
+    }
+
+    @Test
+    @DisplayName("a key outside input-keys, a type outside entity-types and a key that is not a namespace refuse with INVALID_SOURCE_DESCRIPTION, never the value")
+    void namespaceTypesRulesRefuse() {
+        String head = "entity-types: [DEPOT, PARCEL]\ninput-keys: [parcel-ref]\nnamespace-types:\n  ";
+        String[] bad = {
+                head + "other-ref: PARCEL\n",
+                head + "parcel-ref: " + SENTINEL + "\n",
+                head + "\"Bad Key " + SENTINEL + "\": PARCEL\n",
+        };
+        for (String block : bad) {
+            assertThatThrownBy(() -> parse(withDescription(block)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageStartingWith("INVALID_SOURCE_DESCRIPTION:")
+                    .hasMessageContaining("parcel-service")
+                    .hasMessageNotContaining(SENTINEL)
+                    .hasMessageNotContaining("other-ref");
         }
     }
 }

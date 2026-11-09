@@ -10,6 +10,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import io.github.aindriub.dataprism.core.model.InvestigationContext;
+import io.github.aindriub.dataprism.core.spi.KeyNamespace;
 import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.spi.SourceDescription;
 import io.github.aindriub.dataprism.orchestration.catalog.TestAdapters.DescribedAdapter;
@@ -397,5 +398,59 @@ class SourceCatalogTest {
         SourceVisibility visibility = SourceVisibility.allowAll();
         assertThat(visibility.permitted(caller, "alpha")).isTrue();
         assertThat(visibility.permitted(caller, "anything-else")).isTrue();
+    }
+
+    // ---- a multi-type source whose input keys are not all typed (task 301) ----
+
+    private static SourceDescription typed(Set<String> entityTypes, List<String> keys, Map<String, String> mapping) {
+        Map<KeyNamespace, String> typesByKey = new java.util.HashMap<>();
+        mapping.forEach((key, type) -> typesByKey.put(new KeyNamespace(key), type));
+        return new SourceDescription(entityTypes, null, null, keys.stream().map(KeyNamespace::new).toList(), null,
+                null, typesByKey);
+    }
+
+    private static List<String> warningsFrom(SourceDescription... descriptions) {
+        Logger logger = (Logger) LoggerFactory.getLogger(SourceCatalog.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            List<DataSourceAdapter<?>> adapters = new ArrayList<>();
+            for (int i = 0; i < descriptions.length; i++) {
+                adapters.add(new DescribedAdapter("source-" + (char) ('a' + i), descriptions[i]));
+            }
+            SourceCatalog.build(adapters, Map.of());
+            return appender.list.stream().filter(e -> e.getLevel() == ch.qos.logback.classic.Level.WARN)
+                    .map(ILoggingEvent::getFormattedMessage).toList();
+        } finally {
+            logger.detachAppender(appender);
+        }
+    }
+
+    @Test
+    @DisplayName("several entity types and no mapping, or an incomplete one, log one WARN naming the source")
+    void warnsOnceForAnUntypedNamespace() {
+        assertThat(warningsFrom(typed(Set.of("DEPOT", "PARCEL"), List.of("parcel-ref"), Map.of())))
+                .hasSize(1).allSatisfy(m -> assertThat(m).contains("source-a"));
+        assertThat(warningsFrom(typed(Set.of("DEPOT", "PARCEL"), List.of("parcel-ref", "depot-ref"),
+                Map.of("parcel-ref", "PARCEL")))).hasSize(1).allSatisfy(m -> assertThat(m).contains("source-a"));
+    }
+
+    @Test
+    @DisplayName("no type, one type, no input keys or a complete mapping log no WARN")
+    void doesNotWarnOtherwise() {
+        assertThat(warningsFrom(SourceDescription.undeclared(),
+                typed(Set.of(), List.of("parcel-ref"), Map.of()),
+                typed(Set.of("PARCEL"), List.of("parcel-ref"), Map.of()),
+                typed(Set.of("DEPOT", "PARCEL"), List.of(), Map.of()),
+                typed(Set.of("DEPOT", "PARCEL"), List.of("parcel-ref", "depot-ref"),
+                        Map.of("parcel-ref", "PARCEL", "depot-ref", "DEPOT")))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("the WARN never refuses: a source with an untyped namespace still builds")
+    void warnNeverRefuses() {
+        assertThat(build(new DescribedAdapter("alpha", typed(Set.of("DEPOT", "PARCEL"), List.of("parcel-ref"),
+                Map.of()))).entries()).hasSize(1);
     }
 }

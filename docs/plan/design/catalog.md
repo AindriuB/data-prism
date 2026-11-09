@@ -51,7 +51,7 @@ An adapter describes itself in one immutable value, read once at startup and hel
 | `entityTypes` | The entity types the source can answer, opaque labels matching `[A-Za-z][A-Za-z0-9_-]{0,63}` (the same grammar as `dataprism.audit.entity-types`). Empty means "not declared": the source is treated as serving any entity type, as every source does today | `entityTypes` |
 | `aliasDescription` | Neutral text shown when the source is shown under an alias. Must not identify the real system (section 2) | `description` when labels are aliases |
 | `realDescription` | Text that may name the real system. Shown only when real names are in effect (section 3). Absent means the alias description is used | `description` when labels are real names |
-| `inputKeys` | The key namespaces (`KeyNamespace` of `key-resolvers.md`) the source accepts as its subject key. This is the declaration the link builder reads (`key-resolvers.md` section 7) | `inputKeys` |
+| `inputKeys` | The key namespaces (`KeyNamespace` of `key-resolvers.md`) the source accepts as its subject key. This is the declaration the link builder reads (`key-resolvers.md` section 7); a source with several `entityTypes` is a link target only for the namespaces `namespaceTypes` maps (task 252) | `inputKeys` |
 | `cost` | Advisory hint about the cost of one read: `LOW`, `MEDIUM`, `HIGH`. It does not change how the read budget is charged (OD-C12) | `cost` |
 | `freshness` | Advisory hint about how current the data is: `LIVE`, `NEAR_LIVE`, `HOURLY`, `DAILY`, `PERIODIC` | `freshness` |
 | Output model | The model the source returns. Not a new declaration: it is `responseType()`, and `describe_source` reads its protection from the same classification the scrubber applies (section 4) | `fields` |
@@ -86,7 +86,8 @@ public record SourceDescription(
         String realDescription,        // nullable: absent means "use the alias description"
         List<KeyNamespace> inputKeys,
         CostHint cost,                 // nullable
-        FreshnessHint freshness) {     // nullable
+        FreshnessHint freshness,       // nullable
+        Map<KeyNamespace, String> namespaceTypes) { // task 252: entity type read by each input namespace
 
     public static SourceDescription undeclared() { /* empty sets, null texts and hints */ }
 }
@@ -95,6 +96,8 @@ public enum CostHint { LOW, MEDIUM, HIGH }
 
 public enum FreshnessHint { LIVE, NEAR_LIVE, HOURLY, DAILY, PERIODIC }
 ```
+
+`namespaceTypes` (task 252, as built) maps an input namespace to the entity type a read keyed by it answers. Each key must be in `inputKeys` and each value in `entityTypes`, or construction is refused. A source declaring no entity type is read as the sentinel `entity` (`SourceDescription.UNDECLARED_ENTITY_TYPE`); one declared type needs no mapping; several declared types need an entry per input namespace, and a namespace without one makes the source not a link target (`key-resolvers.md`, "Type eligibility"). The six-argument constructor stays and declares no mapping. The example below of a source holding `DEPOT` and `PARCEL` and accepting two keys is therefore a link target only if it maps both keys.
 
 An adapter that does not override `description()` behaves exactly as today: it is listed with a generated description, no declared entity types (so it serves any), no input keys (so it is never the target of a link and can only be chosen by a human-supplied subject key), and no hints. `KeyNamespace` is declared as a nested record of `KeyResolver` in `key-resolvers.md`; it is used here by an SPI that is not a resolver, so 0.8 should hoist it to a top-level type in `...core.spi` (a note for the 0.8 build, not a decision).
 
@@ -329,7 +332,7 @@ The second entry is a source with no alias description, shown with the generated
 
 ### Audit
 
-One event per call, as every tool. (Task 300, open, makes this true for a schema-invalid call too: until it lands the MCP SDK refuses such a call before the handler runs, so it is neither authenticated nor audited. 300 turns SDK input validation off and validates in the handler.)
+One event per call, as every tool. Since task 300 this holds for a schema-invalid call too: SDK input validation is off on both transports and the handler validates (`ToolInput`) after authentication, authorisation and scope, refusing `TOOL_INPUT_INVALID` with one DENY event. What the SDK still refuses before any handler, unaudited: a `tools/call` envelope that is malformed (`params` or `name` missing, `arguments` not an object) and an unknown tool name.
 
 | Field | Value |
 |---|---|
@@ -822,7 +825,7 @@ Checked for collisions against `docs/tools.md`, `docs/audit.md`, `docs/configura
 | `SourceCatalog` | startup registry | 0.8 | none |
 | `SourceVisibility` | permission predicate | 0.8 (allow-all until 0.9; OD-C5) | none |
 | `ListSourcesTool`, `DescribeSourceTool`, `DescribeEntityModelTool` | MCP tool classes | 0.8, 0.8, 0.9 | `GetEntityContextTool` (pattern, not a clash) |
-| `description`, `entity-types` (under `description:` only), `alias-description`, `real-description`, `input-keys`, `cost`, `freshness` | `json-sources` entry keys under `description:` | 0.8 | `model-version`, `fields` (siblings; no overlap) |
+| `description`, `entity-types` (under `description:` only), `alias-description`, `real-description`, `input-keys`, `namespace-types`, `cost`, `freshness` | `json-sources` entry keys under `description:` | 0.8 | `model-version`, `fields` (siblings; no overlap) |
 | `labels` | result field (`ALIAS`, `REAL`) | 0.8 | none |
 | `source`, `entityTypes`, `inputKeys`, `cost`, `freshness`, `undeclared`, `fields` | result fields of `list_sources` and `describe_source` | 0.8 | `entityType` (singular, the existing request field); `entityTypes()` on the MCP tool options and `dataprism.audit.entity-types` mean the audited entity types, a different list on the server side, never a result field; `sources` in `get_entity_context` is an object, `sources` here is an array in another tool |
 | `path`, `protection`, `valueNamespace` | `describe_source` field entry keys | 0.8 | `namespace` in descriptors (means `PrivacyNamespace`; `valueNamespace` is the same meaning, `keyNamespace` is the link meaning) |

@@ -15,6 +15,7 @@ import io.github.aindriub.dataprism.core.policy.PrivacyPolicyResolver;
 
 import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 import io.github.aindriub.dataprism.core.refusal.RefusalPaths;
+import io.github.aindriub.dataprism.core.spi.ChainableField;
 import io.github.aindriub.dataprism.core.spi.FieldMetadataResolver;
 import io.github.aindriub.dataprism.core.spi.ScrubbingEngine;
 import io.github.aindriub.dataprism.core.spi.SyntheticValueSource;

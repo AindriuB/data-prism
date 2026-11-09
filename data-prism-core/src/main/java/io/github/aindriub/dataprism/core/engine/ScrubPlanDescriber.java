@@ -10,6 +10,7 @@ import io.github.aindriub.dataprism.core.model.ModelDescription.Undeclared;
 import io.github.aindriub.dataprism.core.model.PrivacyContext;
 import io.github.aindriub.dataprism.core.policy.EffectivePrivacyPolicy;
 import io.github.aindriub.dataprism.core.policy.PrivacyPolicyResolver;
+import io.github.aindriub.dataprism.core.spi.ChainableField;
 import io.github.aindriub.dataprism.core.spi.FieldMetadataResolver;
 import io.github.aindriub.dataprism.core.spi.KeyNamespace;
 

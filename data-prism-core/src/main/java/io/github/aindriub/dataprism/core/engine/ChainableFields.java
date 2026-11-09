@@ -4,6 +4,7 @@ import io.github.aindriub.dataprism.annotations.Chainable;
 import io.github.aindriub.dataprism.core.descriptor.DescriptorFieldMetadataResolver;
 import io.github.aindriub.dataprism.core.descriptor.ModelDescriptor;
 import io.github.aindriub.dataprism.core.model.FieldMetadata;
+import io.github.aindriub.dataprism.core.spi.ChainableField;
 import io.github.aindriub.dataprism.core.spi.FieldMetadataResolver;
 import io.github.aindriub.dataprism.core.spi.KeyNamespace;
 
