@@ -261,6 +261,9 @@ public final class DataPrismMcpServer {
                 .jsonMapper(wiring.json())
                 .contextExtractor(contextExtractor)
                 .mcpEndpoint(endpointPath)
+                // SDK 2.1.0 sweeps idle sessions on a non-daemon thread that closeGracefully never
+                // stops, so a failed start would leave the JVM up. Null keeps the 2.0.1 lifetime.
+                .sessionSweepInterval(null)
                 .build();
 
         McpSyncServer server = syncServer(wiring, transport);

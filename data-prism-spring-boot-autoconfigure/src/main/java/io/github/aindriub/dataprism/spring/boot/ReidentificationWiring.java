@@ -53,13 +53,14 @@ class ReidentificationWiring {
      */
     @Bean @ConditionalOnProperty(prefix = "dataprism.hazelcast", name = "topology", havingValue = "embedded")
     static BeanPostProcessor dataPrismReidentificationIndexFeed(ObjectProvider<PrivacyCluster> cluster,
-            ObjectProvider<PrivacyMetrics> metrics) {
+            ObjectProvider<PrivacyMetrics> metrics, ObjectProvider<DataPrismProperties> properties) {
         return new BeanPostProcessor() {
             @Override
             public Object postProcessAfterInitialization(Object bean, String beanName) {
                 if (bean instanceof SyntheticValueSource source && !(bean instanceof CachingSyntheticValueSource)) {
                     return new CachingSyntheticValueSource(source, cluster.getObject(),
-                            metrics.getIfAvailable(PrivacyMetrics::none));
+                            metrics.getIfAvailable(PrivacyMetrics::none),
+                            properties.getObject().getHazelcast().getLockTimeout());
                 }
                 return bean;
             }
