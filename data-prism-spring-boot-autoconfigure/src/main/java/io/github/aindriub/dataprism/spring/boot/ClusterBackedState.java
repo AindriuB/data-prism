@@ -21,13 +21,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
-import org.springframework.beans.factory.support.RootBeanDefinition;
+import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
+import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Lazy;
 
 import java.util.OptionalInt;
@@ -45,6 +46,7 @@ import java.util.OptionalInt;
 @ConditionalOnClass(HazelcastInstance.class)
 @ConditionalOnProperty(prefix = "dataprism.hazelcast", name = "topology", havingValue = "embedded")
 @Configuration(proxyBeanMethods = false)
+@Import(ClusterSecurityHealth.class)
 class ClusterBackedState {
     private static final Logger LOG = LoggerFactory.getLogger(ClusterBackedState.class);
 
@@ -111,13 +113,18 @@ class ClusterBackedState {
      * Whether the bean was built by {@link #dataPrismPrivacyCluster}, told by its definition's factory method and not
      * by its name: an application bean may carry the same name.
      */
-    private static boolean builtHere(ConfigurableListableBeanFactory beans, String name) {
+    static boolean builtHere(ConfigurableListableBeanFactory beans, String name) {
         // A singleton registered by hand has no definition, and so was not built here.
-        return beans.containsBeanDefinition(name)
-                && beans.getMergedBeanDefinition(name) instanceof RootBeanDefinition root
-                && root.getResolvedFactoryMethod() != null
-                && root.getResolvedFactoryMethod().getDeclaringClass() == ClusterBackedState.class
-                && "dataPrismPrivacyCluster".equals(root.getResolvedFactoryMethod().getName());
+        if (!beans.containsBeanDefinition(name)) {
+            return false;
+        }
+        // Read from the definition's names, not a resolved method, so it answers before any bean is created.
+        BeanDefinition definition = beans.getBeanDefinition(name);
+        String factoryBean = definition.getFactoryBeanName();
+        return factoryBean != null
+                && "dataPrismPrivacyCluster".equals(definition.getFactoryMethodName())
+                && beans.containsBeanDefinition(factoryBean)
+                && ClusterBackedState.class.getName().equals(beans.getBeanDefinition(factoryBean).getBeanClassName());
     }
 
     /**

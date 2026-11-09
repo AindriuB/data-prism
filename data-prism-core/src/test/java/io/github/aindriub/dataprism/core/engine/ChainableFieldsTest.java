@@ -9,6 +9,7 @@ import io.github.aindriub.dataprism.annotations.SensitiveData;
 import io.github.aindriub.dataprism.annotations.SensitiveObject;
 import io.github.aindriub.dataprism.annotations.SubjectIdentifier;
 import io.github.aindriub.dataprism.core.descriptor.ModelDescriptor;
+import io.github.aindriub.dataprism.core.spi.ChainableField;
 import io.github.aindriub.dataprism.core.spi.KeyNamespace;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

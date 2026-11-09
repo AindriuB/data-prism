@@ -1,8 +1,9 @@
 package io.github.aindriub.dataprism.orchestration.links;
 
 import io.github.aindriub.dataprism.core.descriptor.ModelDescriptor;
-import io.github.aindriub.dataprism.core.engine.ChainableField;
+import io.github.aindriub.dataprism.core.spi.ChainableField;
 import io.github.aindriub.dataprism.core.engine.ChainableFields;
+import io.github.aindriub.dataprism.core.spi.ChainableView;
 import io.github.aindriub.dataprism.core.engine.SourceTree;
 import io.github.aindriub.dataprism.core.link.FollowPayload;
 import io.github.aindriub.dataprism.core.link.LinkBinding;
@@ -30,6 +31,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiFunction;
 import java.util.function.Predicate;
 
 /**
@@ -98,11 +100,24 @@ public final class LinkBuilder {
     private final KeyResolvers resolvers;
     private final Map<String, ModelDescriptor> descriptors;
     private final Clock clock;
+    private final BiFunction<String, Object, Optional<ChainableView>> views;
     private final SecureRandom random = new SecureRandom();
     private final Map<Class<?>, Optional<List<ChainableField>>> fieldsByType = new ConcurrentHashMap<>();
 
     public LinkBuilder(LinkCodec codec, int maxPerResponse, KeyResolvers resolvers,
                        Map<String, ModelDescriptor> descriptors, Clock clock) {
+        this(codec, maxPerResponse, resolvers, descriptors, clock, (name, record) -> Optional.empty());
+    }
+
+    /**
+     * @param views what the scrubbing engine says about a record, by source name and record: asked first, and an
+     *              empty answer leaves the decision to the record's class. Never cached, because two sources can
+     *              share one record class and declare different fields.
+     */
+    public LinkBuilder(LinkCodec codec, int maxPerResponse, KeyResolvers resolvers,
+                       Map<String, ModelDescriptor> descriptors, Clock clock,
+                       BiFunction<String, Object, Optional<ChainableView>> views) {
+        this.views = Objects.requireNonNull(views, "views");
         this.codec = Objects.requireNonNull(codec, "codec");
         if (maxPerResponse < 1 || maxPerResponse > 500) {
             throw new IllegalArgumentException("INVALID_LINK_LIMIT: max-per-response must be 1 to 500");
@@ -189,15 +204,22 @@ public final class LinkBuilder {
 
     private void collect(Origin origin, SourceLabels labels, Predicate<String> nameIsSafe,
                          List<Candidate> out, Map<String, Integer> omittedByOrigin) {
-        List<ChainableField> fields = chainableFields(origin.record().getClass());
-        if (fields.isEmpty()) {
-            return;
-        }
+        List<ChainableField> fields;
         JsonNode tree;
         try {
-            tree = SourceTree.of(origin.record());
+            Optional<ChainableView> view = views.apply(origin.name(), origin.record());
+            if (view.isPresent()) {
+                fields = view.get().fields();
+                tree = view.get().tree();
+            } else {
+                fields = chainableFields(origin.record().getClass());
+                tree = fields.isEmpty() ? null : SourceTree.of(origin.record());
+            }
         } catch (RuntimeException unreadable) {
             return; // fail closed: no link from a record the engine cannot read
+        }
+        if (fields.isEmpty() || tree == null) {
+            return;
         }
         // One link per distinct key toward a target, at its first index in path order (OD-14).
         Set<String> seen = new LinkedHashSet<>();

@@ -151,6 +151,20 @@ public interface DataSourceAdapter<T> {
   read — never a caller-supplied URL, path or query
   (`data-prism-core/src/main/java/io/github/aindriub/dataprism/core/spi/DataRequest.java:6-12`).
 
+- `description()` is optional. It tells the catalog what the source holds:
+  `entityTypes`, the `inputKeys` it accepts as a subject key (a `KeyNamespace`
+  each), advisory `cost` and `freshness`, and neutral texts. The default
+  declares nothing. A source is a target of a sealed link only for a key
+  namespace in `inputKeys`. If it declares several `entityTypes`, it must also
+  say which type a read keyed by each namespace answers, with the
+  `namespaceTypes` map of `SourceDescription` (each key one of `inputKeys`,
+  each value one of `entityTypes`; anything else is refused when the
+  description is built). Without a mapping for a namespace, a source with
+  several types is not a link target for it: no link is issued and an old link
+  is refused. A source with no declared type, or exactly one, needs no mapping.
+  The unmapped case is easy to miss: declare the mapping whenever you list
+  more than one type and any input key.
+
 The worked implementation:
 
 ```java

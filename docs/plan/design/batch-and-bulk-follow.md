@@ -93,7 +93,7 @@ The schema replaces the one in `catalog.md` section 3 (the two filters are uncha
 Rules for a call that carries `page`:
 
 1. `entityType`, `keyNamespace` and `pageSize` may be absent, or present and equal to the values the link was issued for. Present and different is refused as an invalid link (the filters are in the sealed payload, section A.4). A client that wants a different listing starts again without `page`.
-2. The maximum length follows `dataprism.links.max-length`; the served schema is generated from the configured value, as for `follow`. A client that ignores the schema gets the same refusal. (Task 300, open: until it lands the MCP SDK refuses a schema-invalid call before the handler runs, with its own text, no authentication, no audit event and no link-limiter count; 300 validates in the handler so the refusal is the one described here and the attempt is audited and counted.)
+2. The maximum length follows `dataprism.links.max-length`; the served schema is generated from the configured value, as for `follow`. A client that ignores the schema gets the same refusal. (Task 300, built: the handler validates, so a schema-invalid call is authenticated, audited and counted. A `page` that breaks the schema is a forged link: over the configured length it is audited `REFUSED:LINK_TOO_LONG`, any other schema-breaking `page` `REFUSED:LINK_MALFORMED`, both counted by the limiter; a genuine token beside any other invalid field is refused too and never resumes a page.)
 
 ### A.3 Output schema
 
@@ -1120,7 +1120,7 @@ Checked for collisions against `docs/tools.md`, `docs/audit.md`, `docs/configura
 | `LINK_WRONG_TOOL`, `LINK_FILTER_MISMATCH`, `LINK_LABELS_CHANGED`, `LINK_CATALOG_CHANGED` | audit-only reason codes (shape C) | 0.8 | the eleven `LINK_<REASON>` codes (`DEPTH_EXCEEDED` withdrawn, OD-200-8) of task 191 (siblings; `LINK_ORIGIN_DRIFT` and `LINK_EXPIRED` are reused from them) |
 | `dataprism.paging.list-sources.page-size`, `.max-page-size`, `dataprism.paging.lifetime` | configuration keys | 0.8 | `dataprism.links.lifetime` (the link default; this one caps page links) |
 | `INVALID_PAGING_SETTING` | startup refusal code | 0.8 | `INVALID_CATALOG_SETTING`, `INVALID_LINK_LIMIT` (siblings) |
-| `PAGING_KEY_REQUIRED` | startup refusal code (OD-B2 (a)) | 0.8 | `LINK_KEY_UNRESOLVED` (siblings) |
+| `MISSING_PAGING_KEY` | startup refusal code (OD-B2 (a)); built as `MISSING_PAGING_KEY` in task 254, not `PAGING_KEY_REQUIRED` | 0.8 | `MISSING_CLUSTER_KEY`, `LINK_KEY_UNRESOLVED` (siblings) |
 | relation byte `0x02` (catalog page), `0x03` (collection page), `0x04` (group) | link relation codes | 0.8 (`0x02`), 0.9 (`0x03`, `0x04`) | `0x00`, `0x01` of task 191 |
 | `rel: "page"` | `_links` / `next` relation value | 0.9 | `direct`, `translated` (task 191) |
 | `dataprism.paging.pages` | metric (counter, closed labels) | 0.8 | `dataprism.links.keys.loaded` (sibling group) |

@@ -6,6 +6,8 @@ import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.SensitiveObject;
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
+import io.github.aindriub.dataprism.core.spi.ChainableField;
+import io.github.aindriub.dataprism.core.spi.ChainableView;
 import io.github.aindriub.dataprism.core.engine.DefaultFieldMetadataResolver;
 import io.github.aindriub.dataprism.core.limits.InMemoryScopeBudget;
 import io.github.aindriub.dataprism.core.limits.RequestLimits;
@@ -42,6 +44,9 @@ import io.github.aindriub.dataprism.orchestration.SourceCircuitBreaker;
 import io.github.aindriub.dataprism.orchestration.SourceFanOut;
 import io.github.aindriub.dataprism.orchestration.SourceFanOutOptions;
 import io.github.aindriub.dataprism.orchestration.SourceResult;
+import io.github.aindriub.dataprism.orchestration.catalog.RealNamesPolicy;
+import io.github.aindriub.dataprism.orchestration.catalog.SourceCatalog;
+import io.github.aindriub.dataprism.orchestration.catalog.SourceLabels;
 import io.github.aindriub.dataprism.orchestration.catalog.SourceVisibility;
 import io.github.aindriub.dataprism.pseudonymisation.HmacValueTokenSource;
 import io.github.aindriub.dataprism.pseudonymisation.StaticSecretKeyProvider;
@@ -62,6 +67,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiFunction;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -630,5 +636,78 @@ public class LinkBuilderTest {
                 .findFirst().orElseThrow();
         assertThat(origin.links()).isEmpty();
         assertThat(origin.linksOmitted()).isEqualTo(1);
+    }
+
+    // ---- links that follow what the engine says about the record (task 301) ----
+
+    /** One class that stands for the response of every configured source. */
+    public record Blob(String note) {
+    }
+
+    private static Optional<ChainableView> viewOf(String field, String namespace, String value) {
+        return Optional.of(new ChainableView(List.of(new ChainableField(field, new KeyNamespace(namespace), false)),
+                MAPPER.createObjectNode().put(field, value)));
+    }
+
+    private static LinkBuilder.Result buildWith(Rig rig, BiFunction<String, Object, Optional<ChainableView>> views,
+                                                String... origins) {
+        LinkBuilder builder = new LinkBuilder(rig.codec(), 50, new KeyResolvers(List.of()), Map.of(), rig.clock, views);
+        SourceLabels labels = SourceLabels.forRequest(SourceCatalog.build(rig.adapters, Map.of()),
+                SourceVisibility.allowAll(), new SourceAliasing(new HmacValueTokenSource(rig.keys)),
+                RealNamesPolicy.none(), caller(), context());
+        List<LinkBuilder.Origin> answered = new ArrayList<>();
+        for (String origin : origins) {
+            answered.add(new LinkBuilder.Origin(origin, labels.labelOf(origin), new Blob("x")));
+        }
+        return builder.build(answered, labels, Rig.binding(), name -> true);
+    }
+
+    @Test
+    void twoSourcesSharingOneRecordClassEachIssueLinksFromTheirOwnDeclaredField() {
+        Rig rig = rig().source("a-origin", new Blob("x")).source("b-origin", new Blob("x"))
+                .source("parcel-api", new Plain("p"), "parcel-ref").source("depot-api", new Plain("d"), "depot-ref");
+        BiFunction<String, Object, Optional<ChainableView>> views = (name, record) ->
+                name.equals("a-origin") ? viewOf("parcel", "parcel-ref", "P-1") : viewOf("depot", "depot-ref", "D-1");
+
+        LinkBuilder.Result result = buildWith(rig, views, "a-origin", "b-origin");
+
+        String parcelLabel = new SourceAliasing(new HmacValueTokenSource(rig.keys)).aliasFor("parcel-api", context());
+        String depotLabel = new SourceAliasing(new HmacValueTokenSource(rig.keys)).aliasFor("depot-api", context());
+        List<IssuedLink> fromA = result.bySource().values().stream().flatMap(l -> l.links().stream())
+                .filter(l -> l.field().equals("parcel")).toList();
+        List<IssuedLink> fromB = result.bySource().values().stream().flatMap(l -> l.links().stream())
+                .filter(l -> l.field().equals("depot")).toList();
+        assertThat(result.issued()).isEqualTo(2);
+        assertThat(fromA).extracting(IssuedLink::target).containsExactly(parcelLabel);
+        assertThat(fromB).extracting(IssuedLink::target).containsExactly(depotLabel);
+    }
+
+    @Test
+    void aViewThatThrowsGivesNoLinkAndNoException() {
+        Rig rig = rig().source("a-origin", new Blob("x")).source("parcel-api", new Plain("p"), "parcel-ref");
+
+        LinkBuilder.Result result = buildWith(rig, (name, record) -> {
+            throw new IllegalStateException("boom");
+        }, "a-origin");
+
+        assertThat(result.issued()).isZero();
+        assertThat(result.bySource()).isEmpty();
+    }
+
+    @Test
+    void anEmptyViewFallsBackToTheClassPath() {
+        Rig rig = rig().source("parcel-api", new Plain("p"), "parcel-ref");
+        rig.source("origin-api", parcel());
+        LinkBuilder builder = new LinkBuilder(rig.codec(), 50, new KeyResolvers(List.of()), Map.of(), rig.clock,
+                (name, record) -> Optional.empty());
+        SourceLabels labels = SourceLabels.forRequest(SourceCatalog.build(rig.adapters, Map.of()),
+                SourceVisibility.allowAll(), new SourceAliasing(new HmacValueTokenSource(rig.keys)),
+                RealNamesPolicy.none(), caller(), context());
+
+        LinkBuilder.Result result = builder.build(
+                List.of(new LinkBuilder.Origin("origin-api", labels.labelOf("origin-api"), parcel())), labels,
+                Rig.binding(), name -> true);
+
+        assertThat(result.issued()).isEqualTo(1);
     }
 }

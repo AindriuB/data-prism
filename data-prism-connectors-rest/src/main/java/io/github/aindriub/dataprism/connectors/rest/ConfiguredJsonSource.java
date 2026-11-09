@@ -1,6 +1,6 @@
 package io.github.aindriub.dataprism.connectors.rest;
 
-import io.github.aindriub.dataprism.core.engine.ChainableField;
+import io.github.aindriub.dataprism.core.spi.ChainableField;
 import io.github.aindriub.dataprism.core.model.FieldMetadata;
 import io.github.aindriub.dataprism.core.spi.SourceDescription;
 

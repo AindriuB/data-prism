@@ -1,6 +1,4 @@
-package io.github.aindriub.dataprism.core.engine;
-
-import io.github.aindriub.dataprism.core.spi.KeyNamespace;
+package io.github.aindriub.dataprism.core.spi;
 
 import java.util.Objects;
 
