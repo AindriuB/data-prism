@@ -1,9 +1,10 @@
-package io.github.aindriub.dataprism.orchestration.links;
+package io.github.aindriub.dataprism.orchestration;
 
 import io.github.aindriub.dataprism.core.correlation.ExternalCorrelationId;
 
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * What a {@code follow} caller asked for: one sealed link, and nothing else. Scope, principal, purpose and case
@@ -14,10 +15,12 @@ import java.util.Optional;
  * @param toolName              the name the call is audited under
  * @param approvalId            the four-eyes approval this call runs under, or {@code ""}
  * @param approverId            the second principal who approved it, or {@code ""}
+ * @param rejectedArguments     the names, never the values, of reserved arguments the caller sent and the tool
+ *                              refused to honour; recorded in the audit event
  * @param externalCorrelationId the caller's own correlation id, read from the transport context; never null
  */
 public record FollowRequest(String link, String toolName, String approvalId, String approverId,
-                            Optional<ExternalCorrelationId> externalCorrelationId) {
+                            Set<String> rejectedArguments, Optional<ExternalCorrelationId> externalCorrelationId) {
 
     /** The tool every {@link #of} request is audited under. */
     public static final String DEFAULT_TOOL_NAME = "follow";
@@ -29,12 +32,13 @@ public record FollowRequest(String link, String toolName, String approvalId, Str
         }
         approvalId = approvalId == null ? "" : approvalId;
         approverId = approverId == null ? "" : approverId;
+        rejectedArguments = rejectedArguments == null ? Set.of() : Set.copyOf(rejectedArguments);
         externalCorrelationId = externalCorrelationId == null ? Optional.empty() : externalCorrelationId;
     }
 
     /** A request for {@code link} with no approval and no external correlation id. */
     public static FollowRequest of(String link) {
-        return new FollowRequest(link, DEFAULT_TOOL_NAME, "", "", Optional.empty());
+        return new FollowRequest(link, DEFAULT_TOOL_NAME, "", "", Set.of(), Optional.empty());
     }
 
     /** Shows no token. */

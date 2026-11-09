@@ -855,7 +855,7 @@ operate them exist on a second port and are described in
 
 | Property | Default | Meaning |
 |---|---|---|
-| `approval-required-tools` | empty | Tools whose calls need a human approval first. Only `get_entity_context` and `compare_entity_sources` are valid |
+| `approval-required-tools` | empty | Tools whose calls need a human approval first. Only `get_entity_context`, `compare_entity_sources`, `follow`, `list_sources` and `describe_source` are valid |
 | `approval-ttl` | `PT15M` | How long an approval request stays usable |
 | `caller-rate-limit.requests` | unset | Requests one caller may make per window; unset means no limit |
 | `caller-rate-limit.window` | `PT1M` | The rate-limit window |
@@ -874,7 +874,7 @@ joined one cluster. With `single-node` they are per process. See
 
 | Code | Condition |
 |---|---|
-| `UNKNOWN_OVERSIGHT_TOOL` | An approval-required tool name that is neither `get_entity_context` nor `compare_entity_sources` |
+| `UNKNOWN_OVERSIGHT_TOOL` | An approval-required tool name that is not one of `get_entity_context`, `compare_entity_sources`, `follow`, `list_sources` and `describe_source` |
 | `INVALID_OVERSIGHT_LIMIT` | A non-positive `requests`, `window`, `approval-ttl` or `max-pending-per-requester`, here or under `dataprism.reidentification` |
 | `OVERSIGHT_REQUIRES_OPERATOR_SURFACE` | Approval-required tools or a rate limit configured without `dataprism.operator.enabled=true` |
 
