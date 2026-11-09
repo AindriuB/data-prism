@@ -356,8 +356,8 @@ Obligations for the 0.8.0 release cut (no brief filed yet; whoever files it copi
 - Decide the Sonatype Central File Count choice (owner decision 2026-11-04; see the open item near the top). The grace period ends 2026-11-08; the release can be deferred.
 - Done 2026-11-06: task 299 has merged (PR #216) and 254 (PR #221) builds the `CatalogQueries` bean from the orchestrator, so `describe_source` describes configured sources in a running deployment. The obligation is met.
 - Done 2026-11-06: task 300 has merged (PR #220). SDK input validation is off on both transports and all four tools validate in the handler. `follow` (253) must use `ToolInput`, and `EveryToolValidatesInputTest` needs an edit when `follow` lands, or the obligation lapses for the fifth tool.
-- Task 301 must land before 255 enables links and before the cut: configured JSON sources issue no links until it does, and a multi-type configured source cannot declare its type mapping.
-- Task 302 must land before the cut: the MCP SDK logs the raw JSON-RPC message, client identifiers included, at DEBUG on stdio and streamable HTTP, and nothing pins those loggers.
+- Done 2026-11-07: task 301 has merged (PR #224), so configured JSON sources issue links and a multi-type configured source can declare its type mapping. The obligation is met.
+- Done 2026-11-09: task 302 has merged (PR #227) and pins the `io.modelcontextprotocol` logger to WARN on the Spring Boot path, so the SDK no longer logs raw JSON-RPC messages at DEBUG there. The obligation is met.
 - 261 upgrade note (from 254): `dataprism.limits.max-sources` below 8 refuses startup unless `dataprism.catalog.unselected-source-limit` is lowered to at most `max-sources`. 261 also adds `TOOL_INPUT_INVALID` to `docs/tools.md`.
 - Publish the 0.7.x security advisory with the release (draft GHSA-hcfg-rxg3-mgw6, not published; owner decision 2026-11-06: no 0.7.2). Publish it alongside the GHSA-f94h-6mxv-c957 update below.
 - Keep `compose.yaml` and `docker/multi-instance/kubernetes.yaml` on the version-literal list, and confirm that no image reference is older than the released version.
