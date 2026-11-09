@@ -1,4 +1,4 @@
-# 303 — Diagnose and fix the MemberCardTest pause-digest flake
+# 303 — Diagnose and fix two MemberCardTest flakes
 
 **Repo:** .
 **Depends on:** none
@@ -8,11 +8,11 @@
   **only if outcome (b) below is proven**; list every such file in the PR body
 
 ## Goal
-`MemberCardTest.aCardCarriesTheNoDocumentMarkerUntilAMainDocumentExistsThenTheDigestOfWhatItHolds`
-failed once in CI and passed on rerun. Find out whether the test or the product is wrong, prove it, and fix that
-one. Do not decide the outcome from the hypothesis below; decide it from evidence.
+Two MemberCardTest tests (listed under "The failure") each failed once in CI and passed on rerun. For each, find
+out whether the test or the product is wrong, prove it, and fix that one. Do not decide an outcome from a hypothesis; decide it from evidence.
 
 ## The failure
+1. `aCardCarriesTheNoDocumentMarkerUntilAMainDocumentExistsThenTheDigestOfWhatItHolds`
 - 2026-11-09, PR #227 (task 302: an MCP SDK logger pin, no Hazelcast code), CI run 42684474153, job
   129387467821, `build (21)`. `build (25)` passed on the same commit; `main` at 35e78b2c passed.
 - `MemberCardTest.java:1830`: `expected: Digest[...] but was: Digest[...]`, two different digests.
@@ -22,6 +22,15 @@ one. Do not decide the outcome from the hypothesis below; decide it from evidenc
 - Hypothesis, unproven: the wait accepts any non-null digest, so a card written from an earlier version of the
   held document (for example the empty-document digest, before the pause element lands) satisfies it, and the
   equality then races the next card write.
+
+2. `aStartThatEndsWithAnErrorLeavesTheLiveSetStopsItsExecutorAndAllowsALaterWrapperToStart`
+- 2026-11-09, PR #230 (task 303's own docs-only PR), CI run 42689565210, job 129405395196, `build (25)`.
+  `build (21)` passed on the same commit.
+- `MemberCardTest.java:1767`: `Expecting value to be true but was false`, at
+  `assertThat(later.securityStatus().serving()).isTrue();`. After a start forced to fail through
+  `ClusterSentinel.afterWriteStarted`, a new wrapper started on the same instance is not serving at once.
+- Hypothesis, unproven: the serving check is read before the new wrapper's first card or instance verdict is in
+  place.
 
 ## Context
 - `docs/plan/design/cluster-security.md:271` (section 1.9, card v2: `pauseDigest` or the no-document marker,
@@ -38,27 +47,28 @@ one. Do not decide the outcome from the hypothesis below; decide it from evidenc
 - `docs/plan/known-flakes.md:24` — a fixed MemberCardTest row; follow its form (symptom, cause, how
   reproduced, change).
 
-## Decide between
+## Decide between (separately for each test)
 | Outcome | Proven when | Change |
 |---|---|---|
 | (a) test defect | Every digest the card shows in the failing window is one the held document really had at some point, and the card reaches `heldDigest()` within the design's bound. | Test only: wait until the card's digest **equals** `state.document().heldDigest()` (read inside the wait), then assert. |
 | (b) product defect | A card stays behind the held document longer than the design allows (a lost or never-submitted pass after `report`, a digest that skips the mark, or a card digest the document never held). | Fix in `data-prism-hazelcast` main code, plus a test that fails without the fix. Keep the test's exact-equality assertion. |
 
 ## Acceptance
-- [ ] AC1 The PR body states which outcome, (a) or (b), and the evidence for it: the sequence of digests the
+- [ ] AC1 For each test, the PR body states which outcome, (a) or (b), and the evidence for it: the sequence of digests the
   card showed against the held digest over time, and what produced each.
-- [ ] AC2 The failure is reproduced (a temporary latch, delay or loop that forces the interleaving, removed
+- [ ] AC2 Each failure is reproduced (a temporary latch, delay or loop that forces the interleaving, removed
   before merge or kept as a deterministic test), and the PR body says how. If it never reproduces, the PR body
   states the attempt count and method, and AC4's row is `open`, not `fixed`.
-- [ ] AC3 The assertion is not weakened to hide a real lag: no removed or loosened equality, no wait longer
-  than 30 s, no `isNotNull`-only check, no retry of the whole test, no `@Disabled`. Under (a) the wait's
-  predicate compares to `heldDigest()`; under (b) the original assertion stands.
-- [ ] AC4 The PR body carries a proposed `docs/plan/known-flakes.md` row for this test, in the form of line 24,
-  with run 42684474153 and status `fixed` (cause and change named) or `open` (per AC2). The scribe adds it;
+- [ ] AC3 In each test the assertion is not weakened to hide a real lag: no removed or loosened equality, no wait longer
+  than 30 s, no `isNotNull`-only check, no retry of the whole test, no `@Disabled`. For test 1 under (a) the wait's
+  predicate compares to `heldDigest()`; under (b) the original assertion stands. For test 2 under (a) the
+  test waits for a stated condition, not a sleep; under (b) the original assertion stands.
+- [ ] AC4 The PR body carries a proposed `docs/plan/known-flakes.md` row for each test, in the form of line 24,
+  with its run (42684474153 for test 1, 42689565210 for test 2) and status `fixed` (cause and change named) or `open` (per AC2). The scribe adds it;
   the implementer does not edit `known-flakes.md`.
-- [ ] AC5 Under (b) only: a new or changed test fails on `origin/main` without the product fix and passes
+- [ ] AC5 Per test, under (b) only: a new or changed test fails on `origin/main` without the product fix and passes
   with it; the PR body names it and shows the failing run.
-- [ ] AC6 `MemberCardTest` passes in full, and passes 20 consecutive runs of the target test with no failure.
+- [ ] AC6 `MemberCardTest` passes in full, and passes 20 consecutive runs of each target test with no failure.
 - [ ] AC7 The module's suite passes.
 
 ## Checks
@@ -67,7 +77,7 @@ one. Do not decide the outcome from the hypothesis below; decide it from evidenc
   report: `data-prism-hazelcast/target/surefire-reports/TEST-*MemberCardTest.xml`
   min-passing: 98  max-skipped: 0
 - `target-repeat` command — AC6
-  run: `for i in $(seq 20); do mvn -q -pl data-prism-hazelcast -am test -Dtest='MemberCardTest#aCardCarriesTheNoDocumentMarkerUntilAMainDocumentExistsThenTheDigestOfWhatItHolds' -Dsurefire.failIfNoSpecifiedTests=false || exit 1; done`
+  run: `for t in aCardCarriesTheNoDocumentMarkerUntilAMainDocumentExistsThenTheDigestOfWhatItHolds aStartThatEndsWithAnErrorLeavesTheLiveSetStopsItsExecutorAndAllowsALaterWrapperToStart; do for i in $(seq 20); do mvn -q -pl data-prism-hazelcast -am test -Dtest="MemberCardTest#$t" -Dsurefire.failIfNoSpecifiedTests=false || exit 1; done; done`
 - `hazelcast-module` test — AC7
   run: `mvn -q -pl data-prism-hazelcast -am test`
   report: `data-prism-hazelcast/target/surefire-reports/TEST-*.xml`
