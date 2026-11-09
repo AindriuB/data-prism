@@ -1,2 +1,4 @@
 org.springframework.boot.diagnostics.FailureAnalyzer=\
 io.github.aindriub.dataprism.spring.boot.DataPrismConfigurationFailureAnalyzer
+org.springframework.boot.EnvironmentPostProcessor=\
+io.github.aindriub.dataprism.spring.boot.McpSdkLogPin
