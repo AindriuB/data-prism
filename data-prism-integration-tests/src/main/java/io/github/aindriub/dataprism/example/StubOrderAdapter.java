@@ -1,11 +1,15 @@
 package io.github.aindriub.dataprism.example;
 
 import io.github.aindriub.dataprism.core.spi.DataRequest;
+import io.github.aindriub.dataprism.core.spi.CostHint;
 import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
+import io.github.aindriub.dataprism.core.spi.FreshnessHint;
+import io.github.aindriub.dataprism.core.spi.SourceDescription;
 
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** Stands in for an order API. Invented data; no real person is described. */
 public final class StubOrderAdapter implements DataSourceAdapter<OrderDto> {
@@ -29,6 +33,13 @@ public final class StubOrderAdapter implements DataSourceAdapter<OrderDto> {
     @Override
     public Class<OrderDto> responseType() {
         return OrderDto.class;
+    }
+
+    /** What the catalog says about this source. It declares no input key: it is where a link starts, not where one ends. */
+    @Override
+    public SourceDescription description() {
+        return new SourceDescription(Set.of("CUSTOMER"), "Order references and delivery notes",
+                "Order API: order references and delivery notes", List.of(), CostHint.MEDIUM, FreshnessHint.HOURLY);
     }
 
     @Override

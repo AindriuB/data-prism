@@ -1,10 +1,16 @@
 package io.github.aindriub.dataprism.example;
 
 import io.github.aindriub.dataprism.core.spi.DataRequest;
+import io.github.aindriub.dataprism.core.spi.CostHint;
 import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
+import io.github.aindriub.dataprism.core.spi.FreshnessHint;
+import io.github.aindriub.dataprism.core.spi.KeyNamespace;
+import io.github.aindriub.dataprism.core.spi.SourceDescription;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Stands in for a customer API.
@@ -30,6 +36,14 @@ public final class StubCustomerAdapter implements DataSourceAdapter<CustomerDto>
     @Override
     public Class<CustomerDto> responseType() {
         return CustomerDto.class;
+    }
+
+    /** What the catalog says about this source; the order source's {@code customerId} chains into it. */
+    @Override
+    public SourceDescription description() {
+        return new SourceDescription(Set.of("CUSTOMER"), "Contact details and lifecycle status",
+                "Customer API: contact details and lifecycle status", List.of(new KeyNamespace("customer-id")),
+                CostHint.LOW, FreshnessHint.LIVE);
     }
 
     @Override

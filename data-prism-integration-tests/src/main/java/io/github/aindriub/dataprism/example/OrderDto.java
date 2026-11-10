@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.example;
 
+import io.github.aindriub.dataprism.annotations.Chainable;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.InternalIdentifier;
 import io.github.aindriub.dataprism.annotations.LlmExposedModel;
@@ -13,6 +14,7 @@ import io.github.aindriub.dataprism.annotations.SensitiveData;
 public record OrderDto(
 
         @InternalIdentifier
+        @Chainable(keyNamespace = "customer-id")
         String customerId,
 
         @NonSensitive(reason = "Opaque order reference, meaningless outside the order system")
