@@ -744,4 +744,51 @@ class AuditFilePiiScanTest {
         }
         return dir;
     }
+
+    /**
+     * Task 255, over the real HTTP example with links enabled: the audit file written for {@code list_sources} (two
+     * pages), {@code describe_source}, {@code get_entity_context} with {@code _links}, a valid {@code follow} and an
+     * invalid one carries no raw identifier, link token or description text.
+     */
+    @Test
+    void auditFileOfTheLinkSurfaceCarriesNoIdentifierTokenOrDescription() throws IOException {
+        PiiLogScanTest.LinkHttpRun run = PiiLogScanTest.LinkHttpRun.shared();
+        List<String> lines = Files.readAllLines(run.auditFile, StandardCharsets.UTF_8);
+
+        assertThat(lines.size()).as("one record per call, or the scan proves nothing").isGreaterThanOrEqualTo(6);
+        assertThat(lines).anySatisfy(line -> assertThat(AuditRecordFormat.parse(line).fieldDispositions())
+                .containsEntry("link", "REFUSED:LINK_VERSION"));
+        assertThat(run.tokens).hasSizeGreaterThanOrEqualTo(2);
+        List<String> banned = linkBanned(run);
+        List<String> leaked = new ArrayList<>();
+        for (String line : lines) {
+            leaksIn(AuditRecordFormat.parse(line), banned).stream().filter(v -> !leaked.contains(v))
+                    .forEach(leaked::add);
+        }
+        assertThat(leaked).as("the audit file must not carry an identifier, a link token or a description").isEmpty();
+    }
+
+    /** The fixture identifiers, plus every link and page token the run met and the example's description texts. */
+    private static List<String> linkBanned(PiiLogScanTest.LinkHttpRun run) {
+        List<String> all = new ArrayList<>(BANNED_VALUES);
+        all.addAll(run.tokens);
+        all.addAll(PiiLogScanTest.DESCRIPTION_TEXTS);
+        return all;
+    }
+
+    /**
+     * The recorded mutation: a link token and a description text written into one more record (the field scan's own
+     * kind of record) are found, so the scan above can fail.
+     */
+    @Test
+    void auditFileLinkScanIsNotVacuous() throws IOException {
+        PiiLogScanTest.LinkHttpRun run = PiiLogScanTest.LinkHttpRun.shared();
+        AuditEvent clean = AuditRecordFormat.parse(Files.readAllLines(run.auditFile, StandardCharsets.UTF_8).get(0));
+        String token = run.tokens.iterator().next();
+
+        assertThat(leaksIn(clean, linkBanned(run))).isEmpty();
+        assertThat(leaksIn(eventWithInstanceId("writer-" + token), linkBanned(run))).contains(token);
+        assertThat(leaksIn(eventWithInstanceId("writer-" + PiiLogScanTest.DESCRIPTION_TEXTS.get(0)),
+                linkBanned(run))).contains(PiiLogScanTest.DESCRIPTION_TEXTS.get(0));
+    }
 }

@@ -190,4 +190,31 @@ class AuditFieldDispositionTest {
             collection.forEach(element -> collect(values, element));
         }
     }
+
+    /**
+     * The three keys the agent-led surface adds (task 255), over the real HTTP example with links enabled:
+     * {@code names} on every catalog and context call, {@code link} on a refused link and {@code catalog} only when a
+     * description could not be served. Their values are closed words, never a token, a source name or a description.
+     */
+    @Test
+    void namesCatalogAndLinkDispositionsAreRecordedAsClosedWordsOverHttp() throws IOException {
+        PiiLogScanTest.LinkHttpRun run = PiiLogScanTest.LinkHttpRun.shared();
+        List<Map<String, String>> all = run.events.stream().map(AuditEvent::fieldDispositions).toList();
+
+        assertThat(all).anySatisfy(d -> assertThat(d).containsKey("names"));
+        // A refused link says why in closed words; the run's invalid follow is the one such call.
+        assertThat(all).anySatisfy(d -> assertThat(d).containsEntry("link", "REFUSED:LINK_VERSION"));
+        // The catalog key is set only when a description could not be served; nothing in this run fails that way.
+        assertThat(all).noneSatisfy(d -> assertThat(d).containsKey("catalog"));
+        for (Map<String, String> dispositions : all) {
+            for (String key : List.of("names", "catalog", "link")) {
+                String value = dispositions.get(key);
+                if (value != null) {
+                    assertThat(value).as(key).matches("[A-Z][A-Za-z0-9_:\\-]{0,80}");
+                    assertThat(run.tokens).noneMatch(value::contains);
+                    assertThat(PiiLogScanTest.DESCRIPTION_TEXTS).noneMatch(value::contains);
+                }
+            }
+        }
+    }
 }

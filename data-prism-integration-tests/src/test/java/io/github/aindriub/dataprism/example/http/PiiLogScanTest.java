@@ -1,5 +1,31 @@
 package io.github.aindriub.dataprism.example.http;
 
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.crypto.RSASSASigner;
+import com.nimbusds.jose.jwk.JWKSet;
+import com.nimbusds.jose.jwk.RSAKey;
+import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.SignedJWT;
+import com.sun.net.httpserver.HttpsConfigurator;
+import com.sun.net.httpserver.HttpsServer;
+import io.github.aindriub.dataprism.spring.boot.HmacKeyReferenceResolver;
+import io.modelcontextprotocol.client.McpClient;
+import io.modelcontextprotocol.client.McpSyncClient;
+import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
+import org.springframework.boot.WebApplicationType;
+import org.springframework.boot.builder.SpringApplicationBuilder;
+import org.springframework.boot.web.server.servlet.context.ServletWebServerApplicationContext;
+import org.springframework.context.ConfigurableApplicationContext;
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
+import java.net.InetSocketAddress;
+import java.net.http.HttpRequest;
+import java.security.KeyStore;
+import java.time.temporal.ChronoUnit;
+import java.util.Date;
+import java.util.LinkedHashSet;
 import tools.jackson.core.json.JsonFactory;
 import tools.jackson.core.JsonParser;
 import tools.jackson.core.JsonToken;
@@ -64,7 +90,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -1368,5 +1393,277 @@ class PiiLogScanTest {
                     "could not find a repository root above " + Path.of("").toAbsolutePath());
         }
         return dir;
+    }
+
+    // ---- the agent-led surface over the real HTTP example (task 255) ---------------------------------------------
+
+    /** Description texts the example sources declare: catalog data that must reach a result and nothing else. */
+    static final List<String> DESCRIPTION_TEXTS = List.of("Contact details and lifecycle status",
+            "Customer API: contact details and lifecycle status", "Order references and delivery notes",
+            "Order API: order references and delivery notes");
+
+    private static final String LINK_HTTP_ISSUER = "data-prism-example";
+    private static final String LINK_HTTP_AUDIENCE = "data-prism-mcp";
+    private static final String LINK_HTTP_PASSWORD = "data-prism-test-only";
+
+    /**
+     * One run of the example application over HTTP with links enabled and one chainable field
+     * ({@code OrderDto.customerId}): {@code list_sources} on two pages, {@code describe_source},
+     * {@code get_entity_context} with {@code _links}, a valid {@code follow} and an invalid one. Everything the
+     * process logged and every audit event is captured, and every link or page token a result carried is kept, so a
+     * scan can look for it.
+     */
+    static final class LinkHttpRun {
+        final List<AuditEvent> events = new CopyOnWriteArrayList<>();
+        final List<String> surfaces = new ArrayList<>();
+        final Set<String> tokens = new LinkedHashSet<>();
+        String log = "";
+        boolean followed;
+        /** The audit records of the run, written by the file sink {@code AuditFilePiiScanTest} scans. */
+        Path auditFile;
+
+        private static LinkHttpRun shared;
+
+        /**
+         * The one run of this JVM. The JDK caches its default TLS context the first time the JWKS endpoint is
+         * contacted, so a second boot with its own trust store would be refused: the three scans share this run.
+         */
+        static synchronized LinkHttpRun shared() throws IOException {
+            if (shared == null) {
+                Path scratch = Files.createTempDirectory("link-http-run");
+                scratch.toFile().deleteOnExit();
+                Path file = scratch.resolve("audit.log");
+                LinkHttpRun run;
+                try (io.github.aindriub.dataprism.audit.sink.FileAuditSink sink =
+                             new io.github.aindriub.dataprism.audit.sink.FileAuditSink(file)) {
+                    run = execute(scratch, sink);
+                }
+                run.auditFile = file;
+                shared = run;
+            }
+            return shared;
+        }
+
+        static LinkHttpRun execute(Path scratch, AuditSink extraSink) {
+            LinkHttpRun run = new LinkHttpRun();
+            run.log = captureLogOutput(() -> {
+                try {
+                    run.drive(scratch, extraSink);
+                } catch (Exception e) {
+                    throw new IllegalStateException("the HTTP run failed: " + e.getClass().getSimpleName(), e);
+                }
+            });
+            return run;
+        }
+
+        private void drive(Path scratch, AuditSink extraSink) throws Exception {
+            RSAKey signingKey = new RSAKeyGenerator(2048).keyID("link-scan-key").algorithm(JWSAlgorithm.RS256).generate();
+            byte[] jwks = new JWKSet(signingKey.toPublicJWK()).toString().getBytes(StandardCharsets.UTF_8);
+            Path keyStore = scratch.resolve("jwks-server.p12");
+            Path trustStore = scratch.resolve("jwks-trust.p12");
+            Path certificate = scratch.resolve("jwks-server.cer");
+            keytool("-genkeypair", "-alias", "jwks", "-keyalg", "RSA", "-keysize", "2048", "-validity", "2",
+                    "-keystore", keyStore.toString(), "-storetype", "PKCS12", "-storepass", LINK_HTTP_PASSWORD,
+                    "-keypass", LINK_HTTP_PASSWORD, "-dname", "CN=127.0.0.1", "-ext", "san=ip:127.0.0.1");
+            keytool("-exportcert", "-alias", "jwks", "-keystore", keyStore.toString(), "-storetype", "PKCS12",
+                    "-storepass", LINK_HTTP_PASSWORD, "-file", certificate.toString());
+            keytool("-importcert", "-alias", "jwks", "-file", certificate.toString(), "-keystore",
+                    trustStore.toString(), "-storetype", "PKCS12", "-storepass", LINK_HTTP_PASSWORD, "-noprompt");
+            String[] previous = {System.getProperty("javax.net.ssl.trustStore"),
+                    System.getProperty("javax.net.ssl.trustStorePassword"),
+                    System.getProperty("javax.net.ssl.trustStoreType")};
+            System.setProperty("javax.net.ssl.trustStore", trustStore.toString());
+            System.setProperty("javax.net.ssl.trustStorePassword", LINK_HTTP_PASSWORD);
+            System.setProperty("javax.net.ssl.trustStoreType", "PKCS12");
+            SSLContext tls = SSLContext.getInstance("TLS");
+            KeyManagerFactory managers = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+            KeyStore serverKeys = KeyStore.getInstance("PKCS12");
+            try (var input = Files.newInputStream(keyStore)) {
+                serverKeys.load(input, LINK_HTTP_PASSWORD.toCharArray());
+            }
+            managers.init(serverKeys, LINK_HTTP_PASSWORD.toCharArray());
+            tls.init(managers.getKeyManagers(), null, null);
+            HttpsServer jwksServer = HttpsServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            jwksServer.setHttpsConfigurator(new HttpsConfigurator(tls));
+            jwksServer.createContext("/jwks", exchange -> {
+                exchange.getResponseHeaders().add("Content-Type", "application/json");
+                exchange.sendResponseHeaders(200, jwks.length);
+                try (var out = exchange.getResponseBody()) {
+                    out.write(jwks);
+                }
+            });
+            jwksServer.start();
+            // Forced before Tomcat's webapp classloader exists: see McpHttpEndToEndTest.
+            reactor.core.scheduler.Schedulers.boundedElastic().schedule(() -> { });
+            AuditSink recording = event -> {
+                events.add(event);
+                new Slf4jAuditSink().record(event);
+                if (extraSink != null) {
+                    extraSink.record(event);
+                }
+            };
+            // Distinct material per reference: the link key must not share bytes with the pseudonymisation key.
+            HmacKeyReferenceResolver resolver = (keyId, reference) ->
+                    ("link-scan-test-only-key-material-for-" + reference + "-0123456789").getBytes(StandardCharsets.UTF_8);
+            ConfigurableApplicationContext context = new SpringApplicationBuilder(ResourceServerApplication.class)
+                    .web(WebApplicationType.SERVLET)
+                    .initializers(c -> {
+                        c.getBeanFactory().registerSingleton("recordingAuditSink", recording);
+                        c.getBeanFactory().registerSingleton("linkScanKeyResolver", resolver);
+                    })
+                    .run("--server.port=0",
+                            "--dataprism.security.jwt.jwk-set-uri=https://127.0.0.1:" + jwksServer.getAddress().getPort()
+                                    + "/jwks",
+                            "--dataprism.security-policy.roles.investigator[0]=GET_ENTITY_CONTEXT",
+                            "--dataprism.security-policy.roles.investigator[1]=COMPARE_ENTITY_SOURCES",
+                            "--dataprism.security-policy.roles.investigator[2]=LIST_SOURCES",
+                            "--dataprism.security-policy.roles.investigator[3]=DESCRIBE_SOURCE",
+                            "--dataprism.security-policy.roles.investigator[4]=FOLLOW",
+                            "--dataprism.links.enabled=true", "--dataprism.links.key-id=example-link-1",
+                            "--dataprism.links.keys.example-link-1.environment-variable=LINK_SCAN_KEY_REF",
+                            "--dataprism.paging.list-sources.page-size=2");
+            try {
+                int port = ((ServletWebServerApplicationContext) context).getWebServer().getPort();
+                JWTClaimsSet claims = new JWTClaimsSet.Builder().subject("link-scan-principal")
+                        .claim("azp", "link-scan-client").claim("roles", List.of("investigator"))
+                        .claim("purpose", "investigation").claim("case_id", "CASE-LINK-SCAN")
+                        .issuer(LINK_HTTP_ISSUER).audience(LINK_HTTP_AUDIENCE)
+                        .expirationTime(Date.from(Instant.now().plus(10, ChronoUnit.MINUTES))).build();
+                SignedJWT jwt = new SignedJWT(
+                        new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(signingKey.getKeyID()).build(), claims);
+                jwt.sign(new RSASSASigner(signingKey));
+                McpSyncClient client = McpClient.sync(HttpClientStreamableHttpTransport
+                        .builder("http://localhost:" + port).endpoint("/mcp")
+                        .requestBuilder(HttpRequest.newBuilder().header("Authorization", "Bearer " + jwt.serialize()))
+                        .build()).clientInfo(new McpSchema.Implementation("link-scan", "1.0.0")).build();
+                client.initialize();
+                try {
+                    scenario(client);
+                } finally {
+                    client.close();
+                }
+            } finally {
+                context.close();
+                jwksServer.stop(0);
+                restore("javax.net.ssl.trustStore", previous[0]);
+                restore("javax.net.ssl.trustStorePassword", previous[1]);
+                restore("javax.net.ssl.trustStoreType", previous[2]);
+            }
+        }
+
+        @SuppressWarnings("unchecked")
+        private void scenario(McpSyncClient client) {
+            McpSchema.CallToolResult first = call(client, "list_sources", Map.of());
+            Map<String, Object> firstBody = (Map<String, Object>) first.structuredContent();
+            String next = (String) ((Map<String, Object>) firstBody.get("page")).get("next");
+            assertThat(next).as("three sources on pages of two: the first page links to a second").isNotNull();
+            call(client, "list_sources", Map.of("page", next));
+            String label = (String) ((Map<String, Object>) ((List<?>) firstBody.get("sources")).get(0)).get("source");
+            call(client, "describe_source", Map.of("source", label));
+            McpSchema.CallToolResult context = call(client, "get_entity_context",
+                    Map.of("entityType", "CUSTOMER", "subjectId", "123"));
+            List<String> links = new ArrayList<>();
+            collectLinks(context.structuredContent(), links);
+            assertThat(links).as("the order source's chainable customerId must yield a link").isNotEmpty();
+            McpSchema.CallToolResult valid = call(client, "follow", Map.of("link", links.get(0)));
+            followed = valid.isError() != Boolean.TRUE;
+            call(client, "follow", Map.of("link", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"));
+        }
+
+        private McpSchema.CallToolResult call(McpSyncClient client, String tool, Map<String, Object> arguments) {
+            McpSchema.CallToolResult result = client.callTool(new McpSchema.CallToolRequest(tool, arguments));
+            String surface = String.valueOf(result.structuredContent());
+            for (McpSchema.Content content : result.content()) {
+                if (content instanceof McpSchema.TextContent text) {
+                    surface += "\n" + text.text();
+                }
+            }
+            surfaces.add(surface);
+            collectTokens(result.structuredContent());
+            return result;
+        }
+
+        private void collectTokens(Object node) {
+            List<String> found = new ArrayList<>();
+            collectLinks(node, found);
+            tokens.addAll(found);
+            if (node instanceof Map<?, ?> map && map.get("page") instanceof Map<?, ?> page
+                    && page.get("next") instanceof String next) {
+                tokens.add(next);
+            }
+        }
+
+        private static void collectLinks(Object node, List<String> out) {
+            if (node instanceof Map<?, ?> map) {
+                map.forEach((k, v) -> {
+                    if ("link".equals(k) && v instanceof String text) {
+                        out.add(text);
+                    } else {
+                        collectLinks(v, out);
+                    }
+                });
+            } else if (node instanceof Collection<?> items) {
+                items.forEach(item -> collectLinks(item, out));
+            }
+        }
+
+        private static void keytool(String... arguments) throws Exception {
+            List<String> command = new ArrayList<>();
+            command.add(Path.of(System.getProperty("java.home"), "bin", "keytool").toString());
+            command.addAll(List.of(arguments));
+            Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            if (process.waitFor() != 0) {
+                throw new IllegalStateException("keytool failed: " + output);
+            }
+        }
+
+        private static void restore(String name, String value) {
+            if (value == null) {
+                System.clearProperty(name);
+            } else {
+                System.setProperty(name, value);
+            }
+        }
+
+        /** Every value a log line, audit record or audit file must never carry. */
+        List<String> banned() {
+            List<String> all = new ArrayList<>(BANNED_VALUES);
+            all.addAll(tokens);
+            all.addAll(DESCRIPTION_TEXTS);
+            return all;
+        }
+    }
+
+    @Test
+    @DisplayName("links enabled over HTTP: list_sources (two pages), describe_source, _links, a valid and an invalid "
+            + "follow put no identifier, link token or description text into a log line")
+    void linkSurfaceLeaksNothingIntoTheLog() throws IOException {
+        LinkHttpRun run = LinkHttpRun.shared();
+
+        assertThat(run.followed).as("the valid follow must have succeeded, or the scan skipped it").isTrue();
+        assertThat(run.tokens).as("the run must have met link and page tokens").hasSizeGreaterThanOrEqualTo(2);
+        assertThat(run.log).as("the run must have reached the audit logger").contains("event=");
+        assertThat(run.events).extracting(AuditEvent::fieldDispositions).anySatisfy(
+                d -> assertThat(d).containsKey("link"));
+        assertThat(findLeakedAcrossLines(withoutTimestamps(run.log), run.banned()))
+                .as("the log of a run with links enabled must not carry an identifier, a link token or a description")
+                .isEmpty();
+    }
+
+    /**
+     * The mutation the brief asks for, recorded: log one link token through the same logger the audit sink uses (the
+     * leak a careless change would add) and the same scan reports it. Without this the test above could be vacuous.
+     */
+    @Test
+    @DisplayName("the link log scan is not vacuous: a link token and a description text logged are both caught")
+    void linkLogScanIsNotVacuous() throws IOException {
+        LinkHttpRun run = LinkHttpRun.shared();
+        String token = run.tokens.iterator().next();
+        String mutated = run.log + captureLogOutput(() -> LoggerFactory.getLogger("dataprism.audit")
+                .info("simulated leak, for this test only: link={} description={}", token, DESCRIPTION_TEXTS.get(0)));
+
+        assertThat(findLeakedAcrossLines(withoutTimestamps(mutated), run.banned()))
+                .contains(token, DESCRIPTION_TEXTS.get(0));
     }
 }
