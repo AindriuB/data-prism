@@ -13,7 +13,10 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Type;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -43,10 +46,11 @@ class SpiSignaturesFreezeTest {
             ROOT + "security", ROOT + "audit");
 
     @Test
-    void theSpiSignaturesMatchTheFrozenSnapshot() throws IOException {
+    void theSpiSignaturesMatchTheFrozenSnapshot() throws IOException, ClassNotFoundException {
         List<String> actual = new ArrayList<>();
         Set<String> registered = registeredTypes();
         Set<String> found = new TreeSet<>();
+        ClassLoader loader = moduleClasses();
         for (JavaClass type : MainSources.mainClasses()) {
             if (type.getEnclosingClass().isPresent()) {
                 continue;
@@ -56,7 +60,7 @@ class SpiSignaturesFreezeTest {
                 found.add(type.getSimpleName());
             }
             if (listed || PACKAGES.contains(type.getPackageName())) {
-                describe(type.reflect(), actual);
+                describe(Class.forName(type.getName(), false, loader), actual);
             }
         }
         Set<String> missing = new TreeSet<>(registered);
@@ -65,6 +69,23 @@ class SpiSignaturesFreezeTest {
         actual.replaceAll(line -> line.replace(ROOT, ""));
         actual.sort(null);
         FreezeLists.assertMatches("spi-signatures.txt", actual);
+    }
+
+    /**
+     * A loader over every module's {@code target/classes}, in front of the test classpath's own copy. Under
+     * {@code verify} a module such as the server is repackaged, its classes sit under {@code BOOT-INF/classes}
+     * in the jar and the test classpath cannot load them by name; the directories hold them plainly.
+     */
+    private static ClassLoader moduleClasses() throws IOException {
+        Path root = MainSources.repositoryRoot();
+        List<URL> urls = new ArrayList<>();
+        for (String module : MainSources.modules(root)) {
+            Path classes = root.resolve(module).resolve("target").resolve("classes");
+            if (Files.isDirectory(classes)) {
+                urls.add(classes.toUri().toURL());
+            }
+        }
+        return new URLClassLoader(urls.toArray(URL[]::new), SpiSignaturesFreezeTest.class.getClassLoader());
     }
 
     /**
