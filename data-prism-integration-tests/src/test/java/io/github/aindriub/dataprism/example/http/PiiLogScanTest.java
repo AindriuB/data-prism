@@ -1519,27 +1519,17 @@ class PiiLogScanTest {
                             "--dataprism.security-policy.roles.investigator[2]=LIST_SOURCES",
                             "--dataprism.security-policy.roles.investigator[3]=DESCRIBE_SOURCE",
                             "--dataprism.security-policy.roles.investigator[4]=FOLLOW",
-                            "--dataprism.links.enabled=true", "--dataprism.links.key-id=example-link-1",
+                            "--dataprism.links.enabled=true", "--dataprism.links.invalid-attempt-limit=4", "--dataprism.links.key-id=example-link-1",
                             "--dataprism.links.keys.example-link-1.environment-variable=LINK_SCAN_KEY_REF",
                             "--dataprism.paging.list-sources.page-size=2");
             try {
                 int port = ((ServletWebServerApplicationContext) context).getWebServer().getPort();
-                JWTClaimsSet claims = new JWTClaimsSet.Builder().subject("link-scan-principal")
-                        .claim("azp", "link-scan-client").claim("roles", List.of("investigator"))
-                        .claim("purpose", "investigation").claim("case_id", "CASE-LINK-SCAN")
-                        .issuer(LINK_HTTP_ISSUER).audience(LINK_HTTP_AUDIENCE)
-                        .expirationTime(Date.from(Instant.now().plus(10, ChronoUnit.MINUTES))).build();
-                SignedJWT jwt = new SignedJWT(
-                        new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(signingKey.getKeyID()).build(), claims);
-                jwt.sign(new RSASSASigner(signingKey));
-                McpSyncClient client = McpClient.sync(HttpClientStreamableHttpTransport
-                        .builder("http://localhost:" + port).endpoint("/mcp")
-                        .requestBuilder(HttpRequest.newBuilder().header("Authorization", "Bearer " + jwt.serialize()))
-                        .build()).clientInfo(new McpSchema.Implementation("link-scan", "1.0.0")).build();
-                client.initialize();
+                McpSyncClient client = client(port, signingKey, "link-scan-principal");
+                McpSyncClient other = client(port, signingKey, "link-scan-other-principal");
                 try {
-                    scenario(client);
+                    scenario(client, other);
                 } finally {
+                    other.close();
                     client.close();
                 }
             } finally {
@@ -1551,8 +1541,38 @@ class PiiLogScanTest {
             }
         }
 
+        private static McpSyncClient client(int port, RSAKey signingKey, String subject) throws Exception {
+            JWTClaimsSet claims = new JWTClaimsSet.Builder().subject(subject)
+                    .claim("azp", "link-scan-client").claim("roles", List.of("investigator"))
+                    .claim("purpose", "investigation").claim("case_id", "CASE-LINK-SCAN")
+                    .issuer(LINK_HTTP_ISSUER).audience(LINK_HTTP_AUDIENCE)
+                    .expirationTime(Date.from(Instant.now().plus(10, ChronoUnit.MINUTES))).build();
+            SignedJWT jwt = new SignedJWT(
+                    new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(signingKey.getKeyID()).build(), claims);
+            jwt.sign(new RSASSASigner(signingKey));
+            McpSyncClient client = McpClient.sync(HttpClientStreamableHttpTransport
+                    .builder("http://localhost:" + port).endpoint("/mcp")
+                    .requestBuilder(HttpRequest.newBuilder().header("Authorization", "Bearer " + jwt.serialize()))
+                    .build()).clientInfo(new McpSchema.Implementation("link-scan", "1.0.0")).build();
+            client.initialize();
+            return client;
+        }
+
+        /** The token with one byte of its last (tag) byte flipped: it decodes, and fails authentication. */
+        private static String flipped(String token) {
+            byte[] raw = java.util.Base64.getUrlDecoder().decode(token);
+            raw[raw.length - 1] ^= 0x01;
+            return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(raw);
+        }
+
+        /** The link dispositions of the run's events, in call order. */
+        List<String> linkRefusals() {
+            return events.stream().map(e -> e.fieldDispositions().get("link")).filter(java.util.Objects::nonNull)
+                    .toList();
+        }
+
         @SuppressWarnings("unchecked")
-        private void scenario(McpSyncClient client) {
+        private void scenario(McpSyncClient client, McpSyncClient other) {
             McpSchema.CallToolResult first = call(client, "list_sources", Map.of());
             Map<String, Object> firstBody = (Map<String, Object>) first.structuredContent();
             String next = (String) ((Map<String, Object>) firstBody.get("page")).get("next");
@@ -1560,6 +1580,10 @@ class PiiLogScanTest {
             call(client, "list_sources", Map.of("page", next));
             String label = (String) ((Map<String, Object>) ((List<?>) firstBody.get("sources")).get(0)).get("source");
             call(client, "describe_source", Map.of("source", label));
+            // A description that cannot be served sets the audit `catalog` key; the unknown label is banned from logs.
+            String unknownSource = "no-such-source-label-for-the-scan";
+            tokens.add(unknownSource);
+            call(client, "describe_source", Map.of("source", unknownSource));
             McpSchema.CallToolResult context = call(client, "get_entity_context",
                     Map.of("entityType", "CUSTOMER", "subjectId", "123"));
             List<String> links = new ArrayList<>();
@@ -1571,6 +1595,22 @@ class PiiLogScanTest {
             String invalid = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
             tokens.add(invalid);
             call(client, "follow", Map.of("link", invalid));
+            // Refused after the version byte: a flipped byte, a tampered page link, another principal's link.
+            String flippedLink = flipped(links.get(0));
+            tokens.add(flippedLink);
+            call(client, "follow", Map.of("link", flippedLink));
+            String tamperedPage = flipped(next);
+            tokens.add(tamperedPage);
+            call(client, "list_sources", Map.of("page", tamperedPage));
+            call(other, "follow", Map.of("link", links.get(0)));
+            // The fourth failure of the first principal reaches the limit (set to 4 for this run); the next call is
+            // refused by the lockout, and so is a genuine link.
+            String lockoutOne = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
+            String lockoutTwo = "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC";
+            tokens.add(lockoutOne);
+            tokens.add(lockoutTwo);
+            call(client, "follow", Map.of("link", lockoutOne));
+            call(client, "follow", Map.of("link", lockoutTwo));
         }
 
         private McpSchema.CallToolResult call(McpSyncClient client, String tool, Map<String, Object> arguments) {
@@ -1652,6 +1692,28 @@ class PiiLogScanTest {
         assertThat(findLeakedAcrossLines(withoutTimestamps(run.log), run.banned()))
                 .as("the log of a run with links enabled must not carry an identifier, a link token or a description")
                 .isEmpty();
+    }
+
+    /**
+     * Every refusal after the version byte is in the run and is scanned like the rest: the audit says why in closed
+     * words, and none of the refused tokens, a client's own arguments, reaches a log line (the scan above).
+     */
+    @Test
+    @DisplayName("the run refused a flipped byte, a tampered page link, another principal's link and a locked caller, "
+            + "each for its own reason")
+    void everyRefusalReasonIsInTheRun() throws IOException {
+        assertThat(LinkHttpRun.shared().linkRefusals()).containsExactly("REFUSED:LINK_VERSION",
+                "REFUSED:LINK_AUTH_FAILED", "REFUSED:LINK_AUTH_FAILED", "REFUSED:LINK_AUTH_FAILED",
+                "REFUSED:LINK_VERSION", "REFUSED:LINK_ATTEMPTS_LOCKED");
+    }
+
+    /** The link-scans fork sets the data-prism loggers to TRACE (pom.xml, execution link-scans); this fails without it. */
+    @Test
+    @DisplayName("the link scans run with the data-prism loggers at TRACE")
+    void theLinkScansRunWithTheDataPrismLoggersAtTrace() {
+        assertThat(LoggerFactory.getLogger("dataprism.audit").isTraceEnabled()).isTrue();
+        assertThat(LoggerFactory.getLogger(
+                "io.github.aindriub.dataprism.orchestration.DefaultContextOrchestrator").isTraceEnabled()).isTrue();
     }
 
     /**

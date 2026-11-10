@@ -139,6 +139,12 @@
               </includes>
               <forkCount>1</forkCount>
               <reuseForks>false</reuseForks>
+              <!-- The scans read everything the data-prism loggers emit, so they run with those loggers at their most
+                   verbose: a leak at DEBUG or TRACE fails the scan, not only one at INFO. -->
+              <systemPropertyVariables>
+                <org.slf4j.simpleLogger.log.io.github.aindriub.dataprism>trace</org.slf4j.simpleLogger.log.io.github.aindriub.dataprism>
+                <org.slf4j.simpleLogger.log.dataprism>trace</org.slf4j.simpleLogger.log.dataprism>
+              </systemPropertyVariables>
             </configuration>
           </execution>
         </executions>

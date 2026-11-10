@@ -204,8 +204,9 @@ class AuditFieldDispositionTest {
         assertThat(all).anySatisfy(d -> assertThat(d).containsKey("names"));
         // A refused link says why in closed words; the run's invalid follow is the one such call.
         assertThat(all).anySatisfy(d -> assertThat(d).containsEntry("link", "REFUSED:LINK_VERSION"));
-        // The catalog key is set only when a description could not be served; nothing in this run fails that way.
-        assertThat(all).noneSatisfy(d -> assertThat(d).containsKey("catalog"));
+        // The catalog key is set only when a description could not be served; the run's unknown label does that, so
+        // the loop below really scans a catalog value.
+        assertThat(all).anySatisfy(d -> assertThat(d).containsKey("catalog"));
         for (Map<String, String> dispositions : all) {
             for (String key : List.of("names", "catalog", "link")) {
                 String value = dispositions.get(key);
