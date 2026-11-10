@@ -128,7 +128,7 @@ class HttpParseErrorLeakTest {
         HttpResponse<String> list;
         try {
             int port = start();
-            HttpClient http = HttpClient.newHttpClient();
+            HttpClient http = HttpClient.newBuilder().sslContext(explicitSslContext()).build();
             URI uri = URI.create("http://localhost:" + port + "/mcp");
             HttpResponse<String> init = post(http, uri, null, INITIALIZE);
             assertThat(init.statusCode()).isEqualTo(200);
@@ -202,5 +202,18 @@ class HttpParseErrorLeakTest {
         context.addServletMappingDecoded("/mcp", "mcp");
         tomcat.start();
         return tomcat.getConnector().getLocalPort();
+    }
+
+    /**
+     * An explicit SSLContext: {@code HttpClient.newHttpClient()} would initialise the JDK default one, and
+     * McpHttpEndToEndTest's trust settings must reach it first. See AuditSinkFailureAbortsResponseTest.
+     */
+    private static javax.net.ssl.SSLContext explicitSslContext() throws Exception {
+        javax.net.ssl.TrustManagerFactory trust = javax.net.ssl.TrustManagerFactory
+                .getInstance(javax.net.ssl.TrustManagerFactory.getDefaultAlgorithm());
+        trust.init((java.security.KeyStore) null);
+        javax.net.ssl.SSLContext ssl = javax.net.ssl.SSLContext.getInstance("TLS");
+        ssl.init(null, trust.getTrustManagers(), null);
+        return ssl;
     }
 }
