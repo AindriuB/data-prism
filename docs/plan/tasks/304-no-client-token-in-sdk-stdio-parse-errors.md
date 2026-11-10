@@ -110,3 +110,12 @@ Reviewed the fix since a6cacea0, at HEAD 3cc3902719d05d9c32d2f56191e908b31e06607
 - [STYLE] data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/StdioInboundGuard.java:25-26 — The fix edited this Javadoc and introduced two problems. Line 25 is one unwrapped 179-character line, where the rest of the paragraph wraps at about 105 characters. Line 26 still says "A line that passes both goes to the SDK unchanged", but `classify` now has three passes.
   route: implementer — wording and wrapping only. Wrap line 25 like lines 22-24 and 27-31, and change "both" to "all three".
   rule: the neighbouring lines in the same Javadoc (StdioInboundGuard.java:22-24, 27-31) set the wrapping. docs/conventions.md "Code comments": a comment must not assert something that is not true.
+
+## Attempt 1 — failed
+
+/verify at 86fda39333be (2026-11-10): tester PASS (stdio-leak 9, http-leak 9, guard-unit 29, full `./mvnw -B verify` exit 0); reviewer REQUEST CHANGES. The code meets every test-checked criterion; what is missing is the Outcome. No PR exists for the branch and no commit carries one, so these read checks cannot pass:
+- AC1: the Outcome must name the cases that failed on the base commit (the tests-first commit 7bff206c exists; the failing cases were reported by the implementer but are not recorded).
+- AC6: the mutation results must be in the Outcome, including the two added by the 2026-11-10 amendment (remove pass three → F fails; classify through `McpSchema.deserializeJsonRpcMessage` with SDK DEBUG live → A–D and F fail), which have not been run.
+- AC7: the line for 261.
+Next attempt: run the AC6 mutations (revert each), then open the PR against main with the Outcome in its body. No code change is needed unless a mutation survives.
+Reviewer suggestions (not blocking): AC5 proves the delegates are one instance, not that it is `wiring.json()`; the two HTTP E cases assert no status code and no live capture.
