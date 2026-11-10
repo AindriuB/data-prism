@@ -128,23 +128,62 @@ class DataPrismMcpServerTest {
     }
 
     @Test
-    @DisplayName("the server itself, on either transport, uses the shared mapper rather than the SDK default")
-    void serverUsesTheSharedMapper() throws Exception {
-        var stdioWiring = wiringForTest();
-        McpSyncServer stdio = DataPrismMcpServer.syncServer(stdioWiring,
-                new io.modelcontextprotocol.server.transport.StdioServerTransportProvider(stdioWiring.json()));
-        var httpWiring = wiringForTest();
-        McpSyncServer http = DataPrismMcpServer.syncServer(httpWiring,
-                io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider.builder()
-                        .jsonMapper(httpWiring.json()).contextExtractor(request -> McpTransportContext.EMPTY)
-                        .mcpEndpoint("/mcp").build());
+    @DisplayName("the server and each transport provider, from the production factories, use a content-free mapper over the shared one")
+    void serverAndProvidersUseTheContentFreeSharedMapper() throws Exception {
+        McpSyncServer stdio = DataPrismMcpServer.stdio(new NeverCalledOrchestrator(),
+                authorizationServiceGranting(Set.of("GET_ENTITY_CONTEXT")), scopeResolver(),
+                developmentCaller(Set.of()), true, false, PrivacyMetrics.none(), audit(), FIXED,
+                ToolOptions.defaults().noAdmission().build());
+        DataPrismMcpServer.HttpTransport http = DataPrismMcpServer.streamableHttp(new NeverCalledOrchestrator(),
+                authorizationServiceGranting(Set.of("GET_ENTITY_CONTEXT")), scopeResolver(),
+                request -> McpTransportContext.EMPTY, "/mcp", PrivacyMetrics.none(), audit(), FIXED,
+                ToolOptions.defaults().noAdmission().build());
         try {
-            assertThat(serverMapper(stdio)).isSameAs(stdioWiring.json());
-            assertThat(serverMapper(http)).isSameAs(httpWiring.json());
+            assertContentFreeOverSharedMapper(serverMapper(stdio));
+            assertContentFreeOverSharedMapper(providerMapper(stdio));
+            assertContentFreeOverSharedMapper(serverMapper(http.server()));
+            assertContentFreeOverSharedMapper(fieldOf(http.transportProvider(), "jsonMapper"));
         } finally {
             stdio.closeGracefully();
-            http.closeGracefully();
+            http.server().closeGracefully();
         }
+    }
+
+    @Test
+    @DisplayName("mutation: a mapper that is not decorated fails the content-free check")
+    void anUndecoratedMapperFailsTheContentFreeCheck() {
+        var plain = new io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper(DataPrismObjectMapper.create());
+
+        assertThatThrownBy(() -> assertContentFreeOverSharedMapper(plain)).isInstanceOf(AssertionError.class);
+    }
+
+    @Test
+    @DisplayName("every write through the decorated mapper is the shared mapper's write")
+    void writesStillGoThroughTheSharedMapper() throws Exception {
+        var shared = wiringForTest().json();
+        var decorated = new ContentFreeMcpJsonMapper(shared);
+        Map<String, Object> value = Map.of("k", "v");
+
+        assertThat(decorated.writeValueAsString(value)).isEqualTo(shared.writeValueAsString(value));
+        assertThat(decorated.writeValueAsBytes(value)).isEqualTo(shared.writeValueAsBytes(value));
+    }
+
+    private static void assertContentFreeOverSharedMapper(Object mapper) {
+        assertThat(mapper).isInstanceOf(ContentFreeMcpJsonMapper.class);
+        Object delegate = ((ContentFreeMcpJsonMapper) mapper).delegate();
+        assertThat(delegate).isInstanceOf(io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper.class);
+    }
+
+    /** The stdio provider the server was built on: the {@code mcpTransportProvider} field of its async server, SDK 2.1.0. */
+    private static Object providerMapper(McpSyncServer server) throws Exception {
+        Object async = fieldOf(server, "asyncServer");
+        return fieldOf(fieldOf(async, "mcpTransportProvider"), "jsonMapper");
+    }
+
+    private static Object fieldOf(Object target, String name) throws Exception {
+        var field = target.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        return field.get(target);
     }
 
     private static DataPrismMcpServer.Wiring wiringForTest() {
