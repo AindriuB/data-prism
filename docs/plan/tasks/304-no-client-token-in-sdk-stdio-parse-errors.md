@@ -8,6 +8,7 @@
 - data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/StdioInboundGuard.java *(new)*
 - data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/ContentFreeMcpJsonMapper.java *(new)*
 - data-prism-mcp/src/test/java/io/github/aindriub/dataprism/mcp/StdioInboundGuardTest.java *(new)*
+- data-prism-mcp/src/test/java/io/github/aindriub/dataprism/mcp/ContentFreeMcpJsonMapperTest.java *(new; added 2026-11-10 for finding 237-1, owner-approved in review round 3)*
 - data-prism-mcp/src/test/java/io/github/aindriub/dataprism/mcp/DataPrismMcpServerTest.java *(insertions only)*
 - data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/StdioParseErrorLeakTest.java *(new)*
 - data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/http/HttpParseErrorLeakTest.java *(new)*
