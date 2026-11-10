@@ -14,6 +14,7 @@ import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 
 import java.util.List;
 
@@ -52,6 +53,12 @@ class KeyResolverConfigurationTest {
     static class TwoForOnePair {
         @Bean KeyResolver first() { return resolver("first-one", "account-no", "customer-no"); }
         @Bean KeyResolver second() { return resolver("second-one", "account-no", "customer-no"); }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class NamesOppositeToOrder {
+        @Bean @Order(1) KeyResolver zulu() { return resolver("zulu", "account-no", "customer-no"); }
+        @Bean @Order(2) KeyResolver alpha() { return resolver("alpha", "account-no", "branch-no"); }
     }
 
     @Configuration(proxyBeanMethods = false)
@@ -119,6 +126,16 @@ class KeyResolverConfigurationTest {
     void the_edges_are_accepted(String key, String value) {
         context.withPropertyValues("dataprism.key-resolvers." + key + "=" + value)
                 .run(result -> assertThat(result).hasNotFailed());
+    }
+
+    @Test
+    void follow_lists_resolvers_in_name_order_whatever_their_order_annotation() {
+        context.withUserConfiguration(NamesOppositeToOrder.class).run(result -> {
+            assertThat(result).hasNotFailed();
+            OrchestrationOptions.FollowSettings follow = result.getBean(OrchestrationOptions.class).follow().get();
+            assertThat(follow.resolvers().from(new KeyNamespace("account-no"))).extracting(KeyResolver::name)
+                    .containsExactly("alpha", "zulu");
+        });
     }
 
     @Test
