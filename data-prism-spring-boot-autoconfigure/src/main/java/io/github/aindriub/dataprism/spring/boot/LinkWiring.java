@@ -103,6 +103,22 @@ class LinkWiring {
     }
 
     /**
+     * Whether the bean was built by {@link #dataPrismLinkAttemptLimiter}, told by its definition's factory method and
+     * not by its name: an application limiter may carry the same name. A hand-registered singleton has no definition.
+     */
+    static boolean defaultLimiterBuiltHere(ConfigurableListableBeanFactory factory, String name) {
+        if (!factory.containsBeanDefinition(name)) {
+            return false;
+        }
+        org.springframework.beans.factory.config.BeanDefinition definition = factory.getBeanDefinition(name);
+        String factoryBean = definition.getFactoryBeanName();
+        return factoryBean != null
+                && DEFAULT_LIMITER.equals(definition.getFactoryMethodName())
+                && factory.containsBeanDefinition(factoryBean)
+                && LinkWiring.class.getName().equals(factory.getBeanDefinition(factoryBean).getBeanClassName());
+    }
+
+    /**
      * Whether a {@code PrivacyCluster} that data-prism did not build is defined, judged from definitions only (no bean
      * is built). The class is looked up by name so this class never loads the optional type; absent, no such bean
      * exists. Ownership is {@link ClusterBackedState#builtHere}, by definition origin and never by name.

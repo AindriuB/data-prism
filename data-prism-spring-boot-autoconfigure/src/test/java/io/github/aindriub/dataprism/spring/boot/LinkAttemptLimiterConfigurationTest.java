@@ -109,6 +109,14 @@ class LinkAttemptLimiterConfigurationTest {
         }
     }
 
+    /** An application limiter that takes the default's bean name: the name must not exempt it. */
+    @Configuration(proxyBeanMethods = false)
+    static class LimiterWithTheDefaultName {
+        @Bean(LinkWiring.DEFAULT_LIMITER) LinkAttemptLimiter namedLikeTheDefault() {
+            return new StubLimiter(false);
+        }
+    }
+
     static final class StubClusterWide implements ClusterWideLinkAttemptLimiter {
         @Override public LockState lockState(AttemptSubject subject) {
             return LockState.UNAVAILABLE;
@@ -242,6 +250,11 @@ class LinkAttemptLimiterConfigurationTest {
     }
 
     @Test
+    void tcp_ip_refuses_an_application_limiter_that_takes_the_default_bean_name() {
+        refused(runner("embedded", "tcp-ip", LINKS_ON, LimiterWithTheDefaultName.class));
+    }
+
+    @Test
     void tcp_ip_refuses_a_limiter_whose_type_cannot_be_read_without_building_it() {
         refused(runner("embedded", "tcp-ip", LINKS_ON, UntypedLimiterFactory.class));
     }
@@ -343,6 +356,18 @@ class LinkAttemptLimiterConfigurationTest {
         assertThatCode(() -> Preflights.dataPrismLinkLimiterPreflight(environment).postProcessBeanFactory(none))
                 .isInstanceOf(DataPrismConfigurationException.class)
                 .extracting(e -> ((DataPrismConfigurationException) e).code()).isEqualTo("MISSING_SHARED_LINK_LIMITER");
+    }
+
+    @Test
+    void an_application_limiter_with_the_default_bean_name_is_still_checked_beside_a_cluster_wide_one() {
+        DefaultListableBeanFactory factory = new DefaultListableBeanFactory();
+        factory.registerBeanDefinition(LinkWiring.DEFAULT_LIMITER,
+                org.springframework.beans.factory.support.BeanDefinitionBuilder
+                        .rootBeanDefinition(StubLimiter.class, () -> new StubLimiter(false)).getBeanDefinition());
+        factory.registerBeanDefinition("sharedLimiter", org.springframework.beans.factory.support.BeanDefinitionBuilder
+                .rootBeanDefinition(StubClusterWide.class, StubClusterWide::new).getBeanDefinition());
+        assertThatCode(() -> Preflights.dataPrismLinkLimiterPreflight(environment("tcp-ip", LINKS_ON))
+                .postProcessBeanFactory(factory)).isInstanceOf(DataPrismConfigurationException.class);
     }
 
     @Test

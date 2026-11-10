@@ -208,7 +208,7 @@ class Preflights {
             }
             boolean shared = false;
             for (String name : factory.getBeanNamesForType(LinkAttemptLimiter.class, true, false)) {
-                if (LinkWiring.DEFAULT_LIMITER.equals(name)) {
+                if (LinkWiring.defaultLimiterBuiltHere(factory, name)) {
                     continue;
                 }
                 Class<?> declared = factory.getType(name, false);

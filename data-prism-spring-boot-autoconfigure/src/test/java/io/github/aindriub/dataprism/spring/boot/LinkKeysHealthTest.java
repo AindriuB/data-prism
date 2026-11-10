@@ -79,6 +79,37 @@ class LinkKeysHealthTest {
         assertThat(health.getDetails()).containsEntry("held", List.of()).containsEntry("unresolved", 2L);
     }
 
+    /** Real keys, built while every id resolves; then the named ids stop resolving, as after a bad rotation. */
+    private static LinkKeys keysThatLose(Set<String> lost) {
+        java.util.Set<String> gone = java.util.concurrent.ConcurrentHashMap.newKeySet();
+        LinkKeys keys = new LinkKeys(id -> {
+            if (gone.contains(id)) {
+                throw new IllegalStateException("gone");
+            }
+            return (id + "-material-0123456789-0123456789-0123").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        }, "lk2", "pk", () -> Set.of("lk1", "lk2"));
+        gone.addAll(lost);
+        return keys;
+    }
+
+    @Test
+    void a_partly_held_set_is_reported_down_with_the_held_ids_and_the_unresolved_count() {
+        HealthIndicator indicator = LinkKeysHealth.indicator(() -> keysThatLose(Set.of("lk1")), "lk2",
+                Set.of("lk1", "lk2"));
+        Health health = indicator.health();
+        assertThat(health.getStatus()).isEqualTo(Status.DOWN);
+        assertThat(health.getDetails()).containsEntry("held", List.of("lk2")).containsEntry("unresolved", 1L);
+    }
+
+    @Test
+    void a_held_set_that_lacks_the_current_id_is_reported_down_though_the_others_resolve() {
+        HealthIndicator indicator = LinkKeysHealth.indicator(() -> keysThatLose(Set.of("lk2")), "lk2",
+                Set.of("lk1", "lk2"));
+        Health health = indicator.health();
+        assertThat(health.getStatus()).isEqualTo(Status.DOWN);
+        assertThat(health.getDetails()).containsEntry("held", List.of("lk1")).containsEntry("unresolved", 1L);
+    }
+
     @Test
     void a_keys_object_that_throws_is_reported_down_not_thrown() {
         HealthIndicator indicator = LinkKeysHealth.indicator(() -> {
