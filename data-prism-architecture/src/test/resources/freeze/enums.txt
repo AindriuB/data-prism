@@ -1,0 +1,65 @@
+# Every enum in src/main, whether its constant names leave the process, and its constants (sorted).
+# Regenerate: ./mvnw -pl data-prism-architecture test -Dtest=EnumVocabularyFreezeTest -Dfreeze.write=<dir> -Dsurefire.failIfNoSpecifiedTests=false
+io.github.aindriub.dataprism.annotations.DataClassification | out | profile YAML and descriptor classifications; name in a sensitive-pattern violation (SensitivePatternValidator.validate) | ADDRESS,BANKING,BIOMETRIC,CONFIDENTIAL,CONTACT,CREDENTIAL,ETHNIC_ORIGIN,FINANCIAL,FREE_TEXT,GENETIC,GOVERNMENT_IDENTIFIER,PHI,PII,POLITICAL_OPINION,RELIGIOUS_BELIEF,SECURITY,SEX_LIFE_ORIENTATION,TAX_IDENTIFIER,TRADE_UNION
+io.github.aindriub.dataprism.annotations.PrivacyAction | out | audit dispositions (DefaultContextOrchestrator.scrubAndValidate, AuditEvent.isValidAction); profile YAML action | GENERALIZE,HASH,PASS_THROUGH,REDACT,REMOVE,SYNTHESIZE,TOKENIZE
+io.github.aindriub.dataprism.annotations.PrivacyNamespace | out | finding namespace, token and alias prefix, descriptor namespace key, metric tag | ACCOUNT_IDENTITY,ADDRESS,BANK_ACCOUNT,CUSTOM,EMAIL,EMPLOYMENT_IDENTITY,FINANCIAL_VALUE,GOVERNMENT_IDENTIFIER,NONE,ORGANISATION_IDENTITY,ORGANISATION_NAME,PERSON_FIRST_NAME,PERSON_IDENTITY,PERSON_LAST_NAME,PERSON_NAME,PHONE
+io.github.aindriub.dataprism.annotations.SensitivityLevel | internal | annotation attribute; traced 2026-11-10: nothing in src/main reads it | CONFIDENTIAL,INTERNAL,RESTRICTED
+io.github.aindriub.dataprism.annotations.UndeclaredFields | out | annotation attribute and the undeclaredFields descriptor key | DROP,NON_SENSITIVE,PROFILE_DEFAULT,REDACT
+io.github.aindriub.dataprism.audit.AuditCheckpoint$Kind | out | kind of a checkpoint line (AuditCheckpoint.toJsonLine) | BOOT,CRASH_LINE_ACCEPTED,PERIODIC,RETENTION_ANCHOR,SHUTDOWN
+io.github.aindriub.dataprism.audit.retention.AuditRetention$BoundaryScan$State | internal | scan state machine, never named | AWAIT_SHUTDOWN_RECORD,DONE,INIT,WATCH
+io.github.aindriub.dataprism.audit.verify.AuditChainVerifier$AnomalyType | out | verifier report (register 4.4) | DUPLICATE_SEQUENCE,FIELD_COUNT_MISMATCH,INTERRUPTED_WRITE_FRAGMENT,RETENTION_ANCHOR_REJECTED,TORN_CHECKPOINT_LINE,UNPARSEABLE_RECORD,VERSION_REGRESSION
+io.github.aindriub.dataprism.audit.verify.AuditChainVerifier$CheckpointFindingType | out | verifier report (register 4.4) | MISSING_WRITER,TRUNCATED_BEFORE_CHECKPOINT
+io.github.aindriub.dataprism.core.correlation.InboundCorrelation$State | internal | compared, never written | ABSENT,PRESENT,REJECTED
+io.github.aindriub.dataprism.core.engine.ScrubPlanDescriber$Kind | internal | plan walk, never named | DYNAMIC,OMIT,RECORD,SCALAR,STRUCTURE
+io.github.aindriub.dataprism.core.limits.ReadReservation$Refusal | internal | only in ReadReservation.toString | SCOPE_TOTAL,SUBJECT
+io.github.aindriub.dataprism.core.link.InMemoryLinkAttemptLimiter$Action | internal | limiter bookkeeping | LIVE,REMOVED,REOPENED,STALE
+io.github.aindriub.dataprism.core.link.InMemoryLinkAttemptLimiter$Stage | internal | limiter bookkeeping | RESERVED,STORED
+io.github.aindriub.dataprism.core.link.LinkAttemptGate$ExhaustedCause | out | audit disposition REFUSED:LINK_ATTEMPTS_<NAME> (LinkAttemptGate.Exhausted.auditValue) | CEILING,LIMITER_UNAVAILABLE,LOCKED,OPEN_FAILED,OVER_LIMIT
+io.github.aindriub.dataprism.core.link.LinkAttemptLimiter$Admission | internal | limiter result, never named | CEILING,OVER_LIMIT,UNAVAILABLE,WITHIN_LIMIT
+io.github.aindriub.dataprism.core.link.LinkAttemptLimiter$LockState | internal | limiter result, never named | LOCKED,UNAVAILABLE,UNLOCKED
+io.github.aindriub.dataprism.core.link.LinkKeys$Status | internal | key availability, never named | HELD,NOT_HELD,UNAVAILABLE
+io.github.aindriub.dataprism.core.link.LinkLabelKind | internal | converted from SourceCatalog.LabelKind (CatalogQueries.linkKind); never named | ALIAS,REAL
+io.github.aindriub.dataprism.core.link.LinkReason | out | audit disposition REFUSED:LINK_<NAME> (LinkReason.auditValue) | AUTH_FAILED,CATALOG_CHANGED,EXPIRED,FILTER_MISMATCH,ISSUED_IN_FUTURE,KEY_UNAVAILABLE,LABELS_CHANGED,MALFORMED,ORIGIN_DRIFT,PAYLOAD_MISMATCH,RELATION_UNDECLARED,TARGET_NOT_PERMITTED,TOO_LONG,UNKNOWN_KEY,VERSION,WRONG_TOOL
+io.github.aindriub.dataprism.core.link.LinkRelation | out | its code() byte is in the sealed link header; the name stays in process | CATALOG_PAGE,COLLECTION_PAGE,DIRECT,GROUP,TRANSLATED
+io.github.aindriub.dataprism.core.link.SealResult$OmitReason | internal | counted as an omitted link, never named | ALREADY_EXPIRED,BINDING_TOO_LONG,KEY_TOO_LONG,KEY_UNAVAILABLE,TARGET_TOO_LONG,TOO_LONG
+io.github.aindriub.dataprism.core.metrics.Metric | out | metric names | APPROVAL_DECISION_AUDIT_UNAVAILABLE,APPROVAL_DECISION_UNCONFIRMED,APPROVAL_RELEASE_SKIPPED,AUDIT_RETENTION_ANCHOR_FAILED,AUDIT_RETENTION_CHAIN_UNVERIFIED,AUDIT_RETENTION_DELETE_FAILED,AUDIT_RETENTION_FAILED,CATALOG_DESCRIPTIONS_GENERATED,CATALOG_SOURCE_NAMES_NONCONFORMING,CLUSTER_FLOOR_REFUSAL,CLUSTER_LEGACY_ENTRIES,CLUSTER_LOCK_TIMEOUT,CLUSTER_MEMBERS_UNVERIFIED,CLUSTER_PAUSE_AGE_SECONDS,CLUSTER_PAUSE_CONFLICT,CLUSTER_PAUSE_FRESH,CLUSTER_ROTATION_ACCEPTING_NEXT,CLUSTER_ROTATION_BEHIND,CLUSTER_ROTATION_BLOCKED,CLUSTER_SEAL_ENTRIES_UNDER_PREVIOUS,CLUSTER_SEAL_SALT_REJECTED,CLUSTER_SEAL_TAMPER,CLUSTER_SEAL_UNSUPPORTED_FORMAT,DENIAL_AUDIT_UNAVAILABLE,IDENTITY_CACHE_HIT,IDENTITY_CACHE_MISS,IDENTITY_COLLISION,LINKS_ATTEMPTS_EXHAUSTED,LINKS_ISSUED,LINKS_OMITTED,LINKS_REFUSED,LINK_KEYS_LOADED,MCP_DENIED,MCP_REQUESTS,PAGING_PAGES,PRIVACY_FAILCLOSED,PRIVACY_SOURCE_WITHHELD,PRIVACY_TRANSFORMATIONS,PRIVACY_VALIDATION_FAILURES,REIDENTIFICATION,RESOLVER_INVALID_OUTPUT,RESOLVER_LATENCY,RESOLVER_REJECTED,RESOLVER_TIMEOUT,RESOLVER_TOO_MANY,RESOLVER_UNAVAILABLE,SOURCE_CALLS_SATURATED,SOURCE_ERRORS,SOURCE_LATENCY
+io.github.aindriub.dataprism.core.model.ConsistencyFinding$Kind | out | kind of every finding (ResponseSize.bodyBytes) | ABBREVIATION,CONSISTENT,FORMATTING_ONLY,INCONSISTENT,MISSING_IN_SOME_SOURCES,SUSPECTED_INSTRUCTION_CONTENT
+io.github.aindriub.dataprism.core.model.FieldProtection$Protection | out | protection of a field in describe_source (CatalogQueries.describeBody) | ABSENT,BUCKET,MARKER,SYNTHETIC,TOKEN,VERBATIM
+io.github.aindriub.dataprism.core.model.ModelDescription$Undeclared | out | undeclared in describe_source (CatalogQueries.describeBody) | DROP,REFUSE,RENAME
+io.github.aindriub.dataprism.core.model.PrivacyScopeType | internal | held in PrivacyContext and AuthorizationDecision; traced 2026-11-10: no name() or write in src/main | CASE,INVESTIGATION,REQUEST,SESSION
+io.github.aindriub.dataprism.core.policy.EffectivePrivacyPolicy$Decided | internal | policy provenance; traced 2026-11-10: source() is read by nothing outside the policy package | ANNOTATION,DECLARED_NON_SENSITIVE,IDENTIFIER,PROFILE_RULE,SAFE_DEFAULT,SPECIAL_CATEGORY_DEFAULT,UNCLASSIFIED
+io.github.aindriub.dataprism.core.policy.GeneralizationRule$Kind | out | type of a profile YAML generalisation rule | DATE_TRUNCATION,NUMERIC_BAND
+io.github.aindriub.dataprism.core.policy.GeneralizationRule$Precision | out | precision of a profile YAML date-truncation rule | MONTH,YEAR
+io.github.aindriub.dataprism.core.policy.PrivacyProfile$UnclassifiedBehaviour | out | unclassified key of a profile YAML | DROP_AND_WARN,FAIL_REQUEST,PASS_THROUGH_UNSAFE,REDACT_AND_WARN
+io.github.aindriub.dataprism.core.spi.CostHint | out | cost in describe_source (CatalogQueries.describeBody) | HIGH,LOW,MEDIUM
+io.github.aindriub.dataprism.core.spi.FreshnessHint | out | freshness in describe_source (CatalogQueries.describeBody) | DAILY,HOURLY,LIVE,NEAR_LIVE,PERIODIC
+io.github.aindriub.dataprism.core.spi.KeyResolutionException$Reason | internal | mapped by name to ResolverOutcome.Reason (ResolverInvoker.call) | REJECTED,TIMEOUT,TOO_MANY,UNAVAILABLE
+io.github.aindriub.dataprism.hazelcast.ClusterSecuritySettings$UnverifiedMemberAction | internal | no property or output carries it | ALERT,REFUSE
+io.github.aindriub.dataprism.hazelcast.ClusterSecurityStatus$Reason | out | reason detail of the clusterSecurity health contributor (ClusterSecurityHealth) | CARDS_UNAVAILABLE,KEY_CHECK_MISMATCH,NONE,PAUSE_NOT_FRESH,SENTINEL_MISMATCH,UNVERIFIED_MEMBER
+io.github.aindriub.dataprism.hazelcast.ClusterSentinel$Outcome | internal | sentinel comparison result, never named | ABSENT,CURRENT,MISMATCH,NEXT,PREVIOUS
+io.github.aindriub.dataprism.hazelcast.PauseDocument$Kind | internal | pause document bookkeeping; no name() call | ALL,SCOPE,TOOL
+io.github.aindriub.dataprism.hazelcast.PauseDocument$Op | internal | pause document bookkeeping; no name() call | END_SCOPE,PAUSE,RESUME
+io.github.aindriub.dataprism.hazelcast.PauseDocument$Outcome | internal | pause document bookkeeping; no name() call | ADDS_ELEMENT,ADDS_TOMBSTONE,DROPS_STORED,LOST_RACE,ORDER,OVERSIZE,WRITTEN
+io.github.aindriub.dataprism.hazelcast.PauseDocument$Status | internal | pause document bookkeeping; no name() call | ABSENT,AUTHENTIC,GATED,UNREADABLE
+io.github.aindriub.dataprism.hazelcast.PrivacyClusterRefusal$Code | out | startup refusal code (ClusterBackedState, MemberInterfaceCheck) | CLUSTER_KEY_MISMATCH,CLUSTER_SETTINGS_MISMATCH,HAZELCAST_TLS_UNSUPPORTED,INVALID_APPROVAL_QUORUM,INVALID_CLUSTER_INTERFACE,INVALID_CLUSTER_MEMBERS,INVALID_CLUSTER_PORT,INVALID_KUBERNETES_JOIN,INVALID_TRUSTED_RANGE,MISSING_APPROVAL_QUORUM,MISSING_CLUSTER_KEY,MISSING_CLUSTER_NAME,MISSING_MEMBER_INTERFACE,MISSING_TRUSTED_NETWORK,PUBLIC_MEMBER_INTERFACE,RESERVED_CLUSTER_NAME,UNBOUNDED_MEMBER_INTERFACE,UNSAFE_HAZELCAST_DISCOVERY,UNSAFE_HAZELCAST_SERIALIZATION,UNSEALED_CLUSTER_STATE
+io.github.aindriub.dataprism.hazelcast.TrustedNetwork$Verdict | internal | mapped by the caller to its own refusal code (MemberInterfaceCheck) | INVALID_TRUSTED_RANGE,PUBLIC_MEMBER_INTERFACE,TRUSTED
+io.github.aindriub.dataprism.hazelcast.seal.Opened$Outcome | internal | seal result, never named | AUTHENTIC,TAMPERED,UNSUPPORTED
+io.github.aindriub.dataprism.hazelcast.seal.SealedWrites$Plan$Kind | internal | write plan, never named | DELETE,UNCHANGED,WRITE
+io.github.aindriub.dataprism.mcp.CorrelationRequirement | internal | compared, never written; traced 2026-11-10 | OPTIONAL,REQUIRED
+io.github.aindriub.dataprism.orchestration.SourceCallSlots$Start | internal | slot result, never named | SATURATED,STARTED,START_FAILED
+io.github.aindriub.dataprism.orchestration.SourceFanOut$Cut | internal | fan-out cut reason, never named | DEADLINE,INTERRUPTED,PER_SOURCE
+io.github.aindriub.dataprism.orchestration.SourceOutcome$Status | out | status of every per-source result (SourceResult) | ANSWERED,CIRCUIT_OPEN,FAILED,NO_DATA,REFUSED,RESOLVER_FAILED,TIMED_OUT
+io.github.aindriub.dataprism.orchestration.catalog.SourceCatalog$LabelKind | out | labels in catalog and describe_source results, and the audit names key | ALIAS,REAL
+io.github.aindriub.dataprism.orchestration.catalog.SourceLabels$Reason | out | unavailable reason of describe_source and a NOT_AVAILABLE refusal (CatalogQueries.describeSource, SourceSelection.targeted) | CATALOG_SOURCE_NOT_PERMITTED,CATALOG_UNKNOWN_SOURCE
+io.github.aindriub.dataprism.orchestration.links.ResolverOutcome$Reason | internal | mapped to a Metric by ResolverInvoker.metricFor | INVALID_OUTPUT,REJECTED,TIMEOUT,TOO_MANY,UNAVAILABLE
+io.github.aindriub.dataprism.oversight.ApprovalRefusedException$Code | out | re-identification approval refusal code (exception message) | EXPIRED,NOT_PENDING,SELF_APPROVAL,TOO_MANY_PENDING,UNKNOWN_APPROVAL
+io.github.aindriub.dataprism.oversight.ApprovalRequest$Kind | out | kind of an operator approval entry; cluster map value | REIDENTIFICATION,TOOL_CALL
+io.github.aindriub.dataprism.oversight.ApprovalRequest$Status | out | status of an operator approval entry; cluster map value | APPROVED,CONSUMED,EXPIRED,PENDING,REJECTED
+io.github.aindriub.dataprism.pseudonymisation.vocabulary.PoolKind | internal | traced 2026-11-10: name() is never called; key() is the vocabulary file key | FIRST_NAME,LAST_NAME,ORGANISATION,STREET,TOWN
+io.github.aindriub.dataprism.reidentification.Permission | out | dataprism.reidentification.roles values | APPROVE,REQUEST
+io.github.aindriub.dataprism.server.operator.OversightOperatorController$TargetType | out | target of POST /operator/pause and /resume | ALL,SCOPE,TOOL
+io.github.aindriub.dataprism.spring.boot.PrivacyExtensionPoints$Classification | internal | bean classification | PRIVACY_CRITICAL,REPLACEABLE
+io.github.aindriub.dataprism.spring.boot.PrivacyExtensionPoints$Guard | internal | bean guard | COMPETING_BEAN_REFUSAL,NONE,PRIMARY
+io.github.aindriub.dataprism.spring.boot.ReidentificationProperties$Permission | out | dataprism.reidentification.roles values | APPROVE,REQUEST
+io.github.aindriub.dataprism.spring.boot.TransportProperties$Mode | out | dataprism.transport.mode | HTTP,STDIO
+io.github.aindriub.dataprism.validation.SensitiveDataScanner$Detector | internal | its classification is written, not its name | API_KEY,EMAIL,IBAN,INTERNATIONAL_PHONE,IRISH_PPSN,JWT,PAYMENT_CARD,US_SSN
