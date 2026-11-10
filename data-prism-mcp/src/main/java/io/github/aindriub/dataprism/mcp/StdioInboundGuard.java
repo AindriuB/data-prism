@@ -22,8 +22,9 @@ import java.util.concurrent.BlockingQueue;
  * <p>The SDK's stdio reader logs a parse failure at ERROR with Jackson's message, which quotes the
  * offending token, then closes the session. Here each line is framed as {@code BufferedReader.readLine}
  * frames it (LF, CRLF or a lone CR end a line) and checked in three passes with a content-free mapper:
- * syntax, then shape, then type (the tree must convert to the SDK's request, notification or response). It never calls {@code McpSchema.deserializeJsonRpcMessage}, which logs the
- * raw line at DEBUG before parsing. A line that passes both goes to the SDK unchanged, re-terminated with
+ * syntax, then shape, then type (the tree must convert to the SDK's request, notification or
+ * response). It never calls {@code McpSchema.deserializeJsonRpcMessage}, which logs the
+ * raw line at DEBUG before parsing. A line that passes all three goes to the SDK unchanged, re-terminated with
  * LF. A line that fails is not forwarded: the guard answers it with {@code "id":null} and the JSON-RPC
  * code {@code -32700} (not JSON) or {@code -32600} (JSON, but not a request, notification or response),
  * and logs one constant line. Nothing of the line, its length or an exception is logged. A blank line
