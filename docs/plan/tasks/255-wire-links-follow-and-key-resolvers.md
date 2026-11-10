@@ -118,3 +118,10 @@ Reviewed HEAD c478ac49cf542c7fec0cb75c9f099818897ce61e (full branch)
 - P3: PiiLogScanTest.java:1418 collects `surfaces` but never asserts them.
 - NOTE for /verify: the "not vacuous" tests inject synthetic lines instead of mutating a production path.
 - NOTE: contract-register.md:823 still describes `dataprism.links.keys.loaded` as one series per key. OD-08-10 (a) decided a count. That row is outside Owns.
+
+## Attempt 1 — failed
+
+/verify at 0816c88ccdc8 (2026-11-10): tester PASS (full `./mvnw -B verify` exit 0, about 5,016 tests passing, 0 failing, 1 skipped; the link scans ran in their own fork, so AC16 and AC17 are met); reviewer REQUEST CHANGES. The code has no defects and nothing outside Owns. What is missing is AC1's evidence:
+- No Outcome exists (no PR, no Outcome section), and no commit holds the tests without their implementation. The original implementer reported that it wrote the tests after the code, so "the new tests fail on the base commit" was never shown.
+Next attempt: apply the branch's new and changed test files on top of base cac65915 with the production code left at base, run them, and record which fail and why. Revert that scratch state; do not commit it. Then open the PR against main with an Outcome in its body that carries the AC1 result and the decisions made in review. No code change is needed unless a test passes on base when it should not.
+Reviewer suggestions (not blocking): the preflight `break`s on the first non-marker limiter, so with two limiter definitions the result depends on their order (it always fails closed); the kubernetes "started" rows run only the preflight on a bare factory; the defaults test does not assert the codec defaults.
