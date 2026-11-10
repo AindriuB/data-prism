@@ -71,3 +71,11 @@ Reviewed the fix since 1428a930, at HEAD 245026c5ac7e9030519e9223282012a4c33f7de
 - [STYLE] data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/freeze/SpiSignaturesFreezeTest.java:7-10,140-143 — new imports are out of order (`Retention`, `Target`, `Annotation`, then `java.nio.file.Files` before `java.lang.reflect.Constructor`), and `defaultOf` writes `java.lang.reflect.Array` in full while the file imports the other `java.lang.reflect` classes.
   route: implementer
   rule: the file's own sorted import block at SpiSignaturesFreezeTest.java:11-23.
+
+## Review round 3 — findings
+
+Reviewed the fix since ec04373c, at HEAD 1770c660df6de4f7c5d4ab98522024a83cd06cb6. Last round allowed for this branch.
+
+- [P2] data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/freeze/SingleWordCodesFreezeTest.java:31-36,56-64 — the "returned as a code" direction still misses two shapes already on the operator surface, so it does not cover the operator error advice the Acceptance row names: (a) OperatorErrorAdvice returns codes through `body(HttpStatus.X, "CODE")` (OperatorErrorAdvice.java:36-56, helper :61-62); (b) OversightOperatorController assigns the code to a variable in a switch, `case X -> { code = "..."; status = ...; }` (:357-361), then throws `new OperatorException(status, code)` (:363). The Javadoc at :21-25 claims the five shapes are the ones "the server uses", which (a) and (b) disprove.
+  route: implementer — stop matching shapes. Scan every single-word upper-case string literal in the operator controllers, the operator error advice and ServerSecurityConfiguration, against the list plus a small reviewed exclusion list for literals that are not codes (each exclusion with a one-line reason in the test). Correct the Javadoc. Decision 1 and the Acceptance row stay as written.
+  input: add `return body(HttpStatus.CONFLICT, "CONFLICT");` in a new OperatorErrorAdvice handler, or change OversightOperatorController.java:360 to `case SELF_APPROVAL -> { code = "CONFLICT"; status = HttpStatus.CONFLICT; }` → the unlisted code ships and the test passes. Show both failing once, then revert.
