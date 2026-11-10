@@ -139,10 +139,13 @@ class DataPrismMcpServerTest {
                 request -> McpTransportContext.EMPTY, "/mcp", PrivacyMetrics.none(), audit(), FIXED,
                 ToolOptions.defaults().noAdmission().build());
         try {
-            assertContentFreeOverSharedMapper(serverMapper(stdio));
-            assertContentFreeOverSharedMapper(providerMapper(stdio));
-            assertContentFreeOverSharedMapper(serverMapper(http.server()));
-            assertContentFreeOverSharedMapper(fieldOf(http.transportProvider(), "jsonMapper"));
+            // The factory builds one Wiring, so its server and its provider must wrap the same instance.
+            assertContentFreeOverSharedMapper(serverMapper(stdio), delegateOf(providerMapper(stdio)));
+            assertContentFreeOverSharedMapper(providerMapper(stdio), delegateOf(serverMapper(stdio)));
+            assertContentFreeOverSharedMapper(serverMapper(http.server()),
+                    delegateOf(fieldOf(http.transportProvider(), "jsonMapper")));
+            assertContentFreeOverSharedMapper(fieldOf(http.transportProvider(), "jsonMapper"),
+                    delegateOf(serverMapper(http.server())));
         } finally {
             stdio.closeGracefully();
             http.server().closeGracefully();
@@ -154,7 +157,17 @@ class DataPrismMcpServerTest {
     void anUndecoratedMapperFailsTheContentFreeCheck() {
         var plain = new io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper(DataPrismObjectMapper.create());
 
-        assertThatThrownBy(() -> assertContentFreeOverSharedMapper(plain)).isInstanceOf(AssertionError.class);
+        assertThatThrownBy(() -> assertContentFreeOverSharedMapper(plain, plain)).isInstanceOf(AssertionError.class);
+    }
+
+    @Test
+    @DisplayName("mutation: a decoration over a different mapper instance fails the same-instance check")
+    void aDifferentDelegateFailsTheSameInstanceCheck() {
+        var a = new io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper(DataPrismObjectMapper.create());
+        var b = new io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper(DataPrismObjectMapper.create());
+
+        assertThatThrownBy(() -> assertContentFreeOverSharedMapper(new ContentFreeMcpJsonMapper(a), b))
+                .isInstanceOf(AssertionError.class);
     }
 
     @Test
@@ -168,10 +181,15 @@ class DataPrismMcpServerTest {
         assertThat(decorated.writeValueAsBytes(value)).isEqualTo(shared.writeValueAsBytes(value));
     }
 
-    private static void assertContentFreeOverSharedMapper(Object mapper) {
+    private static Object delegateOf(Object mapper) {
+        assertThat(mapper).isInstanceOf(ContentFreeMcpJsonMapper.class);
+        return ((ContentFreeMcpJsonMapper) mapper).delegate();
+    }
+
+    private static void assertContentFreeOverSharedMapper(Object mapper, Object shared) {
         assertThat(mapper).isInstanceOf(ContentFreeMcpJsonMapper.class);
         Object delegate = ((ContentFreeMcpJsonMapper) mapper).delegate();
-        assertThat(delegate).isInstanceOf(io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper.class);
+        assertThat(delegate).isSameAs(shared);
     }
 
     /** The stdio provider the server was built on: the {@code mcpTransportProvider} field of its async server, SDK 2.1.0. */

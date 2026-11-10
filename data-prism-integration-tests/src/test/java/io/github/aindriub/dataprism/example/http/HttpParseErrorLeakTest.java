@@ -96,6 +96,24 @@ class HttpParseErrorLeakTest {
     }
 
     @Test
+    @DisplayName("F: a method that is an object")
+    void methodWrongType() throws Exception {
+        refused("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":{\"a\":\"" + SENTINEL + "\"}}", true);
+    }
+
+    @Test
+    @DisplayName("F: an error whose code is a string")
+    void errorCodeWrongType() throws Exception {
+        refused("{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{\"code\":\"" + SENTINEL + "\",\"message\":\"m\"}}", true);
+    }
+
+    @Test
+    @DisplayName("F: an error that is a string")
+    void errorWrongType() throws Exception {
+        refused("{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":\"" + SENTINEL + "\"}", true);
+    }
+
+    @Test
     @DisplayName("E: tools/call whose arguments is a string holding the sentinel")
     void toolCallArgumentsString() throws Exception {
         refused("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"get_entity_context\","

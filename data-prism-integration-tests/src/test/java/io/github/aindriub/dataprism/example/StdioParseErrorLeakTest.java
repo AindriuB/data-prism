@@ -60,9 +60,27 @@ class StdioParseErrorLeakTest {
     }
 
     @Test
+    @DisplayName("F: a method that is an object is refused with -32600")
+    void methodWrongType() throws Exception {
+        assertGuardRefused(run("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":{\"a\":\"" + SENTINEL + "\"}}"), "-32600");
+    }
+
+    @Test
+    @DisplayName("F: an error whose code is a string is refused with -32600")
+    void errorCodeWrongType() throws Exception {
+        assertGuardRefused(run("{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{\"code\":\"" + SENTINEL + "\",\"message\":\"m\"}}"), "-32600");
+    }
+
+    @Test
+    @DisplayName("F: an error that is a string is refused with -32600")
+    void errorWrongType() throws Exception {
+        assertGuardRefused(run("{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":\"" + SENTINEL + "\"}"), "-32600");
+    }
+
+    @Test
     @DisplayName("E: tools/call with string arguments gets the SDK's error reply, with no sentinel")
     void toolCallArgumentsString() throws Exception {
-        Result result = run("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":"
+        Result result = runPinned("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":"
                 + "{\"name\":\"get_entity_context\",\"arguments\":\"" + SENTINEL + "\"}}");
         assertSdkErrorReply(result);
     }
@@ -70,7 +88,7 @@ class StdioParseErrorLeakTest {
     @Test
     @DisplayName("E: initialize with string capabilities gets the SDK's error reply, with no sentinel")
     void initializeCapabilitiesString() throws Exception {
-        Result result = run("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"initialize\",\"params\":"
+        Result result = runPinned("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"initialize\",\"params\":"
                 + "{\"protocolVersion\":\"2024-11-05\",\"capabilities\":\"" + SENTINEL
                 + "\",\"clientInfo\":{\"name\":\"leak\",\"version\":\"1\"}}}");
         assertSdkErrorReply(result);
@@ -104,9 +122,21 @@ class StdioParseErrorLeakTest {
      * waits for the ping's reply so every earlier line has been handled.
      */
     private static Result run(String caseLine) throws IOException, InterruptedException {
+        return run(caseLine, true);
+    }
+
+    /** As {@link #run}, keeping the WARN pin on the SDK's loggers: E lines are forwarded, so its DEBUG is a named residual. */
+    private static Result runPinned(String caseLine) throws IOException, InterruptedException {
+        return run(caseLine, false);
+    }
+
+    private static Result run(String caseLine, boolean sdkDebug) throws IOException, InterruptedException {
         List<String> command = new ArrayList<>();
         command.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());
         command.add("-Dorg.slf4j.simpleLogger.defaultLogLevel=trace");
+        if (sdkDebug) {
+            command.add("-Dorg.slf4j.simpleLogger.log.io.modelcontextprotocol=debug");
+        }
         command.add("-cp");
         command.add(System.getProperty("java.class.path"));
         command.add(ExampleApplication.class.getName());

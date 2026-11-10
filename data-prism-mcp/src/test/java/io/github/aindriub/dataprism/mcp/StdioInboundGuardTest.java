@@ -91,10 +91,22 @@ class StdioInboundGuardTest {
     }
 
     @Test
+    @DisplayName("a wrongly typed method, result or error is refused as -32600 and the next line passes")
+    void wronglyTypedMembersAreRefused() throws Exception {
+        for (String bad : new String[] {"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":{\"a\":1}}",
+                "{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{\"code\":\"x\",\"message\":\"m\"}}",
+                "{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":\"x\"}"}) {
+            assertThat(forwarded(bad + "\n" + PING + "\n")).isEqualTo(PING + "\n");
+            assertThat(answered()).isEqualTo(INVALID_REQUEST);
+            out.reset();
+        }
+    }
+
+    @Test
     @DisplayName("a line of exactly the limit passes")
     void lineOfExactlyTheLimitPasses() throws Exception {
-        String prefix = "{\"method\":\"x\",\"pad\":\"";
-        String line = prefix + "a".repeat(LIMIT - prefix.length() - 2) + "\"}";
+        String prefix = "{\"jsonrpc\":\"2.0\",\"method\":\"x\",\"params\":{\"pad\":\"";
+        String line = prefix + "a".repeat(LIMIT - prefix.length() - 3) + "\"}}";
         assertThat(line.length()).isEqualTo(LIMIT);
 
         assertThat(forwarded(line + "\n")).isEqualTo(line + "\n");
