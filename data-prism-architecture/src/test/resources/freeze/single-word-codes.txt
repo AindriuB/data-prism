@@ -1,0 +1,10 @@
+# Single-word operator error codes and status values (register section 3.4), kept by hand.
+# CodeSetFreezeTest follows the register's E1 rule, which matches only literals with an underscore, so these are
+# listed here. SingleWordCodesFreezeTest checks both directions. Edit by hand; there is no regeneration.
+APPROVED
+FORBIDDEN
+PAUSED
+REJECTED
+RESOLVED
+RESUMED
+UNAUTHENTICATED

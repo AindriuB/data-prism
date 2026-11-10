@@ -1,5 +1,55 @@
-# Public and protected signatures of core.spi, validation, security and audit (register section 15).
+# Public and protected signatures of core.spi, validation, security, audit and every type in register section 7.1 (register section 15).
 # Regenerate: ./mvnw -pl data-prism-architecture -am test -Dtest=SpiSignaturesFreezeTest -Dfreeze.write=<dir> -Dsurefire.failIfNoSpecifiedTests=false
+annotations.InternalIdentifier | implements | java.lang.annotation.Annotation
+annotations.InternalIdentifier | meta | @java.lang.annotation.Retention(RUNTIME)
+annotations.InternalIdentifier | meta | @java.lang.annotation.Target({FIELD, RECORD_COMPONENT, METHOD, PARAMETER})
+annotations.InternalIdentifier | type | public abstract @interface annotations.InternalIdentifier
+annotations.LlmExposedModel | attribute | profile default "DEFAULT"
+annotations.LlmExposedModel | attribute | undeclaredFields default PROFILE_DEFAULT
+annotations.LlmExposedModel | implements | java.lang.annotation.Annotation
+annotations.LlmExposedModel | meta | @java.lang.annotation.Retention(RUNTIME)
+annotations.LlmExposedModel | meta | @java.lang.annotation.Target({TYPE})
+annotations.LlmExposedModel | method | public abstract annotations.UndeclaredFields annotations.LlmExposedModel.undeclaredFields()
+annotations.LlmExposedModel | method | public abstract java.lang.String annotations.LlmExposedModel.profile()
+annotations.LlmExposedModel | type | public abstract @interface annotations.LlmExposedModel
+annotations.NonSensitive | attribute | reason default (none)
+annotations.NonSensitive | implements | java.lang.annotation.Annotation
+annotations.NonSensitive | meta | @java.lang.annotation.Retention(RUNTIME)
+annotations.NonSensitive | meta | @java.lang.annotation.Target({FIELD, RECORD_COMPONENT, METHOD, PARAMETER})
+annotations.NonSensitive | method | public abstract java.lang.String annotations.NonSensitive.reason()
+annotations.NonSensitive | type | public abstract @interface annotations.NonSensitive
+annotations.SensitiveData | attribute | classifications default (none)
+annotations.SensitiveData | attribute | namespace default NONE
+annotations.SensitiveData | attribute | sensitivity default CONFIDENTIAL
+annotations.SensitiveData | attribute | subject default ""
+annotations.SensitiveData | attribute | suggestedAction default REDACT
+annotations.SensitiveData | implements | java.lang.annotation.Annotation
+annotations.SensitiveData | meta | @java.lang.annotation.Retention(RUNTIME)
+annotations.SensitiveData | meta | @java.lang.annotation.Target({FIELD, RECORD_COMPONENT, METHOD, PARAMETER})
+annotations.SensitiveData | method | public abstract annotations.DataClassification[] annotations.SensitiveData.classifications()
+annotations.SensitiveData | method | public abstract annotations.PrivacyAction annotations.SensitiveData.suggestedAction()
+annotations.SensitiveData | method | public abstract annotations.PrivacyNamespace annotations.SensitiveData.namespace()
+annotations.SensitiveData | method | public abstract annotations.SensitivityLevel annotations.SensitiveData.sensitivity()
+annotations.SensitiveData | method | public abstract java.lang.String annotations.SensitiveData.subject()
+annotations.SensitiveData | type | public abstract @interface annotations.SensitiveData
+annotations.SensitiveObject | attribute | classifications default []
+annotations.SensitiveObject | attribute | namespace default NONE
+annotations.SensitiveObject | attribute | suggestedAction default REDACT
+annotations.SensitiveObject | attribute | undeclaredFields default PROFILE_DEFAULT
+annotations.SensitiveObject | implements | java.lang.annotation.Annotation
+annotations.SensitiveObject | meta | @java.lang.annotation.Retention(RUNTIME)
+annotations.SensitiveObject | meta | @java.lang.annotation.Target({TYPE})
+annotations.SensitiveObject | method | public abstract annotations.DataClassification[] annotations.SensitiveObject.classifications()
+annotations.SensitiveObject | method | public abstract annotations.PrivacyAction annotations.SensitiveObject.suggestedAction()
+annotations.SensitiveObject | method | public abstract annotations.PrivacyNamespace annotations.SensitiveObject.namespace()
+annotations.SensitiveObject | method | public abstract annotations.UndeclaredFields annotations.SensitiveObject.undeclaredFields()
+annotations.SensitiveObject | type | public abstract @interface annotations.SensitiveObject
+annotations.SubjectIdentifier | attribute | role default (none)
+annotations.SubjectIdentifier | implements | java.lang.annotation.Annotation
+annotations.SubjectIdentifier | meta | @java.lang.annotation.Retention(RUNTIME)
+annotations.SubjectIdentifier | meta | @java.lang.annotation.Target({FIELD, RECORD_COMPONENT, METHOD, PARAMETER})
+annotations.SubjectIdentifier | method | public abstract java.lang.String annotations.SubjectIdentifier.role()
+annotations.SubjectIdentifier | type | public abstract @interface annotations.SubjectIdentifier
 audit.AuditChainKey | constructor | public audit.AuditChainKey(java.lang.String,byte[])
 audit.AuditChainKey | field | public static final int audit.AuditChainKey.MIN_KEY_BYTES
 audit.AuditChainKey | method | public java.lang.String audit.AuditChainKey.id()
@@ -139,6 +189,21 @@ audit.AuditedEntityTypes | method | public java.lang.String audit.AuditedEntityT
 audit.AuditedEntityTypes | method | public static audit.AuditedEntityTypes audit.AuditedEntityTypes.of(java.util.Collection<java.lang.String>)
 audit.AuditedEntityTypes | method | public static audit.AuditedEntityTypes audit.AuditedEntityTypes.shape()
 audit.AuditedEntityTypes | type | public final class audit.AuditedEntityTypes
+core.limits.ScopeBudget | method | public abstract boolean core.limits.ScopeBudget.tryRead(java.lang.String,java.lang.String,int)
+core.limits.ScopeBudget | method | public abstract int core.limits.ScopeBudget.reads(java.lang.String,java.lang.String)
+core.limits.ScopeBudget | method | public abstract void core.limits.ScopeBudget.forget(java.lang.String)
+core.limits.ScopeBudget | method | public default core.limits.ReadReservation core.limits.ScopeBudget.reserve(java.lang.String,java.lang.String,int,int,int)
+core.limits.ScopeBudget | method | public default int core.limits.ScopeBudget.scopeReads(java.lang.String)
+core.limits.ScopeBudget | method | public default void core.limits.ScopeBudget.release(core.limits.ReadReservation,int)
+core.limits.ScopeBudget | type | public abstract interface core.limits.ScopeBudget
+core.metrics.PrivacyMetrics | method | public abstract void core.metrics.PrivacyMetrics.increment(core.metrics.Metric)
+core.metrics.PrivacyMetrics | method | public abstract void core.metrics.PrivacyMetrics.increment(core.metrics.Metric,java.lang.String)
+core.metrics.PrivacyMetrics | method | public abstract void core.metrics.PrivacyMetrics.record(core.metrics.Metric,java.lang.String,java.time.Duration)
+core.metrics.PrivacyMetrics | method | public default void core.metrics.PrivacyMetrics.gauge(core.metrics.Metric,java.util.function.DoubleSupplier)
+core.metrics.PrivacyMetrics | method | public static core.metrics.PrivacyMetrics core.metrics.PrivacyMetrics.none()
+core.metrics.PrivacyMetrics | type | public abstract interface core.metrics.PrivacyMetrics
+core.policy.PrivacyPolicyResolver | method | public abstract core.policy.EffectivePrivacyPolicy core.policy.PrivacyPolicyResolver.resolve(core.model.FieldMetadata,core.model.PrivacyContext)
+core.policy.PrivacyPolicyResolver | type | public abstract interface core.policy.PrivacyPolicyResolver
 core.spi.ChainableField | constructor | public core.spi.ChainableField(java.lang.String,core.spi.KeyNamespace,boolean)
 core.spi.ChainableField | method | public boolean core.spi.ChainableField.element()
 core.spi.ChainableField | method | public core.spi.KeyNamespace core.spi.ChainableField.keyNamespace()
@@ -301,6 +366,68 @@ core.spi.ValueTokenSource | method | public abstract java.lang.String core.spi.V
 core.spi.ValueTokenSource | method | public default boolean core.spi.ValueTokenSource.available()
 core.spi.ValueTokenSource | method | public static core.spi.ValueTokenSource core.spi.ValueTokenSource.unavailable()
 core.spi.ValueTokenSource | type | public abstract interface core.spi.ValueTokenSource
+orchestration.ContextOrchestrator | method | public abstract orchestration.ContextResponse orchestration.ContextOrchestrator.buildContext(orchestration.ContextRequest,core.model.PrivacyContext,core.model.InvestigationContext)
+orchestration.ContextOrchestrator | method | public default java.util.Optional<core.model.ModelDescription> orchestration.ContextOrchestrator.describe(java.lang.String,core.model.PrivacyContext,boolean)
+orchestration.ContextOrchestrator | method | public default orchestration.ContextResponse orchestration.ContextOrchestrator.follow(orchestration.FollowRequest,core.model.PrivacyContext,core.model.InvestigationContext)
+orchestration.ContextOrchestrator | type | public abstract interface orchestration.ContextOrchestrator
+oversight.ApprovalStore | method | public abstract java.util.List<oversight.ApprovalRequest> oversight.ApprovalStore.pending(java.time.Instant)
+oversight.ApprovalStore | method | public abstract java.util.Optional<oversight.ApprovalRequest> oversight.ApprovalStore.consumeApproved(oversight.ApprovalRequest$Kind,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.time.Instant)
+oversight.ApprovalStore | method | public abstract java.util.Optional<oversight.ApprovalRequest> oversight.ApprovalStore.find(java.lang.String)
+oversight.ApprovalStore | method | public abstract java.util.Optional<oversight.ApprovalRequest> oversight.ApprovalStore.findPending(oversight.ApprovalRequest$Kind,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.time.Instant)
+oversight.ApprovalStore | method | public abstract oversight.ApprovalRequest oversight.ApprovalStore.approve(java.lang.String,java.lang.String,java.time.Instant)
+oversight.ApprovalStore | method | public abstract oversight.ApprovalRequest oversight.ApprovalStore.create(oversight.ApprovalRequest)
+oversight.ApprovalStore | method | public abstract oversight.ApprovalRequest oversight.ApprovalStore.create(oversight.ApprovalRequest,int)
+oversight.ApprovalStore | method | public abstract oversight.ApprovalRequest oversight.ApprovalStore.reject(java.lang.String,java.lang.String,java.time.Instant)
+oversight.ApprovalStore | method | public abstract void oversight.ApprovalStore.forgetScope(java.lang.String)
+oversight.ApprovalStore | type | public abstract interface oversight.ApprovalStore
+oversight.CallerRateLimiter | method | public abstract boolean oversight.CallerRateLimiter.tryAcquire(java.lang.String,int,java.time.Duration,java.time.Instant)
+oversight.CallerRateLimiter | type | public abstract interface oversight.CallerRateLimiter
+oversight.OversightState | method | public abstract boolean oversight.OversightState.allPaused()
+oversight.OversightState | method | public abstract boolean oversight.OversightState.scopePaused(java.lang.String)
+oversight.OversightState | method | public abstract boolean oversight.OversightState.toolPaused(java.lang.String)
+oversight.OversightState | method | public abstract oversight.OversightSnapshot oversight.OversightState.snapshot()
+oversight.OversightState | method | public abstract void oversight.OversightState.pauseAll()
+oversight.OversightState | method | public abstract void oversight.OversightState.pauseScope(java.lang.String)
+oversight.OversightState | method | public abstract void oversight.OversightState.pauseTool(java.lang.String)
+oversight.OversightState | method | public abstract void oversight.OversightState.resumeAll()
+oversight.OversightState | method | public abstract void oversight.OversightState.resumeScope(java.lang.String)
+oversight.OversightState | method | public abstract void oversight.OversightState.resumeTool(java.lang.String)
+oversight.OversightState | type | public abstract interface oversight.OversightState
+pseudonymisation.vocabulary.Vocabulary | method | public abstract java.lang.String pseudonymisation.vocabulary.Vocabulary.id()
+pseudonymisation.vocabulary.Vocabulary | method | public abstract java.lang.String pseudonymisation.vocabulary.Vocabulary.localeTag()
+pseudonymisation.vocabulary.Vocabulary | method | public abstract java.lang.String pseudonymisation.vocabulary.Vocabulary.script()
+pseudonymisation.vocabulary.Vocabulary | method | public abstract java.util.List<java.lang.String> pseudonymisation.vocabulary.Vocabulary.pool(pseudonymisation.vocabulary.PoolKind)
+pseudonymisation.vocabulary.Vocabulary | type | public abstract interface pseudonymisation.vocabulary.Vocabulary
+reidentification.ReidentificationOutcome | type | public abstract sealed interface reidentification.ReidentificationOutcome
+reidentification.ReidentificationOutcome$Approved | constructor | public reidentification.ReidentificationOutcome$Approved()
+reidentification.ReidentificationOutcome$Approved | implements | reidentification.ReidentificationOutcome
+reidentification.ReidentificationOutcome$Approved | method | public final boolean reidentification.ReidentificationOutcome$Approved.equals(java.lang.Object)
+reidentification.ReidentificationOutcome$Approved | method | public final int reidentification.ReidentificationOutcome$Approved.hashCode()
+reidentification.ReidentificationOutcome$Approved | method | public final java.lang.String reidentification.ReidentificationOutcome$Approved.toString()
+reidentification.ReidentificationOutcome$Approved | type | public static final record reidentification.ReidentificationOutcome$Approved
+reidentification.ReidentificationOutcome$PendingApproval | constructor | public reidentification.ReidentificationOutcome$PendingApproval(java.lang.String)
+reidentification.ReidentificationOutcome$PendingApproval | implements | reidentification.ReidentificationOutcome
+reidentification.ReidentificationOutcome$PendingApproval | method | public final boolean reidentification.ReidentificationOutcome$PendingApproval.equals(java.lang.Object)
+reidentification.ReidentificationOutcome$PendingApproval | method | public final int reidentification.ReidentificationOutcome$PendingApproval.hashCode()
+reidentification.ReidentificationOutcome$PendingApproval | method | public final java.lang.String reidentification.ReidentificationOutcome$PendingApproval.toString()
+reidentification.ReidentificationOutcome$PendingApproval | method | public java.lang.String reidentification.ReidentificationOutcome$PendingApproval.approvalId()
+reidentification.ReidentificationOutcome$PendingApproval | type | public static final record reidentification.ReidentificationOutcome$PendingApproval
+reidentification.ReidentificationOutcome$Refused | constructor | public reidentification.ReidentificationOutcome$Refused(java.lang.String)
+reidentification.ReidentificationOutcome$Refused | implements | reidentification.ReidentificationOutcome
+reidentification.ReidentificationOutcome$Refused | method | public final boolean reidentification.ReidentificationOutcome$Refused.equals(java.lang.Object)
+reidentification.ReidentificationOutcome$Refused | method | public final int reidentification.ReidentificationOutcome$Refused.hashCode()
+reidentification.ReidentificationOutcome$Refused | method | public final java.lang.String reidentification.ReidentificationOutcome$Refused.toString()
+reidentification.ReidentificationOutcome$Refused | method | public java.lang.String reidentification.ReidentificationOutcome$Refused.code()
+reidentification.ReidentificationOutcome$Refused | type | public static final record reidentification.ReidentificationOutcome$Refused
+reidentification.ReidentificationOutcome$Resolved | constructor | public reidentification.ReidentificationOutcome$Resolved(java.lang.String)
+reidentification.ReidentificationOutcome$Resolved | implements | reidentification.ReidentificationOutcome
+reidentification.ReidentificationOutcome$Resolved | method | public final boolean reidentification.ReidentificationOutcome$Resolved.equals(java.lang.Object)
+reidentification.ReidentificationOutcome$Resolved | method | public final int reidentification.ReidentificationOutcome$Resolved.hashCode()
+reidentification.ReidentificationOutcome$Resolved | method | public java.lang.String reidentification.ReidentificationOutcome$Resolved.subjectId()
+reidentification.ReidentificationOutcome$Resolved | method | public java.lang.String reidentification.ReidentificationOutcome$Resolved.toString()
+reidentification.ReidentificationOutcome$Resolved | type | public static final record reidentification.ReidentificationOutcome$Resolved
+reidentification.SubjectLookup | method | public abstract java.util.Optional<java.lang.String> reidentification.SubjectLookup.subjectFor(java.lang.String,annotations.PrivacyNamespace,java.lang.String)
+reidentification.SubjectLookup | type | public abstract interface reidentification.SubjectLookup
 security.AdmissionDecision | constructor | public security.AdmissionDecision(boolean,java.lang.String,java.lang.String,java.lang.String)
 security.AdmissionDecision | method | public boolean security.AdmissionDecision.admitted()
 security.AdmissionDecision | method | public final boolean security.AdmissionDecision.equals(java.lang.Object)
@@ -426,6 +553,11 @@ security.ToolInvocation | method | public final java.lang.String security.ToolIn
 security.ToolInvocation | method | public java.lang.String security.ToolInvocation.requiredCapability()
 security.ToolInvocation | method | public java.lang.String security.ToolInvocation.toolName()
 security.ToolInvocation | type | public final record security.ToolInvocation
+server.operator.OperatorCallers | method | public abstract java.util.Optional<security.AuthenticatedCaller> server.operator.OperatorCallers.current()
+server.operator.OperatorCallers | type | public abstract interface server.operator.OperatorCallers
+spring.boot.HmacKeyReferenceResolver | method | public abstract byte[] spring.boot.HmacKeyReferenceResolver.resolve(java.lang.String,java.lang.String)
+spring.boot.HmacKeyReferenceResolver | method | public default byte[] spring.boot.HmacKeyReferenceResolver.resolveProviderReference(java.lang.String,java.lang.String)
+spring.boot.HmacKeyReferenceResolver | type | public abstract interface spring.boot.HmacKeyReferenceResolver
 validation.FreeTextRecogniser | method | public abstract java.util.Set<annotations.DataClassification> validation.FreeTextRecogniser.recognise(java.lang.String)
 validation.FreeTextRecogniser | type | public abstract interface validation.FreeTextRecogniser
 validation.LlmResponseValidator | method | public abstract validation.ValidationResult validation.LlmResponseValidator.validate(tools.jackson.databind.JsonNode,java.util.Set<java.lang.String>,java.util.Set<java.lang.String>,core.model.PrivacyContext)

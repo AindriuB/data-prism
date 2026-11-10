@@ -4,6 +4,10 @@ import com.tngtech.archunit.core.domain.JavaClass;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.lang.annotation.Retention;
+import java.lang.annotation.Target;
+import java.lang.annotation.Annotation;
+import java.nio.file.Files;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -13,11 +17,18 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import java.util.TreeSet;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * A signature snapshot of the public types in the SPI packages (register section 15, "SPI interfaces and
  * annotations"): {@code core.spi}, {@code validation}, {@code security} and {@code audit}, the audit contract
- * package (its {@code verify} and {@code retention} subpackages are not part of it). For each public type, nested
+ * package (its {@code verify} and {@code retention} subpackages are not part of it), plus every interface and
+ * annotation in register section 7.1, read from the register (task 260 amendment 2026-11-10). Annotations also
+ * record each attribute's default and their {@code @Retention} and {@code @Target}. For each public type, nested
  * public types included: its declaration with supertypes, then every public or protected constructor, method and
  * field, each as {@code Class#toGenericString} and friends print it with the common package prefix removed.
  * Bridge and synthetic members are skipped. Regenerate with {@code -Dfreeze.write=<directory>}.
@@ -25,20 +36,58 @@ import java.util.Set;
 class SpiSignaturesFreezeTest {
 
     private static final String ROOT = "io.github.aindriub.dataprism.";
+    private static final String REGISTER = "docs/plan/design/contract-register.md";
+    private static final Pattern ROW = Pattern.compile("^\\| `@?(\\w+)` \\| (?:interface|annotation) \\|");
     private static final Set<String> PACKAGES = Set.of(ROOT + "core.spi", ROOT + "validation",
             ROOT + "security", ROOT + "audit");
 
     @Test
     void theSpiSignaturesMatchTheFrozenSnapshot() throws IOException {
         List<String> actual = new ArrayList<>();
+        Set<String> registered = registeredTypes();
+        Set<String> found = new TreeSet<>();
         for (JavaClass type : MainSources.mainClasses()) {
-            if (PACKAGES.contains(type.getPackageName()) && type.getEnclosingClass().isEmpty()) {
+            if (type.getEnclosingClass().isPresent()) {
+                continue;
+            }
+            boolean listed = registered.contains(type.getSimpleName());
+            if (listed) {
+                found.add(type.getSimpleName());
+            }
+            if (listed || PACKAGES.contains(type.getPackageName())) {
                 describe(type.reflect(), actual);
             }
         }
+        Set<String> missing = new TreeSet<>(registered);
+        missing.removeAll(found);
+        assertThat(missing).as("register 7.1 types with no class in src/main").isEmpty();
         actual.replaceAll(line -> line.replace(ROOT, ""));
         actual.sort(null);
         FreezeLists.assertMatches("spi-signatures.txt", actual);
+    }
+
+    /**
+     * The simple names in the register's section 7.1 table, interfaces and annotations (an annotation is listed
+     * as {@code `@Name`}). The register is read, so a type added to 7.1 is pinned without editing this test.
+     */
+    private static Set<String> registeredTypes() throws IOException {
+        List<String> lines = Files.readAllLines(MainSources.repositoryRoot().resolve(REGISTER));
+        Set<String> names = new TreeSet<>();
+        boolean inSection = false;
+        for (String line : lines) {
+            if (line.startsWith("### 7.1 ")) {
+                inSection = true;
+            } else if (inSection && line.startsWith("#")) {
+                break;
+            } else if (inSection) {
+                Matcher row = ROW.matcher(line);
+                if (row.find()) {
+                    names.add(row.group(1));
+                }
+            }
+        }
+        assertThat(names).as("types read from " + REGISTER + " section 7.1").hasSizeGreaterThanOrEqualTo(30);
+        return names;
     }
 
     private static void describe(Class<?> type, List<String> out) {
@@ -62,6 +111,17 @@ class SpiSignaturesFreezeTest {
         for (Method method : type.getDeclaredMethods()) {
             if (exposed(method.getModifiers()) && !method.isSynthetic() && !method.isBridge()) {
                 out.add(name + " | method | " + method.toGenericString());
+                if (type.isAnnotation()) {
+                    out.add(name + " | attribute | " + method.getName() + " default "
+                            + defaultOf(method.getDefaultValue()));
+                }
+            }
+        }
+        if (type.isAnnotation()) {
+            for (Annotation meta : type.getDeclaredAnnotations()) {
+                if (meta instanceof Retention || meta instanceof Target) {
+                    out.add(name + " | meta | " + meta);
+                }
             }
         }
         for (Field field : type.getDeclaredFields()) {
@@ -70,6 +130,21 @@ class SpiSignaturesFreezeTest {
             }
         }
         Arrays.stream(type.getDeclaredClasses()).forEach(nested -> describe(nested, out));
+    }
+
+    private static String defaultOf(Object value) {
+        if (value == null) {
+            return "(none)";
+        }
+        if (value.getClass().isArray()) {
+            int length = java.lang.reflect.Array.getLength(value);
+            List<String> items = new ArrayList<>();
+            for (int i = 0; i < length; i++) {
+                items.add(String.valueOf(java.lang.reflect.Array.get(value, i)));
+            }
+            return items.toString();
+        }
+        return value instanceof String ? "\"" + value + "\"" : value.toString();
     }
 
     private static boolean exposed(int modifiers) {
