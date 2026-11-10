@@ -89,6 +89,10 @@ dataprism.hazelcast.topology | java.lang.String | rw | null
 dataprism.hazelcast.trusted-network | boolean | rw | false
 dataprism.identity | bean | rw
 dataprism.identity.resolver | java.lang.String | rw | null
+dataprism.key-resolvers | bean | rw
+dataprism.key-resolvers.budget-cost | java.lang.String | rw | 1
+dataprism.key-resolvers.max-targets | java.lang.String | rw | 5
+dataprism.key-resolvers.timeout | java.lang.String | rw | PT2S
 dataprism.limits | bean | rw
 dataprism.limits.max-concurrency | int | rw | 4
 dataprism.limits.max-records | int | rw | 500
@@ -99,10 +103,18 @@ dataprism.limits.request-timeout | java.time.Duration | rw | PT10S
 dataprism.limits.scope-read-budget | int | rw | 100
 dataprism.limits.scope-total-read-budget | int | rw | 50000
 dataprism.links | bean | rw
+dataprism.links.bind-caller | boolean | rw | true
+dataprism.links.clock-skew | java.lang.String | rw | PT5S
+dataprism.links.enabled | boolean | rw | false
+dataprism.links.invalid-attempt-limit | java.lang.String | rw | 20
+dataprism.links.invalid-attempt-window | java.lang.String | rw | PT10M
 dataprism.links.key-id | java.lang.String | rw | null
 dataprism.links.keys | java.util.Map<java.lang.String,bean> | rw | {}
 dataprism.links.keys.*.environment-variable | java.lang.String | rw | null
 dataprism.links.keys.*.provider-reference | java.lang.String | rw | null
+dataprism.links.lifetime | java.lang.String | rw | PT30M
+dataprism.links.max-length | java.lang.String | rw | 1024
+dataprism.links.max-per-response | java.lang.String | rw | 50
 dataprism.metrics | bean | rw
 dataprism.metrics.registry-reference | java.lang.String | rw | null
 dataprism.metrics.sink | java.lang.String | rw | null
