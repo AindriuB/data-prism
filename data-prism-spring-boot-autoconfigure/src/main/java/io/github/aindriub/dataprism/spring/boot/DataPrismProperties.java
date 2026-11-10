@@ -51,6 +51,8 @@ public class DataPrismProperties {
     private PagingProperties paging = new PagingProperties();
     @NestedConfigurationProperty
     private LinksProperties links = new LinksProperties();
+    @NestedConfigurationProperty
+    private KeyResolverProperties keyResolvers = new KeyResolverProperties();
     /** Named source entries, one per configured Java-first REST adapter, each with base-url, timeout and mTLS or credential references. */
     private Map<String, SourceProperties> sources = new LinkedHashMap<>();
 
@@ -180,6 +182,14 @@ public class DataPrismProperties {
 
     public void setLinks(LinksProperties v) {
         links = v == null ? new LinksProperties() : v;
+    }
+
+    public KeyResolverProperties getKeyResolvers() {
+        return keyResolvers;
+    }
+
+    public void setKeyResolvers(KeyResolverProperties v) {
+        keyResolvers = v == null ? new KeyResolverProperties() : v;
     }
 
     public Map<String, SourceProperties> getSources() {

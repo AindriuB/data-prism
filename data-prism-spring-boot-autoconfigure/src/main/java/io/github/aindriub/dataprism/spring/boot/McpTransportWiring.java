@@ -100,7 +100,7 @@ class McpTransportWiring {
                 .build();
         return DataPrismMcpServer.streamableHttp(orchestrator, authorization, scopeResolver, extractor,
                 properties.getTransport().getHttp().getPath(), metrics, audit, clock, options, catalogQueries,
-                CatalogWiring.PAGE_MAX_LENGTH);
+                properties.getLinks().maxLengthValue(), properties.getLinks().isEnabled());
     }
 
     @Bean(destroyMethod = "closeGracefully")

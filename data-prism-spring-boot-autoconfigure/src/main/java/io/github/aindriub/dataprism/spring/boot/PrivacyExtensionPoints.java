@@ -111,6 +111,17 @@ public final class PrivacyExtensionPoints {
             entry("dataPrismLinkKeys", Classification.PRIVACY_CRITICAL, Guard.COMPETING_BEAN_REFUSAL),
             entry("dataPrismLinkCodec", Classification.PRIVACY_CRITICAL, Guard.COMPETING_BEAN_REFUSAL),
             entry("dataPrismCatalogPreflight", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismCatalogSignals", Classification.REPLACEABLE, Guard.NONE),
+            // The gate is the only way a sealed link is opened, and the parts carry it into the orchestration
+            // options: neither can be replaced. The limiter is the extension point (a cluster-wide one is
+            // supplied by the application, and refused where one is needed and absent).
+            entry("dataPrismLinkAttemptGate", Classification.PRIVACY_CRITICAL, Guard.COMPETING_BEAN_REFUSAL),
+            entry("dataPrismLinkParts", Classification.PRIVACY_CRITICAL, Guard.COMPETING_BEAN_REFUSAL),
+            entry("dataPrismLinkPreflight", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismLinkAttemptLimiter", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismLinkLimiterValidated", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismLinkKeySignals", Classification.REPLACEABLE, Guard.NONE),
+            entry("linkKeysHealthIndicator", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismContextOrchestrator", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismStdioTransportRefused", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismMcpTransportPreflight", Classification.REPLACEABLE, Guard.NONE),

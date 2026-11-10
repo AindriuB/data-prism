@@ -2,10 +2,12 @@ package io.github.aindriub.dataprism.spring.boot;
 
 import io.github.aindriub.dataprism.core.engine.ChainableFields;
 import io.github.aindriub.dataprism.core.engine.JsonTreeScrubbingEngine;
+import io.github.aindriub.dataprism.core.link.LinkAttemptGate;
 import io.github.aindriub.dataprism.core.link.LinkCodec;
 import io.github.aindriub.dataprism.core.link.LinkKeys;
 import io.github.aindriub.dataprism.core.link.LinkSettings;
 import io.github.aindriub.dataprism.core.link.LinkConfigurationException;
+import io.github.aindriub.dataprism.core.metrics.Metric;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.spi.ValueTokenSource;
@@ -32,7 +34,6 @@ import org.springframework.core.type.AnnotatedTypeMetadata;
 
 import java.net.URI;
 import java.time.Clock;
-import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -50,12 +51,6 @@ import java.util.Optional;
 @Configuration(proxyBeanMethods = false)
 class CatalogWiring {
     private static final Logger LOG = LoggerFactory.getLogger(CatalogWiring.class);
-
-    /** The longest link, in characters, the served {@code page} argument schema allows: the link default. */
-    static final int PAGE_MAX_LENGTH = 1024;
-
-    private static final Duration LINK_LIFETIME = Duration.ofMinutes(30);
-    private static final Duration LINK_CLOCK_SKEW = Duration.ofSeconds(5);
 
     /** Resolve this before singleton creation: an application bean of one of these types takes none of them over. */
     @Bean
@@ -174,11 +169,14 @@ class CatalogWiring {
      * scopes and the unselected-source limit. The connector module's orchestrator takes it too.
      */
     @Bean
-    OrchestrationOptions dataPrismOrchestrationOptions(SourceCatalog catalog, DataPrismProperties properties) {
+    OrchestrationOptions dataPrismOrchestrationOptions(SourceCatalog catalog, DataPrismProperties properties,
+                                                       ObjectProvider<LinkWiring.Parts> links) {
         CatalogProperties settings = properties.getCatalog();
-        return OrchestrationOptions.defaults().withCatalog(catalog)
+        OrchestrationOptions options = OrchestrationOptions.defaults().withCatalog(catalog)
                 .withRealNames(new RealNamesPolicy(settings.getRealNamesScopes()))
                 .withUnselectedSourceLimit(settings.unselectedSourceLimitValue());
+        LinkWiring.Parts parts = links.getIfAvailable();
+        return parts == null ? options : parts.applyTo(options, properties);
     }
 
     /**
@@ -196,8 +194,9 @@ class CatalogWiring {
     @Conditional(LinkKeyConfigured.class)
     LinkCodec dataPrismLinkCodec(LinkKeys keys, DataPrismProperties properties, Clock clock) {
         try {
-            return new LinkCodec(new LinkSettings(properties.getLinks().getKeyId(), Optional.of(LINK_LIFETIME),
-                    PAGE_MAX_LENGTH, true, LINK_CLOCK_SKEW), keys, clock);
+            LinksProperties links = properties.getLinks();
+            return new LinkCodec(new LinkSettings(links.getKeyId(), Optional.ofNullable(links.lifetimeValue()),
+                    links.maxLengthValue(), links.isBindCaller(), links.clockSkewValue()), keys, clock);
         } catch (LinkConfigurationException refused) {
             throw new DataPrismConfigurationException(refused.code(), "dataprism.links: the link settings are not valid");
         }
@@ -205,21 +204,49 @@ class CatalogWiring {
 
     /**
      * {@code list_sources} and {@code describe_source}. It asks the context's orchestrator (299), which holds the
-     * scrubber that really scrubs a configured source. Page links are not issued yet (task 255): without them a call
-     * returns the whole visible list. Startup refuses an estate larger than one page only while no link key is
-     * configured; with a key configured it does not keep the list to one page until 255 adds the gate.
+     * scrubber that really scrubs a configured source. With a link key configured it pages through sealed page links
+     * and opens them only through the one {@link LinkAttemptGate}; without one, a call returns the whole visible list
+     * (startup refuses an estate larger than one page then). Only {@code dataprism.links.enabled} adds
+     * {@code chainable} to a description.
      */
     @Bean
     CatalogQueries dataPrismCatalogQueries(SourceCatalog catalog, OrchestrationOptions options,
                                            ContextOrchestrator orchestrator, ValueTokenSource tokens,
                                            List<LlmResponseValidator> validators, PrivacyMetrics metrics, Clock clock,
-                                           DataPrismProperties properties) {
+                                           DataPrismProperties properties, ObjectProvider<LinkCodec> codec,
+                                           ObjectProvider<LinkKeys> keys, ObjectProvider<LinkAttemptGate> gate) {
         PagingProperties paging = properties.getPaging();
         return new CatalogQueries(catalog, options.visibility(), new SourceAliasing(tokens), options.realNames(),
                 orchestrator, List.copyOf(validators),
                 new PagingSettings(paging.getListSources().pageSizeValue(), paging.getListSources().maxPageSizeValue(),
                         paging.lifetimeValue()),
-                null, false, metrics, clock);
+                pageLinks(codec.getIfAvailable(), keys.getIfAvailable(), gate.getIfAvailable()),
+                properties.getLinks().isEnabled(), metrics, clock);
+    }
+
+    /** All three or none: the gate exists exactly when a link key is configured. */
+    private static CatalogQueries.PageLinks pageLinks(LinkCodec codec, LinkKeys keys, LinkAttemptGate gate) {
+        return codec == null || keys == null || gate == null ? null : new CatalogQueries.PageLinks(codec, keys, gate);
+    }
+
+    /**
+     * The catalog counts of OD-08-10 (a): the sources on the generated description and the source names outside the
+     * pattern, as gauges. Counts only, never a name. A gauge that will not register is logged and startup goes on.
+     */
+    @org.springframework.context.annotation.Lazy(false)
+    @Bean
+    static org.springframework.beans.factory.SmartInitializingSingleton dataPrismCatalogSignals(
+            ConfigurableListableBeanFactory beans, ObjectProvider<PrivacyMetrics> metrics) {
+        return () -> {
+            try {
+                SourceCatalog catalog = beans.getBean(SourceCatalog.class);
+                PrivacyMetrics sink = metrics.getIfAvailable(PrivacyMetrics::none);
+                sink.gauge(Metric.CATALOG_DESCRIPTIONS_GENERATED, catalog::generatedDescriptionCount);
+                sink.gauge(Metric.CATALOG_SOURCE_NAMES_NONCONFORMING, catalog::nonconformingNameCount);
+            } catch (RuntimeException registrationFailed) {
+                LOG.warn("the catalog gauges could not be registered: {}", registrationFailed.getClass().getSimpleName());
+            }
+        };
     }
 
     /**

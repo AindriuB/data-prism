@@ -4,7 +4,9 @@ import io.github.aindriub.dataprism.spring.boot.AuditProperties;
 import io.github.aindriub.dataprism.spring.boot.CatalogProperties;
 import io.github.aindriub.dataprism.spring.boot.CorrelationProperties;
 import io.github.aindriub.dataprism.spring.boot.HazelcastProperties;
+import io.github.aindriub.dataprism.spring.boot.KeyResolverProperties;
 import io.github.aindriub.dataprism.spring.boot.LimitsProperties;
+import io.github.aindriub.dataprism.spring.boot.LinksProperties;
 import io.github.aindriub.dataprism.spring.boot.PagingProperties;
 import io.github.aindriub.dataprism.spring.boot.MetricsProperties;
 import io.github.aindriub.dataprism.spring.boot.OperatorProperties;
@@ -53,6 +55,8 @@ public final class DataPrismPropertiesValidator {
     private final LimitsProperties limits;
     private final CatalogProperties catalog;
     private final PagingProperties paging;
+    private final LinksProperties links;
+    private final KeyResolverProperties keyResolvers;
 
     public DataPrismPropertiesValidator(DataPrismProperties p) {
         transport = p.getTransport();
@@ -70,6 +74,8 @@ public final class DataPrismPropertiesValidator {
         limits = p.getLimits();
         catalog = p.getCatalog();
         paging = p.getPaging();
+        links = p.getLinks();
+        keyResolvers = p.getKeyResolvers();
     }
 
     public void validate() {
@@ -101,6 +107,8 @@ public final class DataPrismPropertiesValidator {
         validateOversight();
         validateCatalog();
         validatePaging();
+        validateLinks();
+        validateKeyResolvers();
     }
 
     private static final java.util.regex.Pattern HEADER_TOKEN =
@@ -918,6 +926,49 @@ public final class DataPrismPropertiesValidator {
         } catch (IllegalArgumentException invalid) {
             refuse("INVALID_PAGING_SETTING", ruleOf(invalid.getMessage(), PagingSettings.INVALID));
         }
+    }
+
+    /**
+     * The tools that issue a link: {@code get_entity_context} ({@code _links}) and {@code list_sources} (page links).
+     * {@code compare_entity_sources} carries none. With links on, {@code follow} is gated if any of them is.
+     */
+    private static final List<String> LINK_ISSUING_TOOLS = List.of("get_entity_context", "list_sources");
+
+    /**
+     * {@code dataprism.links.*}: each setting binds with its default and refuses with its own code, naming the
+     * property and never the value. With links on, a link key is required, {@code dataprism.paging.lifetime} may not
+     * exceed the link lifetime, and {@code follow} must be approval-required when a tool that issues links is.
+     */
+    private void validateLinks() {
+        Duration lifetime = links.lifetimeValue();
+        links.maxPerResponseValue();
+        links.maxLengthValue();
+        links.invalidAttemptLimitValue();
+        links.invalidAttemptWindowValue();
+        links.clockSkewValue();
+        if (!links.isEnabled()) {
+            return;
+        }
+        if (!links.keyConfigured()) {
+            refuse("LINK_KEY_UNRESOLVED", "dataprism.links.key-id is required while dataprism.links.enabled is true");
+        }
+        Duration paged = paging.lifetimeValue();
+        if (lifetime != null && paged != null && paged.compareTo(lifetime) > 0) {
+            refuse("INVALID_PAGING_SETTING",
+                    "dataprism.paging.lifetime must not exceed dataprism.links.lifetime while links are enabled");
+        }
+        List<String> gated = oversight.getApprovalRequiredTools();
+        if (!gated.contains("follow") && LINK_ISSUING_TOOLS.stream().anyMatch(gated::contains)) {
+            refuse("FOLLOW_NOT_APPROVAL_GATED", "dataprism.oversight.approval-required-tools lists a tool that issues "
+                    + "links, so it must list follow too while dataprism.links.enabled is true");
+        }
+    }
+
+    /** {@code dataprism.key-resolvers.*}: each setting binds with its default and refuses out-of-range values. */
+    private void validateKeyResolvers() {
+        keyResolvers.maxTargetsValue();
+        keyResolvers.timeoutValue();
+        keyResolvers.budgetCostValue();
     }
 
     private static String ruleOf(String message, String codePrefix) {
