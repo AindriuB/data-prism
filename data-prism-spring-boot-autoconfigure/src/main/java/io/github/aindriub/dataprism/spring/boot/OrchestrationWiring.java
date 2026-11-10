@@ -33,7 +33,7 @@ import java.util.List;
 
 /** Correlation MDC and the context orchestrator. The catalog it serves is wired by {@link CatalogWiring}. */
 @Configuration(proxyBeanMethods = false)
-@Import(CatalogWiring.class)
+@Import({CatalogWiring.class, LinkWiring.class})
 class OrchestrationWiring {
     /** Off unless {@code dataprism.correlation.mdc-key} is set; validated by {@link DataPrismProperties#validate()}. */
     @Bean @ConditionalOnMissingBean

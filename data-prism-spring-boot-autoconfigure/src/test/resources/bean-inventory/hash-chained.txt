@@ -13,12 +13,15 @@ dataPrismCallerRateLimiter | io.github.aindriub.dataprism.oversight.CallerRateLi
 dataPrismCaseAuthorizer | io.github.aindriub.dataprism.security.CaseAuthorizer
 dataPrismCatalogPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
 dataPrismCatalogQueries | io.github.aindriub.dataprism.orchestration.catalog.CatalogQueries
+dataPrismCatalogSignals | org.springframework.beans.factory.SmartInitializingSingleton
 dataPrismClientAllowlist | io.github.aindriub.dataprism.security.ClientAllowlist
 dataPrismClock | java.time.Clock
 dataPrismCompetitionCheck.CatalogQueries | io.github.aindriub.dataprism.spring.boot.PrivacyExtensionPoints$PostCheck
+dataPrismCompetitionCheck.LinkAttemptGate | io.github.aindriub.dataprism.spring.boot.PrivacyExtensionPoints$PostCheck
 dataPrismCompetitionCheck.LinkCodec | io.github.aindriub.dataprism.spring.boot.PrivacyExtensionPoints$PostCheck
 dataPrismCompetitionCheck.LinkKeys | io.github.aindriub.dataprism.spring.boot.PrivacyExtensionPoints$PostCheck
 dataPrismCompetitionCheck.OrchestrationOptions | io.github.aindriub.dataprism.spring.boot.PrivacyExtensionPoints$PostCheck
+dataPrismCompetitionCheck.Parts | io.github.aindriub.dataprism.spring.boot.PrivacyExtensionPoints$PostCheck
 dataPrismCompetitionCheck.PrivacyPolicyResolver | io.github.aindriub.dataprism.spring.boot.PrivacyExtensionPoints$PostCheck
 dataPrismCompetitionCheck.RequestLimits | io.github.aindriub.dataprism.spring.boot.PrivacyExtensionPoints$PostCheck
 dataPrismCompetitionCheck.SourceCatalog | io.github.aindriub.dataprism.spring.boot.PrivacyExtensionPoints$PostCheck
@@ -30,6 +33,8 @@ dataPrismHashChainedAuditSink | io.github.aindriub.dataprism.audit.AuditSink
 dataPrismHttpTransport | io.github.aindriub.dataprism.mcp.DataPrismMcpServer$HttpTransport
 dataPrismHttpTransportValidated | java.lang.Object
 dataPrismIdentityResolverPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
+dataPrismLinkLimiterPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
+dataPrismLinkPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
 dataPrismMcpServlet | org.springframework.boot.web.servlet.ServletRegistrationBean<io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider>
 dataPrismMcpSyncServer | io.modelcontextprotocol.server.McpSyncServer
 dataPrismMcpTransportPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor

@@ -136,7 +136,8 @@ for the relevant group.
 | `dataprism.limits` | All optional; each default is the framework default. See [`dataprism.limits`](#dataprismlimits) | No | Refuse startup for a zero or negative value, a response size that does not fit in an `int`, or a `request-timeout` shorter than `per-source-timeout`, with `INVALID_REQUEST_LIMITS`; and for an application `RequestLimits` bean, including one registered as a raw `FactoryBean` (`FORBIDDEN_PRIVACY_OVERRIDE`) |
 | `dataprism.catalog` | All optional. `unselected-source-limit` is `8`; `real-names-scopes` is empty. See [`dataprism.catalog`](#dataprismcatalog) | No | Refuse startup for a non-positive limit, a limit above `dataprism.limits.max-sources`, or a malformed scope pattern (`INVALID_CATALOG_SETTING`); for a source description that breaks a catalog rule (`INVALID_SOURCE_DESCRIPTION`, `SOURCE_DESCRIPTION_LEAKS_NAME`); for a bad chainable declaration (`INVALID_CHAINABLE_FIELD`); and for an application catalog, options or query bean (`FORBIDDEN_PRIVACY_OVERRIDE`) |
 | `dataprism.paging` | All optional. `list-sources.page-size` is `25`, `list-sources.max-page-size` is `100`, `lifetime` is `PT15M`. See [`dataprism.paging`](#dataprismpaging) | No | Refuse startup for a non-positive value, or a page size above the maximum (`INVALID_PAGING_SETTING`), and for more registered sources than one default page with no `dataprism.links.key-id` (`MISSING_PAGING_KEY`) |
-| `dataprism.links` | `key-id` and `keys.<key-id>.*` are optional here: the link key that page links need. See [`dataprism.links`](#dataprismlinks) | **Yes, by reference** | Refuse startup for a key that does not resolve (`LINK_KEY_UNRESOLVED`), is under 32 bytes (`LINK_KEY_WEAK`), or has the id or the material of the pseudonymisation key (`LINK_KEY_SHARED`), a key id outside 1 to 16 characters of `A-Z`, `a-z`, `0-9`, `_` and `-` (`INVALID_LINK_LIMIT`), and, for a cluster or name key with the id or material of a link key, `CLUSTER_KEY_SHARED` or `NAME_KEY_SHARED` |
+| `dataprism.links` | `enabled` is `false`: no result carries `_links` and `follow` is not registered. `key-id` and `keys.<key-id>.*` are optional while links are off: the link key that page links need. The other keys have the defaults in [`dataprism.links`](#dataprismlinks) | **Yes, by reference** | Refuse startup for a key that does not resolve, or no key with links enabled (`LINK_KEY_UNRESOLVED`), is under 32 bytes (`LINK_KEY_WEAK`), or has the id or the material of the pseudonymisation key (`LINK_KEY_SHARED`), a lifetime that is not a duration of at least one second or `scope` (`INVALID_LINK_LIFETIME`), a limit out of range or a key id outside 1 to 16 characters of `A-Z`, `a-z`, `0-9`, `_` and `-` (`INVALID_LINK_LIMIT`), a `dataprism.paging.lifetime` above `dataprism.links.lifetime` with links enabled (`INVALID_PAGING_SETTING`), a link-issuing tool in `dataprism.oversight.approval-required-tools` without `follow` (`FOLLOW_NOT_APPROVAL_GATED`), a member that joins a cluster through `tcp-ip` or `kubernetes`, or supplies its own `PrivacyCluster` (even of one member), with sealed links in use and no limiter declared as `ClusterWideLinkAttemptLimiter` (`MISSING_SHARED_LINK_LIMITER`), and, for a cluster or name key with the id or material of a link key, `CLUSTER_KEY_SHARED` or `NAME_KEY_SHARED` |
+| `dataprism.key-resolvers` | All optional. `max-targets` is `5`, `timeout` is `PT2S`, `budget-cost` is `1`. See [`dataprism.key-resolvers`](#dataprismkey-resolvers) | No | Refuse startup for a `max-targets` outside 1 to 16, a non-positive `timeout` or `budget-cost` (`INVALID_KEY_RESOLVER_SETTING`), two `KeyResolver` beans for one pair or one name (`DUPLICATE_KEY_RESOLVER`) and a malformed one (`INVALID_KEY_RESOLVER`) |
 | `dataprism.metrics` | Defaults to the framework's no-op implementation only for fixture development; production requires an approved sink/registry binding | Sink credentials are **yes, by reference** when applicable | Refuse startup in production for an unknown or absent required sink; metrics failures after startup remain fail-safe and cannot change a privacy decision |
 | `dataprism.hazelcast` | `topology` is required for a protected deployment and is one of two honest choices, never a default: `embedded` shares the read budget, pause state, approvals and rate limits across members that have joined one cluster, and is the one a multi-instance deployment must choose; `single-node` is a real, supported choice too, but its state is per process, so a configured budget of 100 becomes 100 times the number of running processes. With `embedded`, `cluster-name` (never `dev`), `join.mode` (`tcp-ip`, `kubernetes` or `none`), `join.members`, `join.kubernetes.namespace`, `join.kubernetes.service-name` or `service-dns`, `member.port` (default 5701), `member.interface` and `approval-minimum-members` are the cluster properties, `lock-timeout` (default `PT2S`) bounds every cluster lock wait, and `approval-sweep-interval` (default `PT5M`) sets how often each member sweeps pending approvals; see [`dataprism.hazelcast`](#dataprismhazelcast). Identity-cache TTL follows the privacy scope regardless of topology; re-identification index defaults to `false`; persistence/MapStore defaults to disabled | No | Refuse startup for a missing topology (`MISSING_CLUSTER_TOPOLOGY`), an unknown topology (`UNSUPPORTED_HAZELCAST_TOPOLOGY`), `embedded` with the optional Hazelcast dependency absent from the classpath (`MISSING_SHARED_BUDGET`, never a silent fall back to the per-process budget), persistence/MapStore enablement without an explicit reviewed configuration (`UNSAFE_HAZELCAST_PERSISTENCE`), TLS references (`HAZELCAST_TLS_UNSUPPORTED`: member TLS is not available in the open-source distribution), a missing or reserved cluster name (`MISSING_CLUSTER_NAME`, `RESERVED_CLUSTER_NAME`), a missing or unsupported join mode (`MISSING_CLUSTER_JOIN`, `UNSUPPORTED_CLUSTER_JOIN`), invalid members, Kubernetes join, port or interface (an invalid `member.interface`, or a `hazelcast.*` address property that makes a single member reachable; `INVALID_CLUSTER_MEMBERS`, `INVALID_KUBERNETES_JOIN`, `INVALID_CLUSTER_PORT`, `INVALID_CLUSTER_INTERFACE`), a member port shared with another listener (`CLUSTER_PORT_SHARED`), cluster settings that would be ignored (`CLUSTER_SETTINGS_IGNORED`), a non-positive TTL (`INVALID_HAZELCAST_TTL`), a lock timeout outside `PT100MS` to `PT30S` (`INVALID_LOCK_TIMEOUT`), an approval sweep interval outside `PT1S` to `P1D` (`INVALID_APPROVAL_SWEEP_INTERVAL`), an approval minimum that is below 1, above the listed members or set with `none`, or, with approvals in use, a `tcp-ip` member that cannot be counted (`INVALID_APPROVAL_QUORUM`), or, with approvals in use (approval-required tools set or re-identification enabled), `kubernetes` or a `tcp-ip` hostname member and no minimum (`MISSING_APPROVAL_QUORUM`), or an enabled index without its required controls (`MISSING_REIDENTIFICATION_CONTROLS`) |
 | `dataprism.oversight` | All optional. `approval-required-tools` defaults to empty; `approval-ttl` `PT15M`; `caller-rate-limit.requests` unset (no limit); `caller-rate-limit.window` `PT1M`; `max-pending-per-requester` `5` | No | Refuse startup for an unknown tool name (`UNKNOWN_OVERSIGHT_TOOL`), a non-positive limit, window, TTL or cap (`INVALID_OVERSIGHT_LIMIT`), or approval-required tools or a rate limit without `dataprism.operator.enabled` (`OVERSIGHT_REQUIRES_OPERATOR_SURFACE`) |
@@ -710,21 +711,76 @@ at exactly the page size it starts.
 
 ### `dataprism.links`
 
-Only the link key is bound so far. Page links need it even while links are off.
+The agent-led surface: `_links` on results, the `follow` tool and the page links of `list_sources`. A link is a sealed
+token that names no real value. Everything below defaults to off or to a conservative bound.
 
 | Property | Default | Meaning |
 |---|---|---|
-| `dataprism.links.key-id` | unset | The id of the key that seals new links: 1 to 16 characters of `A-Z`, `a-z`, `0-9`, `_` and `-`. It must be a key of `keys` below. |
+| `dataprism.links.enabled` | `false` | Whether results carry `_links` and `follow` is registered. With `false` the `tools/list` answer has no `follow`. Requires `key-id`. |
+| `dataprism.links.key-id` | unset | The id of the key that seals new links: 1 to 16 characters of `A-Z`, `a-z`, `0-9`, `_` and `-`. It must be a key of `keys` below. Page links need it even while links are off. |
 | `dataprism.links.keys.<key-id>.environment-variable` | none | The environment variable holding that key. Exactly one of this and `provider-reference`. |
 | `dataprism.links.keys.<key-id>.provider-reference` | none | As above, resolved by the `HmacKeyReferenceResolver` (`resolveProviderReference`). |
+| `dataprism.links.lifetime` | `PT30M` | How long a link stays valid: a duration of at least one second, or `scope` (up to the scope's expiry). `INVALID_LINK_LIFETIME` otherwise. |
+| `dataprism.links.max-per-response` | `50` | The most links across one response. 1 to 500. |
+| `dataprism.links.max-length` | `1024` | The longest link, in characters, accepted or issued. 616 to 4096. It is also the length the `page` and `link` arguments allow. |
+| `dataprism.links.invalid-attempt-limit` | `20` | Counted failed attempts a caller may make within the window before it is locked, valid links included. Positive. |
+| `dataprism.links.invalid-attempt-window` | `PT10M` | The window of that count. A positive duration. |
+| `dataprism.links.clock-skew` | `PT5S` | The tolerance for link expiry and issue time. 0 to `PT30S`. |
+| `dataprism.links.bind-caller` | `true` | Whether the caller is bound into the link, so that another principal in the scope cannot use it. |
 
 `keys` holds the current key and any key being retired: each is held for
-verification, and only `key-id` seals. A reference that does not resolve refuses
-startup with `LINK_KEY_UNRESOLVED`, material under 32 bytes with `LINK_KEY_WEAK`, and
-the pseudonymisation key's id or bytes (compared in constant time, for every key
-in `keys`) with `LINK_KEY_SHARED`. A key id outside the allowed shape is
-`INVALID_LINK_LIMIT`. No message contains a reference or a key byte. The link keys
-and the codec built from them are not replaceable (`FORBIDDEN_PRIVACY_OVERRIDE`).
+verification, and only `key-id` seals. The `linkKeys` health contributor lists the
+held key ids (never a reference or a key byte), so that a member can be confirmed to
+hold a new key before it signs; the gauge dataprism.links.keys.loaded is the count.
+A reference that does not resolve refuses startup with `LINK_KEY_UNRESOLVED` (so does
+`enabled: true` with no key), material under 32 bytes with `LINK_KEY_WEAK`, and the
+pseudonymisation key's id or bytes (compared in constant time, for every key in
+`keys`) with `LINK_KEY_SHARED`. A limit out of its range, or a key id outside the
+allowed shape, is `INVALID_LINK_LIMIT`. With links enabled, `dataprism.paging.lifetime`
+above `dataprism.links.lifetime` is `INVALID_PAGING_SETTING`. No message contains a
+reference, a value or a key byte. The link keys, the codec built from them and the
+attempt gate are not replaceable (`FORBIDDEN_PRIVACY_OVERRIDE`).
+
+With links enabled, a tool that issues a link (`get_entity_context`, `list_sources`)
+listed in `dataprism.oversight.approval-required-tools` needs `follow` listed too, or
+startup is refused with `FOLLOW_NOT_APPROVAL_GATED`: a link is not an authorisation, and
+`follow` would otherwise reach what the gated tool does not.
+
+**The failed-attempt limiter.** A sealed-token consumer is active when
+`dataprism.links.enabled` is `true` or a link key is configured: a page link on
+`list_sources` is a sealed link too. While one is active, every link is opened through
+one gate that counts failed attempts per caller. On `single-node`, and on `embedded` with
+`join.mode: none`, the count is kept in memory from `invalid-attempt-limit` and
+`invalid-attempt-window`; an application may supply its own `LinkAttemptLimiter` bean
+instead. On `embedded` with `join.mode` `tcp-ip` or `kubernetes` the count must be shared
+by every member, or a caller could try the limit again on each one. The same holds on
+`embedded` with an application-supplied `PrivacyCluster`, even when it has one member. No
+cluster-wide limiter ships in 1.0, so on such a member startup is refused with
+`MISSING_SHARED_LINK_LIMITER` unless the application supplies a limiter declared as
+`ClusterWideLinkAttemptLimiter`, by its `@Bean` return type or by its class; a bean declared
+only as `LinkAttemptLimiter`, or whose type cannot be read without building it, is refused.
+The message names the condition and never a value. With no
+consumer active (links off and no link key) there is no refusal on any topology. The
+code covers page links as well as follow links.
+
+### `dataprism.key-resolvers`
+
+How `follow` translates a key from one namespace into another through an application
+`KeyResolver`. Resolvers are registered as beans only; no property names a class.
+
+| Property | Default | Meaning |
+|---|---|---|
+| `dataprism.key-resolvers.max-targets` | `5` | The most keys one resolver may return for one key. 1 to 16. |
+| `dataprism.key-resolvers.timeout` | `PT2S` | The longest a resolver call may take. A positive duration. |
+| `dataprism.key-resolvers.budget-cost` | `1` | The reads one resolver call is charged against the scope budget. Positive. |
+
+A value out of range refuses startup with `INVALID_KEY_RESOLVER_SETTING`, naming the
+property and never the value. Every `KeyResolver` bean is collected in `@Order` order
+while links are enabled. Two beans for one `(from, to)` pair, or with one name, refuse
+startup with `DUPLICATE_KEY_RESOLVER`; a name outside `[a-z][a-z0-9-]{0,31}`, a resolver
+into its own namespace or one that cannot be read refuses it with
+`INVALID_KEY_RESOLVER`. A pair that joins a namespace no source or chainable field uses
+is logged once at WARN, with the count and the pair's namespace names only.
 
 ### `dataprism.hazelcast`
 
@@ -875,6 +931,7 @@ joined one cluster. With `single-node` they are per process. See
 | Code | Condition |
 |---|---|
 | `UNKNOWN_OVERSIGHT_TOOL` | An approval-required tool name that is not one of `get_entity_context`, `compare_entity_sources`, `follow`, `list_sources` and `describe_source` |
+| `FOLLOW_NOT_APPROVAL_GATED` | `dataprism.links.enabled` is `true` and `get_entity_context` or `list_sources` is in `approval-required-tools` without `follow` |
 | `INVALID_OVERSIGHT_LIMIT` | A non-positive `requests`, `window`, `approval-ttl` or `max-pending-per-requester`, here or under `dataprism.reidentification` |
 | `OVERSIGHT_REQUIRES_OPERATOR_SURFACE` | Approval-required tools or a rate limit configured without `dataprism.operator.enabled=true` |
 
