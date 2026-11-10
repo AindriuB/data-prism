@@ -125,6 +125,20 @@ class DataPrismMcpServerTest {
         assertThat(mapperOf(linkedWiring.follow())).isSameAs(linkedWiring.mapper());
         assertThat(((io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper) wiring.json()).getJsonMapper())
                 .isSameAs(wiring.mapper());
+
+        // The server built from the wiring decorates wiring.json(), whose underlying mapper is the one
+        // every tool handler holds.
+        McpSyncServer server = DataPrismMcpServer.syncServer(wiring,
+                new io.modelcontextprotocol.server.transport.StdioServerTransportProvider(wiring.json(),
+                        new java.io.ByteArrayInputStream(new byte[0]), new java.io.ByteArrayOutputStream(), 1024));
+        try {
+            Object underlying = delegateOf(serverMapper(server));
+            assertThat(underlying).isSameAs(wiring.json());
+            assertThat(((io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper) underlying).getJsonMapper())
+                    .isSameAs(mapperOf(wiring.get())).isSameAs(mapperOf(wiring.compare()));
+        } finally {
+            server.closeGracefully();
+        }
     }
 
     @Test

@@ -1,11 +1,16 @@
 package io.github.aindriub.dataprism.mcp;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -46,6 +51,34 @@ class StdioInboundGuardTest {
 
     private String answered() {
         return out.toString(StandardCharsets.UTF_8);
+    }
+
+    @Test
+    @DisplayName("an I/O fault on stdin is logged once, by exception class only, and the stream then ends")
+    void anIoFaultIsLoggedWithoutItsMessage() throws Exception {
+        Logger logger = (Logger) LoggerFactory.getLogger(StdioInboundGuard.class);
+        ListAppender<ILoggingEvent> logs = new ListAppender<>();
+        logs.start();
+        logger.addAppender(logs);
+        try {
+            InputStream failing = new InputStream() {
+                @Override
+                public int read() throws IOException {
+                    throw new IOException("boom " + SENTINEL);
+                }
+            };
+            StdioInboundGuard guard = new StdioInboundGuard(mapper(), failing, out, LIMIT);
+
+            assertThat(guard.input().readAllBytes()).isEmpty();
+            assertThat(logs.list).singleElement().satisfies(event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                assertThat(event.getFormattedMessage()).contains("java.io.IOException")
+                        .doesNotContain("boom").doesNotContain(SENTINEL);
+                assertThat(event.getThrowableProxy()).isNull();
+            });
+        } finally {
+            logger.detachAppender(logs);
+        }
     }
 
     @Test

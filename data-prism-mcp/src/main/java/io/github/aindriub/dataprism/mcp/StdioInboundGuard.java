@@ -126,11 +126,13 @@ final class StdioInboundGuard {
             } else {
                 handle(line, length);
             }
-        } catch (IOException | InterruptedException e) {
-            // stdin closed or unreadable, or the SDK went away: the stream ends, as it would without a guard
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
+        } catch (IOException e) {
+            // A stdin or stdout fault ends the session as it would at EOF; say so, naming only the class,
+            // because the message may quote client bytes.
+            LOG.warn("stdio inbound guard stopped on an I/O fault: {}", e.getClass().getName());
+        } catch (InterruptedException e) {
+            // the SDK went away: the stream ends, as it would without a guard
+            Thread.currentThread().interrupt();
         } finally {
             forwarded.finish();
         }
