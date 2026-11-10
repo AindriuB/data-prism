@@ -5,7 +5,7 @@ What is here, and what is not. Running the soaks is the owner's job on a dedicat
 
 | File | What it is |
 |---|---|
-| `soak-single-node.json` | 100 sources, 4 calls a second for 8 hours, two slow sources against a 1 s per-source timeout, a 4,000-subject pool against a read budget of 20 |
+| `soak-single-node.json` | 100 sources, 4 calls a second for 8 hours, two slow sources against a 1 s per-source timeout, a 15,000-subject pool against a read budget of 300 (the budget counts source reads, so 3 calls of 100 sources per subject per scope) |
 | `soak-three-member.json` | The same mix for 4 hours |
 | `compose.soak.yaml` | Overlay on `docker/multi-instance/compose.yaml`: three members, a load balancer, trusted network, private member interface, links off, no link key |
 | `common.sh` | Helpers the scripts source |

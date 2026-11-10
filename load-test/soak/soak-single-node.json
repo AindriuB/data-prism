@@ -5,8 +5,8 @@
   "slowSources": 2,
   "slowLatency": { "minMs": 2500, "maxMs": 3500 },
   "load": { "concurrency": 8, "calls": 0, "warmupCalls": 200, "ratePerSecond": 4, "durationSeconds": 28800,
-            "callTimeoutSeconds": 60, "subjectPool": 4000 },
+            "callTimeoutSeconds": 60, "subjectPool": 15000 },
   "limits": { "maxSources": 100, "maxRecords": 500, "maxResponseSize": "512KB",
-              "perSourceTimeout": "1s", "maxConcurrency": 8, "scopeReadBudget": 20 },
+              "perSourceTimeout": "1s", "maxConcurrency": 8, "scopeReadBudget": 300 },
   "seed": 263
 }
