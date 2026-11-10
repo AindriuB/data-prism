@@ -259,6 +259,76 @@ events. When the linked `DENY` could not be written, the `ALLOW` stands alone an
 audit overstates; `dataprism.approval.decision.unconfirmed` counts those cases. The audit
 can overstate a decision. It never understates one.
 
+### Disposition keys added in 0.8
+
+`fieldDispositions` keeps its closed value grammar: a `PrivacyAction` name, `REFUSED`, or `REFUSED:<code>`. 0.8 adds
+three colon-free keys and one indexed form of the per-source key. A source named `link`, `catalog` or `names` cannot
+be mistaken for them, because a source key always has the shape `<source>:<pointer>`.
+
+| Key | Values | Written when |
+|---|---|---|
+| `names` | `REAL`, `ALIAS` | On every call of `list_sources`, `describe_source`, `get_entity_context`, `compare_entity_sources` and `follow`, a denial included: which labels the call was shown. It is the effective setting, the scope pattern in `dataprism.catalog.real-names-scopes` *and* `EXPOSE_SOURCE_NAMES`, not the capability alone. |
+| `catalog` | `REFUSED:CATALOG_<REASON>` | A catalog or selection refusal. The client sees one answer for several reasons (`SOURCE_NOT_AVAILABLE`); this key says which. |
+| `link` | `REFUSED:LINK_<REASON>` | A link or page link was refused. The client sees `LINK_INVALID` (or `LINK_ATTEMPTS_EXHAUSTED`, `LINK_CHECK_UNAVAILABLE`); this key says why. |
+| `<target>[<i>]:<refused>` | `REFUSED:<code>` | A refused item of a one-to-many `follow`. `<target>` is the source and `<i>` the item's position in the order of the keyed fingerprint. A refused item is omitted from the response's `items`, so this key is the only record of it. |
+
+The reasons under `catalog`:
+
+| Value | Meaning |
+|---|---|
+| `REFUSED:CATALOG_UNKNOWN_SOURCE` | A label that resolves to no source in this scope. |
+| `REFUSED:CATALOG_SOURCE_NOT_PERMITTED` | A label of a source the caller may not use. |
+| `REFUSED:CATALOG_ENTITY_TYPE_MISMATCH` | A selected source that does not serve the requested entity type. |
+| `REFUSED:CATALOG_LABELS_FAILED` | The labels for this scope could not be built. The client sees `SOURCE_NOT_AVAILABLE`. |
+| `REFUSED:CATALOG_DESCRIPTION_FAILED` | `describe_source` could not describe the source, or threw. The client sees `SOURCE_NOT_AVAILABLE`. |
+| `REFUSED:CATALOG_DESCRIPTION_REFUSED` | The description failed a validator or the served schema's caps, so it was not returned. The client sees `SOURCE_NOT_AVAILABLE`. |
+
+The reasons under `link`. The first five are decided before the token authenticates, and the failed-attempt limiter
+counts them; the rest are never counted, and most can be reached only with a genuine link.
+
+| Value | Meaning |
+|---|---|
+| `REFUSED:LINK_MALFORMED` | Not a link at all, or a `page` that fails the input schema. |
+| `REFUSED:LINK_TOO_LONG` | Longer than `dataprism.links.max-length`. |
+| `REFUSED:LINK_VERSION` | A link version this member does not read. |
+| `REFUSED:LINK_UNKNOWN_KEY` | Sealed under a key id this member does not hold, such as a retired key. |
+| `REFUSED:LINK_AUTH_FAILED` | The token does not authenticate: forged, altered or from another deployment. |
+| `REFUSED:LINK_KEY_UNAVAILABLE` | A key id this member holds, whose key the provider cannot serve (a failure, nothing, or under 32 bytes). Not counted, because a genuine user cannot cause it. |
+| `REFUSED:LINK_EXPIRED`, `REFUSED:LINK_ISSUED_IN_FUTURE` | Outside the link's lifetime, with `dataprism.links.clock-skew` applied. |
+| `REFUSED:LINK_WRONG_TOOL` | A page link given to `follow`, or the reverse. |
+| `REFUSED:LINK_TARGET_NOT_PERMITTED` | The target is not a source this caller may use now. |
+| `REFUSED:LINK_RELATION_UNDECLARED` | No declared relation or key resolver allows this hop now, or the target is no longer eligible for the key's namespace. |
+| `REFUSED:LINK_ORIGIN_DRIFT` | The record the link was issued from has since changed or been removed, so the key it carried is no longer there. Reordering alone is not drift. |
+| `REFUSED:LINK_PAYLOAD_MISMATCH` | The sealed payload is not the kind the tool expects. |
+| `REFUSED:LINK_FILTER_MISMATCH`, `REFUSED:LINK_LABELS_CHANGED`, `REFUSED:LINK_CATALOG_CHANGED` | A page link used with other filters, after the label setting changed, or after the catalog changed. |
+| `REFUSED:LINK_ATTEMPTS_LOCKED`, `REFUSED:LINK_ATTEMPTS_OVER_LIMIT`, `REFUSED:LINK_ATTEMPTS_CEILING` | The caller is locked out, has just gone over `invalid-attempt-limit`, or the limiter holds no more subjects. The client sees `LINK_ATTEMPTS_EXHAUSTED`. |
+| `REFUSED:LINK_ATTEMPTS_LIMITER_UNAVAILABLE` | The limiter could not be reached. The client sees `LINK_CHECK_UNAVAILABLE` (retryable), which says nothing about the token. |
+| `REFUSED:LINK_ATTEMPTS_OPEN_FAILED` | The token could not be opened. The client sees `LINK_INVALID`, not a separate code. |
+
+**What is not in the audit.** A link id, an attempt count and a key resolver's name or timing are metrics, not audit
+fields; the audit records no key, no token and no real value. When a key resolver fails, the audit record shows only
+the target's source status, `RESOLVER_FAILED`, in the call's source list: the resolver's name and how long it took
+are in the metrics, and nothing falls back to a direct read. A resolver that returns no key gives the status `NO_DATA`.
+
+### Audit failure codes
+
+These codes name why the audit file, its checkpoint file or its retention purge failed. They are the first token of an
+exception message and of a log line, never a client code: a call that cannot be audited is answered
+`AUDIT_UNAVAILABLE` (see [the tool reference](tools.md#caller-and-call-refusals)). The sink writes on an internal
+writer thread and the caller waits for it uninterruptibly, so an interrupt arriving mid-write does not close the
+channel or poison the sink. The cost is that a hung disk holds the request until the write returns or fails; the
+request does not time out. That is fail closed, and a deployment that wants a bound must monitor the audit storage.
+
+| Code | Meaning |
+|---|---|
+| `AUDIT_SINK_POISONED` | A write to the audit file (or a segment) failed earlier. The sink refuses every later record, so a gap can never be written over; restart after the cause is fixed. |
+| `AUDIT_CHECKPOINT_OPEN_FAILED` | The checkpoint file could not be opened at startup. |
+| `AUDIT_CHECKPOINT_READ_FAILED` | The checkpoint file could not be read, or a line did not parse. |
+| `AUDIT_CHECKPOINT_POISONED` | A write to the checkpoint file failed earlier. The checkpoint sink refuses every later write. |
+| `AUDIT_RETENTION_ANCHOR_FAILED` | A purge could not list or read the expiring segments, or could not record the retention anchor. Nothing is deleted. |
+| `AUDIT_RETENTION_DELETE_FAILED` | A purge could not delete an expired segment. |
+| `AUDIT_RETENTION_FAILED` | Any other purge failure. A purge that fails stops, logs the error and counts the matching metric. |
+
 ## The offline verifier
 
 `AuditChainVerifierCli` replays each writer's chain from a copy of this file

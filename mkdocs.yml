@@ -111,6 +111,7 @@ plugins:
         Reference:
           - configuration.md
           - multiple-instances.md
+          - operations.md
           - tools.md
           - extending.md
           - audit.md
@@ -181,6 +182,7 @@ nav:
   - Reference:
       - configuration.md
       - multiple-instances.md
+      - operations.md
       - tools.md
       - extending.md
       - audit.md

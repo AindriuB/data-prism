@@ -22,10 +22,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A source whose value holds more than 1,000,000 nodes (records, elements, map entries, `JsonNode`s and leaves, each counted once, whatever their size) is refused with `SOURCE_TREE_TOO_LARGE`; that source alone is refused and the others still answer.
 - A configured JSON source whose response carries a structure (an object or an array) at a root leaf field, one with no `nested:` of its own, is now refused with `NESTED_LEAF_NOT_SCALAR`. Before, that case was refused as `UNCLASSIFIED_STRUCTURE`. A root leaf the profile removes (action `REMOVE`) is exempt and is dropped as before. A single `dataprism.json-sources.config-location` value is no longer split at commas; several files are listed as indexed entries.
 - A tool call that breaks the tool's input schema now returns `TOOL_INPUT_INVALID`, or, on a `list_sources` call that carries a `page` key, the link refusal (`LINK_INVALID`, "The link is not valid."), instead of `Tool (<name>) input validation failed: ...`. The check moved from the MCP SDK into the tool handlers, after authentication, so every such call is now audited once and counted as denied, and a call with a `page` key counts toward the link limiter. A client that matched the old text must change. A blank `entityType` or `subjectId` no longer answers "entityType and subjectId are both required"; it is `TOOL_INPUT_INVALID`. The served schemas do not change.
+- The fan-out was rewritten. `dataprism.limits.per-source-timeout` is now measured from the start of each source's own
+  call, not of the whole fan-out. A new `dataprism.limits.request-timeout` (default `PT10S`) bounds the whole request
+  and may not be shorter than `per-source-timeout`. One read is now charged for each source a call asks, so
+  `dataprism.limits.scope-read-budget` (default 100) counts source reads, not calls, and a new
+  `dataprism.limits.scope-total-read-budget` (default 50,000) caps the reads across all subjects of a scope.
+  `RequestLimits` gains `requestTimeout` and `scopeTotalReadBudget` with no forwarding constructor. A request that
+  arrives while a trial call to an open-breaker source is running gets `TIMED_OUT`, not `CIRCUIT_OPEN`.
+- `SKIPPED_OVER_LIMIT` is removed. A call that would ask more than `dataprism.limits.max-sources` sources is refused as
+  a whole with `SOURCE_SELECTION_TOO_LARGE`, and a call with no `targetSources` that would ask more permitted sources
+  than `dataprism.catalog.unselected-source-limit` (default 8) is refused with `SOURCE_SELECTION_REQUIRED`. A client
+  that matches `SKIPPED_OVER_LIMIT` must match the refusal.
+- `EXPOSE_SOURCE_NAMES` alone no longer shows real source names. A scope must also match
+  `dataprism.catalog.real-names-scopes`, which is empty by default, so by default every caller sees aliases.
+- The public 14-argument `DefaultContextOrchestrator` constructor, which shipped in 0.7.1, is removed with no deprecated
+  overload. Pass an `OrchestrationOptions` as a fifteenth argument; `OrchestrationOptions.defaults()` keeps the 0.7.1
+  behaviour. See `docs/migration-0.8.md`.
+- Source calls run on dedicated platform threads named `dataprism-source-<n>`, not virtual threads. No `ThreadLocal`
+  carries into an adapter call; at most 32 calls are in flight per source and 128 in all, and a call with no free slot
+  reports the source `FAILED` and counts `dataprism.source.calls_saturated`. An adapter on a blocking-socket client must
+  set a read timeout, because an interrupt does not stop a plain `java.net.Socket`.
+- `dataprism.json-sources.config-location` is never split at commas, and may now be a list of locations
+  (`DUPLICATE_JSON_SOURCE` for a source named in two files).
 
 ### Added
 
 - `AuditChainVerifierCli accept-crash-line <audit-directory> --checkpoints <anchor-store-file> --segment <name> --offset <n> --sha256 <hex>` (exit code 6 on refusal, see `--help`). Use it after a purge refuses with `AUDIT_RETENTION_CHAIN_UNVERIFIED` because a crash left a line that parses but was never hashed, and an investigation finds a crash line, not tampering. It appends one `CRASH_LINE_ACCEPTED` checkpoint to the anchor store, and purge then tolerates that exact line (segment, offset and the SHA-256 of its bytes) and nothing else. No audit file is changed. The checks do not prove a crash; your investigation decides, so accept a line only after confirming a known crash or power loss of that instance at that time. Someone who can write the audit directory can plant a line that passes every check in order to get it accepted. Stop the server first, run the command as the account that owns the anchor store, and re-run purge until it refuses only at the crash line's day (finish a partly deleted day first). The command refuses, writing nothing, when a `BOOT`, `PERIODIC` or `SHUTDOWN` checkpoint shows the writer got past the line (a power loss on a disk that does not honour fsync can trigger this; extend retention by hand), and when the store holds no `BOOT` for the line's instance, which in a deployment with a checkpoint sink is a strong sign of tampering. Only deployments with no checkpoint sink, and instances that ran before the store existed, should pass `--no-boot-checkpoint`, after investigating; it waives that one check, the waiver is recorded in the acceptance (`bootWaived`), and every later CLI verify run given `--checkpoints` prints a `NOTICE` for it (a program calling `verify()` directly does not see it). These checks refuse a line whose own evidence contradicts the store or the keys; they do not defend against someone who can write the audit directory. In a keyed deployment pass `--hmac-key-file`. The command reports whether the line's own hash recomputes: `KEYED_MATCH <i>` (the 1-based position of the matching key), `UNKEYED_MATCH`, `NO_MATCH_LOOKS_CUT` (looks like a cut or an edit), `NO_UNKEYED_MATCH` (no key given; the line looks cut if the deployment is unkeyed) and `UNKEYED_ONLY_FORGER_SHAPE` (the shape a forger without the key produces; refused). Apart from that refusal the report does not decide acceptance. An anchor store that contains an acceptance cannot be read by 0.7.x or earlier: a 0.7.x verifier stops with an unreadable checkpoint file, and a server rolled back to 0.7.x fails closed, whenever it has an expired day to purge, with `AUDIT_RETENTION_CHAIN_UNVERIFIED: could not read the earlier retention anchors`.
+
+- Three tools and their capabilities: `list_sources` (`LIST_SOURCES`), `describe_source` (`DESCRIBE_SOURCE`) and, with
+  `dataprism.links.enabled: true`, `follow` (`FOLLOW`); and an optional `targetSources` on `get_entity_context` and
+  `compare_entity_sources`. Adding a tool grants nothing: a role needs the capability. `list_sources` allows every
+  source in 0.8 and will deny unmatched sources from 0.9. See `docs/tools.md`.
+- Sealed links on results (`_links`, `_linksOmitted`), the `follow` tool with one-to-many `items` and `itemsTruncated`,
+  the per-source status `RESOLVER_FAILED`, `KeyResolver` beans, and the codes `LINK_INVALID`,
+  `LINK_ATTEMPTS_EXHAUSTED` and `LINK_CHECK_UNAVAILABLE`. Links are off by default.
+- The audit keys `names` (`REAL`, `ALIAS`), `catalog` (`REFUSED:CATALOG_<REASON>`) and `link`
+  (`REFUSED:LINK_<REASON>`), and the item key `<target>[<i>]:<refused>`. See `docs/audit.md`.
+- A `description:` block, `chainable` and `keyNamespace` for configured JSON sources, and `description()` for an
+  adapter, with the startup codes `INVALID_SOURCE_DESCRIPTION`, `SOURCE_DESCRIPTION_LEAKS_NAME` and
+  `INVALID_CHAINABLE_FIELD`.
+- `docs/operations.md`, a draft operations guide for running against many sources, and a startup refusal index in
+  `docs/configuration.md` that documents the shipped codes no page listed.
 
 ### Fixed
 
