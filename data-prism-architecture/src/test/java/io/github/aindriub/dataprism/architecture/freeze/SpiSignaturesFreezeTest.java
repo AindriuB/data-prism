@@ -4,15 +4,16 @@ import com.tngtech.archunit.core.domain.JavaClass;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.lang.annotation.Annotation;
 import java.lang.annotation.Retention;
 import java.lang.annotation.Target;
-import java.lang.annotation.Annotation;
-import java.nio.file.Files;
+import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Type;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -137,10 +138,10 @@ class SpiSignaturesFreezeTest {
             return "(none)";
         }
         if (value.getClass().isArray()) {
-            int length = java.lang.reflect.Array.getLength(value);
+            int length = Array.getLength(value);
             List<String> items = new ArrayList<>();
             for (int i = 0; i < length; i++) {
-                items.add(String.valueOf(java.lang.reflect.Array.get(value, i)));
+                items.add(String.valueOf(Array.get(value, i)));
             }
             return items.toString();
         }

@@ -18,9 +18,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * string literal somewhere in {@code src/main}, and every single-word upper-case literal that
  * {@code data-prism-server}'s operator code returns as a code or status is listed.
  *
- * <p>"Returned as a code or status" is read from the three shapes the server uses: {@code "status", "X"}
- * in a response map, {@code codeOnly(response, 401, "X")} in the security configuration, and
- * {@code case ... -> "X"} in the error controller and the error report valve. Other upper-case literals,
+ * <p>"Returned as a code or status" is read from the five shapes the server uses: {@code "status", "X"}
+ * and {@code "code", "X"} in a response map, {@code new OperatorException(<status>, "X")} in the controllers,
+ * {@code codeOnly(response, 401, "X")} in the security configuration, and {@code case ... -> "X"} in the error controller
+ * and the error report valve. Other upper-case literals,
  * such as an audit entity type, are not codes.
  */
 class SingleWordCodesFreezeTest {
@@ -29,6 +30,9 @@ class SingleWordCodesFreezeTest {
     private static final String WORD = "[A-Z][A-Z0-9]*";
     private static final Pattern STATUS = Pattern.compile("\"status\"\\s*,\\s*\"(" + WORD + ")\"");
     private static final Pattern CODE_ONLY = Pattern.compile("codeOnly\\([^,]+,[^,]+,\\s*\"(" + WORD + ")\"");
+    private static final Pattern CODE_KEY = Pattern.compile("\"code\"\\s*,\\s*\"(" + WORD + ")\"");
+    private static final Pattern EXCEPTION = Pattern.compile(
+            "new\\s+OperatorException\\(\\s*[^,()]+,\\s*\"(" + WORD + ")\"");
     private static final Pattern CASE_ARROW = Pattern.compile("case\\s+[^\\n]*?->\\s*\"(" + WORD + ")\"");
 
     @Test
@@ -52,6 +56,8 @@ class SingleWordCodesFreezeTest {
             if (operator || path.endsWith("ServerSecurityConfiguration.java")) {
                 collect(STATUS, source.text(), returned);
                 collect(CODE_ONLY, source.text(), returned);
+                collect(CODE_KEY, source.text(), returned);
+                collect(EXCEPTION, source.text(), returned);
             }
             if (operator && path.contains("Error")) {
                 collect(CASE_ARROW, source.text(), returned);
