@@ -102,3 +102,11 @@ Reviewed HEAD 095bb6087a7814c6713c6685244776318f1a5950 (full branch, after the 2
 - [P2] data-prism-mcp/src/test/java/io/github/aindriub/dataprism/mcp/DataPrismMcpServerTest.java:174 — `assertContentFreeOverSharedMapper` only checks that the delegate is a `JacksonMcpJsonMapper`. AC5 requires the delegate to be `wiring.json()` itself (the same instance). This was recorded in review round 1 as a fix for the next round, and it is still open at HEAD.
   route: implementer — recorded in the task file's amendment as an implementer fix.
   input: change `DataPrismMcpServer.stdio(..)` to wrap a freshly built `JacksonMcpJsonMapper` instead of `wiring.json()`  →  the test passes, although boundary 1's single-mapper invariant is broken.
+
+## Review round 2 — findings
+
+Reviewed the fix since a6cacea0, at HEAD 3cc3902719d05d9c32d2f56191e908b31e066071.
+
+- [STYLE] data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/StdioInboundGuard.java:25-26 — The fix edited this Javadoc and introduced two problems. Line 25 is one unwrapped 179-character line, where the rest of the paragraph wraps at about 105 characters. Line 26 still says "A line that passes both goes to the SDK unchanged", but `classify` now has three passes.
+  route: implementer — wording and wrapping only. Wrap line 25 like lines 22-24 and 27-31, and change "both" to "all three".
+  rule: the neighbouring lines in the same Javadoc (StdioInboundGuard.java:22-24, 27-31) set the wrapping. docs/conventions.md "Code comments": a comment must not assert something that is not true.
