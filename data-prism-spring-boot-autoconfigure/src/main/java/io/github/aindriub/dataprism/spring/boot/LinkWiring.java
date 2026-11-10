@@ -64,27 +64,40 @@ import java.util.Set;
 class LinkWiring {
     private static final Logger LOG = LoggerFactory.getLogger(LinkWiring.class);
 
-    /** The one definition of an active sealed-token consumer, for a bound {@link DataPrismProperties}. */
-    static boolean consumerActive(DataPrismProperties properties) {
-        LinksProperties links = properties.getLinks();
-        return links.isEnabled() || links.keyConfigured();
+    /** The bean name of the in-memory default limiter. */
+    static final String DEFAULT_LIMITER = "dataPrismLinkAttemptLimiter";
+
+    /**
+     * The one definition of an active sealed-token consumer: {@code dataprism.links.enabled} is {@code true} or a link
+     * key is configured. Read from the environment, so it holds before the properties are bound.
+     */
+    static boolean consumerActive(Environment environment) {
+        String keyId = environment.getProperty("dataprism.links.key-id");
+        if (keyId != null && !keyId.isBlank()) {
+            return true;
+        }
+        try {
+            return Boolean.TRUE.equals(environment.getProperty("dataprism.links.enabled", Boolean.class));
+        } catch (RuntimeException notABoolean) {
+            // The properties' own binding refuses the value; it is not a switch on.
+            return false;
+        }
     }
 
-    /** The same definition, read from the environment before the properties are bound. */
+    /** Whether this member joins a cluster of others: {@code embedded} with {@code tcp-ip} or {@code kubernetes}. */
+    static boolean joinsCluster(Environment environment) {
+        if (!"embedded".equals(environment.getProperty("dataprism.hazelcast.topology"))) {
+            return false;
+        }
+        String mode = environment.getProperty("dataprism.hazelcast.join.mode");
+        return mode != null && ("tcp-ip".equals(mode.strip()) || "kubernetes".equals(mode.strip()));
+    }
+
+    /** {@link #consumerActive(Environment)} as a bean condition. */
     static final class ConsumerActive implements Condition {
         @Override
         public boolean matches(ConditionContext context, AnnotatedTypeMetadata metadata) {
-            Environment environment = context.getEnvironment();
-            String keyId = environment.getProperty("dataprism.links.key-id");
-            if (keyId != null && !keyId.isBlank()) {
-                return true;
-            }
-            try {
-                return Boolean.TRUE.equals(environment.getProperty("dataprism.links.enabled", Boolean.class));
-            } catch (RuntimeException notABoolean) {
-                // The properties' own binding refuses the value; it is not a switch on.
-                return false;
-            }
+            return consumerActive(context.getEnvironment());
         }
     }
 
@@ -157,7 +170,7 @@ class LinkWiring {
      * The in-memory limiter, unless the application supplies its own. It is the default on every topology and is
      * refused later by {@link #dataPrismLinkLimiterValidated} where it cannot be shared.
      */
-    @Bean @ConditionalOnMissingBean(LinkAttemptLimiter.class)
+    @Bean(DEFAULT_LIMITER) @ConditionalOnMissingBean(LinkAttemptLimiter.class)
     @Conditional(ConsumerActive.class)
     LinkAttemptLimiter dataPrismLinkAttemptLimiter(DataPrismProperties properties, Clock clock) {
         LinksProperties links = properties.getLinks();
@@ -173,41 +186,6 @@ class LinkWiring {
     @Conditional(ConsumerActive.class)
     LinkAttemptGate dataPrismLinkAttemptGate(LinkCodec codec, LinkAttemptLimiter limiter) {
         return new LinkAttemptGate(codec, limiter);
-    }
-
-    /**
-     * {@code MISSING_SHARED_LINK_LIMITER}: on {@code embedded} with {@code tcp-ip} or {@code kubernetes}, a limiter
-     * that does not say {@code clusterWide()} is refused while a consumer is active. Names the condition, never a
-     * value. Never raised on {@code single-node} or on {@code join.mode: none}.
-     */
-    @Lazy(false)
-    @Bean
-    @Conditional(ConsumerActive.class)
-    Object dataPrismLinkLimiterValidated(DataPrismProperties properties, ObjectProvider<LinkAttemptLimiter> limiter) {
-        if (consumerActive(properties) && multiMember(properties.getHazelcast())) {
-            LinkAttemptLimiter bean = limiter.getIfAvailable();
-            boolean shared;
-            try {
-                shared = bean != null && bean.clusterWide();
-            } catch (RuntimeException unreadable) {
-                shared = false;
-            }
-            if (!shared) {
-                throw new DataPrismConfigurationException("MISSING_SHARED_LINK_LIMITER",
-                        "sealed links (follow links and page links) are in use on a member that joins a cluster "
-                                + "through tcp-ip or kubernetes, so the failed-attempt count must be shared by every "
-                                + "member: provide a LinkAttemptLimiter bean whose clusterWide() is true");
-            }
-        }
-        return new Object();
-    }
-
-    private static boolean multiMember(HazelcastProperties hazelcast) {
-        if (!"embedded".equals(hazelcast.getTopology())) {
-            return false;
-        }
-        String mode = hazelcast.getJoin().getMode();
-        return mode != null && ("tcp-ip".equals(mode.strip()) || "kubernetes".equals(mode.strip()));
     }
 
     /**

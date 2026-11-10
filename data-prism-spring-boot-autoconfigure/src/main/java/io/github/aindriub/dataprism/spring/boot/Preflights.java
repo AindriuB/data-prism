@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.spring.boot;
 
 import io.github.aindriub.dataprism.core.limits.ScopeBudget;
+import io.github.aindriub.dataprism.core.link.LinkAttemptLimiter;
 import io.github.aindriub.dataprism.core.policy.PrivacyPolicyResolver;
 import io.github.aindriub.dataprism.core.spi.IdentityResolver;
 import io.github.aindriub.dataprism.reidentification.ReidentificationService;
@@ -183,6 +184,44 @@ class Preflights {
                 throw new DataPrismConfigurationException("MCP_TRANSPORT_UNAVAILABLE",
                         "no MCP transport is registered for this application: the HTTP transport requires"
                                 + " a servlet web application");
+            }
+        };
+    }
+
+    /**
+     * {@code MISSING_SHARED_LINK_LIMITER}, before any singleton exists, so a refused member never joins the cluster.
+     * Sealed links (follow links and page links) are in use ({@link LinkWiring#consumerActive}) on a member that joins
+     * a cluster through {@code tcp-ip} or {@code kubernetes}: the failed-attempt count must then be shared, or a
+     * caller could try the limit again on every member. Satisfied only by an application {@link LinkAttemptLimiter}
+     * bean whose {@code clusterWide()} is {@code true}; the in-memory default never is. Never raised on
+     * {@code single-node} or on {@code join.mode: none}. Reads the raw {@code Environment}, as
+     * {@link #dataPrismSharedBudgetPreflight} explains. Names the condition and never a value.
+     */
+    @Bean
+    static BeanFactoryPostProcessor dataPrismLinkLimiterPreflight(Environment environment) {
+        return factory -> {
+            if (!LinkWiring.consumerActive(environment) || !LinkWiring.joinsCluster(environment)) {
+                return;
+            }
+            boolean shared = false;
+            for (String name : factory.getBeanNamesForType(LinkAttemptLimiter.class, true, false)) {
+                if (LinkWiring.DEFAULT_LIMITER.equals(name)) {
+                    continue;
+                }
+                try {
+                    shared = factory.getBean(name, LinkAttemptLimiter.class).clusterWide();
+                } catch (RuntimeException unreadable) {
+                    shared = false;
+                }
+                if (!shared) {
+                    break;
+                }
+            }
+            if (!shared) {
+                throw new DataPrismConfigurationException("MISSING_SHARED_LINK_LIMITER",
+                        "sealed links (follow links and page links) are in use on a member that joins a cluster "
+                                + "through tcp-ip or kubernetes, so the failed-attempt count must be shared by every "
+                                + "member: provide a LinkAttemptLimiter bean whose clusterWide() is true");
             }
         };
     }

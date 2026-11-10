@@ -119,7 +119,7 @@ public final class PrivacyExtensionPoints {
             entry("dataPrismLinkParts", Classification.PRIVACY_CRITICAL, Guard.COMPETING_BEAN_REFUSAL),
             entry("dataPrismLinkPreflight", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismLinkAttemptLimiter", Classification.REPLACEABLE, Guard.NONE),
-            entry("dataPrismLinkLimiterValidated", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismLinkLimiterPreflight", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismLinkKeySignals", Classification.REPLACEABLE, Guard.NONE),
             entry("linkKeysHealthIndicator", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismContextOrchestrator", Classification.REPLACEABLE, Guard.NONE),
