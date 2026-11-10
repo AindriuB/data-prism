@@ -232,6 +232,29 @@ Second external review round on PR #163 (Lows and Nits; none scheduled, each fol
 
 - `AuditChainVerifierCli`:274: readKey failures should report a category.
 
+##### Untasked security follow-ups from landed work
+
+Open follow-ups on security, privacy, audit or fail-closed behaviour that no open task file covers. They were in the cut text and are carried here so the 2026-11-10 cut did not drop them. Each cites its archive line (`archive/PLAN-2026-11-10.md`). The older items (archive:788 to archive:1524) are carried as filed and have not been re-checked against the current code, except archive:794, which was (`PrivacyExtensionPoints.java:130` still lists `dataPrismToolAdmission` as `REPLACEABLE`, `Guard.NONE`).
+
+- archive:309: `TrustedNetwork.java` should reject `0.0.0.0/8` ranges (no match for it in the current file).
+- archive:314: a caller without `FOLLOW` still sees source relationships (from 251; an authorisation gap).
+- archive:307: `FileAuditCheckpointSink` has the same write pattern as 297's sinks, so an interrupt can close its channel.
+- archive:308: decide whether 208's recognisers should restore the interrupt flag, now that 297 removed the audit-sink reason.
+- archive:313: `get_entity_context` and `compare_entity_sources` audit the client's `entityType` in shape mode; archive:1145: the `entityType` fields in `OperatorAudit`, `OversightOperatorController` and `ReidentificationService` were never reviewed for the same.
+- archive:206: the verifier should report any record from an instance after that instance's `SHUTDOWN` checkpoint, and `AuditRecorder` should refuse `record()` after `close()` (OD-292-5, OD-292-6; `DECISIONS.md:92-93`). This is the audit-forgery gap `docs/architecture.md` points to.
+- archive:229, archive:230, archive:231: from 293's review (172-9 to 172-11). `fromJsonLine` does not reject `bootWaived` on other kinds; no test asserts the recorder and retention share one checkpoint sink, and a split sink would make the waiver routine; `bootWaived` needs a caveat that it is only as trustworthy as the store.
+- archive:1514: a whole deleted boot is detectable only if that boot wrote a checkpoint past sequence 0; consider a periodic checkpoint soon after boot.
+- archive:485, archive:486, archive:487: from 245. Operator read endpoints write `ALLOW` before a read that can then fail; `pause` and `resume` can race and leave state and audit disagreeing; `collect` can spend the approval and then answer `AUDIT_UNAVAILABLE`.
+- archive:442, archive:473, archive:478: the verifier counts a broken writer as "unkeyed allowed" under `--allow-unkeyed-writers`, and `verifyWithKeys` pairs writers by list index, not instance id.
+- archive:1095: audit verifier wording for unterminated and truncation-equivalent tails should read "unverified, tampering not ruled out"; consider covering a writer's tail with `--checkpoints`.
+- archive:1121: a failed JSON-projection purge only logs; it should surface through `auditIntegrity` health.
+- archive:1106, archive:1428: the PII log scan misses the tool-level `toolAudit` recorder's events, and `UndeclaredNameToolResultScanTest` never plants an `AuditEvent`, so neither scan proves it can fail on an audit leak.
+- archive:1524: no test pins that undeclared object or array values are never descended into when recording dispositions.
+- archive:794: `ToolAdmission` and `OversightPolicy` could be `PRIVACY_CRITICAL` with a `COMPETING_BEAN_REFUSAL` guard, since an application `@Primary` `ToolAdmission` can silently disable admission.
+- archive:1468: the core `ApprovalStore` has no revoke or expire path for APPROVED requests, so a rolled-back unaudited approve is consumed and looks like a real collect.
+- archive:1284: a key-shape scan in the leak validators under `PASS_THROUGH_UNSAFE` (roadmap candidate).
+- archive:278: 0.9, an approver cannot see the entity, subject or selection they approve.
+
 #### After 1.0: untrusted-network clusters (deferred 2026-10-23, owner decision (b))
 
 The owner chose option (b) on 2026-10-23. 1.0 supports multiple instances on a trusted network only (D-RM-1 (a) as amended, above). Cluster security for networks the operator does not trust is a post-1.0 milestone. Its briefs are kept as written in `tasks/deferred/`, each headed "Deferred 2026-10-23, owner decision (b)". Their dependencies, waves and base branches are those of the 0.8 plan and must be re-planned when the milestone opens.
@@ -464,6 +487,7 @@ system with users.
 **Risk, unscheduled (2026-10-07):** Spring Boot 4.1 supports Jackson 2 but has
 deprecated it for removal since 4.0.0.
 
+- 0.8.x byte-cap task (decided OD-291-2 (b), `DECISIONS.md:158`, archive:187): still to be filed. It depends on 291 (landed). On landing, add the byte cap to the docs' memory clause; the clause stays, since neither cap is a memory limit.
 - Jackson 3 port (scrubbing module, mcp-json-jackson3, flip the enforcer ban) before a Boot release removes Jackson 2 support. D-139-A keeps 0.5.0 on Jackson 2.
 
 Found across v0.3.0 wave 1 (tasks 63, 64, 68), 2026-09-22. None blocks 63,
