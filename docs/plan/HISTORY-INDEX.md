@@ -7,8 +7,10 @@ edits this file, and it writes the row in the same commit as the entry.
 accidentally load. This index exists so `planner` can answer "has this been
 built before, and where do I read about it?" without opening it. A row is the date,
 the task ids and the entry's own heading, which carries its title. There is no
-summary column: the entry says it, and the heading is enough to decide whether
-to open it.
+summary column: the entry says it, and the heading is usually enough to decide
+whether to open it. Where a heading names no subject (a wave number or a review
+fix), the row adds a few-word topic in parentheses after the heading's closing
+backtick. That parenthetical is not part of the heading; do not grep it.
 
 Read a full entry by grepping the exact string in the **Heading** column:
 
@@ -52,7 +54,7 @@ no row is one `planner` cannot find, and will re-plan.
 | 2026-10-20 | 209 | `## 2026-10-20 — Sensitive-pattern validator wired into every Spring-built orchestrator (209)` |
 | 2026-10-20 | 232 | `## 2026-10-20 — Approval creation tokens and bounded cleanup in Hazelcast (232)` |
 | 2026-10-20 | 216 | `## 2026-10-20 — Atomic approval creation in Hazelcast (216)` |
-| 2026-10-19 | 194, 196 | `## 2026-10-19 — PR #132 review fixes` |
+| 2026-10-19 | 194, 196 | `## 2026-10-19 — PR #132 review fixes` (key-scan cap bypass, load-test cleanup race) |
 | 2026-10-19 | 194 | `## 2026-10-19 — Key-shape scan in the leak validators (194)` |
 | 2026-10-19 | 196 | `## 2026-10-19 — Load-test harness (196)` |
 | 2026-10-19 | 198 | `## 2026-10-19 — Batch, paging and bulk-follow design (198)` |
@@ -101,10 +103,10 @@ no row is one `planner` cannot find, and will re-plan.
 | 2026-10-07 | 113, 114, 147 | `## 2026-10-07 — 0.5.0 wave 4: correlation wired into configuration, PII scans extended, platform documented` |
 | 2026-10-07 | 149 | `## 2026-10-07 — Task 149: test-suite port races removed` |
 | 2026-10-07 | none | `## 2026-10-07 — Baseline after 0.5.0 wave 3, and the owner's pause` |
-| 2026-10-07 | 144 | `## 2026-10-07 — 0.5.0 wave 3, part 2: task 144` |
-| 2026-10-07 | 110, 111, 112 | `## 2026-10-07 — 0.5.0 wave 3, part 1: tasks 110, 111, 112` |
-| 2026-10-07 | 109, 142, 146 | `## 2026-10-07 — 0.5.0 wave 2: tasks 109, 142, 146` |
-| 2026-10-07 | 108, 141, 143, 145 | `## 2026-10-07 — 0.5.0 wave 1: tasks 108, 141, 143, 145` |
+| 2026-10-07 | 144 | `## 2026-10-07 — 0.5.0 wave 3, part 2: task 144` (JDK 21/25 CI matrix, class-version gate) |
+| 2026-10-07 | 110, 111, 112 | `## 2026-10-07 — 0.5.0 wave 3, part 1: tasks 110, 111, 112` (correlation id through tools and REST sources) |
+| 2026-10-07 | 109, 142, 146 | `## 2026-10-07 — 0.5.0 wave 2: tasks 109, 142, 146` (audit record v3, correlation id in the hash) |
+| 2026-10-07 | 108, 141, 143, 145 | `## 2026-10-07 — 0.5.0 wave 1: tasks 108, 141, 143, 145` (correlation id types, Spring Boot 4.1.1) |
 | 2026-10-07 | 130 | `## 2026-10-07 — Task 130: clear the dependency backlog` |
 | 2026-10-07 | 138 | `## 2026-10-07 — Task 138: join.mode none refuses incoming joins` |
 | 2026-10-07 | 136 | `## 2026-10-07 — Task 136: cut 0.4.1` |
@@ -148,7 +150,7 @@ no row is one `planner` cannot find, and will re-plan.
 | 2026-09-24 | 89 | `## 2026-09-24 — Task 89: start the developer guide with a tested adapter tutorial` |
 | 2026-09-24 | 86 | `## 2026-09-24 — Task 86: give the docs site an identity` |
 | 2026-09-24 | 87 | `## 2026-09-24 — Task 87: collapse the changelog page per release` |
-| 2026-09-24 | 85 | `## 2026-09-24 — Task 85: shared site plumbing for the site-polish wave` |
+| 2026-09-24 | 85 | `## 2026-09-24 — Site polish merged to main (PR #101); Search Console, Bing, About and first traffic snapshot done` (no entry of its own; covered here as tasks 85-90) |
 | 2026-09-24 | 83 | `## 2026-09-24 — Task 83: README and \`server.json\` wired to the live docs site` |
 | 2026-09-23 | 82 | `## 2026-09-23 — Task 82: MkDocs Material docs site built and wired to deploy` |
 | 2026-09-23 | 81 | `## 2026-09-23 — Task 81: outreach drafts for the owner to post by hand` |
@@ -175,7 +177,7 @@ no row is one `planner` cannot find, and will re-plan.
 | 2026-09-22 | 63, 64, 68 | `## 2026-09-22 — v0.3.0 wave 1 (tasks 63, 64, 68): the audit chain's write ordering fixed, a durable file sink shipped after three attempts, and a bean-classification escape hatch closed` |
 | 2026-09-22 | 58 | `## 2026-09-22 — Task 58: a walkthrough for a stranger's own API, and six attempts to make it both work and not write key material into the repo` |
 | 2026-09-21 | 53, 54, 56, 57 | `## 2026-09-21 — Wave 1 (tasks 53, 54, 56, 57): the no-code path made real, and the demo's transport bug that a stub had hidden` |
-| 2026-09-17 | 52 | `## 2026-09-17 — Task 52: the shipped docs reconciled — module rename, six stale tool/mode claims, and a false causal claim caught at review` |
+| 2026-09-17 | 52 | (no entry of its own; only mentioned as pending in the `## 2026-09-17 — Tasks 49, 50, 51` entry) |
 | 2026-09-17 | 49, 50, 51 | `## 2026-09-17 — Tasks 49, 50, 51: \`data-prism-example\` renamed to \`data-prism-integration-tests\`, and the first two consumer guides ship` |
 | 2026-09-17 | 48 | `## 2026-09-17 — 0.2.0 release complete: GitHub Release, Maven Central, GHCR multi-arch, and the first successful MCP registry publish` |
 | 2026-09-17 | 47 | `## 2026-09-17 — Task 47: the PII scan's reflection-depth and word-boundary holes closed` |
