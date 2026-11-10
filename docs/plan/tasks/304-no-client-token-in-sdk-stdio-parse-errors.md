@@ -120,3 +120,11 @@ Reviewed the fix since a6cacea0, at HEAD 3cc3902719d05d9c32d2f56191e908b31e06607
 - AC7: the line for 261.
 Next attempt: run the AC6 mutations (revert each), then open the PR against main with the Outcome in its body. No code change is needed unless a mutation survives.
 Reviewer suggestions (not blocking): AC5 proves the delegates are one instance, not that it is `wiring.json()`; the two HTTP E cases assert no status code and no live capture.
+
+## Review round 3 — findings (external review of PR #237 at 20b0b050)
+
+Owner decision 2026-11-10: fix the three Mediums; the Lows (237-4 to 237-9) and Nits (237-10, 237-11) are follow-ups.
+
+- [Medium] 237-1 — data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/ContentFreeMcpJsonMapper.java:48 — the decorator has no unit test of its own. Nothing pins that the rewritten exception carries no cause, that the `byte[]` overloads are decorated, or that reads of a non-map TypeRef pass through untouched. route: implementer. Fix: add `ContentFreeMcpJsonMapperTest` asserting each.
+- [Medium] 237-2 — data-prism-mcp/src/test/java/io/github/aindriub/dataprism/mcp/DataPrismMcpServerTest.java:143 — AC5's test proves the server and the providers share one mapper, not that it is `wiring.json()`. route: implementer. Fix: also assert that the decorated delegate's underlying mapper is the same instance as a tool handler's mapper (`mapperOf(..)`, as at :123-127), which comes from the wiring.
+- [Medium] 237-3 — data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/StdioInboundGuard.java:129 — an `IOException` is swallowed, so a stdin or stdout fault ends the session as a clean EOF with nothing logged. route: implementer. Fix: log one content-free line (WARN or ERROR) naming only the exception class, never its message, before finishing; add a unit test with a failing input stream that asserts the line and that no message text appears.
