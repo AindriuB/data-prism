@@ -820,7 +820,7 @@ Proposed metrics (closing tables):
 
 | Metric | State | Release | Source | Decision | Kind, note |
 |---|---|---|---|---|---|
-| `dataprism.links.keys.loaded` | proposed | 0.8 | design/sealed-links.md:503 | sealed-links OD-1..17 (delegated) | metric (gauge, one series per held link key id, value 1) |
+| `dataprism.links.keys.loaded` | proposed | 0.8 | design/sealed-links.md:503 | sealed-links OD-1..17 (delegated) | metric (gauge, the count of held link keys; OD-08-10 (a)) |
 | `dataprism.catalog.source-names.nonconforming` | proposed | 0.8 | design/catalog.md:838 | catalog OD-C1..C19 (delegated) | metric (gauge, count of non-conforming source names). `dataprism.catalog.descriptions.generated` (sibling) |
 | `dataprism.catalog.descriptions.generated` | proposed | 0.8 | design/catalog.md:846 | catalog OD-C1..C19 (delegated) | metric (gauge). `dataprism.links.keys.loaded` (task 191, sibling) |
 | `dataprism.paging.pages` | proposed | 0.8 | design/batch-and-bulk-follow.md:1124 | batch OD-B1..B24 (delegated) | metric (counter, closed labels). `dataprism.links.keys.loaded` (sibling group) |

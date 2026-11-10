@@ -100,7 +100,7 @@ Waves 1 to 11 have landed (the table below carries one row for them; the records
 | Wave | Briefs |
 |---|---|
 | 1 to 11 | landed 2026-10-21 to 2026-11-09 (268, 218, 219, 238, 239, 243, 258, 259, 220, 221, 240, 222, 242, 265, 244, 257, 203, 206, 223, 241, 248, 269, 245, 267, 207, 210, 225, 271, 285, 288, 208, 227, 246, 262, 284, 289, 290, 211, 228, 247, 256, 292, 294, 249, 250, 251, 272, 287, 291, 296, 297, 298, 293, 299, 252, 254, 300, 253, 286, 301, 302). 295 was deferred past 0.8.0 (`tasks/deferred/295-ack-gated-tombstone-gc-for-the-pause-document.md`) and must be reissued against F1 to F5 of the 228 contract before pickup. Per-wave detail: `archive/PLAN-2026-11-10.md:141-151` and `HISTORY-INDEX.md` |
-| 12 | 255, 304 (253, 286 and 301 have landed; 255 is next. 304 filed 2026-11-09: client content out of the MCP SDK's inbound parse-error logs; it owns no file 255 owns) |
+| 12 | 255 (landed 2026-11-10, PR #236), 304 (open: verified at PR #237, not yet merged) (253, 286 and 301 have landed. 304 filed 2026-11-09: client content out of the MCP SDK's inbound parse-error logs; it owns no file 255 owns) |
 | 13 | 260, 261, 263 (261 depends on 304, because 261 carries 304's CHANGELOG and migration line) |
 | last (14) | 213 (depends on 208, 210, 211, 261, 225, 227, 228 and 284 to 287) |
 | 15 (0.9) | 273, 274 (0.9 starter onboarding, filed 2026-10-23; see "0.9 starter onboarding plan" below. 273's OD-273-3 (a) mechanism, rewritten 2026-10-26, is in `tasks/273-default-low-stakes-settings-and-derive-from-spring.md`; the pre-cut row is `archive/PLAN-2026-11-10.md:155`) |
@@ -185,12 +185,52 @@ Follow-ups from wave 9, each belonging to the task named (Lows unless said other
 Follow-ups from wave 10, each belonging to the task named (Lows unless said otherwise):
 
 - 253: settle `entityType` in the follow response against the output schema, which lists none (252 builds it in `followFinish`). 253 must use `ToolInput`.
-- 255: `LINKS_REFUSED` and `LINKS_ATTEMPTS_EXHAUSTED` are incremented nowhere. `CatalogQueries` has no page links until 255 wires the gate.
 - 252: `SourceLabels.Collision` is not handled in follow (about `DefaultContextOrchestrator.java:780`). The `budget.reserve` wait is unbounded (a Hazelcast lock, for example). Budget `settle` and `continue` tests are missing (mutants M09 and M13). `LinkKeyResolution.java:56` drops a retiring key id's shape silently. Whether the in-process budget should key as the shared one does is open (it holds raw subject keys on the heap, OD-08-15 (a)).
 - 300: `EveryToolValidatesInputTest` needs an edit when `follow` lands. A lone unknown property does not invalidate a call.
 - 302: the SDK's ERROR lines may quote tokens; 302 measured the stdio leak, which is filed as 304.
 - 254: lazy singletons that are never created are invisible to the raw `FactoryBean` guard.
+- 255 (still open after it landed): `LINKS_REFUSED` and `LINKS_ATTEMPTS_EXHAUSTED` (`Metric.java:58-59`) are incremented nowhere in main code.
 - 252 and 301: a multi-type configured source has no way to declare a mapping and nothing warns at startup; 301 adds the YAML key and the WARN.
+
+255 follow-ups (PR #236 review, 2026-11-10). Landed as task 255 (`tasks/retired/255-wire-links-follow-and-key-resolvers.md`). Paths are under `data-prism-spring-boot-autoconfigure` unless the file is a test in `data-prism-integration-tests`.
+
+Security, before links are enabled for users:
+
+- 236-D2: `heldKeyIds()` fetches each key from the provider on every health poll and gauge scrape. Root health is often unauthenticated, so ticket this before links ship.
+- 236-13: `LinkKeysHealth.java:54`: health details publish the current and held key ids, which are treated as unnameable elsewhere. Publish counts only, or document when-authorized details.
+- 236-17: `LinksProperties.java:134`: no ceiling on `invalid-attempt-limit` and no floor on the window, so config can silently disable lockout. Bound both and refuse with `INVALID_LINK_LIMIT`.
+- 236-21: `PiiLogScanTest.java:1673`: the scans do not ban the link-key material prefix or `LINK_SCAN_KEY_REF`.
+- 236-28: `PiiLogScanTest.java:1599`: expired-link and unknown-key-id refusals never run in the scanned process.
+- 236-11: `LinkAttemptLimiterConfigurationTest.java:326`: no row for an application `PrivacyCluster` named `dataPrismPrivacyCluster` or registered as a singleton, which would prove origin, not name, decides.
+- 236-D1: a DOWN `linkKeys` result takes the root `/actuator/health` DOWN, contrary to the Javadoc.
+
+Other Lows:
+
+- 236-6: `CatalogWiring.java:229`: `pageLinks` returns null if the codec, keys or gate is missing, so paging silently stops. Refuse startup instead.
+- 236-7: `DataPrismPropertiesValidator.java:949`: the paging-vs-link-lifetime check only runs with links on.
+- 236-8: `KeyResolverProperties.java:72`: number and duration parsing duplicates `LinksProperties`.
+- 236-9: `LinkAttemptLimiterConfigurationTest.java:232`: never checks that the gate holds the application limiter.
+- 236-10: `LinkAttemptLimiterConfigurationTest.java:258`: the unresolvable-type row never reaches the preflight's null-type branch.
+- 236-12: `LinkAttemptLimiterConfigurationTest.java:352`: the kubernetes "started" rows use a hand-registered singleton, not a declared marker-type bean.
+- 236-14: `LinkWiring.java:192`: the refusal code is chosen by message prefix. Use a typed exception.
+- 236-15: `LinksConfigurationTest.java:75`: the codec and limiter defaults are never asserted.
+- 236-16: `LinksConfigurationTest.java:124`: the lockout test does not assert the refusal code for each attempt.
+- 236-18: `PiiLogScanTest.java:1401`: `DESCRIPTION_TEXTS` copies the stub strings; read them from the stubs.
+- 236-19: `PiiLogScanTest.java:1429`: the Javadoc says the scans share one run, but `reuseForks=false` boots three.
+- 236-20: `PiiLogScanTest.java:1434`: `deleteOnExit` on a non-empty temp dir leaves keystores behind.
+- 236-23: integration-tests `pom.xml:129`: `-Dtest` overrides both executions' filters, so a selected class runs twice and the TRACE pin fails there.
+
+Nits: 236-24 (`CatalogWiring` imports and grouping), 236-25 (fully qualified names in `LinkAttemptLimiterConfigurationTest`), 236-26 (the in-memory-default row checks the exception type, not the code), 236-27 (`PiiLogScanTest` `surfaces` is never asserted), 236-29 (the lockout comment says a genuine link is refused, but none is presented).
+
+From our own reviews:
+
+- `LinkWiring.java:241`: the Javadoc still says "in @Order order"; resolvers are ordered by name. Code comment, for an implementer.
+- `AuditFilePiiScanTest` `auditFileLinkScanIsNotVacuous`: proves it can fail by hand-injecting a token, not by a production mutation.
+- `AuditFieldDispositionTest.java:205`: the comment calls the invalid follow "the one such call", but the run now has two.
+- `LinkKeysHealth.java:52`: the `held.contains(currentKeyId)` clause is redundant.
+- The preflight `break`s on the first non-marker limiter; with two limiters the outcome depends on order, though it always fails closed.
+- A class implementing the marker can override `clusterWide()` to false and still pass the preflight.
+
 
 Waves 1 to 4, PR #154 and PR #163 review rounds, 245 and the 0.7.1 planning review (`archive/PLAN-2026-11-10.md:368-498`):
 
