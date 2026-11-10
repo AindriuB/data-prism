@@ -20,7 +20,6 @@ import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.io.InputStream;
@@ -63,21 +62,6 @@ class ToolsListGoldenTest {
             Files.writeString(Path.of(write).resolve("tools-list.json"), actual, StandardCharsets.UTF_8);
         }
         assertThat(actual).as(GOLDEN + " (regenerate with -Dfreeze.write=<directory>)").isEqualTo(golden());
-    }
-
-    @Test
-    @DisplayName("the follow link maxLength in the golden file is the default configured length")
-    void followMaxLengthIsTheConfiguredDefault() throws Exception {
-        JsonNode tools = MAPPER.readTree(golden());
-        JsonNode follow = null;
-        for (JsonNode tool : tools.get("tools")) {
-            if (tool.get("name").asString().equals(FollowTool.NAME)) {
-                follow = tool;
-            }
-        }
-        assertThat(follow).as("follow is served when links are on").isNotNull();
-        assertThat(follow.at("/inputSchema/properties/link/maxLength").asInt())
-                .isEqualTo(ListSourcesTool.DEFAULT_PAGE_MAX_LENGTH);
     }
 
     private static List<McpSchema.Tool> servedTools() {

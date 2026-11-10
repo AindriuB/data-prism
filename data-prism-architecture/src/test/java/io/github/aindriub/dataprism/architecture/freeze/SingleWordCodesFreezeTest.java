@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SingleWordCodesFreezeTest {
 
     private static final String LIST = "single-word-codes.txt";
-    private static final Pattern LITERAL = Pattern.compile("\"([A-Z][A-Z0-9]*)\"");
+    private static final Pattern LITERAL = Pattern.compile("\"([A-Z][A-Z0-9]*)\\\\?\"");
 
     /** Reviewed single-word upper-case literals in the scanned files that are not codes, each with its reason. */
     private static final Map<String, String> NOT_CODES = Map.of(

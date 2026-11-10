@@ -42,8 +42,12 @@ class CodeSetFreezeTest {
     private static final Set<String> OTHER_SURFACES = Set.of("status", "not-a-code");
 
     private static final String NAME = "[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+";
-    private static final Pattern E1 = Pattern.compile("\"(" + NAME + ")\"");
+    private static final Pattern E1 = Pattern.compile("\"(" + NAME + ")\\\\?\"");
     private static final Pattern E1C = Pattern.compile("\"(" + NAME + ")(?::|\\s)");
+    /** A suffix concatenated onto an area: {@code area + "_UNRESOLVED"}, {@code ref.area() + "_WEAK"}. */
+    private static final Pattern SUFFIX = Pattern.compile("\\+\\s*\"(_[A-Z][A-Z0-9_]*)\\\\?\"");
+    /** A literal passed as the area of a concatenated code: {@code usableId("AREA", ...)}, {@code ref(p, "AREA", ...)}. */
+    private static final Pattern AREA = Pattern.compile("\\b(?:usableId|ref)\\(\\s*(?:\\w+,\\s*)?\"(" + NAME + ")\"");
     private static final Pattern E2 = Pattern.compile("\\benum\\s+Code\\s*\\{");
     private static final Pattern E1R = Pattern.compile("(?<![A-Za-z0-9_])(" + NAME + ")(?![A-Za-z0-9_])");
     private static final Pattern COMMENTS = Pattern.compile("/\\*.*?\\*/|//[^\\n]*", Pattern.DOTALL);
@@ -89,17 +93,55 @@ class CodeSetFreezeTest {
         assertThat(problems).isEmpty();
     }
 
+    @Test
+    void extractionSeesACodeInsideAnEscapedJsonString() {
+        assertThat(javaCodes("w.write(\"{\\\"code\\\":\\\"MADE_UP_CODE\\\"}\");")).contains("MADE_UP_CODE");
+    }
+
+    @Test
+    void extractionSeesAnAreaAndASuffixThatAreConcatenated() {
+        String text = "usableId(\"MADE_UP_AREA\", p, id); throw new X(area + \"_UNRESOLVED\", m);"
+                + " throw new X(ref.area() + \"_WEAK\", m);";
+        assertThat(javaCodes(text)).contains("MADE_UP_AREA_UNRESOLVED", "MADE_UP_AREA_WEAK");
+    }
+
     // ---- extraction ---------------------------------------------------------------------------------
 
     static Set<String> extract() throws IOException {
         Set<String> codes = new TreeSet<>();
         for (MainSources.Source source : MainSources.all()) {
             if (source.isJava()) {
-                collect(E1, source.text(), codes);
-                collect(E1C, source.text(), codes);
-                codes.addAll(enumCodeConstants(source.text()));
+                codes.addAll(javaCodes(source.text()));
             } else {
                 collect(E1R, source.text(), codes);
+            }
+        }
+        return codes;
+    }
+
+    /** E1, E1c, E2 and the concatenated shapes in one Java source text. */
+    static Set<String> javaCodes(String text) {
+        Set<String> codes = new TreeSet<>();
+        collect(E1, text, codes);
+        collect(E1C, text, codes);
+        codes.addAll(concatenated(text));
+        codes.addAll(enumCodeConstants(text));
+        return codes;
+    }
+
+    /**
+     * Codes built as {@code area + "_SUFFIX"}: a file that concatenates a suffix onto an area names its areas as
+     * literals ({@link #AREA}); each area with each suffix is a code the file can emit.
+     */
+    static Set<String> concatenated(String text) {
+        Set<String> areas = new TreeSet<>();
+        collect(AREA, text, areas);
+        Set<String> suffixes = new TreeSet<>();
+        collect(SUFFIX, text, suffixes);
+        Set<String> codes = new TreeSet<>();
+        for (String area : areas) {
+            for (String suffix : suffixes) {
+                codes.add(area + suffix);
             }
         }
         return codes;

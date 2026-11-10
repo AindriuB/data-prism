@@ -8,6 +8,7 @@ import com.tngtech.archunit.core.importer.ImportOption;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -28,13 +29,18 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code internal} when they do not; {@code via} says where, or why not. A new enum, a removed one, or a
  * constant added, removed or renamed fails until the list changes with it and the enum is classified.
  *
+ * <p>A third exit, {@code stored}, is an enum whose position or code is written to a file or a cluster map (a
+ * pause document stores {@code Kind} by ordinal; the sealed link header stores {@code LinkRelation} and
+ * {@code LinkLabelKind} by code). Its constants are listed in declaration order, each with its code where it has
+ * an {@code int code()}, so reordering or renumbering fails.
+ *
  * <p>Regenerate with {@code -Dfreeze.write=<directory>}: classified enums keep their exit and via, new ones
  * are written {@code UNCLASSIFIED}, which this test refuses.
  */
 class EnumVocabularyFreezeTest {
 
     private static final String LIST = "enums.txt";
-    private static final Set<String> EXITS = Set.of("out", "internal");
+    private static final Set<String> EXITS = Set.of("out", "internal", "stored");
 
     @Test
     void everyEnumAndItsConstantsMatchTheFrozenList() throws IOException {
@@ -50,6 +56,12 @@ class EnumVocabularyFreezeTest {
                 differences.add("new enum, not in freeze/" + LIST + ": " + name + " " + actual.get(name));
             } else if (!actual.containsKey(name)) {
                 differences.add("listed but no longer in src/main: " + name);
+            } else if (listed.get(name)[1].equals("stored")) {
+                String ordered = String.join(",", declared(name));
+                if (!ordered.equals(listed.get(name)[3])) {
+                    differences.add("stored enum order or codes differ: " + name + ": code " + ordered + ", list "
+                            + listed.get(name)[3]);
+                }
             } else if (!List.of(listed.get(name)[3].split(",")).equals(actual.get(name))) {
                 differences.add("constants differ: " + name + ": code " + actual.get(name) + ", list "
                         + listed.get(name)[3]);
@@ -99,6 +111,27 @@ class EnumVocabularyFreezeTest {
         return enums;
     }
 
+    /** The constants of {@code name} in declaration order, each followed by {@code =code} where it has one. */
+    private static List<String> declared(String name) {
+        try {
+            Class<?> type = Class.forName(name, false, EnumVocabularyFreezeTest.class.getClassLoader());
+            Method code = null;
+            try {
+                code = type.getDeclaredMethod("code");
+                code.setAccessible(true);
+            } catch (NoSuchMethodException none) {
+                code = null;
+            }
+            List<String> out = new ArrayList<>();
+            for (Object constant : type.getEnumConstants()) {
+                out.add(((Enum<?>) constant).name() + (code == null ? "" : "=" + code.invoke(constant)));
+            }
+            return out;
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("cannot read the constants of " + name, e);
+        }
+    }
+
     private static Map<String, String[]> parse(List<String> lines) {
         Map<String, String[]> parsed = new TreeMap<>();
         for (String line : lines) {
@@ -116,8 +149,10 @@ class EnumVocabularyFreezeTest {
         List<String> out = new ArrayList<>();
         for (Map.Entry<String, List<String>> entry : actual.entrySet()) {
             String[] old = listed.get(entry.getKey());
+            List<String> constants = old != null && old[1].equals("stored") ? declared(entry.getKey())
+                    : entry.getValue();
             out.add(entry.getKey() + " | " + (old == null ? "UNCLASSIFIED | UNCLASSIFIED" : old[1] + " | " + old[2])
-                    + " | " + String.join(",", entry.getValue()));
+                    + " | " + String.join(",", constants));
         }
         FreezeLists.write(LIST, out);
     }

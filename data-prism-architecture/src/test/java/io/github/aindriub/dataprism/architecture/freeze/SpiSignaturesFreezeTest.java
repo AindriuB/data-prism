@@ -117,7 +117,7 @@ class SpiSignaturesFreezeTest {
             return;
         }
         String name = type.getName();
-        out.add(name + " | type | " + type.toGenericString());
+        out.add(name + " | type | " + typeLine(type));
         if (type.getGenericSuperclass() != null && type.getSuperclass() != Object.class && !type.isEnum()
                 && !type.isRecord()) {
             out.add(name + " | extends | " + type.getGenericSuperclass().getTypeName());
@@ -152,6 +152,31 @@ class SpiSignaturesFreezeTest {
             }
         }
         Arrays.stream(type.getDeclaredClasses()).forEach(nested -> describe(nested, out));
+    }
+
+    private static final Pattern TYPE_KEYWORD = Pattern.compile("@interface|\\binterface\\b|\\bclass\\b|\\benum\\b|\\brecord\\b");
+
+    /**
+     * {@code toGenericString} with {@code sealed} and {@code non-sealed} stated the same way on every JDK: JDK 25
+     * prints {@code sealed} and JDK 21 does not, so both are removed and put back, just before the type keyword, from
+     * {@link Class#isSealed()} and the type's sealed supertypes.
+     */
+    private static String typeLine(Class<?> type) {
+        String line = type.toGenericString().replace("non-sealed ", "").replace("sealed ", "");
+        String marker = type.isSealed() ? "sealed " : nonSealed(type) ? "non-sealed " : "";
+        Matcher keyword = TYPE_KEYWORD.matcher(line);
+        return marker.isEmpty() || !keyword.find() ? line
+                : line.substring(0, keyword.start()) + marker + line.substring(keyword.start());
+    }
+
+    private static boolean nonSealed(Class<?> type) {
+        if (type.isSealed() || Modifier.isFinal(type.getModifiers()) || type.isEnum() || type.isRecord()) {
+            return false;
+        }
+        if (type.getSuperclass() != null && type.getSuperclass().isSealed()) {
+            return true;
+        }
+        return Arrays.stream(type.getInterfaces()).anyMatch(Class::isSealed);
     }
 
     private static String defaultOf(Object value) {
