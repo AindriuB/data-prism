@@ -570,8 +570,9 @@ all of these is in `design-review.md` under the section named.
   roots published outside the operator's control) or asymmetric signing with
   the private key held outside the writing process — both real design work
   depending on an operational guarantee this library cannot itself enforce,
-  left for the owner to schedule. See `docs/plan/PLAN.md` for the consequences
-  and follow-ups this decision opens.
+  left for the owner to schedule. See `docs/plan/PLAN.md`, "Untasked security follow-ups from
+  landed work", for the follow-ups this decision opens, and `docs/plan/DECISIONS.md`
+  (OD-292-5, OD-292-6 and the "293 second line" residual) for the accepted ones.
   *Reaffirmed 2026-10-06 (owner decision D2).* The proposal to supersede this
   decision with a keyed chain (task 107) was considered and dropped, for the
   same two reasons: the key would live in the operator's own process, and

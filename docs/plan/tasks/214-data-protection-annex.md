@@ -13,7 +13,7 @@ Renumbered from 199 on 2026-10-19 (id collision with the 0.7.0 plan). Reconciled
 
 ## Goal
 `docs/design-review.md:272-277` (D1), `docs/development-plan.md:199` and PLAN's S12 item
-(`docs/plan/PLAN.md:2839-2841`) all call for `docs/data-protection.md`, and it has never been written.
+(`docs/plan/PLAN.md:1015-1017`) all call for `docs/data-protection.md`, and it has never been written.
 Write it as an annex a controller can attach to a GDPR Art. 35 DPIA. Map each control Data Prism ships
 on `main` to the provisions it supports, and say plainly what stays the operator's duty. This task
 absorbs the S12 `data-protection.md` item. The rest of S12 (threat model, mutation and load testing)
