@@ -9,6 +9,18 @@ This page lists the changes in 0.8.0 that can stop something working, and the ne
 upgrade. A section marked Breaking needs action from some deployments; the others say what is different. The
 [CHANGELOG](changelog.md) lists the same changes in release order.
 
+## Breaking: a Hazelcast cluster needs a full restart from 0.7
+
+0.8 keys a scope pause differently from 0.7. A 0.8 member that finds a 0.7 pause in the cluster's oversight map
+refuses to start with `LEGACY_OVERSIGHT_STATE`, because it could not see that pause and the paused scope would resume
+without anyone asking. The check runs when the member's oversight state is built. A pause written afterwards by a 0.7
+member still joined to the cluster is treated as paused when that scope is checked. The message names no scope.
+
+To upgrade, stop every member, then start them all on 0.8. A rolling upgrade is not supported: restarting one member
+at a time leaves the 0.7 state in the cluster, and the 0.8 member refuses. The full restart discards the cluster's
+shared state, so re-issue any pause you still need after it. See
+[Running multiple instances](multiple-instances.md#refusals).
+
 ## Breaking: provider references reach `resolveProviderReference`
 
 `HmacKeyReferenceResolver` has a second method, `resolveProviderReference(keyId, reference)`. A key configured as a

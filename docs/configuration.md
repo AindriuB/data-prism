@@ -1178,6 +1178,9 @@ headings) is listed there, not here.
 | `MISSING_METRICS_SINK`, `UNKNOWN_METRICS_SINK` | `dataprism.metrics.sink` is absent, or is not `micrometer` |
 | `INVALID_METRICS_REFERENCE` | `dataprism.metrics.registry-reference` is blank |
 | `MISSING_METRICS_BINDING` | no metrics binding bean is available |
+| `AUDIT_JSON_PROJECTION_WITHOUT_BUILT_IN_SINK` | `dataprism.audit.output.json-directory` is set with `sink: hash-chained` while an application `AuditSink` bean replaces the built-in sink, so nothing would write to the directory. Remove the application sink or the `json-directory`. See [Migrating from 0.5.x to 0.6.0](migration-0.6.md) |
+| `AUDIT_JSON_PROJECTION_MISSING` | `json-directory` is set but the framework's JSON projection bean is not registered, for example because it was overridden. See [Migrating from 0.5.x to 0.6.0](migration-0.6.md) |
+| `LEGACY_OVERSIGHT_STATE` | a Hazelcast member starts and the cluster's oversight map still holds a scope pause written by 0.7.x, which 0.8 does not read. The message names no scope. The fix is a full restart of every member, which clears the cluster state; a rolling upgrade is not supported. See [Migrating from 0.7.x to 0.8.0](migration-0.8.md#breaking-a-hazelcast-cluster-needs-a-full-restart-from-07) |
 | `PUBLIC_MEMBER_INTERFACE`, `MISSING_TRUSTED_NETWORK`, `INVALID_TRUSTED_RANGE` | the trusted-network rule, which also holds on the plain-Java entry points that start a member, not only in the starter. The rule is whether the member is reachable beyond its own host: see [Running multiple instances](multiple-instances.md#refusals) |
 
 ## The Compose quickstart's evaluation issuer
