@@ -40,7 +40,11 @@ import java.util.Objects;
  * through the mapper the scrubbing engine is installed on; a second mapper
  * anywhere on this path would be a way for source data to reach a client
  * without passing through it, and it would fail silently. See
- * docs/architecture.md boundary 1.
+ * docs/architecture.md boundary 1. That mapper is decorated by
+ * {@link ContentFreeMcpJsonMapper}, which delegates writes unchanged and makes every failed read
+ * or conversion carry no client content, so the SDK's WARN and ERROR lines and its error replies
+ * quote nothing the client sent. On stdio a {@link StdioInboundGuard} also answers a malformed
+ * line itself, so it neither reaches the SDK's logs nor ends the session.
  *
  * <p>stdio cannot carry a per-request identity: a JSON-RPC message over stdio
  * has no request that a token could travel on. {@link #stdio} is therefore an
@@ -67,6 +71,9 @@ public final class DataPrismMcpServer {
 
     /** Refusal code under {@link CorrelationRequirement#REQUIRED} when the call's id was rejected. */
     public static final String EXTERNAL_CORRELATION_ID_INVALID = "EXTERNAL_CORRELATION_ID_INVALID";
+
+    /** The longest stdio line accepted, in bytes: the SDK's own default, set here so the guard and the SDK agree. */
+    private static final int STDIO_INPUT_LIMIT = 16 * 1024 * 1024;
 
     private DataPrismMcpServer() {
     }
@@ -152,18 +159,23 @@ public final class DataPrismMcpServer {
 
         Wiring wiring = Wiring.of(orchestrator, authorizationService, scopeResolver, metrics, audit, clock,
                 developmentCaller, options, catalog, pageMaxLength, linksEnabled);
-        var transport = new StdioServerTransportProvider(wiring.json());
+        McpJsonMapper contentFree = new ContentFreeMcpJsonMapper(wiring.json());
+        // The guard refuses a malformed line itself, so its text reaches no SDK log and the session survives.
+        StdioInboundGuard guard = new StdioInboundGuard(contentFree, System.in, System.out, STDIO_INPUT_LIMIT);
+        var transport = new StdioServerTransportProvider(contentFree, guard.input(), guard.output(),
+                STDIO_INPUT_LIMIT);
 
         return syncServer(wiring, transport);
     }
 
     /**
-     * Builds the server with the shared mapper set explicitly. Without {@code jsonMapper(..)} the
-     * SDK falls back to a ServiceLoader-discovered default mapper, a second and unconfigured one.
+     * Builds the server with the shared mapper, decorated to be content-free, set explicitly. Without
+     * {@code jsonMapper(..)} the SDK falls back to a ServiceLoader-discovered default mapper, a second
+     * and unconfigured one.
      */
     static McpSyncServer syncServer(Wiring wiring, McpServerTransportProvider transport) {
         return McpServer.sync(transport)
-                .jsonMapper(wiring.json())
+                .jsonMapper(new ContentFreeMcpJsonMapper(wiring.json()))
                 // Each handler checks its own input, after authentication: the SDK's check answers first.
                 .validateToolInputs(false)
                 .serverInfo("data-prism", VERSION)
@@ -176,7 +188,7 @@ public final class DataPrismMcpServer {
     /** As {@link #syncServer(Wiring, McpServerTransportProvider)}, for a streamable transport. */
     static McpSyncServer syncServer(Wiring wiring, McpStreamableServerTransportProvider transport) {
         return McpServer.sync(transport)
-                .jsonMapper(wiring.json())
+                .jsonMapper(new ContentFreeMcpJsonMapper(wiring.json()))
                 // Each handler checks its own input, after authentication: the SDK's check answers first.
                 .validateToolInputs(false)
                 .serverInfo("data-prism", VERSION)
@@ -258,7 +270,7 @@ public final class DataPrismMcpServer {
                 null, options, catalog, pageMaxLength, linksEnabled);
         HttpServletStreamableServerTransportProvider transport = HttpServletStreamableServerTransportProvider
                 .builder()
-                .jsonMapper(wiring.json())
+                .jsonMapper(new ContentFreeMcpJsonMapper(wiring.json()))
                 .contextExtractor(contextExtractor)
                 .mcpEndpoint(endpointPath)
                 // SDK 2.1.0 sweeps idle sessions on a non-daemon thread that closeGracefully never
