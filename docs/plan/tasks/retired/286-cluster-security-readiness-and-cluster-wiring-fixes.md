@@ -60,3 +60,13 @@ An operator sees cluster security on the readiness probe. The `clusterSecurity` 
 - Test keys are generated. Neutral, invented identifiers.
 - Say "supports", never "compliant".
 - No Hazelcast Enterprise feature (D-0.4.1-A). No sleeps.
+
+## Outcome
+
+Landed in PR #226, merged 2026-11-07, head 6115a6d4a56af10094564c86e72fd0e3b613a3d1. This session holds no verify verdict: the owner merged it with CI green. The outcome below is from the PR body.
+
+The `clusterSecurity` health contributor (bean `clusterSecurityHealthIndicator`, both a `HealthIndicator` and a `HealthEndpointGroupsPostProcessor`) joins `readiness`, not `liveness`. Details are `reason`, `members` and `unverified` only. It is DOWN whenever the status is not serving, including a stale pause document (read from `HazelcastOversightState.securityStatus()`; other states fall back to `cluster.securityStatus()`), and a missing cluster or a throwing read is DOWN (`CARDS_UNAVAILABLE`). `DataPrismAutoConfiguration` is ordered after Boot's `AvailabilityProbesAutoConfiguration` by name, because Boot adds the readiness group in a post-processor that otherwise runs later. Wiring fixes: the re-identification index feed now passes `lock-timeout` (it used the 2 s default); `ClusterBackedState.builtHere` is the one rule and `PropertiesValidation.isFrameworkCluster` delegates to it; `ClusterLegacyGaugeTest` records registrations in a list so a double registration shows. Register rows added for `trusted-network` and `member.trusted-ranges`.
+
+Edits outside `Owns` (fix rounds): `DataPrismAutoConfiguration.java`, `StalePauseFixture.java`, the count in `AutoConfiguredBeanInventoryTest`. Red-first was shown by mutants, because the sandbox hook refused a base worktree. `ClusterLockTimeoutPassThroughTest` reads the lambda field `arg$1`, since `PrivacyCluster` is final.
+
+Residuals: Kubernetes join mode is not started in tests. The health details are narrower than `cluster-security.md:699`. `clusterSecurity` also joins the aggregate `/actuator/health`, so 213 or 261 should extend the warning at `docs/configuration.md:496`.

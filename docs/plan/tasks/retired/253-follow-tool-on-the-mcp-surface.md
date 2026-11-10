@@ -38,3 +38,15 @@ Give the agent the `follow` tool: it takes nothing but a link string, authentica
 - Spring registration and `dataprism.links.*` (255).
 - `follow_bulk` (0.9).
 - `docs/tools.md` (261).
+
+## Outcome
+
+Landed in PR #225 (merged into `main`); verified PASS (full `verify`, 4,920 tests, 0 failures) and APPROVE at 548e756e984538fbe496b020700900d191ef4efc, the PR head.
+
+`FollowTool` (`follow`) is registered only when links are enabled, through new `linksEnabled` overloads on `DataPrismMcpServer.stdio` and `streamableHttp`; the old overloads keep it off, so Spring wiring is untouched until 255. It uses the shared `ToolInput` path. The 252 `ContextResponse` is returned as is, so it carries `entityType` and the synthetic `subject`; no output schema is served. Any `link` member that is not schema-valid gives `LINK_INVALID`; no `link` member gives `TOOL_INPUT_INVALID`. Approval binds the actual link through the keyed `ParameterFingerprinter`. `LinkFollower.Authorised#key` is never touched from mcp. `LinkArchitectureTest` now counts `mcp` and `connectors` separately.
+
+Review rounds: reserved argument names (names only) travel in `FollowRequest.rejectedArguments` and are audited on every orchestrator path; `follow`, `list_sources` and `describe_source` joined `OVERSIGHT_TOOLS`; `FollowRequest` moved from `orchestration.links` to `orchestration`, because `KeyResolverArchitectureTest` forbids mcp importing `orchestration.links`.
+
+Edits outside `Owns`, accepted by the owner as review-round scope: the `FollowRequest` move with `rejectedArguments`, `FollowToolAuditTest`, the three names in `OVERSIGHT_TOOLS`, `docs/configuration.md`, the 255 task note (follow must be approval-required when any link-issuing tool is, design P5), and `4cc04ea0` (a stale import in 301's `ConfiguredJsonLinksTest` after the move, found when #225 was updated from `main`). Also `EveryToolValidatesInputTest` and `DataPrismMcpServerTest`, as the notes asked.
+
+Residual: the success path in the tool tests uses a spy orchestrator; 252's tests cover the real read, and `FollowToolAuditTest` covers a genuine link through the real orchestrator.
