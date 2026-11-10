@@ -125,26 +125,97 @@ class DataPrismMcpServerTest {
         assertThat(mapperOf(linkedWiring.follow())).isSameAs(linkedWiring.mapper());
         assertThat(((io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper) wiring.json()).getJsonMapper())
                 .isSameAs(wiring.mapper());
+
+        // The server built from the wiring decorates wiring.json(), whose underlying mapper is the one
+        // every tool handler holds.
+        McpSyncServer server = DataPrismMcpServer.syncServer(wiring,
+                new io.modelcontextprotocol.server.transport.StdioServerTransportProvider(wiring.json(),
+                        new java.io.ByteArrayInputStream(new byte[0]), new java.io.ByteArrayOutputStream(), 1024));
+        try {
+            Object underlying = delegateOf(serverMapper(server));
+            assertThat(underlying).isSameAs(wiring.json());
+            assertThat(((io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper) underlying).getJsonMapper())
+                    .isSameAs(mapperOf(wiring.get())).isSameAs(mapperOf(wiring.compare()));
+        } finally {
+            server.closeGracefully();
+        }
     }
 
     @Test
-    @DisplayName("the server itself, on either transport, uses the shared mapper rather than the SDK default")
-    void serverUsesTheSharedMapper() throws Exception {
-        var stdioWiring = wiringForTest();
-        McpSyncServer stdio = DataPrismMcpServer.syncServer(stdioWiring,
-                new io.modelcontextprotocol.server.transport.StdioServerTransportProvider(stdioWiring.json()));
-        var httpWiring = wiringForTest();
-        McpSyncServer http = DataPrismMcpServer.syncServer(httpWiring,
-                io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider.builder()
-                        .jsonMapper(httpWiring.json()).contextExtractor(request -> McpTransportContext.EMPTY)
-                        .mcpEndpoint("/mcp").build());
+    @DisplayName("the server and each transport provider, from the production factories, use a content-free mapper over the shared one")
+    void serverAndProvidersUseTheContentFreeSharedMapper() throws Exception {
+        McpSyncServer stdio = DataPrismMcpServer.stdio(new NeverCalledOrchestrator(),
+                authorizationServiceGranting(Set.of("GET_ENTITY_CONTEXT")), scopeResolver(),
+                developmentCaller(Set.of()), true, false, PrivacyMetrics.none(), audit(), FIXED,
+                ToolOptions.defaults().noAdmission().build());
+        DataPrismMcpServer.HttpTransport http = DataPrismMcpServer.streamableHttp(new NeverCalledOrchestrator(),
+                authorizationServiceGranting(Set.of("GET_ENTITY_CONTEXT")), scopeResolver(),
+                request -> McpTransportContext.EMPTY, "/mcp", PrivacyMetrics.none(), audit(), FIXED,
+                ToolOptions.defaults().noAdmission().build());
         try {
-            assertThat(serverMapper(stdio)).isSameAs(stdioWiring.json());
-            assertThat(serverMapper(http)).isSameAs(httpWiring.json());
+            // The factory builds one Wiring, so its server and its provider must wrap the same instance.
+            assertContentFreeOverSharedMapper(serverMapper(stdio), delegateOf(providerMapper(stdio)));
+            assertContentFreeOverSharedMapper(providerMapper(stdio), delegateOf(serverMapper(stdio)));
+            assertContentFreeOverSharedMapper(serverMapper(http.server()),
+                    delegateOf(fieldOf(http.transportProvider(), "jsonMapper")));
+            assertContentFreeOverSharedMapper(fieldOf(http.transportProvider(), "jsonMapper"),
+                    delegateOf(serverMapper(http.server())));
         } finally {
             stdio.closeGracefully();
-            http.closeGracefully();
+            http.server().closeGracefully();
         }
+    }
+
+    @Test
+    @DisplayName("mutation: a mapper that is not decorated fails the content-free check")
+    void anUndecoratedMapperFailsTheContentFreeCheck() {
+        var plain = new io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper(DataPrismObjectMapper.create());
+
+        assertThatThrownBy(() -> assertContentFreeOverSharedMapper(plain, plain)).isInstanceOf(AssertionError.class);
+    }
+
+    @Test
+    @DisplayName("mutation: a decoration over a different mapper instance fails the same-instance check")
+    void aDifferentDelegateFailsTheSameInstanceCheck() {
+        var a = new io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper(DataPrismObjectMapper.create());
+        var b = new io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper(DataPrismObjectMapper.create());
+
+        assertThatThrownBy(() -> assertContentFreeOverSharedMapper(new ContentFreeMcpJsonMapper(a), b))
+                .isInstanceOf(AssertionError.class);
+    }
+
+    @Test
+    @DisplayName("every write through the decorated mapper is the shared mapper's write")
+    void writesStillGoThroughTheSharedMapper() throws Exception {
+        var shared = wiringForTest().json();
+        var decorated = new ContentFreeMcpJsonMapper(shared);
+        Map<String, Object> value = Map.of("k", "v");
+
+        assertThat(decorated.writeValueAsString(value)).isEqualTo(shared.writeValueAsString(value));
+        assertThat(decorated.writeValueAsBytes(value)).isEqualTo(shared.writeValueAsBytes(value));
+    }
+
+    private static Object delegateOf(Object mapper) {
+        assertThat(mapper).isInstanceOf(ContentFreeMcpJsonMapper.class);
+        return ((ContentFreeMcpJsonMapper) mapper).delegate();
+    }
+
+    private static void assertContentFreeOverSharedMapper(Object mapper, Object shared) {
+        assertThat(mapper).isInstanceOf(ContentFreeMcpJsonMapper.class);
+        Object delegate = ((ContentFreeMcpJsonMapper) mapper).delegate();
+        assertThat(delegate).isSameAs(shared);
+    }
+
+    /** The stdio provider the server was built on: the {@code mcpTransportProvider} field of its async server, SDK 2.1.0. */
+    private static Object providerMapper(McpSyncServer server) throws Exception {
+        Object async = fieldOf(server, "asyncServer");
+        return fieldOf(fieldOf(async, "mcpTransportProvider"), "jsonMapper");
+    }
+
+    private static Object fieldOf(Object target, String name) throws Exception {
+        var field = target.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        return field.get(target);
     }
 
     private static DataPrismMcpServer.Wiring wiringForTest() {
