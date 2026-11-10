@@ -42,7 +42,7 @@ message is refused without ending the session.
 ## Decide between
 | Outcome | Proven when | Change |
 |---|---|---|
-| (a) test defect | The refusal response is complete and well formed (status, headers, JSON-RPC error body). The dropped request is caused by ordinary connection life (for example keep-alive reuse after a server-side close, or start or stop timing), and the same drop reproduces with a well-formed request, such as a valid `tools/call` or a `ping`, in place of the case body. | Test only. The fix removes the race, for example a fresh connection per request or waiting on a stated condition, and the test still fails if the server drops the session or the connection because of the case body. |
+| (a) test defect | The refusal response is complete and well formed (status, headers, JSON-RPC error body). The dropped request is caused by ordinary connection life (for example keep-alive reuse after a server-side close, or start or stop timing), and the same drop reproduces with a well-formed request, such as a valid `tools/call` or a `ping`, in place of the case body. | Test only. The fix removes the race, for example a fresh connection per request or waiting on a stated condition, and the test still fails if the server drops the session or the connection because of the case body. A server close after a complete response is acceptable HTTP behaviour only if the client is told through `Connection: close`; a silent close of a pooled keep-alive connection after a refusal is a product defect under (b), so a fresh connection per request is not an acceptable fix unless the implementer has first shown which of the two it is. |
 | (b) product defect | The drop happens only after a malformed `tools/call`: the SDK or the servlet aborts or errors the async response, closes the connection, or removes the session. The same steps with a well-formed request do not drop. | **Stop and report.** Do not edit product code. The owner decides, and the brief is amended to add the product files to `Owns`. |
 
 ## Acceptance
@@ -51,7 +51,9 @@ message is refused without ending the session.
   cut off); whether Tomcat or the client closed the connection and when; and the same observations for the
   well-formed control request.
 - [ ] AC2 The drop is reproduced (a temporary delay, latch, loop or connection-level probe that forces the
-  interleaving, removed before merge or kept as a deterministic test), and the PR body says how. If it never
+  interleaving, removed before merge or kept as a deterministic test), and the PR body says how. The forced-interleaving reproduction fails on the
+  base commit and passes after the fix, with both runs recorded in the Outcome; the 20 repeat runs are extra
+  evidence, not the proof. If it never
   reproduces, the PR body states the attempt count and method, and AC5's row is `open`, not `fixed`.
 - [ ] AC3 No assertion is weakened. No assertion in `refused` is removed or loosened; there is no catch or retry
   of a failed post, no retry of the whole test, no `@Disabled`, no timeout above the existing 30 s, and no
