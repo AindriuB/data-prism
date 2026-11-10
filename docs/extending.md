@@ -220,6 +220,95 @@ consistency finding — instead of tripping this source's circuit breaker
 (`data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/SourceOutcome.java:19-23`,
 `QuickstartCustomerAdapter.java:12-21`).
 
+## Describing a source
+
+`list_sources` and `describe_source` tell an agent what each source holds. An adapter describes itself by overriding
+`description()`, which is called once, at startup. A configured JSON source does the same in its
+[`description:` block](configuration.md#dataprismjson-sourcesconfig-location). The two are checked by the same rules.
+
+```java
+@Override
+public SourceDescription description() {
+    return new SourceDescription(
+            Set.of("SHIPMENT"),
+            "Parcel scans and delivery status",     // alias description: written for the model
+            null,                                   // real description: the alias text is used
+            List.of(new KeyNamespace("shipment-id")),
+            CostHint.LOW,
+            FreshnessHint.NEAR_LIVE);
+}
+```
+
+`SourceDescription.undeclared()` is the default: the source is listed with the generated text `A data source.` and
+no entity types, input keys or hints. A source that declares nothing is never a link target.
+
+**The text rules.** The alias description is shown to the model, so it must say what the data is and never where it
+lives. At startup each text is checked in order, and the first failing rule refuses startup naming the source and
+the rule number, never the text:
+
+1. not blank, one line, at most 240 characters;
+2. only letters, digits, spaces and `. , ; : ( ) - _ / ' "`;
+3. no key, address or location: nothing a sensitive-data scan matches, and nothing shaped like a URL, a host name
+   (a dotted run of labels), an IP address, or a name followed by a port. This also refuses `e.g.` and `i.e.`,
+   which look like host names; write "for example" and "that is";
+4. the grammars and counts: entity types `[A-Za-z][A-Za-z0-9_-]{0,63}` without duplicates, at most eight input
+   keys without duplicates, `namespaceTypes` keys in `inputKeys` and its values in `entityTypes`. These are enforced
+   when the `SourceDescription` is constructed, so a bad one throws there, at construction, before the catalog sees it;
+5. the alias text must not contain a source name, an adapter class name or a configured base-url host, compared
+   after folding case and dropping punctuation. This one is `SOURCE_DESCRIPTION_LEAKS_NAME`;
+6. the alias text must differ from the real text.
+
+A rule failure is `INVALID_SOURCE_DESCRIPTION`. A description that cannot be built at all (the adapter's
+`description()` throws, or the configured entry cannot be read) refuses with the message "description failed", and
+nothing of the cause is shown. Two sources with one name have no stable code of their own. The startup check is a
+guard rail: it catches the mistakes it can name, not every way a sentence can reveal a system. The operator is the
+reviewer of what the text says ([Operating many sources](operations.md#reviewing-source-descriptions)).
+
+**Chainable fields.** A model field that holds a key another source accepts is declared with `@Chainable(keyNamespace =
+"...")`, on a field that is also `@InternalIdentifier` or `@SubjectIdentifier`; a configured source states
+`chainable: true` and `keyNamespace` on an `identifier: true` entry. The value is still removed or pseudonymised as
+before. Declaring it only lets a sealed link be issued, and only when `dataprism.links.enabled` is `true`.
+`describe_source` shows the field's `chainable` and `keyNamespace` only while links are on.
+
+## Writing a key resolver
+
+When a link's key is in one namespace and the target source accepts another, `follow` asks a `KeyResolver` to
+translate it. Without a resolver for the pair, no link is issued between them. A resolver is a bean; no property
+names a class.
+
+```java
+public final class ShipmentToParcelResolver implements KeyResolver {
+
+    @Override public String name() { return "shipment-to-parcel"; }
+    @Override public KeyNamespace from() { return new KeyNamespace("shipment-id"); }
+    @Override public KeyNamespace to() { return new KeyNamespace("parcel-id"); }
+
+    @Override
+    public Resolution resolve(String key, ResolutionContext context, int maxResults) {
+        List<String> parcels = lookup(key);   // your own call; honour context.deadline()
+        boolean more = parcels.size() > maxResults;
+        return new Resolution(more ? parcels.subList(0, maxResults) : parcels, more);
+    }
+}
+```
+
+- `name()` is for the audit and the metrics, never shown to a client: `[a-z][a-z0-9-]{0,31}`, unique.
+- `from()` and `to()` must differ, and a pair may have only one resolver. Violations refuse startup
+  (`INVALID_KEY_RESOLVER`, `DUPLICATE_KEY_RESOLVER`).
+- `resolve` returns zero or more keys in a stable order, and never more than `maxResults`
+  (`dataprism.key-resolvers.max-targets`, default 5). Say `more = true` when it knew of more. An empty list is "no
+  translation is known": the followed source reads `NO_DATA`. It is not an error.
+- A failure is `KeyResolutionException` with one of the reasons `UNAVAILABLE`, `TIMEOUT`, `REJECTED` or `TOO_MANY`.
+  It carries no message and no cause, and the key is never in it. The followed source then reads
+  `RESOLVER_FAILED`, and nothing falls back to a direct read or to the untranslated key. Returning null, more keys
+  than asked, or a null element is a contract violation and is treated as a failure.
+- The resolver gets a `ResolutionContext`: the scope id, the principal, the purpose and a deadline. It never sees a
+  record or another key. It is called through a bounded invoker with a timeout
+  (`dataprism.key-resolvers.timeout`, default `PT2S`), and each call is charged `dataprism.key-resolvers.budget-cost`
+  reads against the scope budget.
+- A resolver sees a real key value, so it is reviewed code like an adapter: it must not log the key or send it
+  anywhere beyond the lookup it exists to make.
+
 ## Using the caller's correlation id in an adapter
 
 When the caller sent a correlation id and it passed validation, it arrives on

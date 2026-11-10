@@ -170,7 +170,8 @@ operator rate limit; the cap on pending approvals per requester is what bounds a
 Other codes: `OPERATOR_IDENTITY_UNAVAILABLE` (401, the token lacks a usable principal, client, purpose
 or case claim), `REIDENTIFICATION_DISABLED` (404, `dataprism.reidentification.enabled` is `false`),
 `CLUSTER_LOCK_TIMEOUT`, `CLUSTER_OPERATION_REFUSED`, `OVERSIGHT_UNAVAILABLE` and `AUDIT_UNAVAILABLE` (503), `APPLIED_AUDIT_UNAVAILABLE` (503, from `pause` and
-`reject` only: the action took effect and could not be audited), `PAYLOAD_TOO_LARGE` (413).
+`reject` only: the action took effect and could not be audited), `PAYLOAD_TOO_LARGE` (413) and
+`UNSUPPORTED_MEDIA_TYPE` (415, a request body in a content type the endpoint does not accept).
 
 **The approver's view.** The approver sees what is being asked for: the re-identification entry in
 the approval list and in the detail carries the synthetic value and its namespace, with the requester,
