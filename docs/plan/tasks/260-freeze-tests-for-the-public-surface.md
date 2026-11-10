@@ -60,3 +60,14 @@ Reviewed HEAD 8e8dd24376d4f5df1eeffec4692093ea24f974ba (full branch).
 - P3 OperatorEndpointsFreezeTest.java:21-25,45: the source-regex scan keeps only the first path of a multi-path mapping, records a constant path as empty, and mistakes Javadoc text like "class <word>" before a class-level `@RequestMapping` for a method mapping. None of these occurs today.
 - P3 CodeSetFreezeTest.java:47: the E2 pattern misses `enum Code implements X {`.
 - NOTE: unused imports in MapNamesFreezeTest.java:5,8; EnumVocabularyFreezeTest.java:76 duplicates `MainSources.mainClasses()`; ToolsListGoldenTest.java:80 checks against `ListSourcesTool.DEFAULT_PAGE_MAX_LENGTH`, not the `LinksProperties` default.
+
+## Review round 2 — findings
+
+Reviewed the fix since 1428a930, at HEAD 245026c5ac7e9030519e9223282012a4c33f7dec.
+
+- [P2] data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/freeze/SingleWordCodesFreezeTest.java:31-33,53-58 — the "returned as a code" direction only recognises three source shapes (`"status", "X"`, `codeOnly(..., "X")`, and `case ... -> "X"` in files whose path contains `Error`). The operator controllers' main way of returning a code is `new OperatorException(HttpStatus.X, "CODE")` (OversightOperatorController.java:401, ReidentificationOperatorController.java:85/101), and a `Map.of("code", "CODE")` body is another. Neither is seen, so the test does not cover what the Acceptance row asks: every single-word upper-case literal the operator controllers and operator error advice return as a code.
+  route: implementer — add the `OperatorException(<status>, "X")` and `"code", "X"` shapes to the scan (or scan every single-word upper-case string literal in the operator controllers and error advice, with a small reviewed exclusion list for non-codes); keep Decision 1 and the Acceptance row as written.
+  input: add `throw new OperatorException(HttpStatus.CONFLICT, "CONFLICT");` to OversightOperatorController, or change ReidentificationOperatorController.java:113 to `Map.of("code", "GONE")` → the new single-word code ships and SingleWordCodesFreezeTest still passes. Show this failing once, then revert.
+- [STYLE] data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/freeze/SpiSignaturesFreezeTest.java:7-10,140-143 — new imports are out of order (`Retention`, `Target`, `Annotation`, then `java.nio.file.Files` before `java.lang.reflect.Constructor`), and `defaultOf` writes `java.lang.reflect.Array` in full while the file imports the other `java.lang.reflect` classes.
+  route: implementer
+  rule: the file's own sorted import block at SpiSignaturesFreezeTest.java:11-23.
