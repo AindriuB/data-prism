@@ -159,7 +159,8 @@ new DefaultContextOrchestrator(adapters, scrubber, resolver, validators, synthet
 to every caller, no real names, no links. Two differ from 0.7.1: a caller holding `EXPOSE_SOURCE_NAMES` now sees
 aliases (`RealNamesPolicy.none()`), and an embedder with more than 8 adapters has `get_entity_context` calls without
 `targetSources` refused with `SOURCE_SELECTION_REQUIRED` (`unselectedSourceLimit` 8). Use its `with...` methods to change one setting. The eight-argument
-convenience constructor is unchanged.
+convenience constructor keeps its signature, but it now builds with `OrchestrationOptions.defaults()`, so an embedder
+calling it gets the aliases and the `SOURCE_SELECTION_REQUIRED` limit described above.
 
 ## Breaking: adapters run on their own threads
 

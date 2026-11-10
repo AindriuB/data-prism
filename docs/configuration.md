@@ -477,9 +477,10 @@ applicable Union or national law". Other periods may be lawful under Union or
 national law; setting `retention-override` is the operator's own legal
 responsibility, and Data Prism does not judge whether such a law applies.
 
-While a checkpoint cannot be written, audited calls are refused with
-`AUDIT_UNAVAILABLE` until the next checkpoint succeeds (`AUDIT_CHECKPOINT_UNAVAILABLE` names the exception inside the
-server, not a code a client receives). A purge that
+While a checkpoint cannot be written, audited calls are refused until the next checkpoint succeeds. An allowed
+`get_entity_context`, `compare_entity_sources` or `follow` call answers with a generic error that carries no code,
+not `AUDIT_UNAVAILABLE` (`AUDIT_CHECKPOINT_UNAVAILABLE` names the exception inside the server, not a code a client
+receives). A purge that
 cannot anchor, or whose chain does not verify, deletes nothing and logs the
 error.
 

@@ -461,7 +461,7 @@ from a catalog built once at startup. The caller needs the `LIST_SOURCES` capabi
 |---|---|---|
 | `entityType` | string, `[A-Za-z][A-Za-z0-9_-]{0,63}` | Only sources that serve this entity type, plus sources that declare none. |
 | `keyNamespace` | string, `[a-z][a-z0-9-]{0,31}` | Only sources that accept a key in this namespace. |
-| `pageSize` | integer, at least 1 | The most entries to return. Above `dataprism.paging.list-sources.max-page-size` the ceiling applies, and `page.size` says so. Absent: the configured default, or the size recorded in the page link. |
+| `pageSize` | integer, at least 1 | The most entries to return, when a link key is configured (see "Paging"). Without one the whole list comes back on one page and this is ignored. Above `dataprism.paging.list-sources.max-page-size` the ceiling applies, and `page.size` says so. Absent: the configured default, or the size recorded in the page link. |
 | `page` | string, 1 to `dataprism.links.max-length` characters | The `page.next` value of the previous page of the same listing. Absent for the first page. |
 
 **Response**
@@ -476,7 +476,7 @@ from a catalog built once at startup. The caller needs the `LIST_SOURCES` capabi
 | `sources[].entityTypes` | array of string | the entity types the source serves. Absent when the source declares none. |
 | `sources[].inputKeys` | array of string | the key namespaces the source accepts as a subject key, at most eight. Empty when it declares none. |
 | `sources[].cost`, `sources[].freshness` | enum | advisory hints: `cost` is `LOW`, `MEDIUM` or `HIGH`; `freshness` is `LIVE`, `NEAR_LIVE`, `HOURLY`, `DAILY` or `PERIODIC`. Absent when not declared. |
-| `page.size` | integer | the page size that applied, after the ceiling. It is not the number of entries returned. |
+| `page.size` | integer | the page size that applied, after the ceiling. It is not the number of entries returned. Without a link key it is the number of entries in the one page (at least 1). |
 | `page.last` | boolean | `true` when no entry follows this page |
 | `page.next`, `page.expiresAt` | string | a sealed link to the next page, and when it stops being accepted. Present exactly when `last` is `false`. |
 
@@ -508,8 +508,10 @@ when its id matches `dataprism.catalog.real-names-scopes` *and* the caller holds
 shows aliases. A name the caller may not see never appears, and does not change a page boundary. `list_sources`
 allows every source in 0.8; from 0.9 a source that no rule matches is denied.
 
-**Paging.** A page past the first needs a link key (`dataprism.links.key-id`), because `page.next` is a sealed link:
-it is bound to the caller, the filters and the label setting, and it expires after `dataprism.paging.lifetime`.
+**Paging.** Paging needs a link key (`dataprism.links.key-id`). Without one there is no link codec: the whole visible
+list comes back on one page whatever `pageSize` says, `page.last` is `true` and there is no `page.next`. A `page` value
+sent in that state is refused with `LINK_INVALID` at once, and is not counted toward the failed-attempt limit, because
+no link was opened. With a key, `page.next` is a sealed link: it is bound to the caller, the filters and the label setting, and it expires after `dataprism.paging.lifetime`.
 A `page` value that is not valid, has expired, belongs to another caller or to other filters, or comes from a
 catalog that has since changed, is refused with `LINK_INVALID` ("The link is not valid."), the same refusal as for a
 forged link, and counts toward the failed-attempt limit (see "Links and `follow`" below). A call that carries a
@@ -740,9 +742,12 @@ before the orchestrator is asked for anything.
 
 ## Caller and call refusals
 
-These refuse a call before or around the orchestrator. The tool answers `isError` with the bare code as its text
-(`refused: <CODE> at <path>` for a code the orchestrator raised), and writes `DENY:<code>` to the audit with the
-same code. No source is called.
+These refuse a call before or around the orchestrator, or after it. The tool answers
+`isError` with the bare code as its text (`refused: <CODE> at <path>` for a code the orchestrator raised), and writes
+`DENY:<code>` to the audit with the same code. Every code down to `TOOL_INPUT_INVALID`, and `SCOPE_READ_BUDGET`, refuses
+before any source is called. `REQUEST_FAILED`, `AUDIT_UNAVAILABLE` and `NO_SOURCE_DATA` can come after the sources were
+called: the orchestrator refuses them once the fan-out is done, and a source that was refused has its own code (see "Scrub and validation
+refusals"), which takes the call's place when every source that answered was refused.
 
 | Code | Meaning |
 |---|---|
@@ -757,9 +762,9 @@ same code. No source is called.
 | `CASE_AUTHORISATION_UNAVAILABLE` | The `CaseAuthorizer` threw. The refusal never carries the exception's message. |
 | `TOOL_NOT_PERMITTED` | The role lacks the tool's capability (see the next section). |
 | `TOOL_INPUT_INVALID` | The arguments break the tool's input schema, or passed it and failed conversion. One text for every violation, with the correlation id; it names no field and no value. It is raised after authentication, authorisation and scope, so `TOOL_NOT_PERMITTED` wins. On `list_sources` with a `page` key, and on `follow`, a schema violation is `LINK_INVALID` instead. |
-| `AUDIT_UNAVAILABLE` | The audit record for the call could not be written, so the call is refused (fail closed). Every denial path answers this when the denial's own audit write fails, the same code on the re-identification and operator paths (HTTP 503 on the operator API); the metric `dataprism.audit.denial_unavailable` counts them. While an audit checkpoint cannot be written, audited calls are refused the same way: `AUDIT_CHECKPOINT_UNAVAILABLE` is the name of the exception inside the server, not a code a client receives. |
+| `AUDIT_UNAVAILABLE` | The audit record for the call could not be written, so the call is refused (fail closed). Every denial path answers this when the denial's own audit write fails, the same code on the re-identification and operator paths (HTTP 503 on the operator API); the metric `dataprism.audit.denial_unavailable` counts them. While an audit checkpoint cannot be written, the recorder refuses to record and an allowed `get_entity_context`, `compare_entity_sources` or `follow` call answers with a generic error that carries no code ("the request could not be completed"). `AUDIT_CHECKPOINT_UNAVAILABLE` is the name of the exception inside the server, not a code a client receives, and the answer is not `AUDIT_UNAVAILABLE`. |
 | `REQUEST_FAILED` | A failure that is not a privacy refusal, such as a scrubber or validator fault. The client sees only that the request could not be completed; the audit has `DENY:REQUEST_FAILED`. |
-| `NO_SOURCE_DATA` | Every source failed, timed out, had no data or was refused. |
+| `NO_SOURCE_DATA` | No source returned a record for this subject: every source failed, timed out or had no data. It comes after the fan-out. When a source was refused (and none returned a record) the call carries that source's own scrub or validation code instead, never `NO_SOURCE_DATA`. |
 | `SCOPE_READ_BUDGET` | The reads this call needs do not fit the subject's budget or the scope total (see "Time and read limits"). |
 
 ## Scrub and validation refusals

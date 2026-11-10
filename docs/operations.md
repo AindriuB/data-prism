@@ -28,9 +28,12 @@ Three things to know before you add a second instance:
   application supplies a limiter declared as `ClusterWideLinkAttemptLimiter`. Until then, run links on a single
   instance.
 - **Readiness carries `clusterSecurity`.** With Spring Boot Actuator present, the `clusterSecurity` contributor is
-  part of the readiness group, not liveness. It goes `DOWN`, with a `reason`, the member count and the unverified
-  count, while this instance is not serving because the cluster could not be shown to be a Data Prism cluster, so a
-  refusing instance leaves rotation. A restart does not repair a hostile or mismatched cluster, which is why it
+  part of the readiness group, not liveness, but only when the readiness group exists: enable health probes
+  (`management.endpoint.health.probes.enabled=true`; Spring Boot enables them by default on Kubernetes), or add
+  `clusterSecurity` to a readiness group you define yourself. The contributor exists only with the `embedded` topology.
+  It goes `DOWN`, with a `reason`, the member count and the unverified count, while this instance is not serving
+  because the cluster could not be shown to be a Data Prism cluster, so a refusing instance leaves rotation when the
+  probe is on the readiness group. A restart does not repair a hostile or mismatched cluster, which is why it
   is not in liveness.
 - **What is and is not sealed** is on [Running multiple instances](multiple-instances.md), and is not repeated here.
   Read it before you decide which state you rely on.
@@ -43,11 +46,20 @@ Every source a call asks costs one read, charged before any source is called, ag
 `SCOPE_READ_BUDGET` and calls nothing. A `follow` that translates a key costs
 `dataprism.key-resolvers.budget-cost` more per resolver call.
 
-The scope total must be at least the number of subjects an investigation will ask about, times the sources each
-call asks. An investigation over 5,000 subjects against 8 sources needs 40,000 reads, which fits the default. The
-same 5,000 subjects against a hundred-source estate also needs 40,000 reads if every call targets 8 sources, and
-four times that if it does not. The per-subject budget bounds how often one subject is re-read: size it to the number
-of calls, times the sources per call, that you want to allow for one subject in one scope.
+One call can never ask more sources than `dataprism.limits.max-sources` (default 8): a selection above it is refused
+with `SOURCE_SELECTION_TOO_LARGE`, and a call without `targetSources` over `dataprism.catalog.unselected-source-limit`
+(default 8) is refused with `SOURCE_SELECTION_REQUIRED`, so a hundred-source estate does not make a call cost more.
+Neither refusal charges a read. A call therefore costs at most `max-sources` reads, 8 at the defaults, however large the
+estate. (Raising `unselected-source-limit` above `max-sources` does not help: the call is then refused as too large.)
+
+The scope total must be at least the number of subject calls the investigation will make, times the sources each call
+asks, at most `max-sources`. At the defaults, 5,000 subjects, each read once across 8 sources, needs 5,000 x 8 =
+40,000 reads, which fits the 50,000 total; the scope runs out after 50,000 / 8 = 6,250 such calls. A second pass over
+the same 5,000 subjects would need another 40,000, which the total does not cover, so size it for every pass. The
+per-subject budget bounds how often one subject is re-read: at the default 100 and 8 sources per call, one subject
+can be read 12 times (96 reads) before a 13th is refused. A `follow` that translates a key adds
+`dataprism.key-resolvers.budget-cost` (default 1) per resolver call, charged to the chained key's own counter. Size
+both numbers from the calls, times the sources per call, that you want to allow.
 
 With `dataprism.hazelcast.topology: single-node` the counts are per process. With more instances they are shared.
 
