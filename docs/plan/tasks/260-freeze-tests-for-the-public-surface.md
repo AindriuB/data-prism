@@ -7,7 +7,7 @@
 **Wave:** 13 (moved from 12 on 2026-11-06; re-planned 2026-10-23 for owner decision (b): 230 and 264 deferred past 1.0, 284, 286 and 287 added)
 **Owns:**
 - data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/freeze/** *(new)*
-- data-prism-architecture/src/test/resources/freeze/** *(new)*
+- data-prism-architecture/src/test/resources/freeze/** *(new; includes `single-word-codes.txt`, amendment 2026-11-10)*
 - data-prism-mcp/src/test/java/io/github/aindriub/dataprism/mcp/ToolsListGoldenTest.java *(new)*
 - data-prism-mcp/src/test/resources/io/github/aindriub/dataprism/mcp/golden/tools-list.json *(new)*
 
@@ -29,7 +29,8 @@ The public surface freezes at 0.9.0, and most of it is not pinned today (registe
 - [ ] `ToolsListGoldenTest` builds the MCP server with links enabled and compares `tools/list` (names, `inputSchema`, any `outputSchema`) byte for byte with `golden/tools-list.json`; the `follow` `maxLength` is the configured default.
 - [ ] Hazelcast map names (read from the cluster module's constants by reflection from the architecture module) match `freeze/map-names.txt`.
 - [ ] Operator endpoints (every request mapping in `data-prism-server`'s operator controllers, with method and path) match `freeze/operator-endpoints.txt`.
-- [ ] A signature snapshot of the public types in `core.spi`, `validation`, `security` and the `audit` contract package matches `freeze/spi-signatures.txt`.
+- [ ] A signature snapshot of every extension interface and annotation listed in contract-register section 7.1, with the list read from 7.1, matches `freeze/spi-signatures.txt`; annotations are pinned with their attributes, defaults included (amendment 2026-11-10, decision 2).
+- [ ] Single-word codes: `freeze/single-word-codes.txt` lists `UNAUTHENTICATED`, `FORBIDDEN`, `PAUSED`, `RESUMED`, `APPROVED`, `REJECTED` and `RESOLVED`. A test checks both directions: every listed word appears as a string literal in some module's `src/main`, and every single-word upper-case literal returned as a code or status by `data-prism-server`'s operator controllers and operator error advice is on the list. It is shown to fail, in a recorded run, by renaming one listed word (amendment 2026-11-10, decision 1).
 - [ ] Every list can be regenerated with `-Dfreeze.write=<path>`, as `PropertyNamesFrozenTest` does; regenerating on an unchanged tree gives no diff.
 - [ ] No file outside the owned paths changes.
 - [ ] `./mvnw -B -pl data-prism-architecture,data-prism-mcp -am verify` passes, then `./mvnw -B verify`.
@@ -41,3 +42,21 @@ The public surface freezes at 0.9.0, and most of it is not pinned today (registe
 
 ## Note from the wave-7 record (2026-11-04)
 When this task lists the sources of `PrivacyClusterRefusal` codes, include task 228's insertion, `CLUSTER_SETTINGS_MISMATCH` (merged in PR #191), alongside 227's and 287's.
+
+## Amendment 2026-11-10 (owner, after review round 1)
+Owns and Acceptance above are changed in place.
+
+**Decision 1 — single-word codes get a hand-kept list.** `CodeSetFreezeTest` follows the register's E1 rule (contract-register.md:230), which matches only literals containing an underscore, so the operator error codes `UNAUTHENTICATED` and `FORBIDDEN` (contract-register.md:380-381) and the operator status values `PAUSED`, `RESUMED`, `APPROVED`, `REJECTED` and `RESOLVED` (:382-386) are not frozen; renaming `FORBIDDEN` at ServerSecurityConfiguration.java:90 fails no test. Add `freeze/single-word-codes.txt` (already under the `freeze/**` Owns glob) listing those seven words, checked in both directions as the Acceptance row states. Reason: extending E1 to every upper-case literal would sweep in non-codes and make the frozen set noisy.
+
+**Decision 2 — widen the SPI signature snapshot.** `SpiSignaturesFreezeTest` covers only `core.spi`, `validation`, `security` and the `audit` contract package. That narrowing came from this task's own Acceptance line and overrides nothing recorded. Register 7.1 (contract-register.md:1072, :1554) says the freeze pins the method sets of every registered extension interface and annotation; about 18 of the 30 are unpinned, including `ScopeBudget`, `PrivacyMetrics`, `PrivacyPolicyResolver`, `ApprovalStore`, `OversightState`, `CallerRateLimiter`, `ContextOrchestrator`, `Vocabulary`, `SubjectLookup`, `OperatorCallers`, `HmacKeyReferenceResolver` and the six annotations. The snapshot covers every extension type and annotation 7.1 lists, read from 7.1; annotations are pinned with their attributes, defaults included. Reason: the public surface freezes at 0.9.
+
+## Review round 1 — findings
+Reviewed HEAD 8e8dd24376d4f5df1eeffec4692093ea24f974ba (full branch).
+
+- [P2] CodeSetFreezeTest / freeze lists — implement Decision 1 (single-word codes list, both-way check). route: implementer.
+- [P2] SpiSignaturesFreezeTest.java:28 — implement Decision 2 (widen to every register 7.1 extension type and annotation). route: implementer.
+
+### Follow-ups (not this round)
+- P3 OperatorEndpointsFreezeTest.java:21-25,45: the source-regex scan keeps only the first path of a multi-path mapping, records a constant path as empty, and mistakes Javadoc text like "class <word>" before a class-level `@RequestMapping` for a method mapping. None of these occurs today.
+- P3 CodeSetFreezeTest.java:47: the E2 pattern misses `enum Code implements X {`.
+- NOTE: unused imports in MapNamesFreezeTest.java:5,8; EnumVocabularyFreezeTest.java:76 duplicates `MainSources.mainClasses()`; ToolsListGoldenTest.java:80 checks against `ListSourcesTool.DEFAULT_PAGE_MAX_LENGTH`, not the `LinksProperties` default.
