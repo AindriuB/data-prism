@@ -129,3 +129,32 @@ Owner decision 2026-11-10: fix the three Mediums; the Lows (237-4 to 237-9) and 
 - [Medium] 237-1 — data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/ContentFreeMcpJsonMapper.java:48 — the decorator has no unit test of its own. Nothing pins that the rewritten exception carries no cause, that the `byte[]` overloads are decorated, or that reads of a non-map TypeRef pass through untouched. route: implementer. Fix: add `ContentFreeMcpJsonMapperTest` asserting each.
 - [Medium] 237-2 — data-prism-mcp/src/test/java/io/github/aindriub/dataprism/mcp/DataPrismMcpServerTest.java:143 — AC5's test proves the server and the providers share one mapper, not that it is `wiring.json()`. route: implementer. Fix: also assert that the decorated delegate's underlying mapper is the same instance as a tool handler's mapper (`mapperOf(..)`, as at :123-127), which comes from the wiring.
 - [Medium] 237-3 — data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/StdioInboundGuard.java:129 — an `IOException` is swallowed, so a stdin or stdout fault ends the session as a clean EOF with nothing logged. route: implementer. Fix: log one content-free line (WARN or ERROR) naming only the exception class, never its message, before finishing; add a unit test with a failing input stream that asserts the line and that no message text appears.
+
+## Outcome
+
+Landed on `main` as PR #237 (af2fb46c), verified PASS and APPROVE at 159ec3fbc30a5e888eb949c2c2124811794fe797, the merged head, which already included `main`. The Outcome below is the one in PR #237's body.
+
+**Owner decisions of 2026-11-10.**
+1. A third pass in `StdioInboundGuard`: a line with a wrongly typed `method`, `result` or `error` is converted to the SDK's message type on the content-free mapper and refused as `-32600`, so it no longer ends the stdio session.
+2. SDK DEBUG is live for cases A to D and F (`-Dorg.slf4j.simpleLogger.log.io.modelcontextprotocol=debug`); E keeps the WARN pin, because E lines are forwarded and the SDK's DEBUG line for them is the named residual.
+3. AC6 mutation 5 (`wiring.json()` straight to `McpServer.sync(..).jsonMapper`) is covered by the AC5 unit test alone; it survives every integration test.
+
+**Files.** `ContentFreeMcpJsonMapperTest.java` was added to Owns in review round 3 (finding 237-1, owner-approved). Round 3 also fixed 237-2 (the AC5 test now checks the delegate is the wiring's mapper) and 237-3 (a stdin or stdout fault is logged as one content-free line naming only the exception class). The Lows and Nits (237-4 to 237-11) are follow-ups in `PLAN.md`.
+
+**AC1, base commit 7bff206c (tests only, no fix; case F not yet written there).**
+- Stdio failed: A, B, C, D and E `initialize` capabilities (6 ran, 5 failed). E `tools/call` passed.
+- HTTP failed: D and E `initialize` capabilities (6 ran, 2 failed).
+- This differs from the expected "B to E stdio, D and E HTTP": stdio A also failed, and E `tools/call` passed on the base.
+
+**AC6 mutations, run at head, each reverted afterwards.**
+1. Guard removed from `stdio(..)`: all 9 stdio tests fail (no response to id 1, 60 s timeout). This breaks `initialize` (the guard's reader probably kept consuming stdin) rather than demonstrating a leak, so it shows the guard is wired in, not that the sentinel is caught.
+2. Pass three removed: the 3 F tests fail (no `ping` 99 reply, session closed); the other 6 pass.
+3. `classify` through `McpSchema.deserializeJsonRpcMessage` with SDK DEBUG live: 7 of 9 fail (A to D, F x3). E passes by design (WARN pin).
+4. `wiring.json()` straight to the HTTP builder: 4 of 9 HTTP tests fail (D, E initialize, 2 F).
+5. `wiring.json()` straight to `McpServer.sync(..).jsonMapper`: survives all 9 stdio and 9 HTTP tests. The SDK converts inbound messages with the transport's mapper, and no leak case reaches the server-level mapper. Only the AC5 unit test pins its decoration (decision 3).
+
+**AC7 line for 261 (CHANGELOG and migration):** malformed inbound messages are refused with JSON-RPC `-32700` or `-32600`, never logged with their content at WARN or above, and no longer end a stdio session; not audited. The migration notes must also say that plain-Java embedders get no `McpSdkLogPin` and must keep `io.modelcontextprotocol` at WARN (the named SDK DEBUG residual).
+
+**Verification at 86fda393 (attempt 1):** stdio-leak 9, http-leak 9, guard-unit 29, `./mvnw -B verify` exit 0.
+
+**Noted, not defects.** The AC5 test builds its own `StdioServerTransportProvider` to get a server from `syncServer`, where AC5 says "never by building providers itself". The Javadoc at `DataPrismMcpServer.java:76` says the limit is "in bytes: the SDK's own default", but the SDK counts UTF-16 chars; the guard is the stricter of the two and only the wording is wrong.

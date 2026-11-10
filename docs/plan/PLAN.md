@@ -95,13 +95,13 @@ Related, not fixed in 0.7.1: a Map of a record type has a similar element-type b
 
 #### 0.8 plan (agreed 2026-10-20)
 
-Waves 1 to 11 have landed (the table below carries one row for them; the records are in `HISTORY-INDEX.md`). The re-plan of 2026-10-23 (owner decision (b), D-RM-1 (a) as amended above) deferred 224, 226, 229, 230, 231 and 264 past 1.0 (`tasks/deferred/`) and kept 225, 227 and 228; the owner cut nothing else from 0.8.0. The briefs carry their own dependencies, **Wave** lines and contract text under `docs/plan/tasks/`; the decisions made during waves 5 to 11 are in `DECISIONS.md`. The full pre-cut text, including the wave-landing records, the owner decisions of 2026-10-27 and the per-wave review notes, is in `archive/PLAN-2026-11-10.md:131-501`.
+Waves 1 to 12 have landed (the table below carries one row for waves 1 to 11 and one for wave 12; the records are in `HISTORY-INDEX.md`). The re-plan of 2026-10-23 (owner decision (b), D-RM-1 (a) as amended above) deferred 224, 226, 229, 230, 231 and 264 past 1.0 (`tasks/deferred/`) and kept 225, 227 and 228; the owner cut nothing else from 0.8.0. The briefs carry their own dependencies, **Wave** lines and contract text under `docs/plan/tasks/`; the decisions made during waves 5 to 11 are in `DECISIONS.md`. The full pre-cut text, including the wave-landing records, the owner decisions of 2026-10-27 and the per-wave review notes, is in `archive/PLAN-2026-11-10.md:131-501`.
 
 | Wave | Briefs |
 |---|---|
 | 1 to 11 | landed 2026-10-21 to 2026-11-09 (268, 218, 219, 238, 239, 243, 258, 259, 220, 221, 240, 222, 242, 265, 244, 257, 203, 206, 223, 241, 248, 269, 245, 267, 207, 210, 225, 271, 285, 288, 208, 227, 246, 262, 284, 289, 290, 211, 228, 247, 256, 292, 294, 249, 250, 251, 272, 287, 291, 296, 297, 298, 293, 299, 252, 254, 300, 253, 286, 301, 302). 295 was deferred past 0.8.0 (`tasks/deferred/295-ack-gated-tombstone-gc-for-the-pause-document.md`) and must be reissued against F1 to F5 of the 228 contract before pickup. Per-wave detail: `archive/PLAN-2026-11-10.md:141-151` and `HISTORY-INDEX.md` |
-| 12 | 255, 304 (253, 286 and 301 have landed; 255 is next. 304 filed 2026-11-09: client content out of the MCP SDK's inbound parse-error logs; it owns no file 255 owns) |
-| 13 | 260, 261, 263 (261 depends on 304, because 261 carries 304's CHANGELOG and migration line) |
+| 12 | 255 (landed 2026-11-10, PR #236), 304 (landed 2026-11-10, PR #237) (253, 286 and 301 landed earlier. 304: client content out of the MCP SDK's inbound parse-error logs; filed 2026-11-09) |
+| 13 | 260, 261, 263 (next. 261 depends on 304, which landed in wave 12, because 261 carries 304's CHANGELOG and migration line, in `tasks/retired/304-no-client-token-in-sdk-stdio-parse-errors.md`) |
 | last (14) | 213 (depends on 208, 210, 211, 261, 225, 227, 228 and 284 to 287) |
 | 15 (0.9) | 273, 274 (0.9 starter onboarding, filed 2026-10-23; see "0.9 starter onboarding plan" below. 273's OD-273-3 (a) mechanism, rewritten 2026-10-26, is in `tasks/273-default-low-stakes-settings-and-derive-from-spring.md`; the pre-cut row is `archive/PLAN-2026-11-10.md:155`) |
 | 16 (0.9) | 275, 277 |
@@ -165,7 +165,6 @@ Follow-ups from wave 7, each belonging to the task named (Lows unless said other
 - 213: an operator page on `CLUSTER_LOCK_TIMEOUT` during scale-out. A member that starts or rejoins can refuse tool calls for about one tick interval after a peer's write, and a start-up card write waits up to Hazelcast's 5 s backup timeout.
 - 213 (and a startup warning): source names over 128 characters. Document the limit and add a startup warning for a name that will not fit the `targetSources` schema.
 - 303: fix two `MemberCardTest` flakes (the pause-digest test at :1830 and the later-wrapper start test at :1767); they fail PR builds unrelated to Hazelcast (CI runs 42684474153, 42689565210).
-- 304: keep client content out of the MCP SDK's inbound parse-error logs on stdio and HTTP. Measured in 302's PR (#227) for stdio, and found in SDK 2.1.0 bytecode for HTTP (a valid-JSON non-JSON-RPC body is logged whole at ERROR); the owner chose on 2026-11-09 to fix both, not accept a residual.
 - Keep client-echoed `method`, `id` and `protocolVersion` out of the MCP SDK's WARN lines (stdio and HTTP), and the `roots/list_changed` WARN and ERROR lines that log client-returned roots. Residual of 304, found in PR #232's review.
 - 261 and 213: the "Design-doc facts" lines of `tasks/retired/228-signed-leased-pause-document.md` marked "For 213" and "261" are still owed to those tasks, including `ClusterSecurityStatus` gaining two components and `Reason.PAUSE_NOT_FRESH`.
 - 287 and 260: both task files now carry a note that 228 inserted `CLUSTER_SETTINGS_MISMATCH` into `PrivacyClusterRefusal`.
@@ -185,12 +184,65 @@ Follow-ups from wave 9, each belonging to the task named (Lows unless said other
 Follow-ups from wave 10, each belonging to the task named (Lows unless said otherwise):
 
 - 253: settle `entityType` in the follow response against the output schema, which lists none (252 builds it in `followFinish`). 253 must use `ToolInput`.
-- 255: `LINKS_REFUSED` and `LINKS_ATTEMPTS_EXHAUSTED` are incremented nowhere. `CatalogQueries` has no page links until 255 wires the gate.
 - 252: `SourceLabels.Collision` is not handled in follow (about `DefaultContextOrchestrator.java:780`). The `budget.reserve` wait is unbounded (a Hazelcast lock, for example). Budget `settle` and `continue` tests are missing (mutants M09 and M13). `LinkKeyResolution.java:56` drops a retiring key id's shape silently. Whether the in-process budget should key as the shared one does is open (it holds raw subject keys on the heap, OD-08-15 (a)).
 - 300: `EveryToolValidatesInputTest` needs an edit when `follow` lands. A lone unknown property does not invalidate a call.
 - 302: the SDK's ERROR lines may quote tokens; 302 measured the stdio leak, which is filed as 304.
 - 254: lazy singletons that are never created are invisible to the raw `FactoryBean` guard.
+- 255 (still open after it landed): `LINKS_REFUSED` and `LINKS_ATTEMPTS_EXHAUSTED` (`Metric.java:58-59`) are incremented nowhere in main code.
 - 252 and 301: a multi-type configured source has no way to declare a mapping and nothing warns at startup; 301 adds the YAML key and the WARN.
+
+255 follow-ups (PR #236 review, 2026-11-10). Landed as task 255 (`tasks/retired/255-wire-links-follow-and-key-resolvers.md`). Paths are under `data-prism-spring-boot-autoconfigure` unless the file is a test in `data-prism-integration-tests`.
+
+Security, before links are enabled for users:
+
+- 236-D2: `heldKeyIds()` fetches each key from the provider on every health poll and gauge scrape. Root health is often unauthenticated, so ticket this before links ship.
+- 236-13: `LinkKeysHealth.java:54`: health details publish the current and held key ids, which are treated as unnameable elsewhere. Publish counts only, or document when-authorized details.
+- 236-17: `LinksProperties.java:134`: no ceiling on `invalid-attempt-limit` and no floor on the window, so config can silently disable lockout. Bound both and refuse with `INVALID_LINK_LIMIT`.
+- 236-21: `PiiLogScanTest.java:1673`: the scans do not ban the link-key material prefix or `LINK_SCAN_KEY_REF`.
+- 236-28: `PiiLogScanTest.java:1599`: expired-link and unknown-key-id refusals never run in the scanned process.
+- 236-11: `LinkAttemptLimiterConfigurationTest.java:326`: no row for an application `PrivacyCluster` named `dataPrismPrivacyCluster` or registered as a singleton, which would prove origin, not name, decides.
+- 236-D1: a DOWN `linkKeys` result takes the root `/actuator/health` DOWN, contrary to the Javadoc.
+
+Other Lows:
+
+- 236-6: `CatalogWiring.java:229`: `pageLinks` returns null if the codec, keys or gate is missing, so paging silently stops. Refuse startup instead.
+- 236-7: `DataPrismPropertiesValidator.java:949`: the paging-vs-link-lifetime check only runs with links on.
+- 236-8: `KeyResolverProperties.java:72`: number and duration parsing duplicates `LinksProperties`.
+- 236-9: `LinkAttemptLimiterConfigurationTest.java:232`: never checks that the gate holds the application limiter.
+- 236-10: `LinkAttemptLimiterConfigurationTest.java:258`: the unresolvable-type row never reaches the preflight's null-type branch.
+- 236-12: `LinkAttemptLimiterConfigurationTest.java:352`: the kubernetes "started" rows use a hand-registered singleton, not a declared marker-type bean.
+- 236-14: `LinkWiring.java:192`: the refusal code is chosen by message prefix. Use a typed exception.
+- 236-15: `LinksConfigurationTest.java:75`: the codec and limiter defaults are never asserted.
+- 236-16: `LinksConfigurationTest.java:124`: the lockout test does not assert the refusal code for each attempt.
+- 236-18: `PiiLogScanTest.java:1401`: `DESCRIPTION_TEXTS` copies the stub strings; read them from the stubs.
+- 236-19: `PiiLogScanTest.java:1429`: the Javadoc says the scans share one run, but `reuseForks=false` boots three.
+- 236-20: `PiiLogScanTest.java:1434`: `deleteOnExit` on a non-empty temp dir leaves keystores behind.
+- 236-23: integration-tests `pom.xml:129`: `-Dtest` overrides both executions' filters, so a selected class runs twice and the TRACE pin fails there.
+
+Nits: 236-24 (`CatalogWiring` imports and grouping), 236-25 (fully qualified names in `LinkAttemptLimiterConfigurationTest`), 236-26 (the in-memory-default row checks the exception type, not the code), 236-27 (`PiiLogScanTest` `surfaces` is never asserted), 236-29 (the lockout comment says a genuine link is refused, but none is presented).
+
+From our own reviews:
+
+- `LinkWiring.java:241`: the Javadoc still says "in @Order order"; resolvers are ordered by name. Code comment, for an implementer.
+- `AuditFilePiiScanTest` `auditFileLinkScanIsNotVacuous`: proves it can fail by hand-injecting a token, not by a production mutation.
+- `AuditFieldDispositionTest.java:205`: the comment calls the invalid follow "the one such call", but the run now has two.
+- `LinkKeysHealth.java:52`: the `held.contains(currentKeyId)` clause is redundant.
+- The preflight `break`s on the first non-marker limiter; with two limiters the outcome depends on order, though it always fails closed.
+- A class implementing the marker can override `clusterWide()` to false and still pass the preflight.
+
+304 follow-ups (PR #237 review, 2026-11-10). Landed as task 304 (`tasks/retired/304-no-client-token-in-sdk-stdio-parse-errors.md`). Paths are under `data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp` unless a test.
+
+- 237-4: `ContentFreeMcpJsonMapper.java:113`: the `HashMap` routing-key check applies to every read of that TypeRef. Only `McpSchema$1`, the inbound read, uses it in mcp-core 2.1.0. Scope the check, or comment that it depends on that, for the next SDK upgrade.
+- 237-5: `HttpParseErrorLeakTest.java:128`: the E cases assert neither status nor live capture.
+- 237-6: `StdioInboundGuard.java:31`: the Javadoc says the guard never holds more than the limit, but the hand-off queue (64 lines x limit) can hold about 1 GiB. Fix the Javadoc and bound the queue; the bound was already a P3 follow-up.
+- 237-7: `StdioInboundGuard.java:71`: the reader thread is never stopped and keeps reading stdin after `closeGracefully`.
+- 237-8: `StdioInboundGuard.java:178`: pass-three refusals reply with `id:null` even when a valid id was parsed, so the caller waits for a timeout.
+- 237-9: `StdioInboundGuardTest.java:176`: a `Thread.sleep(500)` breaks the no-sleeps rule; use a latch.
+- Nits 237-10 and 237-11: fully qualified `java.util` names in `StdioInboundGuard`; a test that loops over three inputs should be parameterised.
+- `DataPrismMcpServer.java:76`: the Javadoc says the limit is "in bytes: the SDK's own default", but the SDK counts UTF-16 chars. The guard is the stricter of the two; only the wording is wrong.
+- For 261: plain-Java embedders get no `McpSdkLogPin` and must keep `io.modelcontextprotocol` at WARN, because the SDK logs the raw HTTP body and forwarded stdio lines at DEBUG (residual of 304); the migration notes must say so.
+- Recorded in 304's Outcome, no action: AC6 mutation 1 broke `initialize` (the guard's reader probably kept consuming stdin) rather than demonstrating a leak; the AC5 test builds its own `StdioServerTransportProvider` to get a server from `syncServer`, which AC5's "never by building providers itself" did not intend, and is not a defect.
+
 
 Waves 1 to 4, PR #154 and PR #163 review rounds, 245 and the 0.7.1 planning review (`archive/PLAN-2026-11-10.md:368-498`):
 

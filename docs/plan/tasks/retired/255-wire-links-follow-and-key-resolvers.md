@@ -142,3 +142,22 @@ Owner decision 2026-11-10: fix the five Mediums and Low 236-22 in this round. Th
 ## Review round 3 — findings
 
 - [Medium] 236-2 — KeyResolverConfigurationTest.java:150 — register two resolvers whose names sort opposite to their `@Order`, and assert that `follow()` lists them in name order. route: implementer.
+
+## Outcome
+
+Landed in PR #236 (merged into `main` as 4948646e); verified PASS (full `./mvnw -B verify`, about 5,023 tests, 0 failing) and APPROVE at 6333987f05c8db1d51c786b1b1f3df2a0648edee, the merged head.
+
+Spring now binds `dataprism.links.*` and `dataprism.key-resolvers.*`, wires the link codec, keys, attempt gate and limiter, registers `follow` and page links, collects `KeyResolver` beans, and publishes the `linkKeys` health signal. `LINKS_REFUSED` and `LINKS_ATTEMPTS_EXHAUSTED` are still incremented nowhere. The link surface is scanned for leaks over the HTTP example.
+
+Owner decisions of 2026-11-10:
+- The cluster-wide limiter is a marker type, `ClusterWideLinkAttemptLimiter` (core, `io.github.aindriub.dataprism.core.link`), checked by declared type. The `MISSING_SHARED_LINK_LIMITER` preflight reads `factory.getType(name, false)` and never instantiates a bean, so a refused member never joins a cluster. A limiter declared only as `LinkAttemptLimiter`, even with `clusterWide()` true, is refused. `clusterWide()` stays on the SPI but the startup decision does not call it.
+- An application-supplied `PrivacyCluster` (judged by definition origin through `ClusterBackedState.builtHere`, never by bean name) is refused without a marker limiter, as on `tcp-ip` and `kubernetes`. The clause that counted an unresolvable type as "supplied" was dropped because it would refuse over any unrelated untyped `FactoryBean`.
+- Key resolvers reach `follow()` ordered by name, not `@Order`, because `KeyResolvers.java:55` sorts by name and that module was outside Owns. Beans are still collected with `orderedStream()`; the test registers two resolvers whose names sort opposite to their `@Order`.
+
+The link scans (`PiiLogScanTest`, `AuditFilePiiScanTest`) run in their own surefire fork, because `LinkHttpRun` sets the JVM-wide trust store and clashes with `McpHttpEndToEndTest` in one fork (PKIX failure, then 401 on every call). That fork logs the data-prism loggers at TRACE, and a test pins it. Mutation for 236-5, run and reverted: a `LOG.trace` of the presented link just before `follower.authorise(...)` in `DefaultContextOrchestrator` fails `linkSurfaceLeaksNothingIntoTheLog` in that fork and passes at INFO. The scans ban the invalid, flipped-byte, tampered page-link and second-principal tokens and the lockout tokens.
+
+Edit outside Owns, approved by the owner: `AutoConfiguredBeanInventoryTest`, count line only, 69 to 77 (the marker adds no `@Bean`; the rest are the new link, limiter, resolver and health beans). The marker type in core was added to Owns by amendment.
+
+AC1: at base cac65915 with the new tests copied over, `LinkAttemptLimiterConfigurationTest` and `LinkKeysHealthTest` did not compile; with those removed, `AutoConfiguredBeanInventoryTest` failed 9 of 9, `KeyResolverConfigurationTest` 21 of 22 and `LinksConfigurationTest` 33 of 34. The integration-test changes were not run against base.
+
+Follow-ups: PLAN.md, "255 follow-ups (PR #236 review, 2026-11-10)".

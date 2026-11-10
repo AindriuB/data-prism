@@ -775,8 +775,8 @@ How `follow` translates a key from one namespace into another through an applica
 | `dataprism.key-resolvers.budget-cost` | `1` | The reads one resolver call is charged against the scope budget. Positive. |
 
 A value out of range refuses startup with `INVALID_KEY_RESOLVER_SETTING`, naming the
-property and never the value. Every `KeyResolver` bean is collected in `@Order` order
-while links are enabled. Two beans for one `(from, to)` pair, or with one name, refuse
+property and never the value. Every `KeyResolver` bean is collected while links are enabled
+and reaches `follow()` ordered by name. Two beans for one `(from, to)` pair, or with one name, refuse
 startup with `DUPLICATE_KEY_RESOLVER`; a name outside `[a-z][a-z0-9-]{0,31}`, a resolver
 into its own namespace or one that cannot be read refuses it with
 `INVALID_KEY_RESOLVER`. A pair that joins a namespace no source or chainable field uses
