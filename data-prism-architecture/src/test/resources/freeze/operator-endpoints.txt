@@ -1,0 +1,14 @@
+# Every request mapping of the operator controllers (register section 3.4).
+# Regenerate: ./mvnw -pl data-prism-architecture -am test -Dtest=OperatorEndpointsFreezeTest -Dfreeze.write=<dir> -Dsurefire.failIfNoSpecifiedTests=false
+ANY ${spring.web.error.path:${error.path:/error}}
+ANY ${spring.web.error.path:${error.path:/error}}
+GET /operator/approvals
+GET /operator/approvals/{id}
+GET /operator/reidentifications/{id}
+GET /operator/state
+POST /operator/approvals/{id}/approve
+POST /operator/approvals/{id}/reject
+POST /operator/pause
+POST /operator/reidentifications
+POST /operator/reidentifications/{id}/approve
+POST /operator/resume

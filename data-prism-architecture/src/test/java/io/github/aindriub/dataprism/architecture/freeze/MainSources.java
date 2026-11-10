@@ -1,5 +1,9 @@
 package io.github.aindriub.dataprism.architecture.freeze;
 
+import com.tngtech.archunit.core.domain.JavaClasses;
+import com.tngtech.archunit.core.importer.ClassFileImporter;
+import com.tngtech.archunit.core.importer.ImportOption;
+
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
@@ -57,6 +61,21 @@ final class MainSources {
             modules.add(matcher.group(1).trim());
         }
         return modules;
+    }
+
+    /** Every module's compiled main classes, as {@code ModuleGraph} reads them. */
+    static JavaClasses mainClasses() throws IOException {
+        Path root = repositoryRoot();
+        List<Path> directories = new ArrayList<>();
+        for (String module : modules(root)) {
+            Path classes = root.resolve(module).resolve("target").resolve("classes");
+            if (Files.isDirectory(classes)) {
+                directories.add(classes);
+            }
+        }
+        return new ClassFileImporter()
+                .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
+                .importPaths(directories);
     }
 
     static List<Source> all() throws IOException {
