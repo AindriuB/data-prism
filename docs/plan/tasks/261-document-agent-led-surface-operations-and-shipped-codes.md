@@ -104,3 +104,12 @@ Reviewed the fix since 7cef8cca, at HEAD 934c8ebc4ed7c5b11970eb803fe617d00478c10
 - 239-19: docs/tools.md:642. `items` and `itemsTruncated` leave out deadline truncation, and that refused items are dropped.
 - 239-20: docs/tools.md:649. `LINK_ATTEMPTS_EXHAUSTED` also fires when the limiter is full, and a locked caller's valid links are refused but not counted.
 - Nits 239-21 to 239-24: the duplicate CHANGELOG line; the incomplete `KeyResolutionException` list in docs/extending.md:302; "1.0" where docs/operations.md:16 should say 0.8; the "two calls" example at docs/tools.md:523.
+
+## Attempt 1 — failed
+
+/verify at 5303e72f01547 (2026-11-10): tester PASS (`DP_REQUIRE_NO_STUBS=true mkdocs build --strict`, hooks included); reviewer REQUEST CHANGES on S3. S3 was re-derived against task 260's extracted code set (`origin/task/260-freeze-tests`: freeze/codes.txt, 307 codes, and freeze/single-word-codes.txt, 7 codes) by `rg -w` over the user nav pages at this HEAD.
+
+- Gap: startup code `LEGACY_OVERSIGHT_STATE` is shipped (data-prism-hazelcast LegacyOversightStateException.java:14, thrown at HazelcastOversightState.java:372) and is on no user page and not in CHANGELOG.md. PLAN.md:281 assigns its migration note to this task. An operator upgrading a cluster from 0.7 sees it at startup with no page telling them the fix is a full restart of every member. Add it to docs/configuration.md's startup refusal index, docs/multiple-instances.md's refusals and docs/migration-0.8.md.
+- Also: `AUDIT_JSON_PROJECTION_MISSING` and `AUDIT_JSON_PROJECTION_WITHOUT_BUILT_IN_SINK` (AuditSinkSelection.java:113,141,181) appear only in migration-0.6.md, while configuration.md's startup index claims to list every code no other section of the page lists. Add both to the index.
+- PR #239 Outcome, S3: replace the register-and-grep method with the result of this re-derivation; name extending.md for the four SOURCE_MODEL_* codes not at tools.md:788; record that FREE_TEXT_RECOGNISED, FREE_TEXT_RECOGNISER_FAILED and the four PAUSE_DOCUMENT_* log prefixes belong to 213 (213's acceptance covers FREE_TEXT actions and the pause document), and that NOT_PENDING is internal (mapped to APPROVAL_NOT_PENDING) and INVALID_SOURCE_NAME is 0.9.
+Next attempt: those doc edits and the Outcome correction only; then /verify again with a full reviewer pass over every acceptance item, not S3 alone.
