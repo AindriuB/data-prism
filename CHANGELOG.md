@@ -36,8 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `EXPOSE_SOURCE_NAMES` alone no longer shows real source names. A scope must also match
   `dataprism.catalog.real-names-scopes`, which is empty by default, so by default every caller sees aliases.
 - The public 14-argument `DefaultContextOrchestrator` constructor, which shipped in 0.7.1, is removed with no deprecated
-  overload. Pass an `OrchestrationOptions` as a fifteenth argument; `OrchestrationOptions.defaults()` keeps the 0.7.1
-  behaviour. See `docs/migration-0.8.md`.
+  overload. Pass an `OrchestrationOptions` as a fifteenth argument; `OrchestrationOptions.defaults()` gives the 0.8
+  defaults, which differ from 0.7.1 in aliased source names and an 8-source limit on unselected calls. See `docs/migration-0.8.md`.
 - Source calls run on dedicated platform threads named `dataprism-source-<n>`, not virtual threads. No `ThreadLocal`
   carries into an adapter call; at most 32 calls are in flight per source and 128 in all, and a call with no free slot
   reports the source `FAILED` and counts `dataprism.source.calls_saturated`. An adapter on a blocking-socket client must

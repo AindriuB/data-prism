@@ -155,8 +155,10 @@ new DefaultContextOrchestrator(adapters, scrubber, resolver, validators, synthet
         identities, fanOut, budget, limits, correlation, aliasing, metrics, OrchestrationOptions.defaults());
 ```
 
-`OrchestrationOptions.defaults()` keeps the 0.7.1 behaviour: a catalog built from the adapters, every source visible
-to every caller, no real names, no links. Use its `with...` methods to change one setting. The eight-argument
+`OrchestrationOptions.defaults()` gives the 0.8 defaults: a catalog built from the adapters, every source visible
+to every caller, no real names, no links. Two differ from 0.7.1: a caller holding `EXPOSE_SOURCE_NAMES` now sees
+aliases (`RealNamesPolicy.none()`), and an embedder with more than 8 adapters has `get_entity_context` calls without
+`targetSources` refused with `SOURCE_SELECTION_REQUIRED` (`unselectedSourceLimit` 8). Use its `with...` methods to change one setting. The eight-argument
 convenience constructor is unchanged.
 
 ## Breaking: adapters run on their own threads
