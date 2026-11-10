@@ -81,6 +81,9 @@ final class ResultWriter {
         doc.put("sourceStatusTotals", s.totalStatus());
         doc.put("sourcesNotAnswered", s.sourcesNotAnswered());
         doc.put("perSourceStatus", s.perSourceStatus());
+        if (!s.perTool().isEmpty()) {
+            doc.put("perTool", s.perTool());
+        }
         return doc;
     }
 

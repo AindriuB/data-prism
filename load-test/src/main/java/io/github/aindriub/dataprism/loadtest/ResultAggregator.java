@@ -25,6 +25,7 @@ final class ResultAggregator {
     private final Map<String, Long> transportFailureKinds = new TreeMap<>();
     private final Map<String, Long> failureCauses = zeroedCauses();
     private final Map<String, Map<String, Long>> perSource = new TreeMap<>();
+    private final Map<String, ToolTally> perTool = new TreeMap<>();
     private long attempted;
     private long completed;
     private long transportFailures;
@@ -77,6 +78,31 @@ final class ResultAggregator {
         });
     }
 
+    /**
+     * As {@link #record(CallOutcome, boolean, int)}, and the call is also tallied under the tool it called, so a
+     * run that mixes tools reports each tool's own counts and percentiles.
+     */
+    synchronized void record(String tool, CallOutcome outcome, boolean afterDeadline, int scope) {
+        record(outcome, afterDeadline, scope);
+        ToolTally tally = perTool.computeIfAbsent(tool, ignored -> new ToolTally());
+        tally.calls++;
+        if (!outcome.completed()) {
+            tally.failed++;
+        } else if (outcome.refusalCode() != null) {
+            tally.refused++;
+        }
+        if (outcome.completed() || outcome.timed()) {
+            tally.latency.recordValue(Math.min(Math.max(outcome.latencyMicros(), 0), HIGHEST_TRACKABLE_MICROS));
+        }
+    }
+
+    private static final class ToolTally {
+        private final Histogram latency = new Histogram(HIGHEST_TRACKABLE_MICROS, 5);
+        private long calls;
+        private long failed;
+        private long refused;
+    }
+
     private void recordLatency(long micros) {
         if (micros > HIGHEST_TRACKABLE_MICROS) {
             clamped++;
@@ -97,6 +123,14 @@ final class ResultAggregator {
                 notAnswered += status.getValue();
             }
         }
+        Map<String, ToolStats> tools = new TreeMap<>();
+        perTool.forEach((tool, tally) -> {
+            boolean none = tally.latency.getTotalCount() == 0;
+            tools.put(tool, new ToolStats(tally.calls, tally.failed, tally.refused,
+                    none ? 0 : millis(tally.latency.getValueAtPercentile(50)),
+                    none ? 0 : millis(tally.latency.getValueAtPercentile(95)),
+                    none ? 0 : millis(tally.latency.getValueAtPercentile(99))));
+        });
         double seconds = elapsed.toNanos() / 1e9;
         boolean empty = latency.getTotalCount() == 0;
         return new Summary(attempted, completed, transportFailures, new TreeMap<>(transportFailureKinds),
@@ -106,7 +140,7 @@ final class ResultAggregator {
                 empty ? 0 : millis(latency.getMaxValue()),
                 empty ? 0 : latency.getMean() / 1000.0,
                 seconds > 0 ? (completed - completedAfterDeadline) / seconds : 0, new TreeMap<>(refusalCodes), total,
-                sources, clamped, new LinkedHashMap<>(failureCauses), notAnswered, completedAfterDeadline);
+                sources, clamped, new LinkedHashMap<>(failureCauses), notAnswered, completedAfterDeadline, tools);
     }
 
     private static double millis(long micros) {
@@ -132,5 +166,21 @@ final class ResultAggregator {
                    double p50Ms, double p95Ms, double p99Ms, double maxMs, double meanMs,
                    double throughputPerSecond, Map<String, Long> refusalCodes, Map<String, Long> totalStatus,
                    Map<String, Map<String, Long>> perSourceStatus, long clamped,
-                   Map<String, Long> failureCauses, long sourcesNotAnswered, long completedAfterDeadline) { }
+                   Map<String, Long> failureCauses, long sourcesNotAnswered, long completedAfterDeadline,
+                   Map<String, ToolStats> perTool) {
+
+        /** A summary of a run that tallied no per-tool figures. */
+        Summary(long attempted, long completed, long transportFailures, Map<String, Long> transportFailureKinds,
+                double p50Ms, double p95Ms, double p99Ms, double maxMs, double meanMs,
+                double throughputPerSecond, Map<String, Long> refusalCodes, Map<String, Long> totalStatus,
+                Map<String, Map<String, Long>> perSourceStatus, long clamped,
+                Map<String, Long> failureCauses, long sourcesNotAnswered, long completedAfterDeadline) {
+            this(attempted, completed, transportFailures, transportFailureKinds, p50Ms, p95Ms, p99Ms, maxMs,
+                    meanMs, throughputPerSecond, refusalCodes, totalStatus, perSourceStatus, clamped,
+                    failureCauses, sourcesNotAnswered, completedAfterDeadline, Map.of());
+        }
+    }
+
+    /** One tool's counts and latency percentiles, in milliseconds. */
+    record ToolStats(long calls, long failed, long refused, double p50Ms, double p95Ms, double p99Ms) { }
 }

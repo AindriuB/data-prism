@@ -155,13 +155,19 @@ final class LoadDriver {
         int subjectPool = scenario.load().subjectPool();
         List<Thread> workers = new ArrayList<>();
         for (McpSyncClient client : clients) {
+            MixedCalls.State state = new MixedCalls.State();
             Thread worker = new Thread(() -> workerLoop(next, dispatched, calls, start, ratePerSecond,
                     end, System::nanoTime, LockSupport::parkNanos, (index, due) -> {
                 // The scope is read before the call: a rotation landing mid-call can mislabel that one call.
                 int scope = credentials.scopeNumber();
-                CallOutcome outcome = call(client, subjectFor(subjectPrefix, index, subjectPool), due);
+                Called called = call(client, state, subjectFor(subjectPrefix, index, subjectPool), index, due);
                 if (recordTo != null) {
-                    recordTo.record(outcome, System.nanoTime() >= end, scope);
+                    boolean afterDeadline = System.nanoTime() >= end;
+                    if (called.tool() == null) {
+                        recordTo.record(called.outcome(), afterDeadline, scope);
+                    } else {
+                        recordTo.record(called.tool(), called.outcome(), afterDeadline, scope);
+                    }
                 }
             }, () -> watch != null && watch.halted()), "load-worker");
             workers.add(worker);
@@ -234,10 +240,33 @@ final class LoadDriver {
         return Math.max(0, scheduled - dispatched);
     }
 
-    private CallOutcome call(McpSyncClient client, String subject, long measuredFrom) {
-        return measuredCall(id -> client.callTool(new McpSchema.CallToolRequest("get_entity_context",
-                Map.of("entityType", SourceGenerator.ENTITY_TYPE, "subjectId", id))),
-                System::nanoTime, subject, measuredFrom, Duration.ofSeconds(scenario.load().callTimeoutSeconds()));
+    /** A finished call: the tool it called (null for a scenario with no mix) and what it came to. */
+    private record Called(String tool, CallOutcome outcome) { }
+
+    private Called call(McpSyncClient client, MixedCalls.State state, String generatedSubject, long index, long due) {
+        Duration timeout = Duration.ofSeconds(scenario.load().callTimeoutSeconds());
+        Scenario.Target target = scenario.target();
+        String entityType = target != null ? target.entityType() : SourceGenerator.ENTITY_TYPE;
+        String subject = target != null && !target.subjects().isEmpty()
+                ? target.subjects().get((int) (index % target.subjects().size())) : generatedSubject;
+        if (scenario.mix() == null) {
+            return new Called(null, measuredCall(id -> client.callTool(new McpSchema.CallToolRequest(
+                    "get_entity_context", Map.of("entityType", entityType, "subjectId", id))),
+                    System::nanoTime, subject, due, timeout));
+        }
+        MixedCalls.Planned planned = MixedCalls.plan(MixedCalls.choose(scenario.mix(), index), state, entityType,
+                subject, index);
+        java.util.concurrent.atomic.AtomicReference<McpSchema.CallToolResult> received =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        boolean context = planned.tool().equals("get_entity_context");
+        CallOutcome outcome = measuredCall(id -> {
+            McpSchema.CallToolResult result = client.callTool(planned.request());
+            received.set(result);
+            return result;
+        }, context ? ResponseClassifier::classify : ResponseClassifier::classifyOther,
+                System::nanoTime, subject, due, timeout);
+        MixedCalls.absorb(planned, received.get(), state);
+        return new Called(planned.tool(), outcome);
     }
 
     /** The seam around {@code callTool}. */
@@ -253,10 +282,17 @@ final class LoadDriver {
      */
     static CallOutcome measuredCall(ToolCall toolCall, LongSupplier clock, String subject, long measuredFrom,
                                     Duration callTimeout) {
+        return measuredCall(toolCall, ResponseClassifier::classify, clock, subject, measuredFrom, callTimeout);
+    }
+
+    /** As above, with the classifier that turns a result into an outcome. */
+    static CallOutcome measuredCall(ToolCall toolCall,
+                                    java.util.function.BiFunction<McpSchema.CallToolResult, Long, CallOutcome> classifier,
+                                    LongSupplier clock, String subject, long measuredFrom, Duration callTimeout) {
         long sent = clock.getAsLong();
         try {
             McpSchema.CallToolResult result = toolCall.invoke(subject);
-            return ResponseClassifier.classify(result, micros(clock, measuredFrom));
+            return classifier.apply(result, micros(clock, measuredFrom));
         } catch (RuntimeException failure) {
             String kind = failure.getClass().getSimpleName();
             long waited = clock.getAsLong() - sent;

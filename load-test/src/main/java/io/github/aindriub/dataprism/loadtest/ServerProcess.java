@@ -97,6 +97,7 @@ final class ServerProcess implements AutoCloseable {
                 "--dataprism.catalog.unselected-source-limit=" + scenario.limits().maxSources(),
                 "--dataprism.hazelcast.topology=single-node"));
         command.addAll(loggingArguments(log));
+        command.addAll(mixArguments(scenario));
         scenario.limits().asProperties().forEach((key, value) -> command.add("--" + key + "=" + value));
 
         // The JVM's own stdout and stderr (an uncaught exception, an OutOfMemoryError) go to a file of their own:
@@ -138,6 +139,30 @@ final class ServerProcess implements AutoCloseable {
             throw failed;
         }
         return server;
+    }
+
+    /**
+     * The settings a scenario with a call mix needs on top of the base ones: the other tools' capabilities for the
+     * load-test role, links when the mix follows any, and, for a mix with invalid links, a lockout limit the run
+     * cannot reach (the default 20 failed attempts in 10 minutes would lock the one caller out of every
+     * {@code follow} within seconds, and a soak is not a lockout test).
+     */
+    static List<String> mixArguments(Scenario scenario) {
+        Scenario.Mix mix = scenario.mix();
+        if (mix == null) {
+            return List.of();
+        }
+        List<String> arguments = new ArrayList<>(List.of(
+                "--dataprism.security-policy.roles.investigator[1]=LIST_SOURCES",
+                "--dataprism.security-policy.roles.investigator[2]=DESCRIBE_SOURCE",
+                "--dataprism.security-policy.roles.investigator[3]=FOLLOW"));
+        if (mix.needsLinks()) {
+            arguments.add("--dataprism.links.enabled=true");
+        }
+        if (mix.invalidLink() > 0) {
+            arguments.add("--dataprism.links.invalid-attempt-limit=1000000");
+        }
+        return arguments;
     }
 
     /**

@@ -15,6 +15,9 @@ final class SourceGenerator {
 
     static final String ENTITY_TYPE = "PARCEL";
 
+    /** The key namespace of a parcel's id, for the sources that link to each other. */
+    static final String KEY_NAMESPACE = "parcel-id";
+
     private SourceGenerator() { }
 
     static List<SourceDefinition> generate(Scenario scenario) {
@@ -40,6 +43,14 @@ final class SourceGenerator {
 
     /** The YAML {@code dataprism.json-sources.config-location} names; every field is classified. */
     static String catalogueYaml(List<SourceDefinition> sources, String baseUrl) {
+        return catalogueYaml(sources, baseUrl, false);
+    }
+
+    /**
+     * As above; with {@code linkable} every source accepts and offers the {@code parcel-id} key namespace through
+     * its {@code id} field, so a context result carries {@code _links} (while links are enabled) to the others.
+     */
+    static String catalogueYaml(List<SourceDefinition> sources, String baseUrl, boolean linkable) {
         StringBuilder yaml = new StringBuilder("json-sources:\n");
         for (SourceDefinition source : sources) {
             yaml.append("  ").append(source.name()).append(":\n")
@@ -48,9 +59,12 @@ final class SourceGenerator {
                     .append("    timeout: PT10S\n")
                     .append("    model-version: parcel-v1\n")
                     .append("    subject-json-path: id\n")
+                    .append(linkable ? "    description:\n      entity-types: [" + ENTITY_TYPE + "]\n"
+                            + "      input-keys: [" + KEY_NAMESPACE + "]\n" : "")
                     .append("    fields:\n")
                     .append("      id:\n")
                     .append("        identifier: true\n")
+                    .append(linkable ? "        chainable: true\n        keyNamespace: " + KEY_NAMESPACE + "\n" : "")
                     .append("      status:\n")
                     .append("        nonSensitive: \"enumerated parcel lifecycle state\"\n")
                     .append("      depot:\n")

@@ -27,9 +27,92 @@ import java.util.Map;
  *                      of {@code sourceLatency}; 0 means none. Lets a scenario time out some sources and not all
  *                      (a call in which every source fails is refused, and reports no per-source statuses)
  * @param slowLatency   the band the slow sources answer within; required when {@code slowSources} is above 0
+ * @param mix           the weights of the calls the driver makes; absent means {@code get_entity_context} only,
+ *                      each call on a fresh or pooled subject. Present, the scenario also drives {@code list_sources},
+ *                      {@code describe_source}, {@code follow} and invalid links
+ * @param target        an already-running endpoint to drive instead of starting the synthetic sources and a server;
+ *                      absent means the harness starts its own
  */
 public record Scenario(String name, int sources, Latency sourceLatency, Load load, Limits limits, long seed,
-                       int slowSources, Latency slowLatency) {
+                       int slowSources, Latency slowLatency, Mix mix, Target target) {
+
+    /** A scenario with no call mix and no external target: the original shape. */
+    public Scenario(String name, int sources, Latency sourceLatency, Load load, Limits limits, long seed,
+                    int slowSources, Latency slowLatency) {
+        this(name, sources, sourceLatency, load, limits, seed, slowSources, slowLatency, null, null);
+    }
+
+    /**
+     * Relative weights of the calls one worker makes. A weight of 0 (or an absent field) means never. The
+     * names are the closed set of what the driver can issue; an unknown name is rejected when the scenario loads.
+     *
+     * @param entityContext         {@code get_entity_context} naming no sources
+     * @param targetedEntityContext {@code get_entity_context} naming sources taken from the last {@code list_sources}
+     * @param listSources           {@code list_sources}, continuing the worker's walk through its pages
+     * @param describeSource        {@code describe_source} of a label from the last {@code list_sources}
+     * @param follow                {@code follow} of a link from the last result's {@code _links}
+     * @param invalidLink           {@code follow} of a well-formed link the server never issued
+     */
+    public record Mix(int entityContext, int targetedEntityContext, int listSources, int describeSource,
+                      int follow, int invalidLink) {
+        public Mix {
+            for (var weight : Map.of("entityContext", entityContext, "targetedEntityContext", targetedEntityContext,
+                    "listSources", listSources, "describeSource", describeSource, "follow", follow,
+                    "invalidLink", invalidLink).entrySet()) {
+                if (weight.getValue() < 0) {
+                    throw new IllegalArgumentException("scenario mix." + weight.getKey() + " must not be negative");
+                }
+            }
+            if (total(entityContext, targetedEntityContext, listSources, describeSource, follow, invalidLink) <= 0) {
+                throw new IllegalArgumentException("scenario mix needs at least one weight above 0");
+            }
+        }
+
+        int total() {
+            return total(entityContext, targetedEntityContext, listSources, describeSource, follow, invalidLink);
+        }
+
+        /** Whether the server must have links enabled for this mix. */
+        boolean needsLinks() {
+            return follow > 0 || invalidLink > 0;
+        }
+
+        private static int total(int... weights) {
+            int sum = 0;
+            for (int weight : weights) {
+                sum += Math.max(weight, 0);
+            }
+            return sum;
+        }
+    }
+
+    /**
+     * An endpoint that is already running, such as the load balancer of the three-member overlay.
+     *
+     * @param baseUrl    the server's base URL; the MCP endpoint is {@code /mcp} under it
+     * @param tokenUrl   the token issuer's {@code POST /token} URL; a token lives {@code tokenLifetimeMinutes}
+     *                   and is replaced before it ends. An issuer whose certificate the JVM does not trust needs
+     *                   the usual {@code javax.net.ssl.trustStore} properties
+     * @param entityType the entity type asked for; default {@code PARCEL}
+     * @param subjects   the subject ids called, cycled; absent means generated ids as for a started server
+     * @param tokenLifetimeMinutes how long a minted token lives; default 60
+     * @param scopeLifetimeHours   how long a privacy scope lives on the target; default 8
+     */
+    public record Target(String baseUrl, String tokenUrl, String entityType, java.util.List<String> subjects,
+                         int tokenLifetimeMinutes, int scopeLifetimeHours) {
+        public Target {
+            if (baseUrl == null || !baseUrl.matches("https?://[^\\s/]+")) {
+                throw new IllegalArgumentException("scenario target.baseUrl must be an http or https origin");
+            }
+            if (tokenUrl == null || !tokenUrl.matches("https?://\\S+")) {
+                throw new IllegalArgumentException("scenario target.tokenUrl must be an http or https URL");
+            }
+            entityType = entityType == null || entityType.isBlank() ? SourceGenerator.ENTITY_TYPE : entityType;
+            subjects = subjects == null ? java.util.List.of() : java.util.List.copyOf(subjects);
+            tokenLifetimeMinutes = tokenLifetimeMinutes <= 0 ? 60 : tokenLifetimeMinutes;
+            scopeLifetimeHours = scopeLifetimeHours <= 0 ? 8 : scopeLifetimeHours;
+        }
+    }
 
     /** Uniform latency band, in milliseconds, each source responds within. */
     public record Latency(int minMs, int maxMs) { }

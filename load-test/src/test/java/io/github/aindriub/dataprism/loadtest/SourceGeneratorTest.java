@@ -73,4 +73,16 @@ class SourceGeneratorTest {
         sources.forEach(s -> assertThat(yaml).contains("  " + s.name() + ":").contains(s.path()));
         assertThat(yaml).contains("base-url: http://127.0.0.1:9").contains("identifier: true");
     }
+
+    @Test
+    void aLinkableCatalogueDeclaresTheKeyNamespaceOnEverySource() {
+        List<SourceDefinition> sources = SourceGenerator.generate(scenario(3, 5, 40));
+
+        String linkable = SourceGenerator.catalogueYaml(sources, "http://127.0.0.1:9", true);
+        String plain = SourceGenerator.catalogueYaml(sources, "http://127.0.0.1:9");
+
+        assertThat(linkable.split("chainable: true", -1)).hasSize(4);
+        assertThat(linkable).contains("input-keys: [parcel-id]").contains("keyNamespace: parcel-id");
+        assertThat(plain).doesNotContain("chainable").doesNotContain("input-keys");
+    }
 }

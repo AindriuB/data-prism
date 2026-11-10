@@ -37,6 +37,33 @@ final class ResponseClassifier {
         return CallOutcome.completed(latencyMicros, statuses);
     }
 
+    /**
+     * Any other tool's result: refused when it is an error result, otherwise completed. Such a result carries no
+     * per-source statuses, so none are recorded.
+     */
+    static CallOutcome classifyOther(McpSchema.CallToolResult result, long latencyMicros) {
+        if (Boolean.TRUE.equals(result.isError())) {
+            return CallOutcome.refused(latencyMicros, refusalCode(firstText(result)));
+        }
+        return CallOutcome.completed(latencyMicros, Map.of());
+    }
+
+    /** The result body as a tree, from structured content or the first text block; null when it is neither. */
+    static JsonNode body(McpSchema.CallToolResult result) {
+        if (result.structuredContent() != null) {
+            return MAPPER.valueToTree(result.structuredContent());
+        }
+        String text = firstText(result);
+        if (text == null) {
+            return null;
+        }
+        try {
+            return MAPPER.readTree(text);
+        } catch (RuntimeException notJson) {
+            return null;
+        }
+    }
+
     private static String refusalCode(String text) {
         if (text == null) {
             return UNCLASSIFIED;

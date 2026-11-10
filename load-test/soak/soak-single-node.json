@@ -8,5 +8,7 @@
             "callTimeoutSeconds": 60, "subjectPool": 15000 },
   "limits": { "maxSources": 100, "maxRecords": 500, "maxResponseSize": "512KB",
               "perSourceTimeout": "1s", "maxConcurrency": 8, "scopeReadBudget": 300 },
+  "mix": { "entityContext": 4, "targetedEntityContext": 3, "listSources": 3, "describeSource": 2,
+           "follow": 2, "invalidLink": 1 },
   "seed": 263
 }

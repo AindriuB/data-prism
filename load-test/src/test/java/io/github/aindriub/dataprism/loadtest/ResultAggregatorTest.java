@@ -220,4 +220,23 @@ class ResultAggregatorTest {
         assertThat(summary.completed()).isEqualTo(8000);
         assertThat(summary.perSourceStatus().get("scope-1/s")).containsEntry("ANSWERED", 8000L);
     }
+
+    @Test
+    void aCallTalliedUnderAToolIsReportedForThatTool() {
+        ResultAggregator aggregator = new ResultAggregator();
+        for (int ms = 1; ms <= 10; ms++) {
+            aggregator.record("list_sources", CallOutcome.completed(ms * 1000L, Map.of()), false, 1);
+        }
+        aggregator.record("follow", CallOutcome.refused(5_000, "LINK_INVALID"), false, 1);
+        aggregator.record("follow", CallOutcome.transportFailure("Boom"), false, 1);
+
+        ResultAggregator.Summary summary = aggregator.summary(Duration.ofSeconds(1));
+
+        assertThat(summary.attempted()).isEqualTo(12);
+        assertThat(summary.perTool().get("list_sources").calls()).isEqualTo(10);
+        assertThat(summary.perTool().get("list_sources").p50Ms()).isEqualTo(5.0);
+        assertThat(summary.perTool().get("follow").calls()).isEqualTo(2);
+        assertThat(summary.perTool().get("follow").refused()).isEqualTo(1);
+        assertThat(summary.perTool().get("follow").failed()).isEqualTo(1);
+    }
 }
