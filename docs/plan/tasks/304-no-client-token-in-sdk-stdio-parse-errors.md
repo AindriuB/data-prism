@@ -85,3 +85,20 @@ Synthetic sentinel `SENTINEL-SUBJECT-7f3a91c2`. Cases: **A** unterminated object
 - **Remaining findings of review round 1, known to re-review:**
   - P2, implementer, fix in the next round: `DataPrismMcpServerTest.java:172-176` checks only that the delegate is a `JacksonMcpJsonMapper`; AC5 requires it to be `wiring.json()` itself (identity).
   - P3, follow-up, not this task: `StdioInboundGuard`'s hand-off queue (64 lines x `limit`) can hold about 1 GiB, against the Design's "never buffers more than `limit`".
+
+## Review round 1 — findings
+
+Reviewed HEAD 095bb6087a7814c6713c6685244776318f1a5950 (full branch, after the 2026-11-10 amendment).
+
+- [P2] data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/StdioInboundGuard.java:152-165 — `classify` still has only two passes. The Design (Amendment 2026-11-10, Decision 1) requires a third: convert the tree to the SDK's message type on the content-free mapper. Without it, a line with a wrongly typed `method`, `result` or `error` is passed through to the SDK. The class Javadoc at line 23 still says "two passes".
+  route: implementer — brings the code in line with Decision 1 as written.
+  input: on stdio, `initialize`, then `{"jsonrpc":"2.0","id":2,"method":{"a":1}}`, then `{"jsonrpc":"2.0","id":99,"method":"ping"}`  →  the guard forwards line 2. The SDK's `convertValue` throws, it logs ERROR `Error processing inbound message`, and it closes the session, so ping 99 is never answered. The same happens with `"error":"x"`. This breaks the Goal's "without ending the session".
+- [P2] data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/StdioParseErrorLeakTest.java:109 — the child JVM gets only `defaultLogLevel=trace`. `simplelogger.properties` still pins `io.modelcontextprotocol` at WARN, so SDK DEBUG output is never live. AC6 says that making the guard classify through `McpSchema.deserializeJsonRpcMessage` fails A to D and F. With this setup that mutation would still pass, because the raw-line DEBUG output is suppressed.
+  route: implementer — Decision 2 already says how: add `-Dorg.slf4j.simpleLogger.log.io.modelcontextprotocol=debug` for A to D and F, and keep the WARN pin for E.
+  input: change `classify` to call `McpSchema.deserializeJsonRpcMessage(mapper, line)`, then run case C  →  the sentinel goes to SDK DEBUG, which is suppressed, so the test stays green.
+- [P2] StdioParseErrorLeakTest.java (no case F) and data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/http/HttpParseErrorLeakTest.java (last case at :107) — case F (a wrongly typed `method`, `result` and `error`, each carrying the sentinel) is missing on both transports. Nothing guards finding 1, and AC6's "removing pass three fails AC2 F" cannot be shown.
+  route: implementer — AC2 and AC3, as amended.
+  input: the input from finding 1 passes every existing test.
+- [P2] data-prism-mcp/src/test/java/io/github/aindriub/dataprism/mcp/DataPrismMcpServerTest.java:174 — `assertContentFreeOverSharedMapper` only checks that the delegate is a `JacksonMcpJsonMapper`. AC5 requires the delegate to be `wiring.json()` itself (the same instance). This was recorded in review round 1 as a fix for the next round, and it is still open at HEAD.
+  route: implementer — recorded in the task file's amendment as an implementer fix.
+  input: change `DataPrismMcpServer.stdio(..)` to wrap a freshly built `JacksonMcpJsonMapper` instead of `wiring.json()`  →  the test passes, although boundary 1's single-mapper invariant is broken.
