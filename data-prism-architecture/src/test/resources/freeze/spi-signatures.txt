@@ -1,0 +1,619 @@
+# Public and protected signatures of core.spi, validation, security, audit and every type in register section 7.1 (register section 15).
+# Regenerate: ./mvnw -pl data-prism-architecture -am test -Dtest=SpiSignaturesFreezeTest -Dfreeze.write=<dir> -Dsurefire.failIfNoSpecifiedTests=false
+annotations.InternalIdentifier | implements | java.lang.annotation.Annotation
+annotations.InternalIdentifier | meta | @java.lang.annotation.Retention(RUNTIME)
+annotations.InternalIdentifier | meta | @java.lang.annotation.Target({FIELD, RECORD_COMPONENT, METHOD, PARAMETER})
+annotations.InternalIdentifier | type | public abstract @interface annotations.InternalIdentifier
+annotations.LlmExposedModel | attribute | profile default "DEFAULT"
+annotations.LlmExposedModel | attribute | undeclaredFields default PROFILE_DEFAULT
+annotations.LlmExposedModel | implements | java.lang.annotation.Annotation
+annotations.LlmExposedModel | meta | @java.lang.annotation.Retention(RUNTIME)
+annotations.LlmExposedModel | meta | @java.lang.annotation.Target({TYPE})
+annotations.LlmExposedModel | method | public abstract annotations.UndeclaredFields annotations.LlmExposedModel.undeclaredFields()
+annotations.LlmExposedModel | method | public abstract java.lang.String annotations.LlmExposedModel.profile()
+annotations.LlmExposedModel | type | public abstract @interface annotations.LlmExposedModel
+annotations.NonSensitive | attribute | reason default (none)
+annotations.NonSensitive | implements | java.lang.annotation.Annotation
+annotations.NonSensitive | meta | @java.lang.annotation.Retention(RUNTIME)
+annotations.NonSensitive | meta | @java.lang.annotation.Target({FIELD, RECORD_COMPONENT, METHOD, PARAMETER})
+annotations.NonSensitive | method | public abstract java.lang.String annotations.NonSensitive.reason()
+annotations.NonSensitive | type | public abstract @interface annotations.NonSensitive
+annotations.SensitiveData | attribute | classifications default (none)
+annotations.SensitiveData | attribute | namespace default NONE
+annotations.SensitiveData | attribute | sensitivity default CONFIDENTIAL
+annotations.SensitiveData | attribute | subject default ""
+annotations.SensitiveData | attribute | suggestedAction default REDACT
+annotations.SensitiveData | implements | java.lang.annotation.Annotation
+annotations.SensitiveData | meta | @java.lang.annotation.Retention(RUNTIME)
+annotations.SensitiveData | meta | @java.lang.annotation.Target({FIELD, RECORD_COMPONENT, METHOD, PARAMETER})
+annotations.SensitiveData | method | public abstract annotations.DataClassification[] annotations.SensitiveData.classifications()
+annotations.SensitiveData | method | public abstract annotations.PrivacyAction annotations.SensitiveData.suggestedAction()
+annotations.SensitiveData | method | public abstract annotations.PrivacyNamespace annotations.SensitiveData.namespace()
+annotations.SensitiveData | method | public abstract annotations.SensitivityLevel annotations.SensitiveData.sensitivity()
+annotations.SensitiveData | method | public abstract java.lang.String annotations.SensitiveData.subject()
+annotations.SensitiveData | type | public abstract @interface annotations.SensitiveData
+annotations.SensitiveObject | attribute | classifications default []
+annotations.SensitiveObject | attribute | namespace default NONE
+annotations.SensitiveObject | attribute | suggestedAction default REDACT
+annotations.SensitiveObject | attribute | undeclaredFields default PROFILE_DEFAULT
+annotations.SensitiveObject | implements | java.lang.annotation.Annotation
+annotations.SensitiveObject | meta | @java.lang.annotation.Retention(RUNTIME)
+annotations.SensitiveObject | meta | @java.lang.annotation.Target({TYPE})
+annotations.SensitiveObject | method | public abstract annotations.DataClassification[] annotations.SensitiveObject.classifications()
+annotations.SensitiveObject | method | public abstract annotations.PrivacyAction annotations.SensitiveObject.suggestedAction()
+annotations.SensitiveObject | method | public abstract annotations.PrivacyNamespace annotations.SensitiveObject.namespace()
+annotations.SensitiveObject | method | public abstract annotations.UndeclaredFields annotations.SensitiveObject.undeclaredFields()
+annotations.SensitiveObject | type | public abstract @interface annotations.SensitiveObject
+annotations.SubjectIdentifier | attribute | role default (none)
+annotations.SubjectIdentifier | implements | java.lang.annotation.Annotation
+annotations.SubjectIdentifier | meta | @java.lang.annotation.Retention(RUNTIME)
+annotations.SubjectIdentifier | meta | @java.lang.annotation.Target({FIELD, RECORD_COMPONENT, METHOD, PARAMETER})
+annotations.SubjectIdentifier | method | public abstract java.lang.String annotations.SubjectIdentifier.role()
+annotations.SubjectIdentifier | type | public abstract @interface annotations.SubjectIdentifier
+audit.AuditChainKey | constructor | public audit.AuditChainKey(java.lang.String,byte[])
+audit.AuditChainKey | field | public static final int audit.AuditChainKey.MIN_KEY_BYTES
+audit.AuditChainKey | method | public java.lang.String audit.AuditChainKey.id()
+audit.AuditChainKey | method | public java.lang.String audit.AuditChainKey.toString()
+audit.AuditChainKey | type | public final class audit.AuditChainKey
+audit.AuditChainMode | method | public boolean audit.AuditChainMode.isKeyed()
+audit.AuditChainMode | method | public java.lang.String audit.AuditChainMode.toString()
+audit.AuditChainMode | method | public java.util.Optional<audit.AuditChainKey> audit.AuditChainMode.key()
+audit.AuditChainMode | method | public static audit.AuditChainMode audit.AuditChainMode.keyed(audit.AuditChainKey)
+audit.AuditChainMode | method | public static audit.AuditChainMode audit.AuditChainMode.unkeyed()
+audit.AuditChainMode | type | public final class audit.AuditChainMode
+audit.AuditCheckpoint | constructor | public audit.AuditCheckpoint(audit.AuditCheckpoint$Kind,java.lang.String,long,java.lang.String,java.time.Instant)
+audit.AuditCheckpoint | constructor | public audit.AuditCheckpoint(audit.AuditCheckpoint$Kind,java.lang.String,long,java.lang.String,java.time.Instant,java.time.LocalDate)
+audit.AuditCheckpoint | constructor | public audit.AuditCheckpoint(audit.AuditCheckpoint$Kind,java.lang.String,long,java.lang.String,java.time.Instant,java.time.LocalDate,java.lang.String,java.lang.Long,boolean)
+audit.AuditCheckpoint | method | public audit.AuditCheckpoint$Kind audit.AuditCheckpoint.kind()
+audit.AuditCheckpoint | method | public boolean audit.AuditCheckpoint.bootWaived()
+audit.AuditCheckpoint | method | public final boolean audit.AuditCheckpoint.equals(java.lang.Object)
+audit.AuditCheckpoint | method | public final int audit.AuditCheckpoint.hashCode()
+audit.AuditCheckpoint | method | public final java.lang.String audit.AuditCheckpoint.toString()
+audit.AuditCheckpoint | method | public java.lang.Long audit.AuditCheckpoint.byteOffset()
+audit.AuditCheckpoint | method | public java.lang.String audit.AuditCheckpoint.headHash()
+audit.AuditCheckpoint | method | public java.lang.String audit.AuditCheckpoint.instanceId()
+audit.AuditCheckpoint | method | public java.lang.String audit.AuditCheckpoint.segmentName()
+audit.AuditCheckpoint | method | public java.lang.String audit.AuditCheckpoint.toJsonLine()
+audit.AuditCheckpoint | method | public java.time.Instant audit.AuditCheckpoint.recordedAt()
+audit.AuditCheckpoint | method | public java.time.LocalDate audit.AuditCheckpoint.segmentDate()
+audit.AuditCheckpoint | method | public long audit.AuditCheckpoint.sequence()
+audit.AuditCheckpoint | method | public static audit.AuditCheckpoint audit.AuditCheckpoint.fromJsonLine(java.lang.String)
+audit.AuditCheckpoint | type | public final record audit.AuditCheckpoint
+audit.AuditCheckpoint$Kind | field | public static final audit.AuditCheckpoint$Kind audit.AuditCheckpoint$Kind.BOOT
+audit.AuditCheckpoint$Kind | field | public static final audit.AuditCheckpoint$Kind audit.AuditCheckpoint$Kind.CRASH_LINE_ACCEPTED
+audit.AuditCheckpoint$Kind | field | public static final audit.AuditCheckpoint$Kind audit.AuditCheckpoint$Kind.PERIODIC
+audit.AuditCheckpoint$Kind | field | public static final audit.AuditCheckpoint$Kind audit.AuditCheckpoint$Kind.RETENTION_ANCHOR
+audit.AuditCheckpoint$Kind | field | public static final audit.AuditCheckpoint$Kind audit.AuditCheckpoint$Kind.SHUTDOWN
+audit.AuditCheckpoint$Kind | method | public static audit.AuditCheckpoint$Kind audit.AuditCheckpoint$Kind.valueOf(java.lang.String)
+audit.AuditCheckpoint$Kind | method | public static audit.AuditCheckpoint$Kind[] audit.AuditCheckpoint$Kind.values()
+audit.AuditCheckpoint$Kind | type | public static final enum audit.AuditCheckpoint$Kind
+audit.AuditCheckpointSink | method | public abstract void audit.AuditCheckpointSink.record(audit.AuditCheckpoint)
+audit.AuditCheckpointSink | method | public default java.util.List<audit.AuditCheckpoint> audit.AuditCheckpointSink.crashLinesAccepted()
+audit.AuditCheckpointSink | method | public default java.util.List<audit.AuditCheckpoint> audit.AuditCheckpointSink.retentionAnchors()
+audit.AuditCheckpointSink | method | public default java.util.List<audit.AuditCheckpoint> audit.AuditCheckpointSink.shutdownCheckpoints()
+audit.AuditCheckpointSink | type | public abstract interface audit.AuditCheckpointSink
+audit.AuditCheckpointUnavailableException | constructor | public audit.AuditCheckpointUnavailableException(java.lang.String,java.lang.Throwable)
+audit.AuditCheckpointUnavailableException | extends | java.lang.RuntimeException
+audit.AuditCheckpointUnavailableException | type | public final class audit.AuditCheckpointUnavailableException
+audit.AuditEntry | constructor | public audit.AuditEntry(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.util.Set<java.lang.String>,java.util.Set<java.lang.String>,java.lang.String,java.util.Map<java.lang.String, java.lang.String>,java.lang.String,java.lang.String)
+audit.AuditEntry | constructor | public audit.AuditEntry(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.util.Set<java.lang.String>,java.util.Set<java.lang.String>,java.lang.String,java.util.Map<java.lang.String, java.lang.String>,java.lang.String,java.lang.String,java.lang.String)
+audit.AuditEntry | method | public final boolean audit.AuditEntry.equals(java.lang.Object)
+audit.AuditEntry | method | public final int audit.AuditEntry.hashCode()
+audit.AuditEntry | method | public final java.lang.String audit.AuditEntry.toString()
+audit.AuditEntry | method | public java.lang.String audit.AuditEntry.approvalId()
+audit.AuditEntry | method | public java.lang.String audit.AuditEntry.approverId()
+audit.AuditEntry | method | public java.lang.String audit.AuditEntry.caseId()
+audit.AuditEntry | method | public java.lang.String audit.AuditEntry.clientId()
+audit.AuditEntry | method | public java.lang.String audit.AuditEntry.correlationId()
+audit.AuditEntry | method | public java.lang.String audit.AuditEntry.entityType()
+audit.AuditEntry | method | public java.lang.String audit.AuditEntry.externalCorrelationId()
+audit.AuditEntry | method | public java.lang.String audit.AuditEntry.parameterFingerprint()
+audit.AuditEntry | method | public java.lang.String audit.AuditEntry.policyDecision()
+audit.AuditEntry | method | public java.lang.String audit.AuditEntry.principalId()
+audit.AuditEntry | method | public java.lang.String audit.AuditEntry.privacyProfile()
+audit.AuditEntry | method | public java.lang.String audit.AuditEntry.purpose()
+audit.AuditEntry | method | public java.lang.String audit.AuditEntry.scopeId()
+audit.AuditEntry | method | public java.lang.String audit.AuditEntry.subjectPseudonym()
+audit.AuditEntry | method | public java.lang.String audit.AuditEntry.tool()
+audit.AuditEntry | method | public java.util.Map<java.lang.String, java.lang.String> audit.AuditEntry.fieldDispositions()
+audit.AuditEntry | method | public java.util.Set<java.lang.String> audit.AuditEntry.rejectedArguments()
+audit.AuditEntry | method | public java.util.Set<java.lang.String> audit.AuditEntry.sourceSystems()
+audit.AuditEntry | type | public final record audit.AuditEntry
+audit.AuditEvent | constructor | public audit.AuditEvent(java.lang.String,java.time.Instant,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.util.Set<java.lang.String>,java.util.Set<java.lang.String>,java.lang.String,java.lang.String,long,java.lang.String,java.lang.String)
+audit.AuditEvent | constructor | public audit.AuditEvent(java.lang.String,java.time.Instant,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.util.Set<java.lang.String>,java.util.Set<java.lang.String>,java.lang.String,java.lang.String,long,java.lang.String,java.lang.String,int,java.util.Map<java.lang.String, java.lang.String>,java.lang.String,java.lang.String)
+audit.AuditEvent | constructor | public audit.AuditEvent(java.lang.String,java.time.Instant,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.util.Set<java.lang.String>,java.util.Set<java.lang.String>,java.lang.String,java.lang.String,long,java.lang.String,java.lang.String,int,java.util.Map<java.lang.String, java.lang.String>,java.lang.String,java.lang.String,java.lang.String)
+audit.AuditEvent | field | public static final int audit.AuditEvent.CURRENT_VERSION
+audit.AuditEvent | field | public static final java.lang.String audit.AuditEvent.NAMES_KEY
+audit.AuditEvent | method | public final boolean audit.AuditEvent.equals(java.lang.Object)
+audit.AuditEvent | method | public final int audit.AuditEvent.hashCode()
+audit.AuditEvent | method | public final java.lang.String audit.AuditEvent.toString()
+audit.AuditEvent | method | public int audit.AuditEvent.recordVersion()
+audit.AuditEvent | method | public java.lang.String audit.AuditEvent.approvalId()
+audit.AuditEvent | method | public java.lang.String audit.AuditEvent.approverId()
+audit.AuditEvent | method | public java.lang.String audit.AuditEvent.caseId()
+audit.AuditEvent | method | public java.lang.String audit.AuditEvent.clientId()
+audit.AuditEvent | method | public java.lang.String audit.AuditEvent.correlationId()
+audit.AuditEvent | method | public java.lang.String audit.AuditEvent.entityType()
+audit.AuditEvent | method | public java.lang.String audit.AuditEvent.eventHash()
+audit.AuditEvent | method | public java.lang.String audit.AuditEvent.eventId()
+audit.AuditEvent | method | public java.lang.String audit.AuditEvent.externalCorrelationId()
+audit.AuditEvent | method | public java.lang.String audit.AuditEvent.instanceId()
+audit.AuditEvent | method | public java.lang.String audit.AuditEvent.parameterFingerprint()
+audit.AuditEvent | method | public java.lang.String audit.AuditEvent.policyDecision()
+audit.AuditEvent | method | public java.lang.String audit.AuditEvent.previousHash()
+audit.AuditEvent | method | public java.lang.String audit.AuditEvent.principalId()
+audit.AuditEvent | method | public java.lang.String audit.AuditEvent.privacyProfile()
+audit.AuditEvent | method | public java.lang.String audit.AuditEvent.purpose()
+audit.AuditEvent | method | public java.lang.String audit.AuditEvent.scopeId()
+audit.AuditEvent | method | public java.lang.String audit.AuditEvent.subjectPseudonym()
+audit.AuditEvent | method | public java.lang.String audit.AuditEvent.tool()
+audit.AuditEvent | method | public java.time.Instant audit.AuditEvent.timestamp()
+audit.AuditEvent | method | public java.util.Map<java.lang.String, java.lang.String> audit.AuditEvent.fieldDispositions()
+audit.AuditEvent | method | public java.util.Set<java.lang.String> audit.AuditEvent.rejectedArguments()
+audit.AuditEvent | method | public java.util.Set<java.lang.String> audit.AuditEvent.sourceSystems()
+audit.AuditEvent | method | public long audit.AuditEvent.sequence()
+audit.AuditEvent | type | public final record audit.AuditEvent
+audit.AuditEventHash | method | public static java.lang.String audit.AuditEventHash.compute(audit.AuditEvent)
+audit.AuditEventHash | method | public static java.lang.String audit.AuditEventHash.compute(audit.AuditEvent,audit.AuditChainKey)
+audit.AuditEventHash | method | public static java.lang.String audit.AuditEventHash.compute(java.lang.String,java.time.Instant,java.lang.String,long,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.util.Set<java.lang.String>,java.util.Set<java.lang.String>,java.lang.String)
+audit.AuditEventHash | method | public static java.lang.String audit.AuditEventHash.compute(java.lang.String,java.time.Instant,java.lang.String,long,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.util.Set<java.lang.String>,java.util.Set<java.lang.String>,java.lang.String,int,java.util.Map<java.lang.String, java.lang.String>,java.lang.String,java.lang.String)
+audit.AuditEventHash | method | public static java.lang.String audit.AuditEventHash.compute(java.lang.String,java.time.Instant,java.lang.String,long,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.util.Set<java.lang.String>,java.util.Set<java.lang.String>,java.lang.String,int,java.util.Map<java.lang.String, java.lang.String>,java.lang.String,java.lang.String,java.lang.String)
+audit.AuditEventHash | type | public final class audit.AuditEventHash
+audit.AuditEventListener | method | public abstract void audit.AuditEventListener.onAuditEvent(audit.AuditEvent)
+audit.AuditEventListener | type | public abstract interface audit.AuditEventListener
+audit.AuditEventListeners | constructor | public audit.AuditEventListeners(java.util.List<audit.AuditEventListener>,int)
+audit.AuditEventListeners | field | public static final java.time.Duration audit.AuditEventListeners.DEFAULT_DRAIN_TIMEOUT
+audit.AuditEventListeners | field | public static final java.time.Duration audit.AuditEventListeners.DEFAULT_DROP_LOG_INTERVAL
+audit.AuditEventListeners | implements | java.lang.AutoCloseable
+audit.AuditEventListeners | method | public boolean audit.AuditEventListeners.active()
+audit.AuditEventListeners | method | public long audit.AuditEventListeners.droppedCount()
+audit.AuditEventListeners | method | public void audit.AuditEventListeners.close()
+audit.AuditEventListeners | type | public final class audit.AuditEventListeners
+audit.AuditRecorder | constructor | public audit.AuditRecorder(audit.AuditSink,java.time.Clock,java.lang.String)
+audit.AuditRecorder | constructor | public audit.AuditRecorder(audit.AuditSink,java.time.Clock,java.lang.String,audit.AuditCheckpointSink)
+audit.AuditRecorder | constructor | public audit.AuditRecorder(audit.AuditSink,java.time.Clock,java.lang.String,audit.AuditCheckpointSink,audit.AuditEventListeners,audit.AuditChainMode)
+audit.AuditRecorder | implements | java.lang.AutoCloseable
+audit.AuditRecorder | method | public java.lang.String audit.AuditRecorder.instanceId()
+audit.AuditRecorder | method | public synchronized audit.AuditEvent audit.AuditRecorder.record(audit.AuditEntry)
+audit.AuditRecorder | method | public synchronized audit.AuditEvent audit.AuditRecorder.record(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.util.Set<java.lang.String>,java.util.Set<java.lang.String>,java.lang.String)
+audit.AuditRecorder | method | public synchronized void audit.AuditRecorder.checkpoint()
+audit.AuditRecorder | method | public synchronized void audit.AuditRecorder.close()
+audit.AuditRecorder | type | public final class audit.AuditRecorder
+audit.AuditSink | method | public abstract void audit.AuditSink.record(audit.AuditEvent)
+audit.AuditSink | type | public abstract interface audit.AuditSink
+audit.AuditedEntityTypes | field | public static final java.lang.String audit.AuditedEntityTypes.UNREGISTERED
+audit.AuditedEntityTypes | field | public static final java.util.regex.Pattern audit.AuditedEntityTypes.REGISTERED_NAME
+audit.AuditedEntityTypes | field | public static final java.util.regex.Pattern audit.AuditedEntityTypes.SHAPE
+audit.AuditedEntityTypes | method | public boolean audit.AuditedEntityTypes.isShapeMode()
+audit.AuditedEntityTypes | method | public java.lang.String audit.AuditedEntityTypes.audited(java.lang.String)
+audit.AuditedEntityTypes | method | public static audit.AuditedEntityTypes audit.AuditedEntityTypes.of(java.util.Collection<java.lang.String>)
+audit.AuditedEntityTypes | method | public static audit.AuditedEntityTypes audit.AuditedEntityTypes.shape()
+audit.AuditedEntityTypes | type | public final class audit.AuditedEntityTypes
+core.limits.ScopeBudget | method | public abstract boolean core.limits.ScopeBudget.tryRead(java.lang.String,java.lang.String,int)
+core.limits.ScopeBudget | method | public abstract int core.limits.ScopeBudget.reads(java.lang.String,java.lang.String)
+core.limits.ScopeBudget | method | public abstract void core.limits.ScopeBudget.forget(java.lang.String)
+core.limits.ScopeBudget | method | public default core.limits.ReadReservation core.limits.ScopeBudget.reserve(java.lang.String,java.lang.String,int,int,int)
+core.limits.ScopeBudget | method | public default int core.limits.ScopeBudget.scopeReads(java.lang.String)
+core.limits.ScopeBudget | method | public default void core.limits.ScopeBudget.release(core.limits.ReadReservation,int)
+core.limits.ScopeBudget | type | public abstract interface core.limits.ScopeBudget
+core.metrics.PrivacyMetrics | method | public abstract void core.metrics.PrivacyMetrics.increment(core.metrics.Metric)
+core.metrics.PrivacyMetrics | method | public abstract void core.metrics.PrivacyMetrics.increment(core.metrics.Metric,java.lang.String)
+core.metrics.PrivacyMetrics | method | public abstract void core.metrics.PrivacyMetrics.record(core.metrics.Metric,java.lang.String,java.time.Duration)
+core.metrics.PrivacyMetrics | method | public default void core.metrics.PrivacyMetrics.gauge(core.metrics.Metric,java.util.function.DoubleSupplier)
+core.metrics.PrivacyMetrics | method | public static core.metrics.PrivacyMetrics core.metrics.PrivacyMetrics.none()
+core.metrics.PrivacyMetrics | type | public abstract interface core.metrics.PrivacyMetrics
+core.policy.PrivacyPolicyResolver | method | public abstract core.policy.EffectivePrivacyPolicy core.policy.PrivacyPolicyResolver.resolve(core.model.FieldMetadata,core.model.PrivacyContext)
+core.policy.PrivacyPolicyResolver | type | public abstract interface core.policy.PrivacyPolicyResolver
+core.spi.ChainableField | constructor | public core.spi.ChainableField(java.lang.String,core.spi.KeyNamespace,boolean)
+core.spi.ChainableField | method | public boolean core.spi.ChainableField.element()
+core.spi.ChainableField | method | public core.spi.KeyNamespace core.spi.ChainableField.keyNamespace()
+core.spi.ChainableField | method | public final boolean core.spi.ChainableField.equals(java.lang.Object)
+core.spi.ChainableField | method | public final int core.spi.ChainableField.hashCode()
+core.spi.ChainableField | method | public final java.lang.String core.spi.ChainableField.toString()
+core.spi.ChainableField | method | public java.lang.String core.spi.ChainableField.path()
+core.spi.ChainableField | type | public final record core.spi.ChainableField
+core.spi.ChainableView | constructor | public core.spi.ChainableView(java.util.List<core.spi.ChainableField>,tools.jackson.databind.JsonNode)
+core.spi.ChainableView | method | public final boolean core.spi.ChainableView.equals(java.lang.Object)
+core.spi.ChainableView | method | public final int core.spi.ChainableView.hashCode()
+core.spi.ChainableView | method | public java.lang.String core.spi.ChainableView.toString()
+core.spi.ChainableView | method | public java.util.List<core.spi.ChainableField> core.spi.ChainableView.fields()
+core.spi.ChainableView | method | public tools.jackson.databind.JsonNode core.spi.ChainableView.tree()
+core.spi.ChainableView | type | public final record core.spi.ChainableView
+core.spi.CostHint | field | public static final core.spi.CostHint core.spi.CostHint.HIGH
+core.spi.CostHint | field | public static final core.spi.CostHint core.spi.CostHint.LOW
+core.spi.CostHint | field | public static final core.spi.CostHint core.spi.CostHint.MEDIUM
+core.spi.CostHint | method | public static core.spi.CostHint core.spi.CostHint.valueOf(java.lang.String)
+core.spi.CostHint | method | public static core.spi.CostHint[] core.spi.CostHint.values()
+core.spi.CostHint | type | public final enum core.spi.CostHint
+core.spi.DataRequest | constructor | public core.spi.DataRequest(java.lang.String,java.lang.String,java.util.Map<java.lang.String, java.lang.Object>)
+core.spi.DataRequest | constructor | public core.spi.DataRequest(java.lang.String,java.lang.String,java.util.Map<java.lang.String, java.lang.Object>,core.spi.SourceCallContext)
+core.spi.DataRequest | constructor | public core.spi.DataRequest(java.lang.String,java.lang.String,java.util.Map<java.lang.String, java.lang.Object>,core.spi.SourceCallContext,java.util.Optional<core.spi.KeyNamespace>)
+core.spi.DataRequest | method | public core.spi.DataRequest core.spi.DataRequest.withContext(core.spi.SourceCallContext)
+core.spi.DataRequest | method | public core.spi.DataRequest core.spi.DataRequest.withKeyNamespace(core.spi.KeyNamespace)
+core.spi.DataRequest | method | public core.spi.SourceCallContext core.spi.DataRequest.context()
+core.spi.DataRequest | method | public final boolean core.spi.DataRequest.equals(java.lang.Object)
+core.spi.DataRequest | method | public final int core.spi.DataRequest.hashCode()
+core.spi.DataRequest | method | public final java.lang.String core.spi.DataRequest.toString()
+core.spi.DataRequest | method | public java.lang.String core.spi.DataRequest.entityType()
+core.spi.DataRequest | method | public java.lang.String core.spi.DataRequest.subjectId()
+core.spi.DataRequest | method | public java.util.Map<java.lang.String, java.lang.Object> core.spi.DataRequest.parameters()
+core.spi.DataRequest | method | public java.util.Optional<core.spi.KeyNamespace> core.spi.DataRequest.keyNamespace()
+core.spi.DataRequest | method | public static core.spi.DataRequest core.spi.DataRequest.of(java.lang.String,java.lang.String)
+core.spi.DataRequest | type | public final record core.spi.DataRequest
+core.spi.DataSourceAdapter | method | public abstract T core.spi.DataSourceAdapter.fetch(core.spi.DataRequest)
+core.spi.DataSourceAdapter | method | public abstract java.lang.Class<T> core.spi.DataSourceAdapter.responseType()
+core.spi.DataSourceAdapter | method | public abstract java.lang.String core.spi.DataSourceAdapter.sourceName()
+core.spi.DataSourceAdapter | method | public default core.spi.SourceDescription core.spi.DataSourceAdapter.description()
+core.spi.DataSourceAdapter | type | public abstract interface core.spi.DataSourceAdapter<T>
+core.spi.EntityCorrelationService | method | public abstract java.util.List<core.model.ConsistencyFinding> core.spi.EntityCorrelationService.correlate(java.util.List<core.spi.EntityCorrelationService$SourceRecord>,core.model.PrivacyContext)
+core.spi.EntityCorrelationService | type | public abstract interface core.spi.EntityCorrelationService
+core.spi.EntityCorrelationService$SourceRecord | constructor | public core.spi.EntityCorrelationService$SourceRecord(java.lang.String,java.lang.Object)
+core.spi.EntityCorrelationService$SourceRecord | method | public final boolean core.spi.EntityCorrelationService$SourceRecord.equals(java.lang.Object)
+core.spi.EntityCorrelationService$SourceRecord | method | public final int core.spi.EntityCorrelationService$SourceRecord.hashCode()
+core.spi.EntityCorrelationService$SourceRecord | method | public final java.lang.String core.spi.EntityCorrelationService$SourceRecord.toString()
+core.spi.EntityCorrelationService$SourceRecord | method | public java.lang.Object core.spi.EntityCorrelationService$SourceRecord.record()
+core.spi.EntityCorrelationService$SourceRecord | method | public java.lang.String core.spi.EntityCorrelationService$SourceRecord.sourceName()
+core.spi.EntityCorrelationService$SourceRecord | type | public static final record core.spi.EntityCorrelationService$SourceRecord
+core.spi.FieldMetadataResolver | method | public abstract java.util.List<core.model.FieldMetadata> core.spi.FieldMetadataResolver.resolve(java.lang.Class<?>)
+core.spi.FieldMetadataResolver | method | public default boolean core.spi.FieldMetadataResolver.descendable(java.lang.Class<?>)
+core.spi.FieldMetadataResolver | method | public default boolean core.spi.FieldMetadataResolver.exposed(java.lang.Class<?>)
+core.spi.FieldMetadataResolver | method | public default java.lang.String core.spi.FieldMetadataResolver.internalIdentifierField(java.lang.Class<?>)
+core.spi.FieldMetadataResolver | type | public abstract interface core.spi.FieldMetadataResolver
+core.spi.FreshnessHint | field | public static final core.spi.FreshnessHint core.spi.FreshnessHint.DAILY
+core.spi.FreshnessHint | field | public static final core.spi.FreshnessHint core.spi.FreshnessHint.HOURLY
+core.spi.FreshnessHint | field | public static final core.spi.FreshnessHint core.spi.FreshnessHint.LIVE
+core.spi.FreshnessHint | field | public static final core.spi.FreshnessHint core.spi.FreshnessHint.NEAR_LIVE
+core.spi.FreshnessHint | field | public static final core.spi.FreshnessHint core.spi.FreshnessHint.PERIODIC
+core.spi.FreshnessHint | method | public static core.spi.FreshnessHint core.spi.FreshnessHint.valueOf(java.lang.String)
+core.spi.FreshnessHint | method | public static core.spi.FreshnessHint[] core.spi.FreshnessHint.values()
+core.spi.FreshnessHint | type | public final enum core.spi.FreshnessHint
+core.spi.IdentityResolver | method | public abstract core.spi.IdentityResolver$CanonicalId core.spi.IdentityResolver.resolve(core.spi.IdentityResolver$SourceRef)
+core.spi.IdentityResolver | method | public abstract java.util.List<core.spi.IdentityResolver$SourceRef> core.spi.IdentityResolver.expand(core.spi.IdentityResolver$CanonicalId,java.util.List<java.lang.String>)
+core.spi.IdentityResolver | type | public abstract interface core.spi.IdentityResolver
+core.spi.IdentityResolver$CanonicalId | constructor | public core.spi.IdentityResolver$CanonicalId(java.lang.String)
+core.spi.IdentityResolver$CanonicalId | method | public final boolean core.spi.IdentityResolver$CanonicalId.equals(java.lang.Object)
+core.spi.IdentityResolver$CanonicalId | method | public final int core.spi.IdentityResolver$CanonicalId.hashCode()
+core.spi.IdentityResolver$CanonicalId | method | public final java.lang.String core.spi.IdentityResolver$CanonicalId.toString()
+core.spi.IdentityResolver$CanonicalId | method | public java.lang.String core.spi.IdentityResolver$CanonicalId.value()
+core.spi.IdentityResolver$CanonicalId | type | public static final record core.spi.IdentityResolver$CanonicalId
+core.spi.IdentityResolver$SourceRef | constructor | public core.spi.IdentityResolver$SourceRef(java.lang.String,java.lang.String)
+core.spi.IdentityResolver$SourceRef | method | public final boolean core.spi.IdentityResolver$SourceRef.equals(java.lang.Object)
+core.spi.IdentityResolver$SourceRef | method | public final int core.spi.IdentityResolver$SourceRef.hashCode()
+core.spi.IdentityResolver$SourceRef | method | public final java.lang.String core.spi.IdentityResolver$SourceRef.toString()
+core.spi.IdentityResolver$SourceRef | method | public java.lang.String core.spi.IdentityResolver$SourceRef.key()
+core.spi.IdentityResolver$SourceRef | method | public java.lang.String core.spi.IdentityResolver$SourceRef.sourceName()
+core.spi.IdentityResolver$SourceRef | type | public static final record core.spi.IdentityResolver$SourceRef
+core.spi.IdentityResolverKeyResolvers | method | public static core.spi.KeyResolver core.spi.IdentityResolverKeyResolvers.of(core.spi.IdentityResolver,java.lang.String,java.lang.String,core.spi.KeyNamespace,java.lang.String,core.spi.KeyNamespace)
+core.spi.IdentityResolverKeyResolvers | type | public final class core.spi.IdentityResolverKeyResolvers
+core.spi.KeyNamespace | constructor | public core.spi.KeyNamespace(java.lang.String)
+core.spi.KeyNamespace | method | public final boolean core.spi.KeyNamespace.equals(java.lang.Object)
+core.spi.KeyNamespace | method | public final int core.spi.KeyNamespace.hashCode()
+core.spi.KeyNamespace | method | public java.lang.String core.spi.KeyNamespace.toString()
+core.spi.KeyNamespace | method | public java.lang.String core.spi.KeyNamespace.value()
+core.spi.KeyNamespace | type | public final record core.spi.KeyNamespace
+core.spi.KeyResolutionException | constructor | public core.spi.KeyResolutionException(core.spi.KeyResolutionException$Reason)
+core.spi.KeyResolutionException | extends | java.lang.RuntimeException
+core.spi.KeyResolutionException | method | public core.spi.KeyResolutionException$Reason core.spi.KeyResolutionException.reason()
+core.spi.KeyResolutionException | type | public final class core.spi.KeyResolutionException
+core.spi.KeyResolutionException$Reason | field | public static final core.spi.KeyResolutionException$Reason core.spi.KeyResolutionException$Reason.REJECTED
+core.spi.KeyResolutionException$Reason | field | public static final core.spi.KeyResolutionException$Reason core.spi.KeyResolutionException$Reason.TIMEOUT
+core.spi.KeyResolutionException$Reason | field | public static final core.spi.KeyResolutionException$Reason core.spi.KeyResolutionException$Reason.TOO_MANY
+core.spi.KeyResolutionException$Reason | field | public static final core.spi.KeyResolutionException$Reason core.spi.KeyResolutionException$Reason.UNAVAILABLE
+core.spi.KeyResolutionException$Reason | method | public static core.spi.KeyResolutionException$Reason core.spi.KeyResolutionException$Reason.valueOf(java.lang.String)
+core.spi.KeyResolutionException$Reason | method | public static core.spi.KeyResolutionException$Reason[] core.spi.KeyResolutionException$Reason.values()
+core.spi.KeyResolutionException$Reason | type | public static final enum core.spi.KeyResolutionException$Reason
+core.spi.KeyResolver | method | public abstract core.spi.KeyNamespace core.spi.KeyResolver.from()
+core.spi.KeyResolver | method | public abstract core.spi.KeyNamespace core.spi.KeyResolver.to()
+core.spi.KeyResolver | method | public abstract core.spi.KeyResolver$Resolution core.spi.KeyResolver.resolve(java.lang.String,core.spi.ResolutionContext,int)
+core.spi.KeyResolver | method | public abstract java.lang.String core.spi.KeyResolver.name()
+core.spi.KeyResolver | type | public abstract interface core.spi.KeyResolver
+core.spi.KeyResolver$Resolution | constructor | public core.spi.KeyResolver$Resolution(java.util.List<java.lang.String>,boolean)
+core.spi.KeyResolver$Resolution | method | public boolean core.spi.KeyResolver$Resolution.more()
+core.spi.KeyResolver$Resolution | method | public final boolean core.spi.KeyResolver$Resolution.equals(java.lang.Object)
+core.spi.KeyResolver$Resolution | method | public final int core.spi.KeyResolver$Resolution.hashCode()
+core.spi.KeyResolver$Resolution | method | public java.lang.String core.spi.KeyResolver$Resolution.toString()
+core.spi.KeyResolver$Resolution | method | public java.util.List<java.lang.String> core.spi.KeyResolver$Resolution.keys()
+core.spi.KeyResolver$Resolution | type | public static final record core.spi.KeyResolver$Resolution
+core.spi.PassThroughIdentityResolver | constructor | public core.spi.PassThroughIdentityResolver()
+core.spi.PassThroughIdentityResolver | implements | core.spi.IdentityResolver
+core.spi.PassThroughIdentityResolver | method | public core.spi.IdentityResolver$CanonicalId core.spi.PassThroughIdentityResolver.resolve(core.spi.IdentityResolver$SourceRef)
+core.spi.PassThroughIdentityResolver | method | public java.util.List<core.spi.IdentityResolver$SourceRef> core.spi.PassThroughIdentityResolver.expand(core.spi.IdentityResolver$CanonicalId,java.util.List<java.lang.String>)
+core.spi.PassThroughIdentityResolver | type | public final class core.spi.PassThroughIdentityResolver
+core.spi.ResolutionContext | constructor | public core.spi.ResolutionContext(java.lang.String,java.lang.String,java.lang.String,java.time.Instant)
+core.spi.ResolutionContext | method | public final boolean core.spi.ResolutionContext.equals(java.lang.Object)
+core.spi.ResolutionContext | method | public final int core.spi.ResolutionContext.hashCode()
+core.spi.ResolutionContext | method | public java.lang.String core.spi.ResolutionContext.principalId()
+core.spi.ResolutionContext | method | public java.lang.String core.spi.ResolutionContext.purpose()
+core.spi.ResolutionContext | method | public java.lang.String core.spi.ResolutionContext.scopeId()
+core.spi.ResolutionContext | method | public java.lang.String core.spi.ResolutionContext.toString()
+core.spi.ResolutionContext | method | public java.time.Instant core.spi.ResolutionContext.deadline()
+core.spi.ResolutionContext | type | public final record core.spi.ResolutionContext
+core.spi.ScrubbingEngine | method | public abstract core.model.ScrubResult core.spi.ScrubbingEngine.scrub(java.lang.Object,core.model.PrivacyContext)
+core.spi.ScrubbingEngine | method | public default java.util.Optional<core.model.ModelDescription> core.spi.ScrubbingEngine.describe(java.lang.Class<?>,core.model.PrivacyContext,boolean)
+core.spi.ScrubbingEngine | method | public default java.util.Optional<core.model.ModelDescription> core.spi.ScrubbingEngine.describe(java.lang.String,java.lang.Class<?>,core.model.PrivacyContext,boolean)
+core.spi.ScrubbingEngine | method | public default java.util.Optional<core.spi.ChainableView> core.spi.ScrubbingEngine.chainableView(java.lang.String,java.lang.Object)
+core.spi.ScrubbingEngine | type | public abstract interface core.spi.ScrubbingEngine
+core.spi.SecretKeyProvider | method | public abstract byte[] core.spi.SecretKeyProvider.secret(java.lang.String)
+core.spi.SecretKeyProvider | type | public abstract interface core.spi.SecretKeyProvider
+core.spi.SourceCallContext | constructor | public core.spi.SourceCallContext(java.util.Optional<core.correlation.ExternalCorrelationId>)
+core.spi.SourceCallContext | method | public final boolean core.spi.SourceCallContext.equals(java.lang.Object)
+core.spi.SourceCallContext | method | public final int core.spi.SourceCallContext.hashCode()
+core.spi.SourceCallContext | method | public final java.lang.String core.spi.SourceCallContext.toString()
+core.spi.SourceCallContext | method | public java.util.Optional<core.correlation.ExternalCorrelationId> core.spi.SourceCallContext.externalCorrelationId()
+core.spi.SourceCallContext | method | public static core.spi.SourceCallContext core.spi.SourceCallContext.none()
+core.spi.SourceCallContext | method | public static core.spi.SourceCallContext core.spi.SourceCallContext.of(core.correlation.ExternalCorrelationId)
+core.spi.SourceCallContext | type | public final record core.spi.SourceCallContext
+core.spi.SourceDescription | constructor | public core.spi.SourceDescription(java.util.Set<java.lang.String>,java.lang.String,java.lang.String,java.util.List<core.spi.KeyNamespace>,core.spi.CostHint,core.spi.FreshnessHint)
+core.spi.SourceDescription | constructor | public core.spi.SourceDescription(java.util.Set<java.lang.String>,java.lang.String,java.lang.String,java.util.List<core.spi.KeyNamespace>,core.spi.CostHint,core.spi.FreshnessHint,java.util.Map<core.spi.KeyNamespace, java.lang.String>)
+core.spi.SourceDescription | field | public static final int core.spi.SourceDescription.MAX_INPUT_KEYS
+core.spi.SourceDescription | field | public static final java.lang.String core.spi.SourceDescription.UNDECLARED_ENTITY_TYPE
+core.spi.SourceDescription | method | public core.spi.CostHint core.spi.SourceDescription.cost()
+core.spi.SourceDescription | method | public core.spi.FreshnessHint core.spi.SourceDescription.freshness()
+core.spi.SourceDescription | method | public final boolean core.spi.SourceDescription.equals(java.lang.Object)
+core.spi.SourceDescription | method | public final int core.spi.SourceDescription.hashCode()
+core.spi.SourceDescription | method | public final java.lang.String core.spi.SourceDescription.toString()
+core.spi.SourceDescription | method | public java.lang.String core.spi.SourceDescription.aliasDescription()
+core.spi.SourceDescription | method | public java.lang.String core.spi.SourceDescription.realDescription()
+core.spi.SourceDescription | method | public java.util.List<core.spi.KeyNamespace> core.spi.SourceDescription.inputKeys()
+core.spi.SourceDescription | method | public java.util.Map<core.spi.KeyNamespace, java.lang.String> core.spi.SourceDescription.namespaceTypes()
+core.spi.SourceDescription | method | public java.util.Set<java.lang.String> core.spi.SourceDescription.entityTypes()
+core.spi.SourceDescription | method | public static core.spi.SourceDescription core.spi.SourceDescription.undeclared()
+core.spi.SourceDescription | type | public final record core.spi.SourceDescription
+core.spi.SyntheticValueSource | method | public abstract java.lang.String core.spi.SyntheticValueSource.syntheticValue(java.lang.String,annotations.PrivacyNamespace,core.model.PrivacyContext)
+core.spi.SyntheticValueSource | type | public abstract interface core.spi.SyntheticValueSource
+core.spi.ValueTokenSource | method | public abstract java.lang.String core.spi.ValueTokenSource.hash(java.lang.String,annotations.PrivacyNamespace,core.model.PrivacyContext)
+core.spi.ValueTokenSource | method | public abstract java.lang.String core.spi.ValueTokenSource.token(java.lang.String,annotations.PrivacyNamespace,core.model.PrivacyContext)
+core.spi.ValueTokenSource | method | public default boolean core.spi.ValueTokenSource.available()
+core.spi.ValueTokenSource | method | public static core.spi.ValueTokenSource core.spi.ValueTokenSource.unavailable()
+core.spi.ValueTokenSource | type | public abstract interface core.spi.ValueTokenSource
+orchestration.ContextOrchestrator | method | public abstract orchestration.ContextResponse orchestration.ContextOrchestrator.buildContext(orchestration.ContextRequest,core.model.PrivacyContext,core.model.InvestigationContext)
+orchestration.ContextOrchestrator | method | public default java.util.Optional<core.model.ModelDescription> orchestration.ContextOrchestrator.describe(java.lang.String,core.model.PrivacyContext,boolean)
+orchestration.ContextOrchestrator | method | public default orchestration.ContextResponse orchestration.ContextOrchestrator.follow(orchestration.FollowRequest,core.model.PrivacyContext,core.model.InvestigationContext)
+orchestration.ContextOrchestrator | type | public abstract interface orchestration.ContextOrchestrator
+oversight.ApprovalStore | method | public abstract java.util.List<oversight.ApprovalRequest> oversight.ApprovalStore.pending(java.time.Instant)
+oversight.ApprovalStore | method | public abstract java.util.Optional<oversight.ApprovalRequest> oversight.ApprovalStore.consumeApproved(oversight.ApprovalRequest$Kind,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.time.Instant)
+oversight.ApprovalStore | method | public abstract java.util.Optional<oversight.ApprovalRequest> oversight.ApprovalStore.find(java.lang.String)
+oversight.ApprovalStore | method | public abstract java.util.Optional<oversight.ApprovalRequest> oversight.ApprovalStore.findPending(oversight.ApprovalRequest$Kind,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.time.Instant)
+oversight.ApprovalStore | method | public abstract oversight.ApprovalRequest oversight.ApprovalStore.approve(java.lang.String,java.lang.String,java.time.Instant)
+oversight.ApprovalStore | method | public abstract oversight.ApprovalRequest oversight.ApprovalStore.create(oversight.ApprovalRequest)
+oversight.ApprovalStore | method | public abstract oversight.ApprovalRequest oversight.ApprovalStore.create(oversight.ApprovalRequest,int)
+oversight.ApprovalStore | method | public abstract oversight.ApprovalRequest oversight.ApprovalStore.reject(java.lang.String,java.lang.String,java.time.Instant)
+oversight.ApprovalStore | method | public abstract void oversight.ApprovalStore.forgetScope(java.lang.String)
+oversight.ApprovalStore | type | public abstract interface oversight.ApprovalStore
+oversight.CallerRateLimiter | method | public abstract boolean oversight.CallerRateLimiter.tryAcquire(java.lang.String,int,java.time.Duration,java.time.Instant)
+oversight.CallerRateLimiter | type | public abstract interface oversight.CallerRateLimiter
+oversight.OversightState | method | public abstract boolean oversight.OversightState.allPaused()
+oversight.OversightState | method | public abstract boolean oversight.OversightState.scopePaused(java.lang.String)
+oversight.OversightState | method | public abstract boolean oversight.OversightState.toolPaused(java.lang.String)
+oversight.OversightState | method | public abstract oversight.OversightSnapshot oversight.OversightState.snapshot()
+oversight.OversightState | method | public abstract void oversight.OversightState.pauseAll()
+oversight.OversightState | method | public abstract void oversight.OversightState.pauseScope(java.lang.String)
+oversight.OversightState | method | public abstract void oversight.OversightState.pauseTool(java.lang.String)
+oversight.OversightState | method | public abstract void oversight.OversightState.resumeAll()
+oversight.OversightState | method | public abstract void oversight.OversightState.resumeScope(java.lang.String)
+oversight.OversightState | method | public abstract void oversight.OversightState.resumeTool(java.lang.String)
+oversight.OversightState | type | public abstract interface oversight.OversightState
+pseudonymisation.vocabulary.Vocabulary | method | public abstract java.lang.String pseudonymisation.vocabulary.Vocabulary.id()
+pseudonymisation.vocabulary.Vocabulary | method | public abstract java.lang.String pseudonymisation.vocabulary.Vocabulary.localeTag()
+pseudonymisation.vocabulary.Vocabulary | method | public abstract java.lang.String pseudonymisation.vocabulary.Vocabulary.script()
+pseudonymisation.vocabulary.Vocabulary | method | public abstract java.util.List<java.lang.String> pseudonymisation.vocabulary.Vocabulary.pool(pseudonymisation.vocabulary.PoolKind)
+pseudonymisation.vocabulary.Vocabulary | type | public abstract interface pseudonymisation.vocabulary.Vocabulary
+reidentification.ReidentificationOutcome | type | public abstract sealed interface reidentification.ReidentificationOutcome
+reidentification.ReidentificationOutcome$Approved | constructor | public reidentification.ReidentificationOutcome$Approved()
+reidentification.ReidentificationOutcome$Approved | implements | reidentification.ReidentificationOutcome
+reidentification.ReidentificationOutcome$Approved | method | public final boolean reidentification.ReidentificationOutcome$Approved.equals(java.lang.Object)
+reidentification.ReidentificationOutcome$Approved | method | public final int reidentification.ReidentificationOutcome$Approved.hashCode()
+reidentification.ReidentificationOutcome$Approved | method | public final java.lang.String reidentification.ReidentificationOutcome$Approved.toString()
+reidentification.ReidentificationOutcome$Approved | type | public static final record reidentification.ReidentificationOutcome$Approved
+reidentification.ReidentificationOutcome$PendingApproval | constructor | public reidentification.ReidentificationOutcome$PendingApproval(java.lang.String)
+reidentification.ReidentificationOutcome$PendingApproval | implements | reidentification.ReidentificationOutcome
+reidentification.ReidentificationOutcome$PendingApproval | method | public final boolean reidentification.ReidentificationOutcome$PendingApproval.equals(java.lang.Object)
+reidentification.ReidentificationOutcome$PendingApproval | method | public final int reidentification.ReidentificationOutcome$PendingApproval.hashCode()
+reidentification.ReidentificationOutcome$PendingApproval | method | public final java.lang.String reidentification.ReidentificationOutcome$PendingApproval.toString()
+reidentification.ReidentificationOutcome$PendingApproval | method | public java.lang.String reidentification.ReidentificationOutcome$PendingApproval.approvalId()
+reidentification.ReidentificationOutcome$PendingApproval | type | public static final record reidentification.ReidentificationOutcome$PendingApproval
+reidentification.ReidentificationOutcome$Refused | constructor | public reidentification.ReidentificationOutcome$Refused(java.lang.String)
+reidentification.ReidentificationOutcome$Refused | implements | reidentification.ReidentificationOutcome
+reidentification.ReidentificationOutcome$Refused | method | public final boolean reidentification.ReidentificationOutcome$Refused.equals(java.lang.Object)
+reidentification.ReidentificationOutcome$Refused | method | public final int reidentification.ReidentificationOutcome$Refused.hashCode()
+reidentification.ReidentificationOutcome$Refused | method | public final java.lang.String reidentification.ReidentificationOutcome$Refused.toString()
+reidentification.ReidentificationOutcome$Refused | method | public java.lang.String reidentification.ReidentificationOutcome$Refused.code()
+reidentification.ReidentificationOutcome$Refused | type | public static final record reidentification.ReidentificationOutcome$Refused
+reidentification.ReidentificationOutcome$Resolved | constructor | public reidentification.ReidentificationOutcome$Resolved(java.lang.String)
+reidentification.ReidentificationOutcome$Resolved | implements | reidentification.ReidentificationOutcome
+reidentification.ReidentificationOutcome$Resolved | method | public final boolean reidentification.ReidentificationOutcome$Resolved.equals(java.lang.Object)
+reidentification.ReidentificationOutcome$Resolved | method | public final int reidentification.ReidentificationOutcome$Resolved.hashCode()
+reidentification.ReidentificationOutcome$Resolved | method | public java.lang.String reidentification.ReidentificationOutcome$Resolved.subjectId()
+reidentification.ReidentificationOutcome$Resolved | method | public java.lang.String reidentification.ReidentificationOutcome$Resolved.toString()
+reidentification.ReidentificationOutcome$Resolved | type | public static final record reidentification.ReidentificationOutcome$Resolved
+reidentification.SubjectLookup | method | public abstract java.util.Optional<java.lang.String> reidentification.SubjectLookup.subjectFor(java.lang.String,annotations.PrivacyNamespace,java.lang.String)
+reidentification.SubjectLookup | type | public abstract interface reidentification.SubjectLookup
+security.AdmissionDecision | constructor | public security.AdmissionDecision(boolean,java.lang.String,java.lang.String,java.lang.String)
+security.AdmissionDecision | method | public boolean security.AdmissionDecision.admitted()
+security.AdmissionDecision | method | public final boolean security.AdmissionDecision.equals(java.lang.Object)
+security.AdmissionDecision | method | public final int security.AdmissionDecision.hashCode()
+security.AdmissionDecision | method | public final java.lang.String security.AdmissionDecision.toString()
+security.AdmissionDecision | method | public java.lang.String security.AdmissionDecision.approvalId()
+security.AdmissionDecision | method | public java.lang.String security.AdmissionDecision.approverPrincipalId()
+security.AdmissionDecision | method | public java.lang.String security.AdmissionDecision.code()
+security.AdmissionDecision | method | public static security.AdmissionDecision security.AdmissionDecision.admit()
+security.AdmissionDecision | method | public static security.AdmissionDecision security.AdmissionDecision.refuse(java.lang.String)
+security.AdmissionDecision | type | public final record security.AdmissionDecision
+security.AuthenticatedCaller | constructor | public security.AuthenticatedCaller(java.lang.String,java.lang.String,java.util.Set<java.lang.String>,java.lang.String,java.lang.String,java.time.Instant)
+security.AuthenticatedCaller | method | public final boolean security.AuthenticatedCaller.equals(java.lang.Object)
+security.AuthenticatedCaller | method | public final int security.AuthenticatedCaller.hashCode()
+security.AuthenticatedCaller | method | public final java.lang.String security.AuthenticatedCaller.toString()
+security.AuthenticatedCaller | method | public java.lang.String security.AuthenticatedCaller.caseId()
+security.AuthenticatedCaller | method | public java.lang.String security.AuthenticatedCaller.clientId()
+security.AuthenticatedCaller | method | public java.lang.String security.AuthenticatedCaller.principalId()
+security.AuthenticatedCaller | method | public java.lang.String security.AuthenticatedCaller.purpose()
+security.AuthenticatedCaller | method | public java.time.Instant security.AuthenticatedCaller.expiresAt()
+security.AuthenticatedCaller | method | public java.util.Set<java.lang.String> security.AuthenticatedCaller.roles()
+security.AuthenticatedCaller | method | public static security.AuthenticatedCaller security.AuthenticatedCaller.fromClaims(java.util.Map<java.lang.String, java.lang.Object>,security.ClaimNames)
+security.AuthenticatedCaller | type | public final record security.AuthenticatedCaller
+security.AuthorizationDecision | constructor | public security.AuthorizationDecision(boolean,java.lang.String,core.model.PrivacyScopeType,java.util.Set<java.lang.String>,java.lang.String)
+security.AuthorizationDecision | method | public boolean security.AuthorizationDecision.allowed()
+security.AuthorizationDecision | method | public core.model.PrivacyScopeType security.AuthorizationDecision.scopeType()
+security.AuthorizationDecision | method | public final boolean security.AuthorizationDecision.equals(java.lang.Object)
+security.AuthorizationDecision | method | public final int security.AuthorizationDecision.hashCode()
+security.AuthorizationDecision | method | public final java.lang.String security.AuthorizationDecision.toString()
+security.AuthorizationDecision | method | public java.lang.String security.AuthorizationDecision.denialCode()
+security.AuthorizationDecision | method | public java.lang.String security.AuthorizationDecision.privacyProfile()
+security.AuthorizationDecision | method | public java.util.Set<java.lang.String> security.AuthorizationDecision.capabilities()
+security.AuthorizationDecision | method | public static security.AuthorizationDecision security.AuthorizationDecision.denied(java.lang.String)
+security.AuthorizationDecision | type | public final record security.AuthorizationDecision
+security.AuthorizationService | constructor | public security.AuthorizationService(security.SecurityPolicy,java.lang.String,core.model.PrivacyScopeType,security.ClientAllowlist)
+security.AuthorizationService | method | public boolean security.AuthorizationService.usesClientAllowlist(security.ClientAllowlist)
+security.AuthorizationService | method | public security.AuthorizationDecision security.AuthorizationService.authorize(security.AuthenticatedCaller,security.ToolInvocation)
+security.AuthorizationService | type | public final class security.AuthorizationService
+security.CaseAccessRequest | constructor | public security.CaseAccessRequest(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.util.Set<java.lang.String>)
+security.CaseAccessRequest | method | public final boolean security.CaseAccessRequest.equals(java.lang.Object)
+security.CaseAccessRequest | method | public final int security.CaseAccessRequest.hashCode()
+security.CaseAccessRequest | method | public final java.lang.String security.CaseAccessRequest.toString()
+security.CaseAccessRequest | method | public java.lang.String security.CaseAccessRequest.caseId()
+security.CaseAccessRequest | method | public java.lang.String security.CaseAccessRequest.clientId()
+security.CaseAccessRequest | method | public java.lang.String security.CaseAccessRequest.principalId()
+security.CaseAccessRequest | method | public java.lang.String security.CaseAccessRequest.purpose()
+security.CaseAccessRequest | method | public java.util.Set<java.lang.String> security.CaseAccessRequest.roles()
+security.CaseAccessRequest | type | public final record security.CaseAccessRequest
+security.CaseAuthorizer | method | public abstract boolean security.CaseAuthorizer.isAuthorised(security.CaseAccessRequest)
+security.CaseAuthorizer | method | public static security.CaseAuthorizer security.CaseAuthorizer.tokenTrusted()
+security.CaseAuthorizer | type | public abstract interface security.CaseAuthorizer
+security.ClaimNames | constructor | public security.ClaimNames(java.lang.String,java.util.List<java.lang.String>,java.lang.String,java.lang.String,java.lang.String)
+security.ClaimNames | field | public static final security.ClaimNames security.ClaimNames.DEFAULT
+security.ClaimNames | method | public final boolean security.ClaimNames.equals(java.lang.Object)
+security.ClaimNames | method | public final int security.ClaimNames.hashCode()
+security.ClaimNames | method | public final java.lang.String security.ClaimNames.toString()
+security.ClaimNames | method | public java.lang.String security.ClaimNames.caseId()
+security.ClaimNames | method | public java.lang.String security.ClaimNames.principal()
+security.ClaimNames | method | public java.lang.String security.ClaimNames.purpose()
+security.ClaimNames | method | public java.lang.String security.ClaimNames.roles()
+security.ClaimNames | method | public java.util.List<java.lang.String> security.ClaimNames.client()
+security.ClaimNames | type | public final record security.ClaimNames
+security.ClientAllowlist | method | public boolean security.ClientAllowlist.equals(java.lang.Object)
+security.ClientAllowlist | method | public boolean security.ClientAllowlist.permits(java.lang.String)
+security.ClientAllowlist | method | public int security.ClientAllowlist.hashCode()
+security.ClientAllowlist | method | public static security.ClientAllowlist security.ClientAllowlist.of(java.util.Set<java.lang.String>)
+security.ClientAllowlist | method | public static security.ClientAllowlist security.ClientAllowlist.unrestricted()
+security.ClientAllowlist | type | public final class security.ClientAllowlist
+security.OversightPolicy | constructor | public security.OversightPolicy(java.util.Set<java.lang.String>,java.util.OptionalInt,java.time.Duration,java.time.Duration)
+security.OversightPolicy | constructor | public security.OversightPolicy(java.util.Set<java.lang.String>,java.util.OptionalInt,java.time.Duration,java.time.Duration,int)
+security.OversightPolicy | field | public static final int security.OversightPolicy.DEFAULT_MAX_PENDING_PER_REQUESTER
+security.OversightPolicy | method | public final boolean security.OversightPolicy.equals(java.lang.Object)
+security.OversightPolicy | method | public final int security.OversightPolicy.hashCode()
+security.OversightPolicy | method | public final java.lang.String security.OversightPolicy.toString()
+security.OversightPolicy | method | public int security.OversightPolicy.maxPendingPerRequester()
+security.OversightPolicy | method | public java.time.Duration security.OversightPolicy.approvalTtl()
+security.OversightPolicy | method | public java.time.Duration security.OversightPolicy.callerWindow()
+security.OversightPolicy | method | public java.util.OptionalInt security.OversightPolicy.callerRequestLimit()
+security.OversightPolicy | method | public java.util.Set<java.lang.String> security.OversightPolicy.approvalRequiredTools()
+security.OversightPolicy | method | public static security.OversightPolicy security.OversightPolicy.none()
+security.OversightPolicy | type | public final record security.OversightPolicy
+security.PrivacySession | constructor | public security.PrivacySession(core.model.PrivacyContext,core.model.InvestigationContext)
+security.PrivacySession | method | public core.model.InvestigationContext security.PrivacySession.investigationContext()
+security.PrivacySession | method | public core.model.PrivacyContext security.PrivacySession.privacyContext()
+security.PrivacySession | method | public final boolean security.PrivacySession.equals(java.lang.Object)
+security.PrivacySession | method | public final int security.PrivacySession.hashCode()
+security.PrivacySession | method | public final java.lang.String security.PrivacySession.toString()
+security.PrivacySession | type | public final record security.PrivacySession
+security.PurposeValidator | constructor | public security.PurposeValidator(java.util.Set<java.lang.String>)
+security.PurposeValidator | field | public static final java.lang.String security.PurposeValidator.UNKNOWN_PURPOSE
+security.PurposeValidator | method | public java.lang.String security.PurposeValidator.validate(java.lang.String)
+security.PurposeValidator | type | public final class security.PurposeValidator
+security.ReservedArguments | field | public static final java.util.Set<java.lang.String> security.ReservedArguments.NAMES
+security.ReservedArguments | method | public static java.util.Set<java.lang.String> security.ReservedArguments.rejected(java.util.Set<java.lang.String>)
+security.ReservedArguments | type | public final class security.ReservedArguments
+security.ScopeResolver | constructor | public security.ScopeResolver(core.model.PseudonymisationVersion,java.time.Duration,security.PurposeValidator,security.CaseAuthorizer)
+security.ScopeResolver | field | public static final java.lang.String security.ScopeResolver.CASE_AUTHORISATION_UNAVAILABLE
+security.ScopeResolver | field | public static final java.lang.String security.ScopeResolver.CASE_NOT_AUTHORISED
+security.ScopeResolver | method | public boolean security.ScopeResolver.usesCaseAuthorizer(security.CaseAuthorizer)
+security.ScopeResolver | method | public security.PrivacySession security.ScopeResolver.resolve(security.AuthenticatedCaller,security.AuthorizationDecision,java.time.Clock)
+security.ScopeResolver | type | public final class security.ScopeResolver
+security.SecurityPolicy | constructor | public security.SecurityPolicy(java.util.Set<java.lang.String>,java.util.Map<java.lang.String, java.util.Set<java.lang.String>>)
+security.SecurityPolicy | method | public final boolean security.SecurityPolicy.equals(java.lang.Object)
+security.SecurityPolicy | method | public final int security.SecurityPolicy.hashCode()
+security.SecurityPolicy | method | public final java.lang.String security.SecurityPolicy.toString()
+security.SecurityPolicy | method | public java.util.Map<java.lang.String, java.util.Set<java.lang.String>> security.SecurityPolicy.roleCapabilities()
+security.SecurityPolicy | method | public java.util.Set<java.lang.String> security.SecurityPolicy.allowedPurposes()
+security.SecurityPolicy | method | public java.util.Set<java.lang.String> security.SecurityPolicy.capabilitiesFor(java.util.Set<java.lang.String>)
+security.SecurityPolicy | method | public static security.SecurityPolicy security.SecurityPolicy.fromYaml(java.io.InputStream)
+security.SecurityPolicy | type | public final record security.SecurityPolicy
+security.SecurityRefusedException | constructor | public security.SecurityRefusedException(java.lang.String,java.lang.String)
+security.SecurityRefusedException | extends | java.lang.RuntimeException
+security.SecurityRefusedException | method | public java.lang.String security.SecurityRefusedException.code()
+security.SecurityRefusedException | type | public class security.SecurityRefusedException
+security.ToolAdmission | constructor | public security.ToolAdmission(oversight.OversightState,oversight.ApprovalStore,oversight.CallerRateLimiter,security.OversightPolicy,java.time.Clock)
+security.ToolAdmission | method | public security.AdmissionDecision security.ToolAdmission.admit(security.AuthenticatedCaller,java.lang.String,java.lang.String,java.lang.String)
+security.ToolAdmission | method | public static security.ToolAdmission security.ToolAdmission.none()
+security.ToolAdmission | type | public class security.ToolAdmission
+security.ToolInvocation | constructor | public security.ToolInvocation(java.lang.String,java.lang.String)
+security.ToolInvocation | method | public final boolean security.ToolInvocation.equals(java.lang.Object)
+security.ToolInvocation | method | public final int security.ToolInvocation.hashCode()
+security.ToolInvocation | method | public final java.lang.String security.ToolInvocation.toString()
+security.ToolInvocation | method | public java.lang.String security.ToolInvocation.requiredCapability()
+security.ToolInvocation | method | public java.lang.String security.ToolInvocation.toolName()
+security.ToolInvocation | type | public final record security.ToolInvocation
+server.operator.OperatorCallers | method | public abstract java.util.Optional<security.AuthenticatedCaller> server.operator.OperatorCallers.current()
+server.operator.OperatorCallers | type | public abstract interface server.operator.OperatorCallers
+spring.boot.HmacKeyReferenceResolver | method | public abstract byte[] spring.boot.HmacKeyReferenceResolver.resolve(java.lang.String,java.lang.String)
+spring.boot.HmacKeyReferenceResolver | method | public default byte[] spring.boot.HmacKeyReferenceResolver.resolveProviderReference(java.lang.String,java.lang.String)
+spring.boot.HmacKeyReferenceResolver | type | public abstract interface spring.boot.HmacKeyReferenceResolver
+validation.FreeTextRecogniser | method | public abstract java.util.Set<annotations.DataClassification> validation.FreeTextRecogniser.recognise(java.lang.String)
+validation.FreeTextRecogniser | type | public abstract interface validation.FreeTextRecogniser
+validation.LlmResponseValidator | method | public abstract validation.ValidationResult validation.LlmResponseValidator.validate(tools.jackson.databind.JsonNode,java.util.Set<java.lang.String>,java.util.Set<java.lang.String>,core.model.PrivacyContext)
+validation.LlmResponseValidator | type | public abstract interface validation.LlmResponseValidator
+validation.RawValueLeakValidator | constructor | public validation.RawValueLeakValidator()
+validation.RawValueLeakValidator | implements | validation.LlmResponseValidator
+validation.RawValueLeakValidator | method | public validation.ValidationResult validation.RawValueLeakValidator.validate(tools.jackson.databind.JsonNode,java.util.Set<java.lang.String>,java.util.Set<java.lang.String>,core.model.PrivacyContext)
+validation.RawValueLeakValidator | type | public final class validation.RawValueLeakValidator
+validation.ScanReport | constructor | public validation.ScanReport(java.util.List<validation.SensitiveMatch>,boolean)
+validation.ScanReport | method | public boolean validation.ScanReport.complete()
+validation.ScanReport | method | public final boolean validation.ScanReport.equals(java.lang.Object)
+validation.ScanReport | method | public final int validation.ScanReport.hashCode()
+validation.ScanReport | method | public final java.lang.String validation.ScanReport.toString()
+validation.ScanReport | method | public java.util.List<validation.SensitiveMatch> validation.ScanReport.matches()
+validation.ScanReport | method | public static validation.ScanReport validation.ScanReport.complete(java.util.List<validation.SensitiveMatch>)
+validation.ScanReport | method | public static validation.ScanReport validation.ScanReport.truncated(java.util.List<validation.SensitiveMatch>)
+validation.ScanReport | type | public final record validation.ScanReport
+validation.SensitiveDataScanner | constructor | public validation.SensitiveDataScanner()
+validation.SensitiveDataScanner | constructor | public validation.SensitiveDataScanner(int)
+validation.SensitiveDataScanner | field | public static final int validation.SensitiveDataScanner.DEFAULT_CHARACTER_BUDGET
+validation.SensitiveDataScanner | method | public validation.ScanReport validation.SensitiveDataScanner.scan(tools.jackson.databind.JsonNode)
+validation.SensitiveDataScanner | method | public validation.ScanReport validation.SensitiveDataScanner.scan(tools.jackson.databind.JsonNode,java.util.function.Predicate<java.lang.String>)
+validation.SensitiveDataScanner | type | public final class validation.SensitiveDataScanner
+validation.SensitiveMatch | constructor | public validation.SensitiveMatch(java.lang.String,annotations.DataClassification,java.lang.String)
+validation.SensitiveMatch | method | public annotations.DataClassification validation.SensitiveMatch.classification()
+validation.SensitiveMatch | method | public final boolean validation.SensitiveMatch.equals(java.lang.Object)
+validation.SensitiveMatch | method | public final int validation.SensitiveMatch.hashCode()
+validation.SensitiveMatch | method | public final java.lang.String validation.SensitiveMatch.toString()
+validation.SensitiveMatch | method | public java.lang.String validation.SensitiveMatch.detectionMethod()
+validation.SensitiveMatch | method | public java.lang.String validation.SensitiveMatch.path()
+validation.SensitiveMatch | type | public final record validation.SensitiveMatch
+validation.SensitivePatternValidator | constructor | public validation.SensitivePatternValidator()
+validation.SensitivePatternValidator | constructor | public validation.SensitivePatternValidator(validation.SensitiveDataScanner,java.util.List<validation.FreeTextRecogniser>)
+validation.SensitivePatternValidator | field | public static final java.lang.String validation.SensitivePatternValidator.FREE_TEXT_RECOGNISED
+validation.SensitivePatternValidator | field | public static final java.lang.String validation.SensitivePatternValidator.FREE_TEXT_RECOGNISER_FAILED
+validation.SensitivePatternValidator | field | public static final java.lang.String validation.SensitivePatternValidator.SCAN_INCOMPLETE
+validation.SensitivePatternValidator | field | public static final java.lang.String validation.SensitivePatternValidator.SENSITIVE_PATTERN
+validation.SensitivePatternValidator | implements | validation.LlmResponseValidator
+validation.SensitivePatternValidator | method | public validation.ValidationResult validation.SensitivePatternValidator.validate(tools.jackson.databind.JsonNode,java.util.Set<java.lang.String>,java.util.Set<java.lang.String>,core.model.PrivacyContext)
+validation.SensitivePatternValidator | type | public final class validation.SensitivePatternValidator
+validation.ValidationResult | constructor | public validation.ValidationResult(boolean,java.util.List<validation.Violation>)
+validation.ValidationResult | method | public boolean validation.ValidationResult.valid()
+validation.ValidationResult | method | public final boolean validation.ValidationResult.equals(java.lang.Object)
+validation.ValidationResult | method | public final int validation.ValidationResult.hashCode()
+validation.ValidationResult | method | public final java.lang.String validation.ValidationResult.toString()
+validation.ValidationResult | method | public java.util.List<validation.Violation> validation.ValidationResult.violations()
+validation.ValidationResult | method | public static validation.ValidationResult validation.ValidationResult.failed(java.util.List<validation.Violation>)
+validation.ValidationResult | method | public static validation.ValidationResult validation.ValidationResult.ok()
+validation.ValidationResult | type | public final record validation.ValidationResult
+validation.Violation | constructor | public validation.Violation(java.lang.String,java.lang.String,java.lang.String)
+validation.Violation | constructor | public validation.Violation(java.lang.String,java.lang.String,java.lang.String,java.lang.String)
+validation.Violation | method | public final boolean validation.Violation.equals(java.lang.Object)
+validation.Violation | method | public final int validation.Violation.hashCode()
+validation.Violation | method | public final java.lang.String validation.Violation.toString()
+validation.Violation | method | public java.lang.String validation.Violation.classification()
+validation.Violation | method | public java.lang.String validation.Violation.code()
+validation.Violation | method | public java.lang.String validation.Violation.detectionMethod()
+validation.Violation | method | public java.lang.String validation.Violation.path()
+validation.Violation | type | public final record validation.Violation

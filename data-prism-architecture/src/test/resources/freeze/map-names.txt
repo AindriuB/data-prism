@@ -1,0 +1,22 @@
+# Hazelcast map and protection names read from PrivacyCluster's constants (register section 8.1).
+# Regenerate: ./mvnw -pl data-prism-architecture -am test -Dtest=MapNamesFreezeTest -Dfreeze.write=<dir> -Dsurefire.failIfNoSpecifiedTests=false
+legacy-map dataprism.approval
+legacy-map dataprism.approval.id
+legacy-map dataprism.approval.pending
+legacy-map dataprism.budget
+legacy-map dataprism.callerrate
+legacy-map dataprism.identity
+legacy-map dataprism.oversight
+legacy-map dataprism.reidentification
+map dataprism.approval.consumed.s1
+map dataprism.approval.id.s1
+map dataprism.approval.pending.s1
+map dataprism.approval.s1
+map dataprism.budget.s1
+map dataprism.callerrate.s1
+map dataprism.identity.s1
+map dataprism.membercard.s1
+map dataprism.oversight
+map dataprism.oversight.s1
+map dataprism.reidentification.s1
+protection dataprism.approval.quorum
