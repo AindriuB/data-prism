@@ -110,6 +110,38 @@
             <TASK61_TLS_PASSWORD>dp-test-only-not-a-real-secret</TASK61_TLS_PASSWORD>
           </environmentVariables>
         </configuration>
+        <executions>
+          <!-- The link scans (LinkHttpRun) set the JVM-wide javax.net.ssl.trustStore to their own JWKS certificate, as
+               McpHttpEndToEndTest does to a different one. The JDK builds its default SSLContext once per JVM, so
+               whichever boots second fails its JWKS fetch. These classes therefore run in forks of their own, one
+               per class, and the default execution leaves them out. -->
+          <execution>
+            <id>default-test</id>
+            <configuration>
+              <excludes>
+                <exclude>**/PiiLogScanTest.java</exclude>
+                <exclude>**/AuditFilePiiScanTest.java</exclude>
+                <exclude>**/AuditFieldDispositionTest.java</exclude>
+              </excludes>
+            </configuration>
+          </execution>
+          <execution>
+            <id>link-scans</id>
+            <phase>test</phase>
+            <goals>
+              <goal>test</goal>
+            </goals>
+            <configuration>
+              <includes>
+                <include>**/PiiLogScanTest.java</include>
+                <include>**/AuditFilePiiScanTest.java</include>
+                <include>**/AuditFieldDispositionTest.java</include>
+              </includes>
+              <forkCount>1</forkCount>
+              <reuseForks>false</reuseForks>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>

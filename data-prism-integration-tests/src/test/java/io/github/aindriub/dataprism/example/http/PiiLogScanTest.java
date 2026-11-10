@@ -1567,7 +1567,10 @@ class PiiLogScanTest {
             assertThat(links).as("the order source's chainable customerId must yield a link").isNotEmpty();
             McpSchema.CallToolResult valid = call(client, "follow", Map.of("link", links.get(0)));
             followed = valid.isError() != Boolean.TRUE;
-            call(client, "follow", Map.of("link", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"));
+            // A client-supplied argument is banned from every log line and audit record too, not only issued tokens.
+            String invalid = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+            tokens.add(invalid);
+            call(client, "follow", Map.of("link", invalid));
         }
 
         private McpSchema.CallToolResult call(McpSyncClient client, String tool, Map<String, Object> arguments) {
