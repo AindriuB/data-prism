@@ -2,6 +2,12 @@ package io.github.aindriub.dataprism.spring.boot;
 
 import io.github.aindriub.dataprism.core.link.LinkAttemptGate;
 import io.github.aindriub.dataprism.core.link.LinkAttemptLimiter;
+import io.github.aindriub.dataprism.core.link.LinkCodec;
+import io.github.aindriub.dataprism.core.link.LinkSettings;
+import io.github.aindriub.dataprism.core.model.InvestigationContext;
+import io.github.aindriub.dataprism.core.model.PrivacyContext;
+import io.github.aindriub.dataprism.core.model.PrivacyScopeType;
+import io.github.aindriub.dataprism.core.model.PseudonymisationVersion;
 import io.github.aindriub.dataprism.core.link.InMemoryLinkAttemptLimiter;
 import io.github.aindriub.dataprism.orchestration.OrchestrationOptions;
 import io.github.aindriub.dataprism.orchestration.catalog.CatalogQueries;
@@ -14,7 +20,9 @@ import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -87,6 +95,37 @@ class LinksConfigurationTest {
             LinkAttemptGate gate = result.getBean(LinkAttemptGate.class);
             assertThat(result.getBean(OrchestrationOptions.class).follow().get().gate()).isSameAs(gate);
             assertThat(result).hasSingleBean(CatalogQueries.class);
+            assertThat(pageGate(result.getBean(CatalogQueries.class))).isSameAs(gate);
+        });
+    }
+
+    /** The gate inside the catalog's page links; there is no accessor, so it is read from the field. */
+    private static LinkAttemptGate pageGate(CatalogQueries queries) throws ReflectiveOperationException {
+        java.lang.reflect.Field field = CatalogQueries.class.getDeclaredField("links");
+        field.setAccessible(true);
+        CatalogQueries.PageLinks links = (CatalogQueries.PageLinks) field.get(queries);
+        assertThat(links).isNotNull();
+        return links.gate();
+    }
+
+    @Test
+    void with_a_link_key_and_links_off_invalid_page_values_on_list_sources_lock_the_caller_out() {
+        context.withPropertyValues(KEY, KEY_REF, "dataprism.links.invalid-attempt-limit=3").run(result -> {
+            assertThat(result).hasNotFailed();
+            assertThat(pageGate(result.getBean(CatalogQueries.class))).isSameAs(result.getBean(LinkAttemptGate.class));
+            CatalogQueries queries = result.getBean(CatalogQueries.class);
+            InvestigationContext caller = new InvestigationContext("investigator-1", "client-1", "CASE-1",
+                    Set.of(io.github.aindriub.dataprism.core.model.Capability.EXPOSE_SOURCE_NAMES));
+            PrivacyContext scope = new PrivacyContext("scope-a", PrivacyScopeType.CASE, "DEFAULT", "test",
+                    Instant.parse("2030-01-01T00:00:00Z"), PseudonymisationVersion.HMAC_SHA256_V1.withKey("v1"));
+            CatalogQueries.ListRequest invalid =
+                    new CatalogQueries.ListRequest(null, null, null, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+            for (int i = 0; i < 3; i++) {
+                assertThat(queries.listSources(invalid, caller, scope, null, "c").refusalCode())
+                        .isNotEqualTo("LINK_ATTEMPTS_EXHAUSTED");
+            }
+            assertThat(queries.listSources(invalid, caller, scope, null, "c").refusalCode())
+                    .isEqualTo("LINK_ATTEMPTS_EXHAUSTED");
         });
     }
 
@@ -103,7 +142,23 @@ class LinksConfigurationTest {
                     assertThat(options.follow().get().maxTargets()).isEqualTo(16);
                     assertThat(options.follow().get().resolverTimeout()).isEqualTo(Duration.ofSeconds(5));
                     assertThat(options.follow().get().budgetCost()).isEqualTo(2);
+                    LinkSettings settings = codecSettings(result.getBean(LinkCodec.class));
+                    assertThat(settings.lifetime()).contains(Duration.ofMinutes(20));
+                    assertThat(settings.maxLength()).isEqualTo(2048);
+                    assertThat(settings.clockSkew()).isEqualTo(Duration.ofSeconds(10));
+                    assertThat(settings.bindCaller()).isFalse();
+                    // The served follow schema bounds the link by the configured length, not the default.
+                    McpSchema.Tool follow = result.getBean(McpSyncServer.class).listTools().stream()
+                            .filter(tool -> tool.name().equals("follow")).findFirst().orElseThrow();
+                    assertThat(follow.inputSchema().toString()).contains("maxLength=2048")
+                            .doesNotContain("maxLength=1024");
                 });
+    }
+
+    private static LinkSettings codecSettings(LinkCodec codec) throws ReflectiveOperationException {
+        java.lang.reflect.Field field = LinkCodec.class.getDeclaredField("settings");
+        field.setAccessible(true);
+        return (LinkSettings) field.get(codec);
     }
 
     @Test

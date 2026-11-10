@@ -2,6 +2,7 @@ package io.github.aindriub.dataprism.spring.boot;
 
 import com.hazelcast.core.Hazelcast;
 import io.github.aindriub.dataprism.core.link.AttemptSubject;
+import io.github.aindriub.dataprism.core.link.ClusterWideLinkAttemptLimiter;
 import io.github.aindriub.dataprism.core.link.InMemoryLinkAttemptLimiter;
 import io.github.aindriub.dataprism.core.link.LinkAttemptGate;
 import io.github.aindriub.dataprism.core.link.LinkAttemptLimiter;
@@ -45,11 +46,99 @@ class LinkAttemptLimiterConfigurationTest {
         Hazelcast.shutdownAll();
     }
 
-    /** Counts as shared by every member; the delegate only supplies the behaviour. */
+    /** Declared as the marker, so it counts as shared by every member. */
     @Configuration(proxyBeanMethods = false)
     static class ClusterWideLimiter {
-        @Bean LinkAttemptLimiter sharedLimiter() {
+        @Bean ClusterWideLinkAttemptLimiter sharedLimiter() {
+            return new StubClusterWide();
+        }
+    }
+
+    /** Declared only as {@code LinkAttemptLimiter}, though its {@code clusterWide()} is {@code true}: refused. */
+    @Configuration(proxyBeanMethods = false)
+    static class ClaimedClusterWideLimiter {
+        @Bean LinkAttemptLimiter claimedLimiter() {
             return new StubLimiter(true);
+        }
+    }
+
+    /** A {@code FactoryBean} with no declared object type: the factory cannot read it without building it. */
+    @Configuration(proxyBeanMethods = false)
+    static class UntypedLimiterFactory {
+        @Bean org.springframework.beans.factory.FactoryBean<?> untypedLimiter() {
+            return new org.springframework.beans.factory.FactoryBean<Object>() {
+                @Override public Object getObject() {
+                    return new StubClusterWide();
+                }
+
+                @Override public Class<?> getObjectType() {
+                    return null;
+                }
+            };
+        }
+    }
+
+    /** Its factory method reads the bound properties; the recorder shows what it saw and that post-processors ran. */
+    static final class Probe {
+        static volatile String issuerSeen;
+        static final List<String> BEFORE_INIT = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+        static void reset() {
+            issuerSeen = null;
+            BEFORE_INIT.clear();
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class InjectingClusterWideLimiter {
+        @Bean ClusterWideLinkAttemptLimiter injectingLimiter(DataPrismProperties properties,
+                                                             io.github.aindriub.dataprism.hazelcast.PrivacyCluster cluster) {
+            Probe.issuerSeen = properties.getSecurity().getJwt().getIssuer();
+            return new StubClusterWide();
+        }
+
+        @Bean static org.springframework.beans.factory.config.BeanPostProcessor limiterObserver() {
+            return new org.springframework.beans.factory.config.BeanPostProcessor() {
+                @Override public Object postProcessBeforeInitialization(Object bean, String name) {
+                    if (bean instanceof ClusterWideLinkAttemptLimiter) {
+                        Probe.BEFORE_INIT.add(name);
+                    }
+                    return bean;
+                }
+            };
+        }
+    }
+
+    static final class StubClusterWide implements ClusterWideLinkAttemptLimiter {
+        @Override public LockState lockState(AttemptSubject subject) {
+            return LockState.UNAVAILABLE;
+        }
+
+        @Override public Admission recordFailure(AttemptSubject subject) {
+            return Admission.UNAVAILABLE;
+        }
+    }
+
+    /** A clock the test moves. */
+    @Configuration(proxyBeanMethods = false)
+    static class MovableClock {
+        static final java.util.concurrent.atomic.AtomicReference<java.time.Instant> NOW =
+                new java.util.concurrent.atomic.AtomicReference<>(java.time.Instant.parse("2030-01-01T00:00:00Z"));
+
+        @Bean Clock dataPrismClock() {
+            return new Clock() {
+                @Override public java.time.ZoneId getZone() {
+                    return java.time.ZoneOffset.UTC;
+                }
+
+                @Override public Clock withZone(java.time.ZoneId zone) {
+                    return this;
+                }
+
+                @Override public java.time.Instant instant() {
+                    return NOW.get();
+                }
+            };
         }
     }
 
@@ -147,6 +236,93 @@ class LinkAttemptLimiterConfigurationTest {
                 .run(result -> assertThat(result).hasNotFailed());
     }
 
+    @Test
+    void tcp_ip_refuses_a_limiter_declared_only_as_the_base_type_even_when_it_claims_to_be_cluster_wide() {
+        refused(runner("embedded", "tcp-ip", LINKS_ON, ClaimedClusterWideLimiter.class));
+    }
+
+    @Test
+    void tcp_ip_refuses_a_limiter_whose_type_cannot_be_read_without_building_it() {
+        refused(runner("embedded", "tcp-ip", LINKS_ON, UntypedLimiterFactory.class));
+    }
+
+    @Test
+    void the_refusal_tells_the_application_to_declare_the_marker_type() {
+        runner("embedded", "tcp-ip", LINKS_ON, ClaimedClusterWideLimiter.class).run(result ->
+                assertThat(LinksConfigurationTest.refusal(result.getStartupFailure()).getMessage())
+                        .contains("ClusterWideLinkAttemptLimiter"));
+    }
+
+    @Test
+    void a_cluster_wide_limiter_that_injects_the_properties_and_the_cluster_is_built_after_binding() {
+        Probe.reset();
+        runner("embedded", "tcp-ip", LINKS_ON, InjectingClusterWideLimiter.class).run(result -> {
+            assertThat(result).hasNotFailed();
+            assertThat(Probe.issuerSeen).isNotNull();
+            assertThat(Probe.BEFORE_INIT).contains("injectingLimiter");
+        });
+    }
+
+    @Test
+    void the_preflight_builds_no_bean() {
+        DefaultListableBeanFactory factory = new DefaultListableBeanFactory();
+        factory.registerBeanDefinition("limiter", org.springframework.beans.factory.support.BeanDefinitionBuilder
+                .rootBeanDefinition(StubClusterWide.class, () -> {
+                    throw new AssertionError("the preflight built the limiter");
+                }).getBeanDefinition());
+        assertThatCode(() -> Preflights.dataPrismLinkLimiterPreflight(environment("tcp-ip", LINKS_ON))
+                .postProcessBeanFactory(factory)).doesNotThrowAnyException();
+    }
+
+    // ---- an application-supplied PrivacyCluster counts as joining one ---------------------------------
+
+    private static WebApplicationContextRunner suppliedCluster(Class<?>... extra) {
+        List<Class<?>> configurations = new ArrayList<>(List.of(ClusterKeyConfigurationTest.KeyIntegrations.class,
+                ClusterConfigurationTest.SuppliedCluster.class));
+        configurations.addAll(List.of(extra));
+        return new WebApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
+                .withUserConfiguration(configurations.toArray(Class<?>[]::new))
+                .withPropertyValues(OversightConfigurationTest.base("embedded"))
+                .withPropertyValues(LINKS_ON);
+    }
+
+    @Test
+    void a_supplied_cluster_is_refused_without_a_limiter() {
+        refused(suppliedCluster());
+    }
+
+    @Test
+    void a_supplied_cluster_is_refused_with_a_limiter_declared_only_as_the_base_type() {
+        refused(suppliedCluster(ClaimedClusterWideLimiter.class));
+    }
+
+    @Test
+    void a_supplied_cluster_starts_with_a_cluster_wide_limiter() {
+        suppliedCluster(ClusterWideLimiter.class).run(result -> assertThat(result).hasNotFailed());
+    }
+
+    @Test
+    void the_supplied_cluster_refusal_message_names_the_case_and_no_value() {
+        suppliedCluster().run(result -> assertThat(LinksConfigurationTest.refusal(result.getStartupFailure())
+                .getMessage()).contains("supplies its own PrivacyCluster").doesNotContain("lk1")
+                .doesNotContain("LINK_REF"));
+    }
+
+    @Test
+    void the_framework_s_own_cluster_is_not_a_supplied_cluster() {
+        DefaultListableBeanFactory factory = new DefaultListableBeanFactory();
+        factory.registerBeanDefinition("dataPrismPrivacyCluster",
+                org.springframework.beans.factory.support.BeanDefinitionBuilder
+                        .rootBeanDefinition(io.github.aindriub.dataprism.hazelcast.PrivacyCluster.class)
+                        .setFactoryMethodOnBean("dataPrismPrivacyCluster", "clusterBackedState")
+                        .getBeanDefinition());
+        factory.registerBeanDefinition("clusterBackedState",
+                org.springframework.beans.factory.support.BeanDefinitionBuilder
+                        .rootBeanDefinition(ClusterBackedState.class).getBeanDefinition());
+        assertThat(LinkWiring.suppliesCluster(factory)).isFalse();
+    }
+
     // ---- kubernetes: refused in a running context; the started rows run the preflight itself ---------
 
     @ParameterizedTest
@@ -160,7 +336,7 @@ class LinkAttemptLimiterConfigurationTest {
     void kubernetes_starts_past_the_preflight_with_a_cluster_wide_limiter(String links) {
         MockEnvironment environment = environment("kubernetes", "links-on".equals(links) ? LINKS_ON : LINK_KEY_ONLY);
         DefaultListableBeanFactory factory = new DefaultListableBeanFactory();
-        factory.registerSingleton("sharedLimiter", new StubLimiter(true));
+        factory.registerSingleton("sharedLimiter", new StubClusterWide());
         assertThatCode(() -> Preflights.dataPrismLinkLimiterPreflight(environment).postProcessBeanFactory(factory))
                 .doesNotThrowAnyException();
         DefaultListableBeanFactory none = new DefaultListableBeanFactory();
@@ -194,11 +370,24 @@ class LinkAttemptLimiterConfigurationTest {
     }
 
     @Test
-    void the_in_memory_limiter_is_built_from_the_configured_limit_and_window() {
-        runner("single-node", "none", LINKS_ON).withPropertyValues("dataprism.links.invalid-attempt-limit=3",
-                "dataprism.links.invalid-attempt-window=PT1M").run(result -> {
+    void the_in_memory_limiter_honours_the_configured_limit_and_window_with_a_fixed_clock() {
+        MovableClock.NOW.set(java.time.Instant.parse("2030-01-01T00:00:00Z"));
+        runner("single-node", "none", LINKS_ON, MovableClock.class).withPropertyValues(
+                "dataprism.links.invalid-attempt-limit=3", "dataprism.links.invalid-attempt-window=PT1M")
+                .run(result -> {
                     assertThat(result).hasNotFailed();
-                    assertThat(result.getBean(LinkAttemptLimiter.class)).isInstanceOf(InMemoryLinkAttemptLimiter.class);
+                    LinkAttemptLimiter limiter = result.getBean(LinkAttemptLimiter.class);
+                    assertThat(limiter).isInstanceOf(InMemoryLinkAttemptLimiter.class);
+                    AttemptSubject subject = new AttemptSubject("scope-a", "investigator-1");
+                    for (int i = 0; i < 3; i++) {
+                        assertThat(limiter.lockState(subject)).isEqualTo(LinkAttemptLimiter.LockState.UNLOCKED);
+                        assertThat(limiter.recordFailure(subject)).isEqualTo(LinkAttemptLimiter.Admission.WITHIN_LIMIT);
+                    }
+                    assertThat(limiter.lockState(subject)).isEqualTo(LinkAttemptLimiter.LockState.LOCKED);
+                    MovableClock.NOW.set(java.time.Instant.parse("2030-01-01T00:00:59Z"));
+                    assertThat(limiter.lockState(subject)).isEqualTo(LinkAttemptLimiter.LockState.LOCKED);
+                    MovableClock.NOW.set(java.time.Instant.parse("2030-01-01T00:01:01Z"));
+                    assertThat(limiter.lockState(subject)).isEqualTo(LinkAttemptLimiter.LockState.UNLOCKED);
                 });
     }
 

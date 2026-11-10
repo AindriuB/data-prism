@@ -34,6 +34,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.core.env.Environment;
 import org.springframework.core.type.AnnotatedTypeMetadata;
+import org.springframework.util.ClassUtils;
 
 import java.time.Clock;
 import java.util.ArrayList;
@@ -54,10 +55,12 @@ import java.util.Set;
  * as the raw limiter.
  *
  * <p>The limiter. On {@code single-node}, and on {@code embedded} with {@code join.mode: none}, the in-memory limiter
- * is the default and is never refused. On {@code embedded} with {@code tcp-ip} or {@code kubernetes} the count must
- * be shared by every member, or one caller could try {@code limit} links on each member: unless the
- * {@link LinkAttemptLimiter} bean says {@code clusterWide()}, startup refuses with {@code MISSING_SHARED_LINK_LIMITER}.
- * No cluster-wide limiter ships in 1.0, so on such a member an application must supply one.
+ * is the default and is never refused. On {@code embedded} with {@code tcp-ip} or {@code kubernetes}, or with an
+ * application-supplied {@code PrivacyCluster} even of one member, the count must be shared by every member, or one
+ * caller could try {@code limit} links on each member: unless an application limiter is declared as
+ * {@link io.github.aindriub.dataprism.core.link.ClusterWideLinkAttemptLimiter}, startup refuses with
+ * {@code MISSING_SHARED_LINK_LIMITER}. No cluster-wide limiter ships in 1.0, so on such a member an application
+ * must supply one.
  */
 @Configuration(proxyBeanMethods = false)
 @Import(LinkKeysHealth.class)
@@ -84,13 +87,42 @@ class LinkWiring {
         }
     }
 
-    /** Whether this member joins a cluster of others: {@code embedded} with {@code tcp-ip} or {@code kubernetes}. */
-    static boolean joinsCluster(Environment environment) {
+    private static final String CLUSTER_TYPE = "io.github.aindriub.dataprism.hazelcast.PrivacyCluster";
+
+    /**
+     * Whether this member must share the failed-attempt count: {@code embedded} with {@code tcp-ip} or
+     * {@code kubernetes}, or with a {@code PrivacyCluster} the application supplies (see {@link #suppliesCluster}).
+     */
+    static boolean joinsCluster(Environment environment, ConfigurableListableBeanFactory factory) {
         if (!"embedded".equals(environment.getProperty("dataprism.hazelcast.topology"))) {
             return false;
         }
         String mode = environment.getProperty("dataprism.hazelcast.join.mode");
-        return mode != null && ("tcp-ip".equals(mode.strip()) || "kubernetes".equals(mode.strip()));
+        return mode != null && ("tcp-ip".equals(mode.strip()) || "kubernetes".equals(mode.strip()))
+                || suppliesCluster(factory);
+    }
+
+    /**
+     * Whether a {@code PrivacyCluster} that data-prism did not build is defined, judged from definitions only (no bean
+     * is built). The class is looked up by name so this class never loads the optional type; absent, no such bean
+     * exists. Ownership is {@link ClusterBackedState#builtHere}, by definition origin and never by name.
+     */
+    static boolean suppliesCluster(ConfigurableListableBeanFactory factory) {
+        ClassLoader loader = factory.getBeanClassLoader();
+        if (!ClassUtils.isPresent(CLUSTER_TYPE, loader)) {
+            return false;
+        }
+        try {
+            Class<?> type = ClassUtils.forName(CLUSTER_TYPE, loader);
+            for (String name : factory.getBeanNamesForType(type, true, false)) {
+                if (!ClusterBackedState.builtHere(factory, name)) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (ClassNotFoundException | LinkageError absent) {
+            return false;
+        }
     }
 
     /** {@link #consumerActive(Environment)} as a bean condition. */
@@ -167,8 +199,8 @@ class LinkWiring {
     }
 
     /**
-     * The in-memory limiter, unless the application supplies its own. It is the default on every topology and is
-     * refused later by {@link #dataPrismLinkLimiterValidated} where it cannot be shared.
+     * The in-memory limiter, unless the application supplies its own. It is the default on every topology;
+     * {@code Preflights.dataPrismLinkLimiterPreflight} refuses the members where it cannot be shared.
      */
     @Bean(DEFAULT_LIMITER) @ConditionalOnMissingBean(LinkAttemptLimiter.class)
     @Conditional(ConsumerActive.class)
