@@ -11,7 +11,8 @@ Re-planned 2026-10-23 for owner decision (b): 1.0 supports multiple instances on
 **Owns:**
 - load-test/soak/** *(new: scenario files, a Compose overlay for the three-member run, and the fault and capture scripts of design 5.2)*
 - docs/plan/perf/soak-0.8.md *(new)*
-- .github/workflows/load-test.yml *(the scenario choice list only)*
+- .github/workflows/load-test.yml *(whole file; widened from the scenario choice list by the second 2026-11-10 amendment)*
+- load-test/src/** *(the harness driver; added by the second 2026-11-10 amendment)*
 
 ## Goal
 The roadmap's 0.8 readiness includes a soak, including the cluster. Run the 0.8 core for hours, on a single node and on a three-member trusted-network cluster, with the agent-led surface in use (catalog pages, `_links`, `follow`, targeted and untargeted calls) and the failure paths of 258 mixed in, and record whether latency, memory, budget accounting and audit volume stay stable. Run the link timing test that sealed-links obligation 10 asks for. This task also runs the parts of the cluster soak of `cluster-security.md` 5.2 that apply to 1.0 (215's Outcome assigned it here): the fault and hostile-member runs, and the packet capture on the member port. Key rotation under load is deferred with 229.
@@ -33,19 +34,34 @@ The roadmap's 0.8 readiness includes a soak, including the cluster. Run the 0.8 
 
 **Retirement.** This task retires when Part A lands. Part B is then carried in `docs/plan/PLAN.md` under the 0.8.0 release-cut obligations. The scribe adds it there at `/record`, and this task does not edit `PLAN.md`. The Part B items below are moved here verbatim from the pre-split list, with their IDs, so that the release-cut entry can cite them. The **Executor** line above applies to Part B. Owns is unchanged.
 
+## Amendment 2026-11-10 (owner, second): widen Owns for Part A
+**Decision.** Owns gains `load-test/src/**` and the whole of `.github/workflows/load-test.yml`. The first amendment's "Owns is unchanged" no longer holds.
+
+**Reason.** The Part A implementer's PARTIAL report showed AC13, AC15 and AC19 cannot close under the old Owns: the driver exercises `get_entity_context` only, `run.sh` always starts its own server, and the workflow's artifact name and timeout break `../soak/` scenarios.
+
+**What Part A now delivers with them.**
+- A1 The driver can issue `list_sources` walks, `describe_source`, `follow` and invalid links as well as `get_entity_context`. Scenario fields set the mix; an unknown scenario field or tool is still rejected at load. The soak scenarios use the new mix.
+- A2 The driver can target an already-running endpoint (the overlay's load balancer) instead of starting its own server, selected by a scenario field so that `load-test/run.sh` (not in Owns) needs no change. The three-member scenario uses it.
+- A3 `load-test.yml`: the uploaded artifact name does not embed the scenario path, so `../soak/` choices upload; the job timeout covers the longest soak scenario plus a margin.
+- A4 If Docker is available, the overlay is brought up and the fault, probe and capture scripts are smoked for real. If not, the Outcome records that they had `bash -n` only, and the real run is left to the Part B owner run.
+- A5 `fault-hostile-member.sh` (`TAMPER_FLOOD_CMD`) and `fault-clock-skew.sh` (`FAKETIME_LIB`) stay owner-supplied inputs; `load-test/README.md` is not in Owns, so `load-test/soak/README.md` says so.
+
+**Overlap.** `load-test/src/**` intersects 273 (`ServerProcess.java`, configuration arguments only) and 275 (`SourceGenerator.java`, generated `json-sources:` text only). Both are 0.9 and have no edge to 263; left for the orchestrator to resolve.
+
 ## Acceptance
 IDs AC1 to AC12 are the pre-split items in their original order. AC13 onwards are new in Part A.
 
 ### Part A (agent)
 - [ ] AC11 The new soak scenarios and 258's failure-path scenarios are in the `load-test.yml` choice list. Soak entries that live under `load-test/soak/` are listed as paths relative to `load-test/scenarios/` (for example `../soak/<file>.json`), because the workflow runs `load-test/run.sh "load-test/scenarios/${SCENARIO}"`.
-- [ ] AC13 Scenario files under `load-test/soak/`: a single-node mix (100 sources, links enabled, a fixed rate, at least 8 hours, with the AC1 mix of `list_sources` walks, `describe_source`, targeted and untargeted `get_entity_context`, `follow` of direct and translated links, invalid links, timeouts and budget exhaustion) and a three-member mix (the same mix for at least 4 hours through a load balancer, with no `follow` and no page link). Each one loads and runs through `load-test/run.sh`.
+- [ ] AC13 Scenario files under `load-test/soak/`: a single-node mix (100 sources, links enabled, a fixed rate, at least 8 hours, with the AC1 mix of `list_sources` walks, `describe_source`, targeted and untargeted `get_entity_context`, `follow` of direct and translated links, invalid links, timeouts and budget exhaustion) and a three-member mix (the same mix for at least 4 hours through a load balancer, with no `follow` and no page link, targeting the overlay's load balancer per A2). The mix is set by scenario fields the driver executes (A1), not by comments. Each one loads and runs through `load-test/run.sh`.
 - [ ] AC14 A Compose overlay under `load-test/soak/`, applied on top of `docker/multi-instance/compose.yaml`, brings up three members behind a load balancer with `trusted-network: true`, a private `member.interface`, links disabled and no link key. `docker/multi-instance/**` is unchanged.
-- [ ] AC15 Fault-injection scripts under `load-test/soak/` cover every Part B fault: kill and restart a member, kill a partition owner and its backup together, roll all members, a planned full restart for the cluster-key and name-key change, a hostile member (tamper flood), a network partition and clock skew on one member. They also cover the AC3 startup probes (`dataprism.links.enabled=true`, and a link key configured). Each script writes counts and findings only, never an address, a payload byte or a key.
+- [ ] AC15 Fault-injection scripts under `load-test/soak/` cover every Part B fault: kill and restart a member, kill a partition owner and its backup together, roll all members, a planned full restart for the cluster-key and name-key change, a hostile member (tamper flood), a network partition and clock skew on one member. They also cover the AC3 startup probes (`dataprism.links.enabled=true`, and a link key configured). Each script writes counts and findings only, never an address, a payload byte or a key. The hostile-member and clock-skew scripts take `TAMPER_FLOOD_CMD` and `FAKETIME_LIB` from the owner and refuse to run without them; `load-test/soak/README.md` says so (A5).
 - [ ] AC16 A packet-capture script under `load-test/soak/` captures the member port for a named transport profile. It writes raw captures only under `load-test/results/` (git-ignored) or outside the repository, and its summary holds counts and findings only: whether plaintext appears and whether a subject id appears in the clear. It never holds an address, a payload byte or a key.
 - [ ] AC17 `docs/plan/perf/soak-0.8.md` exists as a template. The pass criteria of AC2, AC5, AC6, AC7 and AC8 are written out in advance, and the 221 "Resolving class ... is not allowed" criterion is included. Every Part B measurement has an empty result table: per-hour metrics, the AC3 refusals, the cluster cost, the faults, the key change, hostile member, partition and skew, captures per profile and platform, isolation claims, and `LinkTimingSoakTest`. A machine-specification section holds no hostname, address, user name or workplace detail. No result cell is filled in.
 - [ ] AC18 A script under `load-test/soak/` runs `LinkTimingSoakTest` with `-Ddataprism.timing=true` and prints its result and tolerance in the form the AC10 table takes.
-- [ ] AC19 Each scenario (AC11, AC13), the overlay (AC14) and each script (AC15, AC16, AC18) is run once as a smoke run of a few minutes. The Outcome records what was run, how long it ran and whether it worked, under the AC12 rule, and labels it "harness smoke, not soak evidence". No smoke figure goes into `soak-0.8.md`.
+- [ ] AC19 Each scenario (AC11, AC13) is run once as a smoke run of a few minutes. The overlay (AC14) and each script (AC15, AC16, AC18) are smoked for real if Docker is available; otherwise the Outcome says they had `bash -n` only and are left to Part B (A4). The Outcome records what was run, how long it ran and whether it worked, under the AC12 rule, and labels it "harness smoke, not soak evidence". No smoke figure goes into `soak-0.8.md`.
 - [ ] AC20 No file outside Owns is changed.
+- [ ] AC21 `load-test.yml` meets A3: the artifact name has no scenario path in it, and `timeout-minutes` exceeds the longest soak scenario's duration.
 
 ### Part B (owner-run, release cut)
 Executed on a dedicated host, never on a shared CI runner. Carried in PLAN.md's 0.8.0 release-cut obligations once Part A lands.
@@ -65,6 +81,7 @@ Executed on a dedicated host, never on a shared CI runner. Carried in PLAN.md's 
 Part A only. Part B is proved by the owner's filled-in `soak-0.8.md` at the release cut.
 - `harness-build` command — AC11, AC13
   run: `./mvnw -B -q -f load-test/pom.xml package`
+  (this runs the load-test module's own tests; new driver behaviour for A1 and A2 gets tests there)
 - `scripts-parse` command — AC15, AC16, AC18
   run: `for f in load-test/soak/*.sh; do bash -n "$f" || exit 1; done`
 - `overlay-config` command — AC14
@@ -75,8 +92,8 @@ Part A only. Part B is proved by the owner's filled-in `soak-0.8.md` at the rele
   run: `./mvnw -B -q -pl data-prism-orchestration -am -Dtest=LinkTimingSoakTest -Dsurefire.failIfNoSpecifiedTests=false -Ddataprism.timing=true test`
   report: `data-prism-orchestration/target/surefire-reports/TEST-*LinkTimingSoakTest.xml`
   min-passing: 1  max-skipped: 0
-- `scaffold-shape` read — AC11, AC13, AC14, AC15, AC16, AC17, AC19
-  how: the choice-list entries resolve to existing files; each scenario has the AC13 mix and duration; the overlay sets the AC14 properties; no script or template line writes an address, payload or key; the template's result tables are empty; the Outcome's smoke record is labelled and has no host detail.
+- `scaffold-shape` read — AC11, AC13, AC14, AC15, AC16, AC17, AC19, AC21
+  how: the choice-list entries resolve to existing files; the driver issues each A1 tool and rejects unknown fields; the artifact name and timeout meet AC21; each scenario has the AC13 mix and duration; the overlay sets the AC14 properties; no script or template line writes an address, payload or key; the template's result tables are empty; the Outcome's smoke record is labelled and has no host detail.
 
 ## Out of scope
 - In Part A: running the 8-hour and 4-hour soaks, any fault or capture run beyond the AC19 smoke, and entering any figure in `soak-0.8.md`. Those are Part B.
