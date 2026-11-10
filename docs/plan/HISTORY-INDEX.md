@@ -23,6 +23,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Heading (grep this exact string) |
 |---|---|---|
+| 2026-11-10 | 304 | `## 2026-11-10 — 304: client content kept out of the SDK's inbound parse-error logs, on stdio and HTTP` |
 | 2026-11-10 | 255 | `## 2026-11-10 — 255: links, follow and key resolvers wired into Spring, with the link surface scanned for leaks` |
 | 2026-11-09 | 253, 286, 301, 302 | `## 2026-11-09 — 253, 286, 301 and 302: the follow tool, cluster security on readiness, links from configured JSON sources, the pinned SDK logger` |
 | 2026-11-06 | 252, 254, 300 | `## 2026-11-06 — 252, 254 and 300: following one link, the limits and catalog in Spring, tool input validated in the handlers` |

@@ -95,13 +95,13 @@ Related, not fixed in 0.7.1: a Map of a record type has a similar element-type b
 
 #### 0.8 plan (agreed 2026-10-20)
 
-Waves 1 to 11 have landed (the table below carries one row for them; the records are in `HISTORY-INDEX.md`). The re-plan of 2026-10-23 (owner decision (b), D-RM-1 (a) as amended above) deferred 224, 226, 229, 230, 231 and 264 past 1.0 (`tasks/deferred/`) and kept 225, 227 and 228; the owner cut nothing else from 0.8.0. The briefs carry their own dependencies, **Wave** lines and contract text under `docs/plan/tasks/`; the decisions made during waves 5 to 11 are in `DECISIONS.md`. The full pre-cut text, including the wave-landing records, the owner decisions of 2026-10-27 and the per-wave review notes, is in `archive/PLAN-2026-11-10.md:131-501`.
+Waves 1 to 12 have landed (the table below carries one row for waves 1 to 11 and one for wave 12; the records are in `HISTORY-INDEX.md`). The re-plan of 2026-10-23 (owner decision (b), D-RM-1 (a) as amended above) deferred 224, 226, 229, 230, 231 and 264 past 1.0 (`tasks/deferred/`) and kept 225, 227 and 228; the owner cut nothing else from 0.8.0. The briefs carry their own dependencies, **Wave** lines and contract text under `docs/plan/tasks/`; the decisions made during waves 5 to 11 are in `DECISIONS.md`. The full pre-cut text, including the wave-landing records, the owner decisions of 2026-10-27 and the per-wave review notes, is in `archive/PLAN-2026-11-10.md:131-501`.
 
 | Wave | Briefs |
 |---|---|
 | 1 to 11 | landed 2026-10-21 to 2026-11-09 (268, 218, 219, 238, 239, 243, 258, 259, 220, 221, 240, 222, 242, 265, 244, 257, 203, 206, 223, 241, 248, 269, 245, 267, 207, 210, 225, 271, 285, 288, 208, 227, 246, 262, 284, 289, 290, 211, 228, 247, 256, 292, 294, 249, 250, 251, 272, 287, 291, 296, 297, 298, 293, 299, 252, 254, 300, 253, 286, 301, 302). 295 was deferred past 0.8.0 (`tasks/deferred/295-ack-gated-tombstone-gc-for-the-pause-document.md`) and must be reissued against F1 to F5 of the 228 contract before pickup. Per-wave detail: `archive/PLAN-2026-11-10.md:141-151` and `HISTORY-INDEX.md` |
-| 12 | 255 (landed 2026-11-10, PR #236), 304 (open: verified at PR #237, not yet merged) (253, 286 and 301 have landed. 304 filed 2026-11-09: client content out of the MCP SDK's inbound parse-error logs; it owns no file 255 owns) |
-| 13 | 260, 261, 263 (261 depends on 304, because 261 carries 304's CHANGELOG and migration line) |
+| 12 | 255 (landed 2026-11-10, PR #236), 304 (landed 2026-11-10, PR #237) (253, 286 and 301 landed earlier. 304: client content out of the MCP SDK's inbound parse-error logs; filed 2026-11-09) |
+| 13 | 260, 261, 263 (next. 261 depends on 304, which landed in wave 12, because 261 carries 304's CHANGELOG and migration line, in `tasks/retired/304-no-client-token-in-sdk-stdio-parse-errors.md`) |
 | last (14) | 213 (depends on 208, 210, 211, 261, 225, 227, 228 and 284 to 287) |
 | 15 (0.9) | 273, 274 (0.9 starter onboarding, filed 2026-10-23; see "0.9 starter onboarding plan" below. 273's OD-273-3 (a) mechanism, rewritten 2026-10-26, is in `tasks/273-default-low-stakes-settings-and-derive-from-spring.md`; the pre-cut row is `archive/PLAN-2026-11-10.md:155`) |
 | 16 (0.9) | 275, 277 |
@@ -165,7 +165,6 @@ Follow-ups from wave 7, each belonging to the task named (Lows unless said other
 - 213: an operator page on `CLUSTER_LOCK_TIMEOUT` during scale-out. A member that starts or rejoins can refuse tool calls for about one tick interval after a peer's write, and a start-up card write waits up to Hazelcast's 5 s backup timeout.
 - 213 (and a startup warning): source names over 128 characters. Document the limit and add a startup warning for a name that will not fit the `targetSources` schema.
 - 303: fix two `MemberCardTest` flakes (the pause-digest test at :1830 and the later-wrapper start test at :1767); they fail PR builds unrelated to Hazelcast (CI runs 42684474153, 42689565210).
-- 304: keep client content out of the MCP SDK's inbound parse-error logs on stdio and HTTP. Measured in 302's PR (#227) for stdio, and found in SDK 2.1.0 bytecode for HTTP (a valid-JSON non-JSON-RPC body is logged whole at ERROR); the owner chose on 2026-11-09 to fix both, not accept a residual.
 - Keep client-echoed `method`, `id` and `protocolVersion` out of the MCP SDK's WARN lines (stdio and HTTP), and the `roots/list_changed` WARN and ERROR lines that log client-returned roots. Residual of 304, found in PR #232's review.
 - 261 and 213: the "Design-doc facts" lines of `tasks/retired/228-signed-leased-pause-document.md` marked "For 213" and "261" are still owed to those tasks, including `ClusterSecurityStatus` gaining two components and `Reason.PAUSE_NOT_FRESH`.
 - 287 and 260: both task files now carry a note that 228 inserted `CLUSTER_SETTINGS_MISMATCH` into `PrivacyClusterRefusal`.
@@ -230,6 +229,19 @@ From our own reviews:
 - `LinkKeysHealth.java:52`: the `held.contains(currentKeyId)` clause is redundant.
 - The preflight `break`s on the first non-marker limiter; with two limiters the outcome depends on order, though it always fails closed.
 - A class implementing the marker can override `clusterWide()` to false and still pass the preflight.
+
+304 follow-ups (PR #237 review, 2026-11-10). Landed as task 304 (`tasks/retired/304-no-client-token-in-sdk-stdio-parse-errors.md`). Paths are under `data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp` unless a test.
+
+- 237-4: `ContentFreeMcpJsonMapper.java:113`: the `HashMap` routing-key check applies to every read of that TypeRef. Only `McpSchema$1`, the inbound read, uses it in mcp-core 2.1.0. Scope the check, or comment that it depends on that, for the next SDK upgrade.
+- 237-5: `HttpParseErrorLeakTest.java:128`: the E cases assert neither status nor live capture.
+- 237-6: `StdioInboundGuard.java:31`: the Javadoc says the guard never holds more than the limit, but the hand-off queue (64 lines x limit) can hold about 1 GiB. Fix the Javadoc and bound the queue; the bound was already a P3 follow-up.
+- 237-7: `StdioInboundGuard.java:71`: the reader thread is never stopped and keeps reading stdin after `closeGracefully`.
+- 237-8: `StdioInboundGuard.java:178`: pass-three refusals reply with `id:null` even when a valid id was parsed, so the caller waits for a timeout.
+- 237-9: `StdioInboundGuardTest.java:176`: a `Thread.sleep(500)` breaks the no-sleeps rule; use a latch.
+- Nits 237-10 and 237-11: fully qualified `java.util` names in `StdioInboundGuard`; a test that loops over three inputs should be parameterised.
+- `DataPrismMcpServer.java:76`: the Javadoc says the limit is "in bytes: the SDK's own default", but the SDK counts UTF-16 chars. The guard is the stricter of the two; only the wording is wrong.
+- For 261: plain-Java embedders get no `McpSdkLogPin` and must keep `io.modelcontextprotocol` at WARN, because the SDK logs the raw HTTP body and forwarded stdio lines at DEBUG (residual of 304); the migration notes must say so.
+- Recorded in 304's Outcome, no action: AC6 mutation 1 broke `initialize` (the guard's reader probably kept consuming stdin) rather than demonstrating a leak; the AC5 test builds its own `StdioServerTransportProvider` to get a server from `syncServer`, which AC5's "never by building providers itself" did not intend, and is not a defect.
 
 
 Waves 1 to 4, PR #154 and PR #163 review rounds, 245 and the 0.7.1 planning review (`archive/PLAN-2026-11-10.md:368-498`):
