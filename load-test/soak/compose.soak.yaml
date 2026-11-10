@@ -1,0 +1,98 @@
+# Overlay for the three-member soak (task 263, Part A). Apply it on top of
+# docker/multi-instance/compose.yaml, which it does not edit:
+#
+#   export DATAPRISM_CLUSTER_KEY_MATERIAL="$(openssl rand -hex 32)"
+#   export DATAPRISM_NAME_KEY_MATERIAL="$(openssl rand -hex 32)"
+#   docker compose -f docker/multi-instance/compose.yaml \
+#     -f docker/multi-instance/compose.build.yaml \
+#     -f load-test/soak/compose.soak.yaml up --build
+#
+# (drop compose.build.yaml to use published 0.8.0 images). What it changes:
+#   - a third member, server-c, on the member network;
+#   - every member lists all three members, trusts the network by assertion
+#     (trusted-network: true) and binds only the private member subnet;
+#   - links are disabled and no link key is configured, because a joining
+#     member refuses both with MISSING_SHARED_LINK_LIMITER: the three-member run
+#     has no `follow` and no page link;
+#   - a round-robin load balancer, `lb`, is the only service published to the host
+#     (loopback, port 8080). 5701 is published nowhere.
+# Compose >= 2.24.4 is needed for the `!reset` and `!override` tags. The trusted-network
+# caveat of the base file applies unchanged: it holds only on a Linux Docker engine
+# where cross-network routing to the member port has been checked and found blocked.
+
+x-member-env: &member-env
+  DATAPRISM_HAZELCAST_JOIN_MEMBERS: 172.28.57.11:5701,172.28.57.12:5701,172.28.57.13:5701
+  DATAPRISM_HAZELCAST_MEMBER_INTERFACE: 172.28.57.*
+  DATAPRISM_HAZELCAST_TRUSTEDNETWORK: "true"
+  # Links off, and no DATAPRISM_LINKS_KEYID or DATAPRISM_LINKS_KEYS_* anywhere.
+  DATAPRISM_LINKS_ENABLED: "false"
+
+services:
+  server-a:
+    environment:
+      <<: *member-env
+    ports: !reset []
+
+  server-b:
+    environment:
+      <<: *member-env
+
+  server-c:
+    extends:
+      file: ../../compose.yaml
+      service: server
+    environment:
+      <<: *member-env
+      DATAPRISM_HAZELCAST_TOPOLOGY: embedded
+      DATAPRISM_HAZELCAST_CLUSTERNAME: prism-example
+      DATAPRISM_HAZELCAST_JOIN_MODE: tcp-ip
+      DATAPRISM_HAZELCAST_MEMBER_PORT: 5701
+      DATAPRISM_HAZELCAST_SECURITY_CLUSTERKEY_KEYID: cluster-1
+      DATAPRISM_HAZELCAST_SECURITY_CLUSTERKEY_ENVIRONMENTVARIABLE: DATAPRISM_CLUSTER_KEY_MATERIAL
+      DATAPRISM_HAZELCAST_SECURITY_NAMEKEY_KEYID: name-1
+      DATAPRISM_HAZELCAST_SECURITY_NAMEKEY_ENVIRONMENTVARIABLE: DATAPRISM_NAME_KEY_MATERIAL
+      DATAPRISM_CLUSTER_KEY_MATERIAL: ${DATAPRISM_CLUSTER_KEY_MATERIAL:?export it before up, with openssl rand -hex 32}
+      DATAPRISM_NAME_KEY_MATERIAL: ${DATAPRISM_NAME_KEY_MATERIAL:?export it before up, with openssl rand -hex 32}
+      DATAPRISM_AUDIT_WRITER_ID: server-c
+    networks:
+      default: {}
+      cluster:
+        ipv4_address: 172.28.57.13
+    ports: !reset []
+
+  # Round-robin over the three members on the default network. Instances are
+  # stateless for MCP calls, so no affinity is set. Buffering is off so a streamed
+  # response is not held back.
+  lb:
+    image: nginx:1.27-alpine
+    depends_on:
+      - server-a
+      - server-b
+      - server-c
+    configs:
+      - source: lb-conf
+        target: /etc/nginx/conf.d/default.conf
+    networks:
+      - default
+    ports:
+      - "127.0.0.1:8080:8080"
+
+configs:
+  lb-conf:
+    content: |
+      upstream members {
+        least_conn;
+        server server-a:8080;
+        server server-b:8080;
+        server server-c:8080;
+      }
+      server {
+        listen 8080;
+        location / {
+          proxy_pass http://members;
+          proxy_http_version 1.1;
+          proxy_set_header Connection "";
+          proxy_buffering off;
+          proxy_read_timeout 120s;
+        }
+      }

@@ -13,6 +13,11 @@ on:
           - sources-32.json
           - sources-100.json
           - sources-300.json
+          - failure-source-timeouts.json
+          - failure-read-budget.json
+          - failure-over-limit.json
+          - ../soak/soak-single-node.json
+          - ../soak/soak-three-member.json
         default: sources-8.json
 
 permissions:
