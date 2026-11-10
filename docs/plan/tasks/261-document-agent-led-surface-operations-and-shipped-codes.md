@@ -8,16 +8,22 @@
 **Wave:** 13 (moved from 12 on 2026-11-06; re-planned 2026-10-23 for owner decision (b): 230 deferred past 1.0; 284, 286 and 287 added; 271 added by PR #161)
 **Owns:**
 - docs/tools.md
-- docs/audit.md *(the disposition keys and values these tasks add, and the resolver-failure statement only)*
+- docs/audit.md *(the disposition keys and values these tasks add, the resolver-failure statement, and the "Audit failure codes" section that S3 adds only)*
 - docs/reidentification.md *(the refusal-code table only)*
 - docs/multiple-instances.md *(the refusal-code table only)*
-- docs/configuration.md *(the `json-sources` `description:` block and file list, and a startup-refusal index section only)*
+- docs/configuration.md *(the `json-sources` `description:` block and file list, a startup-refusal index section, the `dataprism.limits` table rows for `max-sources` and `per-source-timeout`, and the checkpoint-failure text that now says `AUDIT_UNAVAILABLE`, which 244's owed pages name, only)*
 - docs/extending.md *(the adapter description and `KeyResolver` sections only)*
 - docs/developer-guide/write-an-adapter.md *(the description section only)*
 - docs/operations.md *(new: draft operations guide)*
 - docs/migration-0.8.md *(extend; created by 222's review round: the core sections are added here, and task 213 adds its own afterwards)*
 - CHANGELOG.md *(`[Unreleased]`, the core entries only)*
 - mkdocs.yml *(nav and llmstxt entries for `operations.md` only; the `migration-0.8.md` nav entries already exist)*
+
+*Amendment 2026-11-10 (owner):* the `docs/configuration.md` scope now also covers the `dataprism.limits` rows for `max-sources` and `per-source-timeout` and the checkpoint-failure text (`AUDIT_UNAVAILABLE`); the `docs/audit.md` scope now also covers the "Audit failure codes" section S3 adds. Code review of PR #239 found these edits correct and needed: without them `SKIPPED_OVER_LIMIT` and the old timeout wording would stay stale.
+
+*Amendment 2026-11-10 (owner, after PR #239 review):*
+1. **239-1, captures deferred.** Captured examples for `follow` and `_links` are deferred. No shipped entry point enables links against a fixture, and adding one is code outside Owns. `docs/tools.md` keeps the schema- and code-derived shapes and says they are not captured. A successor task adds a links-enabled capture fixture and captures both; the scribe files it at /record. AC1 stays met for every other example. The PR #239 body must carry an Outcome with the capture command and the S3 list (each code, with its page and heading).
+2. **239-2, docs follow the code.** The docs describe what the code does. A checkpoint failure on an allowed `get_entity_context`, `compare_entity_sources` or `follow` call answers with a generic error that has no code; it is not `AUDIT_UNAVAILABLE`. Mapping that exception to `AUDIT_UNAVAILABLE` is a separate code decision, not part of this task. This narrows the `docs/configuration.md` Owns note on checkpoint-failure text accordingly.
 
 ## Goal
 Make the 0.8 core usable by someone who has never seen the project: the three new tools and `targetSources` in the tool reference, the new audit keys, how an adapter or a configured source describes itself and how a resolver is written, a first operations guide for running against many sources, and the migration notes for every behaviour the core changed. The roadmap asks for a draft operations guide in 0.8; the register's successor S3 asks that every shipped code be documented on the page for its surface.
@@ -38,7 +44,7 @@ Make the 0.8 core usable by someone who has never seen the project: the three ne
 - Re-planned 2026-10-27: 270 is retired and superseded by 288, 289 and 290. Read "270" in Depends on as "290" (which depends on 288); its Outcome carries the migration notes. 210 now also requires a client-allowlist decision (`MISSING_CLIENT_ALLOWLIST`); 213 documents that, not this task.
 
 ## Acceptance
-- [ ] `docs/tools.md` documents `list_sources` (filters, paging, `page`, `labels`), `describe_source` (the protection vocabulary, `undeclared`, `valueNamespace`, `chainable`), `follow` (input, envelope, `items`, `itemsTruncated`, the uniform `LINK_INVALID`, `LINK_ATTEMPTS_EXHAUSTED`), `targetSources`, `_links` and `_linksOmitted`, the `RESOLVER_FAILED` status, `AUDIT_UNAVAILABLE` on every denial path, and the capabilities `LIST_SOURCES`, `DESCRIBE_SOURCE` and `FOLLOW` with the upgrade note that adding a tool grants nothing. Each example was captured against the real stack and the capture command is in the Outcome.
+- [ ] `docs/tools.md` documents `list_sources` (filters, paging, `page`, `labels`), `describe_source` (the protection vocabulary, `undeclared`, `valueNamespace`, `chainable`), `follow` (input, envelope, `items`, `itemsTruncated`, the uniform `LINK_INVALID`, `LINK_ATTEMPTS_EXHAUSTED`), `targetSources`, `_links` and `_linksOmitted`, the `RESOLVER_FAILED` status, `AUDIT_UNAVAILABLE` on every denial path (a checkpoint failure on an allowed `get_entity_context`, `compare_entity_sources` or `follow` call is documented as what the code does: a generic error with no code, not `AUDIT_UNAVAILABLE`; amended 2026-11-10), and the capabilities `LIST_SOURCES`, `DESCRIBE_SOURCE` and `FOLLOW` with the upgrade note that adding a tool grants nothing. Each example was captured against the real stack and the capture command is in the Outcome, except the `follow` and `_links` examples: these keep their schema- and code-derived shapes, and `docs/tools.md` says they are not captured (deferred to a successor task; amended 2026-11-10).
 - [ ] `docs/audit.md` documents the `names` key (`REAL`, `ALIAS`), the `catalog` key and its `REFUSED:CATALOG_<REASON>` values, the `link` key and its `REFUSED:LINK_<REASON>` values, `<target>[<i>]:<refused>`, and that link ids, attempt counts and resolver timings are metrics, not audit fields.
 - [ ] S3: every shipped code with "Docs: no" in register section 3, re-derived on this base, is documented on the page for its surface; the Outcome lists each code with its page and heading.
 - [ ] `docs/operations.md` (draft, marked so) says, for running more than one instance, that 1.0 supports a trusted network only (`dataprism.hazelcast.trusted-network`, 284), links and page links are refused on joining members (`MISSING_SHARED_LINK_LIMITER`, 255), and readiness carries `clusterSecurity` (286); it links to `docs/multiple-instances.md` (213) for what is and is not sealed, rather than repeating it.
@@ -57,3 +63,53 @@ Make the 0.8 core usable by someone who has never seen the project: the three ne
 - `docs/data-protection.md` (214).
 - Any code, test, or design document.
 - Updating the 0.7.x security advisory GHSA-f94h-6mxv-c957: the coordinator does it (OD-290-2 (b), decided by the owner 2026-10-27), saying that every release up to and including 0.7.1 is affected, that there is no workaround, and that the fix is 0.8.0. No task proves the range or a workaround.
+
+## Review round 1 — findings
+
+Reviewed HEAD c14de3201633834a2a6eb3ef6a58be78256f0be9.
+
+- [P2] docs/audit.md:270 — The page says the `names` key is written "on every call of list_sources, describe_source, get_entity_context, compare_entity_sources and follow, a denial included". The code leaves it out of every MCP-level denial before label resolution: authentication, authorisation, scope and TOOL_INPUT_INVALID. These pass `names == null` or `Map.of()`: ListSourcesTool.java:359/365/368 → :467, GetEntityContextTool.java:233 → :325, FollowTool.java:208 → :298. route: implementer — reword to say which calls carry `names`: those that reached label resolution, including admission and orchestrator denials. input: a caller whose role lacks GET_ENTITY_CONTEXT calls get_entity_context → the audit record is DENY:TOOL_NOT_PERMITTED with empty fieldDispositions and no `names`, which the page promises is there.
+- [P2] docs/migration-0.8.md:158 and CHANGELOG.md:39 — Both say "`OrchestrationOptions.defaults()` keeps the 0.7.1 behaviour". It does not. defaults() (OrchestrationOptions.java:134-136) sets `RealNamesPolicy.none()` and `unselectedSourceLimit` 8. So a 0.7.1 caller holding EXPOSE_SOURCE_NAMES now sees aliases, and an embedder with more than 8 adapters is refused with SOURCE_SELECTION_REQUIRED. route: implementer — wording only. Say defaults() gives the 0.8 defaults, and name the two differences from 0.7.1. input: a plain-Java embedder upgrades with 10 adapters, a caller holding EXPOSE_SOURCE_NAMES, and `OrchestrationOptions.defaults()` → every get_entity_context call without targetSources is refused with SOURCE_SELECTION_REQUIRED, and labels are ALIAS.
+
+## Review round 2 — findings
+
+Reviewed the fix since 7cef8cca, at HEAD 934c8ebc4ed7c5b11970eb803fe617d00478c10f.
+
+- [P2] docs/audit.md:270 — NOT FIXED from round 1. The new wording says `names` is written on calls "that reached label resolution, admission and orchestrator denials included". That is still wrong for three of the five tools. `get_entity_context`, `compare_entity_sources` and `follow` audit an admission denial with an empty dispositions map (`Map.of()`), so it has no `names` key: GetEntityContextTool.java:348-366 (called from :255), CompareEntitySourcesTool.java:413-431 (called from :255), FollowTool.java:308-322 (called from :226). Only `list_sources` and `describe_source` write `names` on an admission denial (ListSourcesTool.java:370, :376, :467). For the other three, `names` is written only inside the orchestrator (DefaultContextOrchestrator.java:217, :744).
+  route: implementer — wording only. Say that for `list_sources` and `describe_source` an admission denial carries `names`; that for `get_entity_context`, `compare_entity_sources` and `follow` only calls that reach the orchestrator carry it (its denials included); and that an admission denial for those three, like any earlier MCP-level denial, carries no `names`.
+  input: human approval is on for `get_entity_context`, and a caller with the capability calls it without approval → the audit record is `DENY:APPROVAL_REQUIRED` with empty fieldDispositions and no `names`, which the page says admission denials include.
+
+## Review round 3 — findings (external review of PR #239 at f147dc1f)
+
+- [Medium] 239-1 — The PR #239 body has no Outcome. route: implementer — add an Outcome with the capture command used for `list_sources`, `describe_source` and `targetSources`; the S3 list, giving each code with its page and heading; and a note that `follow` and `_links` are deferred per the 2026-11-10 amendment. The PR body is not a file: update it with `gh pr edit 239`.
+- [Medium] 239-2 — docs/configuration.md:481 and docs/tools.md:760 say a checkpoint failure refuses with `AUDIT_UNAVAILABLE`. route: implementer — reword both to match the code: an allowed `get_entity_context`, `compare_entity_sources` or `follow` call answers with a generic error that has no code (DefaultContextOrchestrator.java:359 and the GetEntityContextTool catch order).
+- [Medium] 239-3 — docs/migration-0.8.md:162 says the 8-argument orchestrator constructor is called unchanged. route: implementer — say its signature is unchanged but it now uses `OrchestrationOptions.defaults()`, so aliases and `SOURCE_SELECTION_REQUIRED` apply.
+- [Medium] 239-4 — docs/operations.md:30 says `clusterSecurity` takes a member out of rotation through readiness. It joins the readiness group only when health probes are enabled. route: implementer — state that requirement, or how to add it to readiness.
+- [Medium] 239-5 — docs/operations.md:49: the read-budget sizing example ("four times") matches no reachable configuration, so an operator could undersize. route: implementer — rework the arithmetic from the real defaults and limits, citing them.
+- [Medium] 239-6 — docs/tools.md:511 says paging honours `pageSize`. Without a link key the whole list comes back on one page, and a `page` value is refused without being counted. route: implementer — qualify the `pageSize` and `page.size` rows, and add a paragraph on behaviour with no link key.
+- [Medium] 239-7 — docs/tools.md:743: the intro to caller refusals says no source is called. `NO_SOURCE_DATA` and `REQUEST_FAILED` come after fan-out, and refused sources give their own code. route: implementer — reword the intro and the `NO_SOURCE_DATA` row.
+
+### Follow-ups (not this round)
+- 239-8: docs/audit.md:330. `AUDIT_RETENTION_FAILED` is a fallback, not a code that is thrown; a JSON listing failure is `DELETE_FAILED`; `ANCHOR` means nothing further is deleted.
+- 239-9: docs/configuration.md:1062. Alias rule 5 is understated: an alias must not contain a source name, an adapter class name or a base-url host.
+- 239-10: docs/extending.md:256. An `IllegalArgumentException` from `description()` is reported as `INVALID_SOURCE_DESCRIPTION` rule 4, not as "description failed".
+- 239-11: docs/migration-0.8.md:10. The claim that the CHANGELOG lists the same changes is wrong: `[Unreleased]` omits page approval, the audit-sink thread, the trusted-network rule and the paging codes.
+- 239-12: docs/migration-0.8.md:115 and docs/tools.md:142 say eight status codes; `SourceOutcome.Status` has seven.
+- 239-13 (security): docs/migration-0.8.md:130. A bare `*` in `real-names-scopes` is accepted and opts every scope in, with no warning. Warn about it, or file a code follow-up to refuse it.
+- 239-14: docs/multiple-instances.md:140. `PUBLIC_MEMBER_INTERFACE` fires only for an address beyond the private and trusted ranges, not on joining alone.
+- 239-15: docs/operations.md:101. A link key equal to the cluster or name key is refused with `CLUSTER_KEY_SHARED` or `NAME_KEY_SHARED`, not `LINK_KEY_SHARED`.
+- 239-16: docs/operations.md:122. A retired key id reaches the client as `LINK_INVALID`; `LINK_UNKNOWN_KEY` is only the audit reason.
+- 239-17: docs/tools.md:458. The catalog input schemas lack `additionalProperties: false`, so a typo is ignored and the call returns everything.
+- 239-18: docs/tools.md:515. Not every refused page link counts: the expired, filter-mismatch and catalog-change reasons are uncounted.
+- 239-19: docs/tools.md:642. `items` and `itemsTruncated` leave out deadline truncation, and that refused items are dropped.
+- 239-20: docs/tools.md:649. `LINK_ATTEMPTS_EXHAUSTED` also fires when the limiter is full, and a locked caller's valid links are refused but not counted.
+- Nits 239-21 to 239-24: the duplicate CHANGELOG line; the incomplete `KeyResolutionException` list in docs/extending.md:302; "1.0" where docs/operations.md:16 should say 0.8; the "two calls" example at docs/tools.md:523.
+
+## Attempt 1 — failed
+
+/verify at 5303e72f01547 (2026-11-10): tester PASS (`DP_REQUIRE_NO_STUBS=true mkdocs build --strict`, hooks included); reviewer REQUEST CHANGES on S3. S3 was re-derived against task 260's extracted code set (`origin/task/260-freeze-tests`: freeze/codes.txt, 307 codes, and freeze/single-word-codes.txt, 7 codes) by `rg -w` over the user nav pages at this HEAD.
+
+- Gap: startup code `LEGACY_OVERSIGHT_STATE` is shipped (data-prism-hazelcast LegacyOversightStateException.java:14, thrown at HazelcastOversightState.java:372) and is on no user page and not in CHANGELOG.md. PLAN.md:281 assigns its migration note to this task. An operator upgrading a cluster from 0.7 sees it at startup with no page telling them the fix is a full restart of every member. Add it to docs/configuration.md's startup refusal index, docs/multiple-instances.md's refusals and docs/migration-0.8.md.
+- Also: `AUDIT_JSON_PROJECTION_MISSING` and `AUDIT_JSON_PROJECTION_WITHOUT_BUILT_IN_SINK` (AuditSinkSelection.java:113,141,181) appear only in migration-0.6.md, while configuration.md's startup index claims to list every code no other section of the page lists. Add both to the index.
+- PR #239 Outcome, S3: replace the register-and-grep method with the result of this re-derivation; name extending.md for the four SOURCE_MODEL_* codes not at tools.md:788; record that FREE_TEXT_RECOGNISED, FREE_TEXT_RECOGNISER_FAILED and the four PAUSE_DOCUMENT_* log prefixes belong to 213 (213's acceptance covers FREE_TEXT actions and the pause document), and that NOT_PENDING is internal (mapped to APPROVAL_NOT_PENDING) and INVALID_SOURCE_NAME is 0.9.
+Next attempt: those doc edits and the Outcome correction only; then /verify again with a full reviewer pass over every acceptance item, not S3 alone.

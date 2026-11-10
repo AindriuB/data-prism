@@ -165,6 +165,7 @@ Follow-ups from wave 7, each belonging to the task named (Lows unless said other
 - 213: an operator page on `CLUSTER_LOCK_TIMEOUT` during scale-out. A member that starts or rejoins can refuse tool calls for about one tick interval after a peer's write, and a start-up card write waits up to Hazelcast's 5 s backup timeout.
 - 213 (and a startup warning): source names over 128 characters. Document the limit and add a startup warning for a name that will not fit the `targetSources` schema.
 - 303: fix two `MemberCardTest` flakes (the pause-digest test at :1830 and the later-wrapper start test at :1767); they fail PR builds unrelated to Hazelcast (CI runs 42684474153, 42689565210).
+- 305: diagnose and fix the HttpParseErrorLeakTest tools/call flake (filed 2026-11-10; not yet in a wave)
 - Keep client-echoed `method`, `id` and `protocolVersion` out of the MCP SDK's WARN lines (stdio and HTTP), and the `roots/list_changed` WARN and ERROR lines that log client-returned roots. Residual of 304, found in PR #232's review.
 - 261 and 213: the "Design-doc facts" lines of `tasks/retired/228-signed-leased-pause-document.md` marked "For 213" and "261" are still owed to those tasks, including `ClusterSecurityStatus` gaining two components and `Reason.PAUSE_NOT_FRESH`.
 - 287 and 260: both task files now carry a note that 228 inserted `CLUSTER_SETTINGS_MISMATCH` into `PrivacyClusterRefusal`.

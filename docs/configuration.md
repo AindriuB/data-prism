@@ -477,8 +477,10 @@ applicable Union or national law". Other periods may be lawful under Union or
 national law; setting `retention-override` is the operator's own legal
 responsibility, and Data Prism does not judge whether such a law applies.
 
-While a checkpoint cannot be written, audited calls are refused with
-`AUDIT_CHECKPOINT_UNAVAILABLE` until the next checkpoint succeeds. A purge that
+While a checkpoint cannot be written, audited calls are refused until the next checkpoint succeeds. An allowed
+`get_entity_context`, `compare_entity_sources` or `follow` call answers with a generic error that carries no code,
+not `AUDIT_UNAVAILABLE` (`AUDIT_CHECKPOINT_UNAVAILABLE` names the exception inside the server, not a code a client
+receives). A purge that
 cannot anchor, or whose chain does not verify, deletes nothing and logs the
 error.
 
@@ -651,10 +653,10 @@ apply wherever the orchestrator is built, including with
 
 | Property | Default | Meaning |
 |---|---|---|
-| `dataprism.limits.max-sources` | `8` | The most sources one request may call. A source beyond it is not called and is reported as `SKIPPED_OVER_LIMIT`. |
+| `dataprism.limits.max-sources` | `8` | The most sources one request may call. A selection over it is refused as `SOURCE_SELECTION_TOO_LARGE` before any source is called; no source is silently skipped. |
 | `dataprism.limits.max-records` | `500` | The most records one request may take from sources. |
 | `dataprism.limits.max-response-size` | `512KB` | The largest compact body returned to the client for one request, as a size such as `512KB` or `1MB`. It bounds what the client receives (every returned source's tree, the source statuses and the findings, and for `compare_entity_sources` its projection too), not one source's response and not the MCP envelope. A larger body refuses the whole call with `RESPONSE_TOO_LARGE`; equality is allowed. It must fit in an `int` number of bytes. |
-| `dataprism.limits.per-source-timeout` | `3s` | The time allowed to the sources of one request, measured from the start of the fan-out and not from the start of each call. A source called late in the fan-out therefore has less time than one called first. |
+| `dataprism.limits.per-source-timeout` | `3s` | The time allowed to one source's call, measured from the moment that call starts, after it holds a concurrency permit. A source that waits for a permit does not spend its timeout waiting; the whole request is bounded by `request-timeout`. |
 | `dataprism.limits.max-concurrency` | `4` | The most downstream calls in flight at once across one request. |
 | `dataprism.limits.scope-read-budget` | `100` | The source reads of one subject allowed within one privacy scope. The next read is refused with `SCOPE_READ_BUDGET`. With `dataprism.hazelcast.topology: single-node` the count is per process. |
 | `dataprism.limits.request-timeout` | `PT10S` | The deadline for the whole of one request, from its start. It may not be shorter than `per-source-timeout`: a deployment that raises `per-source-timeout` above `PT10S` must raise this too, or startup is refused. |
@@ -993,8 +995,25 @@ its one property, a deployment is unaffected and this section does not apply.
 
 The one property this mode reads: a Spring resource location (`classpath:` or
 `file:`) naming a YAML file with its own `json-sources:` root key, structurally
-unrelated to `dataprism.sources` and never merged with it. Each named entry
-under `json-sources:` states, and only states:
+unrelated to `dataprism.sources` and never merged with it. From 0.8 it can also
+be a list of such locations, so that several teams can each keep their own file:
+
+```yaml
+dataprism:
+  json-sources:
+    config-location:
+      - file:/etc/dataprism/depot-sources.yaml
+      - file:/etc/dataprism/carrier-sources.yaml
+```
+
+The property binds as one list with ordinary property-source precedence, so a
+later source of configuration replaces the whole list. **A single value is never
+split at commas**: a URL with a comma in it is one location. Every file is parsed
+strictly and the sources are joined. A source name that appears in two files
+refuses startup with `DUPLICATE_JSON_SOURCE`, naming the source and neither
+location. A `tls:` block stated in two files refuses startup, and so does a
+`tls:` block in one file beside a plaintext source in another.
+Each named entry under `json-sources:` states, and only states:
 
 - `base-url`, `path` (a fixed template with exactly one `{subject}` segment)
   and `timeout` — server-owned transport, identical in kind to a Java-first
@@ -1023,6 +1042,34 @@ under `json-sources:` states, and only states:
   refused at load time, naming the offending catalogue and field, since a
   nested catalogue carries no identifier of its own and this mode never
   descends a second level.
+- `description:` (optional) — what the source holds, as `list_sources` and
+  `describe_source` show it. Without it the source is listed as `A data source.`
+  with no entity types, and startup logs how many sources use that generated
+  text. Its keys:
+
+  | Key | Meaning |
+  |---|---|
+  | `entity-types` | a list of entity types the source answers, each `[A-Za-z][A-Za-z0-9_-]{0,63}`; no duplicates |
+  | `input-keys` | a list of key namespaces (`[a-z][a-z0-9-]{0,31}`) the source accepts as a subject key; at most eight, no duplicates |
+  | `namespace-types` | a map from an `input-keys` namespace to one of the `entity-types`. Needed for a link target when there are several entity types and any input key |
+  | `alias-description` | the neutral text shown under an alias. Written for the model, so it must not name the system |
+  | `real-description` | the text shown under real names; the alias text is used when absent |
+  | `cost`, `freshness` | advisory hints: `cost` is `LOW`, `MEDIUM` or `HIGH`; `freshness` is `LIVE`, `NEAR_LIVE`, `HOURLY`, `DAILY` or `PERIODIC` |
+
+  Description text must be one line of at most 240 characters made of letters,
+  digits, spaces and the punctuation `. , ; : ( ) - _ / ' "`, with no key, URL,
+  host name, address, or sensitive-looking value in it. A dotted run such as
+  `e.g.` or `i.e.` looks like a host name and is refused, so write "for
+  example". The alias text may not contain the source's name, and may not equal
+  the real text. A text that breaks one of these refuses startup with
+  `INVALID_SOURCE_DESCRIPTION`, or `SOURCE_DESCRIPTION_LEAKS_NAME`; the message
+  names the source and the rule and never the text. See
+  [Describing a source](extending.md#describing-a-source).
+- On an `identifier: true` entry of `fields:` (not inside a nested catalogue),
+  `chainable: true` with a `keyNamespace` says that the value is a key another
+  source accepts, so a link can be issued from it. The two are stated together
+  or not at all; anything else is `INVALID_CHAINABLE_FIELD`. Links are issued
+  only when `dataprism.links.enabled` is `true`.
 
 A response whose shape no longer matches a source's declared nesting is a
 request-time privacy refusal, not a startup refusal — the catalogue was valid
@@ -1062,6 +1109,79 @@ both, if they disagree** — the `json-sources:` value is always the
 authoritative one actually dialled, so a `dataprism.sources` entry that
 silently won an unused, disagreeing check would be exactly the hazard this
 refusal closes.
+
+## Startup refusal index
+
+A startup refusal stops the application before it serves anything. The code is the first token of the failure's
+message, and the message names the property or the source and never a value. This index lists the codes that no
+other section of this page lists with its property, so that a code seen in a log can be looked up. A code that has
+its own table elsewhere (for example the case-authorisation codes under
+[`dataprism.security-policy`](#dataprismsecurity-policy-case-authorisation-and-client-allowlist), the
+cluster codes under [`dataprism.hazelcast`](#dataprismhazelcast) and in
+[Running multiple instances](multiple-instances.md#refusals), or the link, paging and limit codes under their own
+headings) is listed there, not here.
+
+**Transport, security and caller claims**
+
+| Code | Condition |
+|---|---|
+| `INVALID_TRANSPORT` | `dataprism.transport.mode` is not `http` or `stdio` |
+| `FIXTURE_DEVELOPMENT_STDIO_ONLY` | `dataprism.transport.fixture-development` is set with a mode other than `stdio` |
+| `INVALID_HTTP_PATH` | a configured HTTP path does not start with `/`, contains `//`, or contains `?` |
+| `MISSING_CALLER_CONTEXT_EXTRACTOR` | the HTTP transport is on and no `McpTransportContextExtractor<HttpServletRequest>` bean exists |
+| `MISSING_JWT_ISSUER`, `MISSING_JWT_AUDIENCE` | a protected deployment without `dataprism.security.jwt.issuer` or `audience` |
+| `INVALID_JWT_LOCATION` | not exactly one of the JWKS URI and the issuer-discovery URI, or one that is not an approved HTTPS URI |
+| `JWT_DISCOVERY_FAILED` | issuer discovery did not return usable metadata |
+| `MISSING_CALLER_CLAIM` | the principal or roles claim mapping under `dataprism.security.caller-claims` is blank |
+| `DUPLICATE_CALLER_CLAIM` | the principal, roles and investigation claim names are not three distinct names |
+| `RESERVED_CALLER_CLAIM` | a caller-claim mapping uses a reserved tool-argument name |
+| `MISSING_ROLE_POLICY` | `dataprism.security-policy.roles` is empty |
+| `EMPTY_PURPOSE_LIST`, `BLANK_PURPOSE` | `dataprism.security-policy.purposes` is empty, or one entry is blank |
+| `BLANK_ROLE`, `EMPTY_ROLE_CAPABILITIES` | a role name is blank, or a role grants no capability |
+| `UNKNOWN_CAPABILITY` | a role grants a capability Data Prism does not know |
+
+**Privacy, keys and models**
+
+| Code | Condition |
+|---|---|
+| `MISSING_PRIVACY_PROFILE`, `UNKNOWN_PRIVACY_PROFILE` | `dataprism.privacy.profile` is blank, or names no bundled profile |
+| `INVALID_SCOPE_LIFETIME` | `dataprism.privacy.scope-lifetime` is missing, zero or negative |
+| `UNSUPPORTED_LOCALE` | `dataprism.privacy.locale` is not a locale with a built-in vocabulary (`neutral` is accepted) |
+| `MISSING_HMAC_KEY_REFERENCE` | `dataprism.privacy.hmac-key` has no `key-id`, or does not state exactly one of `environment-variable` and `provider-reference` |
+| `LITERAL_SECRET_FORBIDDEN` | a `value` is set on the HMAC key or on a cluster or name key. Keys are always referenced, never written in configuration |
+| `HMAC_KEY_UNRESOLVED`, `HMAC_KEY_WEAK` | the HMAC key reference resolves to nothing (also raised while the cluster keys are checked against it), or to fewer than 32 bytes. The resolver's array is never changed or cleared |
+| `MISSING_KEY_PROVIDER` | a `provider-reference` key and no `HmacKeyReferenceResolver` that handles it. The packaged server reads environment variables only |
+| `MODEL_DESCRIPTOR_FILE_NOT_FOUND`, `MODEL_DESCRIPTOR_FILE_UNREADABLE` | `dataprism.privacy.descriptor-file` names no file, or one that is not a readable regular file |
+| `UNSAFE_MODEL_DESCRIPTOR_UNDECLARED_FIELDS` | the descriptor file sets `undeclaredFields: NON_SENSITIVE` for a model |
+| `MODEL_DESCRIPTOR_RESOLVER_REPLACED` | `dataprism.privacy.descriptor-file` is set and either a `FieldMetadataResolver` bean other than Data Prism's own from that file exists, or a `JsonTreeScrubbingEngine` bean uses another resolver. With the property set only Data Prism's own resolver is accepted. A custom resolver needs the property unset |
+| `SOURCE_MODEL_NOT_A_RECORD`, `SOURCE_MODEL_GENERIC`, `SOURCE_MODEL_MAP_OF_RECORD`, `SOURCE_MODEL_NESTED_COLLECTION_OF_RECORD` | a source model, or a type inside it, is not a record, is generic, or puts a record where the engine will not read it |
+| `SOURCE_MODEL_JACKSON_ANNOTATION` | a Jackson annotation on a source model, other than the five that affect only reading: `@JsonAlias`, `@JsonCreator`, `@JsonDeserialize`, `@JsonSetter` and `@JsonIgnoreProperties(ignoreUnknown = true)` |
+| `SOURCE_MODEL_NOT_READABLE` | a record in a named module that does not open its package to Data Prism with an unqualified `opens` |
+| `SOURCE_MODEL_RECORD_NOT_DECLARED` | a record value at a position declared as anything but that record |
+
+**Sources and the catalog**
+
+| Code | Condition |
+|---|---|
+| `BLANK_SOURCE_NAME`, `INVALID_SOURCE` | a `dataprism.sources` key is blank, or its entry is null |
+| `INVALID_SOURCE_URL` | a source `base-url` is not an HTTPS URI with a host and no user info, query or fragment. Plain `http` is accepted only for localhost under `fixture-development` |
+| `INVALID_SOURCE_TIMEOUT` | a source's `timeout` is missing, zero or negative |
+| `INVALID_SOURCE_MTLS` | a source states a key reference or a trust reference of its mutual TLS, but not both |
+| `INVALID_SOURCE_CREDENTIAL_REFERENCE` | a source's service credential reference contains a space |
+| `UNREVIEWED_SOURCE_ADAPTER` | a `DataSourceAdapter` bean is named neither under `dataprism.sources` nor in a configured JSON source's catalogue |
+| `INVALID_SOURCE_DESCRIPTION`, `SOURCE_DESCRIPTION_LEAKS_NAME`, `INVALID_CHAINABLE_FIELD`, `DUPLICATE_JSON_SOURCE` | see [`dataprism.catalog`](#dataprismcatalog) and [`dataprism.json-sources.config-location`](#dataprismjson-sourcesconfig-location). A message that ends "description failed" means the description could not be built; its text is never shown |
+
+**Metrics, audit and plain-Java entry points**
+
+| Code | Condition |
+|---|---|
+| `MISSING_METRICS_SINK`, `UNKNOWN_METRICS_SINK` | `dataprism.metrics.sink` is absent, or is not `micrometer` |
+| `INVALID_METRICS_REFERENCE` | `dataprism.metrics.registry-reference` is blank |
+| `MISSING_METRICS_BINDING` | no metrics binding bean is available |
+| `AUDIT_JSON_PROJECTION_WITHOUT_BUILT_IN_SINK` | `dataprism.audit.output.json-directory` is set with `sink: hash-chained` while an application `AuditSink` bean replaces the built-in sink, so nothing would write to the directory. Remove the application sink or the `json-directory`. See [Migrating from 0.5.x to 0.6.0](migration-0.6.md) |
+| `AUDIT_JSON_PROJECTION_MISSING` | `json-directory` is set but the framework's JSON projection bean is not registered, for example because it was overridden. See [Migrating from 0.5.x to 0.6.0](migration-0.6.md) |
+| `LEGACY_OVERSIGHT_STATE` | a Hazelcast member starts and the cluster's oversight map still holds a scope pause written by 0.7.x, which 0.8 does not read. The message names no scope. The fix is a full restart of every member, which clears the cluster state; a rolling upgrade is not supported. See [Migrating from 0.7.x to 0.8.0](migration-0.8.md#breaking-a-hazelcast-cluster-needs-a-full-restart-from-07) |
+| `PUBLIC_MEMBER_INTERFACE`, `MISSING_TRUSTED_NETWORK`, `INVALID_TRUSTED_RANGE` | the trusted-network rule, which also holds on the plain-Java entry points that start a member, not only in the starter. The rule is whether the member is reachable beyond its own host: see [Running multiple instances](multiple-instances.md#refusals) |
 
 ## The Compose quickstart's evaluation issuer
 
