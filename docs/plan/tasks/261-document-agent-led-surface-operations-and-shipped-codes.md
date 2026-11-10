@@ -8,16 +8,18 @@
 **Wave:** 13 (moved from 12 on 2026-11-06; re-planned 2026-10-23 for owner decision (b): 230 deferred past 1.0; 284, 286 and 287 added; 271 added by PR #161)
 **Owns:**
 - docs/tools.md
-- docs/audit.md *(the disposition keys and values these tasks add, and the resolver-failure statement only)*
+- docs/audit.md *(the disposition keys and values these tasks add, the resolver-failure statement, and the "Audit failure codes" section that S3 adds only)*
 - docs/reidentification.md *(the refusal-code table only)*
 - docs/multiple-instances.md *(the refusal-code table only)*
-- docs/configuration.md *(the `json-sources` `description:` block and file list, and a startup-refusal index section only)*
+- docs/configuration.md *(the `json-sources` `description:` block and file list, a startup-refusal index section, the `dataprism.limits` table rows for `max-sources` and `per-source-timeout`, and the checkpoint-failure text that now says `AUDIT_UNAVAILABLE`, which 244's owed pages name, only)*
 - docs/extending.md *(the adapter description and `KeyResolver` sections only)*
 - docs/developer-guide/write-an-adapter.md *(the description section only)*
 - docs/operations.md *(new: draft operations guide)*
 - docs/migration-0.8.md *(extend; created by 222's review round: the core sections are added here, and task 213 adds its own afterwards)*
 - CHANGELOG.md *(`[Unreleased]`, the core entries only)*
 - mkdocs.yml *(nav and llmstxt entries for `operations.md` only; the `migration-0.8.md` nav entries already exist)*
+
+*Amendment 2026-11-10 (owner):* the `docs/configuration.md` scope now also covers the `dataprism.limits` rows for `max-sources` and `per-source-timeout` and the checkpoint-failure text (`AUDIT_UNAVAILABLE`); the `docs/audit.md` scope now also covers the "Audit failure codes" section S3 adds. Code review of PR #239 found these edits correct and needed: without them `SKIPPED_OVER_LIMIT` and the old timeout wording would stay stale.
 
 ## Goal
 Make the 0.8 core usable by someone who has never seen the project: the three new tools and `targetSources` in the tool reference, the new audit keys, how an adapter or a configured source describes itself and how a resolver is written, a first operations guide for running against many sources, and the migration notes for every behaviour the core changed. The roadmap asks for a draft operations guide in 0.8; the register's successor S3 asks that every shipped code be documented on the page for its surface.
@@ -57,3 +59,10 @@ Make the 0.8 core usable by someone who has never seen the project: the three ne
 - `docs/data-protection.md` (214).
 - Any code, test, or design document.
 - Updating the 0.7.x security advisory GHSA-f94h-6mxv-c957: the coordinator does it (OD-290-2 (b), decided by the owner 2026-10-27), saying that every release up to and including 0.7.1 is affected, that there is no workaround, and that the fix is 0.8.0. No task proves the range or a workaround.
+
+## Review round 1 — findings
+
+Reviewed HEAD c14de3201633834a2a6eb3ef6a58be78256f0be9.
+
+- [P2] docs/audit.md:270 — The page says the `names` key is written "on every call of list_sources, describe_source, get_entity_context, compare_entity_sources and follow, a denial included". The code leaves it out of every MCP-level denial before label resolution: authentication, authorisation, scope and TOOL_INPUT_INVALID. These pass `names == null` or `Map.of()`: ListSourcesTool.java:359/365/368 → :467, GetEntityContextTool.java:233 → :325, FollowTool.java:208 → :298. route: implementer — reword to say which calls carry `names`: those that reached label resolution, including admission and orchestrator denials. input: a caller whose role lacks GET_ENTITY_CONTEXT calls get_entity_context → the audit record is DENY:TOOL_NOT_PERMITTED with empty fieldDispositions and no `names`, which the page promises is there.
+- [P2] docs/migration-0.8.md:158 and CHANGELOG.md:39 — Both say "`OrchestrationOptions.defaults()` keeps the 0.7.1 behaviour". It does not. defaults() (OrchestrationOptions.java:134-136) sets `RealNamesPolicy.none()` and `unselectedSourceLimit` 8. So a 0.7.1 caller holding EXPOSE_SOURCE_NAMES now sees aliases, and an embedder with more than 8 adapters is refused with SOURCE_SELECTION_REQUIRED. route: implementer — wording only. Say defaults() gives the 0.8 defaults, and name the two differences from 0.7.1. input: a plain-Java embedder upgrades with 10 adapters, a caller holding EXPOSE_SOURCE_NAMES, and `OrchestrationOptions.defaults()` → every get_entity_context call without targetSources is refused with SOURCE_SELECTION_REQUIRED, and labels are ALIAS.
