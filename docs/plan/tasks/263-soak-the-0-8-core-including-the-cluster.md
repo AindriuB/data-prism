@@ -91,6 +91,22 @@ Owner decision on R3-1 and R3-2 (review round 3, at the end): fail closed, and w
 
 *Reason:* a default lets a build without the version pick up a stale jar, or fail later with an unclear message. Two build paths outside Owns (R3-1) and an unobservable AC24 half (R3-2) prove it. *Size:* this brief is over 30 KB because it carries five amendments and three review rounds. Folding them into one contract is left for the next re-plan.
 
+## Amendment 2026-11-11 (owner, sixth)
+Owner decisions on R5-1 and R5-3 (review round 5, at the end).
+
+**R5-1: always build the branch.**
+- `load-test/soak/compose.soak.yaml` gives each of `server-a`, `server-b` and `server-c` its own `build:` from the checkout, with `pull_policy: build` (or an equivalent that can never pull or reuse a tag). `docker/multi-instance/**` stays unchanged (AC14).
+- `load-test/soak/common.sh` builds by default: `SOAK_BUILD` defaults to 1, or the knob is removed.
+- Every fault, probe and capture summary, and the driver's target-mode result, records the member image ID and the git commit (short SHA and a dirty flag).
+- `load-test/soak/README.md` documents the build rule and the provenance fields.
+- Checkable: bringing the overlay up never pulls the server image, and the summaries carry image ID and commit (AC25).
+
+**R5-3: criterion 3.** `soak-0.8.md` pass criterion 3 fails the run on any `FAILED` or `RESOLVER_FAILED` source status. Its cause wording matches what the harness records: source statuses by source, and transport failures in `failureCauses`. AC2 and AC17 are worded to match.
+
+**Provenance of earlier smokes.** The overlay smokes of rounds 2 to 4 ran images of unknown provenance. Part A's AC19 overlay smoke must be re-run under the new build rule.
+
+*Reason:* a stale local tag was reused silently and nothing recorded which image ran (R5-1); `RESOLVER_FAILED` passed every criterion, and the cause criterion asked for an entry the harness never writes (R5-3).
+
 ## Acceptance
 IDs AC1 to AC12 are the pre-split items in their original order. AC13 onwards are new in Part A.
 
@@ -100,19 +116,20 @@ IDs AC1 to AC12 are the pre-split items in their original order. AC13 onwards ar
 - [ ] AC14 A Compose overlay under `load-test/soak/`, applied on top of `docker/multi-instance/compose.yaml`, brings up three members behind a load balancer with `trusted-network: true`, a private `member.interface`, links disabled and no link key. `docker/multi-instance/**` is unchanged.
 - [ ] AC15 Fault-injection scripts under `load-test/soak/` cover every Part B fault: kill and restart a member, kill a partition owner and its backup together, roll all members, a planned full restart for the cluster-key and name-key change, a hostile member (tamper flood), a network partition and clock skew on one member. They also cover the AC3 startup probes (`dataprism.links.enabled=true`, and a link key configured). Each script writes counts and findings only, never an address, a payload byte or a key. The hostile-member and clock-skew scripts take `TAMPER_FLOOD_CMD` and `FAKETIME_LIB` from the owner and refuse to run without them; `load-test/soak/README.md` says so (A5).
 - [ ] AC16 A packet-capture script under `load-test/soak/` captures the member port for a named transport profile. It writes raw captures only under `load-test/results/` (git-ignored) or outside the repository, and its summary holds counts and findings only: whether plaintext appears and whether a subject id appears in the clear. It never holds an address, a payload byte or a key.
-- [ ] AC17 `docs/plan/perf/soak-0.8.md` exists as a template. The pass criteria of AC2, AC5, AC6, AC7 and AC8 are written out in advance, and the 221 "Resolving class ... is not allowed" criterion is included. Every Part B measurement has an empty result table: per-hour metrics, the AC3 refusals, the cluster cost, the faults, the key change, hostile member, partition and skew, captures per profile and platform, isolation claims, and `LinkTimingSoakTest`. A machine-specification section holds no hostname, address, user name or workplace detail. No result cell is filled in.
+- [ ] AC17 `docs/plan/perf/soak-0.8.md` exists as a template. The pass criteria of AC2, AC5, AC6, AC7 and AC8 are written out in advance, and the 221 "Resolving class ... is not allowed" criterion is included. Criterion 3 is worded as AC2 states it (sixth amendment). Every Part B measurement has an empty result table: per-hour metrics, the AC3 refusals, the cluster cost, the faults, the key change, hostile member, partition and skew, captures per profile and platform, isolation claims, and `LinkTimingSoakTest`. A machine-specification section holds no hostname, address, user name or workplace detail. No result cell is filled in.
 - [ ] AC18 A script under `load-test/soak/` runs `LinkTimingSoakTest` with `-Ddataprism.timing=true` and prints its result and tolerance in the form the AC10 table takes.
-- [ ] AC19 Each scenario (AC11, AC13) is run once as a smoke run of a few minutes. The overlay (AC14) and each script (AC15, AC16, AC18) are smoked for real if Docker is available; otherwise the Outcome says they had `bash -n` only and are left to Part B (A4). The Outcome records what was run, how long it ran and whether it worked, under the AC12 rule, and labels it "harness smoke, not soak evidence". No smoke figure goes into `soak-0.8.md`.
+- [ ] AC19 Each scenario (AC11, AC13) is run once as a smoke run of a few minutes. The overlay (AC14) and each script (AC15, AC16, AC18) are smoked for real if Docker is available; otherwise the Outcome says they had `bash -n` only and are left to Part B (A4). The Outcome records what was run, how long it ran and whether it worked, under the AC12 rule, and labels it "harness smoke, not soak evidence". No smoke figure goes into `soak-0.8.md`. Overlay smokes before the sixth amendment do not count: the overlay smoke is re-run under the AC25 build rule.
 - [ ] AC20 No file outside Owns is changed.
 - [ ] AC21 `load-test.yml` meets A3: the artifact name has no scenario path in it, and `timeout-minutes` exceeds the longest soak scenario's duration.
 - [ ] AC22 (D1) A target-mode scenario that sets `sources`, `slowSources`, `slowLatency` or `limits` is refused at load, naming the field; a target-mode result has `mode: target` and no `effectiveLimits` or source counts. The overlay's `member-env` sets the scope read budget and per-source timeout, and the three-member scenario's subject count and the expected `SCOPE_READ_BUDGET` share are stated in `load-test/soak/README.md`, the share being below the whole run.
 - [ ] AC23 (D2) With the harness's own server, a `follow` of a translated link reaches the resolver's target namespace: a load-test module test shows the generated sources declare both namespaces, the resolver is on the server's `loader.path`, and the single-node scenario's mix includes translated follows. Nothing under `data-prism-*/src/main` or `docker/**` changes.
+- [ ] AC25 (amendment 6) The overlay builds `server-a`, `server-b` and `server-c` from the checkout with `pull_policy: build` (or an equivalent that never pulls or reuses a tag); bringing it up never pulls the server image. `common.sh` builds by default. Every fault, probe and capture summary, and the driver's target-mode result, records the member image ID and the git commit (short SHA, dirty flag). `load-test/soak/README.md` documents both.
 - [ ] AC24 (amendments 4, 5) (i) After `versions:set` to another version, `load-test/run.sh --build-only` exits 0 with no edit to `load-test/pom.xml`. (ii) `./mvnw -B -f load-test/pom.xml package` without `-Ddataprism.version` exits non-zero, and its output names `dataprism.version` and `run.sh`. (iii) The supply-chain load-test step and the `load-test/README.md` build commands pass the version or use `run.sh`.
 
 ### Part B (owner-run, release cut)
 Executed on a dedicated host, never on a shared CI runner. Carried in PLAN.md's 0.8.0 release-cut obligations once Part A lands.
 - [ ] AC1 Single node: a run of at least 8 hours at a fixed rate, 100 sources, links enabled, mixing `list_sources` walks, `describe_source`, targeted and untargeted `get_entity_context`, `follow` of direct and translated links, invalid links, timeouts and budget exhaustion. Three members: the same mix for at least 4 hours through a load balancer, using the overlay under `load-test/soak/` and not editing `docker/multi-instance/**`, except that links are disabled and no link key is configured, so there is no `follow` and no page link (a joining member refuses both with `MISSING_SHARED_LINK_LIMITER`). The overlay sets `trusted-network: true` and a private `member.interface`.
-- [ ] AC2 `soak-0.8.md` records per hour: p50, p95 and p99 per tool, throughput, every FAILED cause, heap after GC, live threads, open file handles, audit bytes written, and the budget counters against the calls made. These rows come from the driver's interval rows (D3, AC13), plus the host's own measurements where the driver cannot read a figure. It states pass or fail against criteria written before the run: no upward trend in heap after GC or threads over the last half of the run, no FAILED without a cause, budget counters equal to reads made, and no privacy refusal other than those the scenario provoked.
+- [ ] AC2 `soak-0.8.md` records per hour: p50, p95 and p99 per tool, throughput, every `FAILED` and `RESOLVER_FAILED` source status by source and every transport failure in `failureCauses` (sixth amendment), heap after GC, live threads, open file handles, audit bytes written, and the budget counters against the calls made. These rows come from the driver's interval rows (D3, AC13), plus the host's own measurements where the driver cannot read a figure. It states pass or fail against criteria written before the run: no upward trend in heap after GC or threads over the last half of the run, no `FAILED` or `RESOLVER_FAILED` source status, budget counters equal to reads made, and no privacy refusal other than those the scenario provoked.
 - [ ] AC3 A member of the three-member cluster started with `dataprism.links.enabled=true`, and one started with a link key configured, each refuse at startup with `MISSING_SHARED_LINK_LIMITER`; `soak-0.8.md` records both. The link and paging mix runs on the single node only.
 - [ ] AC4 Cluster cost: latency and CPU of the three-member run against the 0.7 baseline (259) and against the single-node run, at 100 and at 500 sources. The 500-source run is a short measurement run, not scale evidence. The sealed-entry size and the design 2.3 cost estimate are not measured; they are deferred with 224 to 226.
 - [ ] AC5 Faults under load: kill and restart a member, kill a partition owner and its backup together, and roll all members. Each is recorded with its effect. No stale pause is accepted outside the lease, and re-identification index loss behaves as `docs/multiple-instances.md` documents.
@@ -132,6 +149,10 @@ Part A only. Part B is proved by the owner's filled-in `soak-0.8.md` at the rele
   run: `for f in load-test/soak/*.sh; do bash -n "$f" || exit 1; done`
 - `overlay-config` command — AC14
   run: `docker compose -f docker/multi-instance/compose.yaml -f load-test/soak/<overlay> config -q`
+- `overlay-builds` command — AC25
+  run: `docker compose -f docker/multi-instance/compose.yaml -f load-test/soak/compose.soak.yaml config --format json | jq -e '[.services["server-a","server-b","server-c"] | (.build != null) and (.pull_policy == "build")] | all'`
+- `provenance` read — AC25
+  how: each fault, probe and capture script's summary and the driver's target-mode result write the member image ID and short SHA with a dirty flag; `common.sh` builds by default; `load-test/soak/README.md` documents the build rule and the fields.
 - `multi-instance-untouched` command — AC14, AC20, AC23
   run: `git diff --exit-code origin/main...HEAD -- docker data-prism-*/src/main docs/plan/PLAN.md`
 - `link-timing` test — AC18
@@ -205,3 +226,11 @@ Reviewed HEAD: 162d4571ad4255cc9bef68c2b43563bc22ef99c9. Source: the owner's PR 
 |---|---|---|---|---|
 | 243-28 | High | probe-startup-refusals.sh:30 | Calls new_key, which round 1 removed from common.sh; set -e exits after probe 1, server-c left refusing, AC3 key probe never runs | Generate inline (openssl rand -hex 32) or restore new_key; EXIT trap restores server-c |
 | 243-29 | Medium | LoadDriver.java:328 | follow and followTranslated go through classifyOther, so a source or resolver failure inside a follow counts as completed | Classify follow ops with classify; test a RESOLVER_FAILED follow |
+
+## Review round 5 — findings
+
+Reviewed HEAD: f46b3df693a195c3ae4e5601589532c7c588ef9d (code-reviewer re-review of round 4; 243-28 and 243-29 FIXED). Owner approved a fifth round.
+
+- R5-1 [P2] load-test/soak/compose.soak.yaml:10,50-53; load-test/soak/common.sh:16-20 — The overlay never ensures members run the branch's build and nothing records which image ran. All three members use ghcr.io/aindriub/data-prism-quickstart-server:${QUICKSTART_IMAGE_TAG:-0.8.0}; compose.build.yaml builds server-a/b only; common.sh defaults SOAK_BUILD=0; SOAK_BUILD and QUICKSTART_IMAGE_TAG are undocumented; 0.8.0 is unpublished. A stale local :0.8.0 tag is reused silently under the default pull policy. Settled by Amendment 6 (owner).
+- R5-2 [P3, owner-approved for this round] load-test/soak/probe-startup-refusals.sh:14,43 — On success server-c is force-recreated twice (explicit restore, then the uncleared EXIT trap); the :42 comment is wrong. Fix: `trap - EXIT` after the explicit restore and correct the comment.
+- R5-3 [P3] docs/plan/perf/soak-0.8.md:31 — Criterion 3 names only FAILED; RESOLVER_FAILED passes every criterion, and the cause entry it asks for cannot exist for a FAILED source (failureCauses holds transport failures only). Settled by Amendment 6 (owner).
