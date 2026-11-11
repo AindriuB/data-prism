@@ -40,11 +40,21 @@ out="$(summary_file "capture-$profile-$platform")"; : > "$out"
 cid="$(dc ps -q server-a)"
 [ -n "$cid" ] || { note "$out" "capture: not run (server-a is not up)"; exit 3; }
 
-docker run --rm --network "container:$cid" --cap-drop ALL --cap-add NET_RAW --cap-add SETUID --cap-add SETGID \
-  -v "$results_dir:/out" "$image" \
-  timeout "$secs" tcpdump -i any -n -s 0 -U -w "/out/$pcap" "tcp port 5701" >/dev/null 2>&1 || true
+# The sidecar writes its pcap inside its own filesystem (/tmp), which needs no host-directory rights: a rootful
+# Linux engine would refuse a write into the owner-owned results directory without CAP_DAC_OVERRIDE. The file is
+# copied out with docker cp afterwards. tcpdump's own error output is kept and shown if nothing was recorded.
+cap_name="soak-capture-$stamp-$$"
+trap 'docker rm -f "$cap_name" >/dev/null 2>&1 || true' EXIT
+docker run --name "$cap_name" --network "container:$cid" --cap-drop ALL --cap-add NET_RAW --cap-add SETUID --cap-add SETGID \
+  "$image" timeout "$secs" tcpdump -i any -n -s 0 -U -w "/tmp/$pcap" "tcp port 5701" >/dev/null 2>"$results_dir/.capture-$stamp.err" || true
+docker cp "$cap_name:/tmp/$pcap" "$results_dir/$pcap" >/dev/null 2>>"$results_dir/.capture-$stamp.err" || true
 
-if [ ! -s "$results_dir/$pcap" ]; then note "$out" "capture: no packets recorded (capture rights or image missing?)"; exit 3; fi
+if [ ! -s "$results_dir/$pcap" ]; then
+  note "$out" "capture: no packets recorded (capture rights or image missing?)"
+  sed -n '1,5p' "$results_dir/.capture-$stamp.err" >&2
+  exit 3
+fi
+rm -f "$results_dir/.capture-$stamp.err"
 
 # Analyse in a sidecar with no network and no capabilities; only counts leave it.
 counts="$(docker run --rm --network none --cap-drop ALL -e "SUBJECT_IDS=$subject_ids" \

@@ -38,8 +38,8 @@ Translated links: the harness's own server gets a `KeyResolver` (`parcel-id` to 
 `target/data-prism-load-test-key-resolver.jar` by this module's `package` and put on the server's `loader.path`
 beside the REST connector when the mix has a `followTranslated` weight. Every fifth synthetic source then declares
 `parcel-ref` as its input key, so a context result carries a translated link to it. The module compiles the
-resolver against `data-prism-core` from the reactor build (`../data-prism-core/target`, built by `run.sh`; the
-`dataprism.version` property of `load-test/pom.xml` must match the reactor's version), so build the reactor first.
+resolver against `data-prism-core` from the reactor build (`../data-prism-core/target`, built by `run.sh`, which
+passes the reactor's version as `-Ddataprism.version`), so build the reactor first.
 The overlay's members run with links disabled, so no resolver and no translated follow exists in the three-member
 run (pending the owner: it needs decision (b) reversed or task 264).
 
