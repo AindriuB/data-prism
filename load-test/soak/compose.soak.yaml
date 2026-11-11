@@ -26,6 +26,16 @@ x-member-env: &member-env
   DATAPRISM_HAZELCAST_TRUSTEDNETWORK: "true"
   # Links off, and no DATAPRISM_LINKS_KEYID or DATAPRISM_LINKS_KEYS_* anywhere.
   DATAPRISM_LINKS_ENABLED: "false"
+  # The role's capabilities: an env list replaces the image's whole YAML list, so index 0 is restated. Without
+  # LIST_SOURCES and DESCRIBE_SOURCE about two thirds of the scenario's calls would be denied.
+  DATAPRISM_SECURITYPOLICY_ROLES_INVESTIGATOR_0: GET_ENTITY_CONTEXT
+  DATAPRISM_SECURITYPOLICY_ROLES_INVESTIGATOR_1: LIST_SOURCES
+  DATAPRISM_SECURITYPOLICY_ROLES_INVESTIGATOR_2: DESCRIBE_SOURCE
+  # Limits the scenario cannot set on a target (task 263, D1). The budget is per subject per scope, in source reads;
+  # soak-three-member.json calls two subjects, one fixture source each: see "The three-member run" in README.md for
+  # the refusal share this produces. Source timeouts are a single-node measurement only; the value is the default.
+  DATAPRISM_LIMITS_SCOPEREADBUDGET: "12000"
+  DATAPRISM_LIMITS_PERSOURCETIMEOUT: 3s
 
 services:
   server-a:
@@ -89,6 +99,22 @@ configs:
         timeout client 120s
         timeout server 120s
         timeout tunnel 1h
+        retries 3
+        # A request whose member died is sent to another one, not failed against the dead one.
+        option redispatch
+      # Docker's embedded DNS, so a recreated member (a new address) is found again, and a member that is not
+      # up yet does not stop the proxy starting.
+      resolvers docker
+        nameserver dns 127.0.0.11:53
+        resolve_retries 3
+        timeout resolve 1s
+        timeout retry 1s
+        hold valid 10s
+        hold other 10s
+        hold refused 10s
+        hold nx 10s
+        hold timeout 10s
+        hold obsolete 10s
       frontend mcp
         bind *:8080
         default_backend members
@@ -97,6 +123,12 @@ configs:
         stick-table type string len 64 size 100k expire 24h
         stick on req.hdr(mcp-session-id)
         stick store-response res.hdr(mcp-session-id)
+        # The member's /health (liveness): a member that fails two checks in a row takes no traffic until it
+        # passes two.
+        option httpchk
+        http-check send meth GET uri /health ver HTTP/1.1 hdr Host localhost
+        http-check expect status 200
+        default-server check inter 5s fall 2 rise 2 resolvers docker init-addr last,libc,none
         server server-a server-a:8080
         server server-b server-b:8080
         server server-c server-c:8080

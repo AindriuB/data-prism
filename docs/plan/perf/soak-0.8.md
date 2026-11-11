@@ -31,8 +31,9 @@ A run passes only if every line holds.
 3. No FAILED source status or failed call without a cause (every one has an entry in
    `calls.failureCauses`).
 4. The budget counters equal the reads made.
-5. No privacy refusal other than those the scenario provoked (`SCOPE_READ_BUDGET` for the budget mix;
-   none other).
+5. No privacy refusal other than those the scenario provoked: `SCOPE_READ_BUDGET` (the read budget, in both
+   runs) and `LINK_INVALID` (the single-node run's invalid-link calls, whose refusal text the driver counts
+   under that code); none other. An `UNCLASSIFIED_ERROR` refusal fails the run.
 6. No member logs "Resolving class ... is not allowed" at any point in any run (task 221). The count is
    zero.
 
@@ -57,11 +58,15 @@ any profile. A subject id in the clear in any profile fails.
 
 ## Per-hour metrics (AC2)
 
-One table per run. One row per hour.
+One table per run. One row per hour. The rows come from the result file's `intervals` (the driver's interval
+rows: per operation p50, p95, p99, calls and failures, refusals by code, and, for the single-node run only,
+heap after GC and live threads of the harness server's JVM). For the three-member run those two columns, the
+open file handles and the audit bytes come from the host's own measurements of the members, because the driver
+cannot read a member's JVM.
 
 ### Single node (at least 8 hours)
 
-| Hour | Tool | p50 ms | p95 ms | p99 ms | Throughput per s | Heap after GC | Live threads | Open file handles | Audit bytes written | Budget counter | Reads made |
+| Hour | Operation | p50 ms | p95 ms | p99 ms | Throughput per s | Heap after GC | Live threads | Open file handles | Audit bytes written | Budget counter | Reads made |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | | | | | | | | | | | | |
 
@@ -79,7 +84,7 @@ Pass or fail against the AC2 criteria:
 
 ### Three members (at least 4 hours)
 
-| Hour | Tool | p50 ms | p95 ms | p99 ms | Throughput per s | Heap after GC | Live threads | Open file handles | Audit bytes written | Budget counter | Reads made |
+| Hour | Operation | p50 ms | p95 ms | p99 ms | Throughput per s | Heap after GC | Live threads | Open file handles | Audit bytes written | Budget counter | Reads made |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | | | | | | | | | | | | |
 

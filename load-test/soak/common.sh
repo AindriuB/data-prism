@@ -45,7 +45,7 @@ health_code() {
     printf "%s" "$code"' "$port" "$path" 2>/dev/null || printf 'none'
 }
 
-# wait_ready <service> <seconds>: 0 when the member answers 200 within the time; the wait is bounded.
+# wait_ready <service> <seconds>: 0 when the member's /health answers 200 within the time (liveness only).
 wait_ready() {
   local svc="$1" limit="$2" waited=0
   while [ "$waited" -lt "$limit" ]; do
@@ -55,10 +55,31 @@ wait_ready() {
   return 1
 }
 
+# cluster_size <service>: the member count in the latest "Members {size:N" line of the member's own log, or
+# "none". A number only; the log's addresses are never read out.
+cluster_size() {
+  local n
+  n="$(dc logs --no-log-prefix "$1" 2>/dev/null | grep -o 'Members {size:[0-9]*' | tail -1 | grep -o '[0-9]*$' || true)"
+  printf '%s' "${n:-none}"
+}
+
+# wait_joined <service> <seconds>: 0 when the member answers /health 200 AND its log's latest member list holds
+# all three members. A step that waits on this, not on wait_ready, does not start the next fault before the
+# member has rejoined the cluster. A log line from before a restart can satisfy it only if the member rejoined
+# since (the latest line is the one read).
+wait_joined() {
+  local svc="$1" limit="$2" waited=0
+  while [ "$waited" -lt "$limit" ]; do
+    [ "$(health_code "$svc")" = "200" ] && [ "$(cluster_size "$svc")" = "3" ] && return 0
+    sleep 5; waited=$((waited + 5))
+  done
+  return 1
+}
+
 # cpu_percent <service>: the container's CPU percentage at this moment (a number, no host detail).
 cpu_percent() { docker stats --no-stream --format '{{.CPUPerc}}' "$(dc ps -q "$1")" 2>/dev/null || printf 'none'; }
 
-# member_count: how many of the three members answer ready right now.
+# member_count: how many of the three members answer /health 200 right now (liveness, not membership).
 member_count() {
   local n=0 m
   for m in "${members[@]}"; do [ "$(health_code "$m")" = "200" ] && n=$((n + 1)); done
@@ -72,9 +93,6 @@ require_keys() {
     exit 2
   fi
 }
-
-# new_key: a fresh 64-hex-character key on stdout; the caller must not print it.
-new_key() { openssl rand -hex 32; }
 
 # Fail-closed marker for the 221 criterion: count log lines of one member that say a class is not
 # allowed to resolve. Prints a number only.
