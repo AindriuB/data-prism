@@ -90,7 +90,7 @@ timeouts are single-node only; the overlay's per-source timeout is the 3 s defau
   `DATAPRISM_NAME_KEY_MATERIAL` before any later script, or its recreate will fail with `CLUSTER_KEY_MISMATCH`.
 - `capture-member-port.sh` takes `SUBJECT_IDS`, the exact ids the scenario calls (for the three-member scenario,
   `1001,1002`), searches the capture for exactly those strings, and refuses to report unless its own positive
-  control finds a planted id. Its sidecar image is pinned by digest, has only `NET_RAW`, and the analysis runs with
+  control finds a planted id. Its sidecar image is pinned by digest, has `NET_RAW` (plus `SETUID` and `SETGID`, which tcpdump uses to drop its own privileges), and the analysis runs with
   no network.
 - The partition's pause is issued by the owner, as the header of `fault-network-partition.sh` says.
 

@@ -16,7 +16,7 @@
 # The check proves itself first: a positive control appends the first id to a copy of the capture and the same
 # search must find it, otherwise no result is written ("not run").
 # Capture runs in a throwaway sidecar sharing server-a's network namespace. The image is pinned by digest
-# (CAPTURE_IMAGE overrides it) and the sidecar has only NET_RAW, which tcpdump needs: not NET_ADMIN, which would
+# (CAPTURE_IMAGE overrides it) and the sidecar has NET_RAW (and SETUID and SETGID, for tcpdump to drop privileges): not NET_ADMIN, which would
 # let it change the member's network. The analysis runs with no network and no capabilities.
 #
 # The raw capture is written only under load-test/results/ (git-ignored) or SOAK_RESULTS_DIR when
@@ -40,9 +40,9 @@ out="$(summary_file "capture-$profile-$platform")"; : > "$out"
 cid="$(dc ps -q server-a)"
 [ -n "$cid" ] || { note "$out" "capture: not run (server-a is not up)"; exit 3; }
 
-docker run --rm --network "container:$cid" --cap-drop ALL --cap-add NET_RAW \
+docker run --rm --network "container:$cid" --cap-drop ALL --cap-add NET_RAW --cap-add SETUID --cap-add SETGID \
   -v "$results_dir:/out" "$image" \
-  timeout "$secs" tcpdump -Z root -i any -n -s 0 -U -w "/out/$pcap" "tcp port 5701" >/dev/null 2>&1 || true
+  timeout "$secs" tcpdump -i any -n -s 0 -U -w "/out/$pcap" "tcp port 5701" >/dev/null 2>&1 || true
 
 if [ ! -s "$results_dir/$pcap" ]; then note "$out" "capture: no packets recorded (capture rights or image missing?)"; exit 3; fi
 
