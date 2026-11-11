@@ -46,3 +46,11 @@ Verified at dc86ab245bbafc8aa54531396027d7fe29d070fb: tester PASS (stdio-classes
 - AC4 not met: `StdioParseErrorLeakTest.java:216-217` and `StdioSdkLogPinTest.java:146-147` join each reader for 10 s (up to 20 s in a row). The existing timeout was `errReader.join(5000)`, and AC4 allows only the 10 s `waitFor` above existing timeouts. Fix: join both readers with the existing 5000 ms; a reader still alive still fails the test.
 - AC2 evidence gap: the Outcome reports 7 of 9 failing on the base commit with the 100 ms lag but does not name `errorWrongType`. Show `errorWrongType` failing on the base commit and passing after the fix.
 - AC3 evidence gap: the two `assertSdkErrorReply` cases (`toolCallArgumentsString`, `initializeCapabilitiesString`, `StdioParseErrorLeakTest.java:83-96`) also call `assertNoLeak`, but no mutation is shown making them fail. Show a temporary mutation (reverted before commit) that makes them fail, or state why they fall outside AC3's three checks.
+
+## Outcome
+
+Landed on `main` as PR #249 (`8c41a1f1`), verified PASS and APPROVE at `59dca0eb` on /verify attempt 2 (2026-11-11). Teardown in all three places is `toHandle().destroy()`, `waitFor` 10 s with `destroyForcibly` fallback, both readers joined to end of stream (5000 ms), failure on a reader `IOException`. AC2 and AC3 evidence is in the PR #249 body: with a 100 ms lag, `errorWrongType` fails on base `7f3234d2` and passes after; echoing every inbound line from `StdioInboundGuard.handle` made all 9 `StdioParseErrorLeakTest` cases and `StdioSdkLogPinTest.pinKeepsClientArgumentsOutOfStderr` fail.
+
+AC5's scope check ("only owned files") fails as written: this task file is in the PR diff because of the orchestrator's attempt-1 note, commit `e55f9010`. That is accepted; no owned-file scope was exceeded.
+
+Open from the owner's review (PR #249, round 1, nothing Medium or above): 309-F1 (249-1 and 249-3, wanted before 0.8.0), 249-2 and 249-5, in PLAN.md under "309 follow-ups".
