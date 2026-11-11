@@ -10,6 +10,10 @@ set -euo pipefail
 require_keys
 out="$(summary_file probe-startup-refusals)"; : > "$out"
 
+# However the script ends (a probe failing, an interrupt), put server-c back as the overlay defines it.
+restore_server_c() { dc up -d --force-recreate --no-deps server-c >/dev/null 2>&1 || true; }
+trap restore_server_c EXIT
+
 probe() {   # probe <label> <env override file content>
   local label="$1" override; override="$(mktemp)"
   printf '%s\n' "$2" > "$override"
@@ -27,7 +31,7 @@ probe "links enabled" "services:
       DATAPRISM_LINKS_ENABLED: \"true\""
 
 export DATAPRISM_PROBE_LINK_KEY_MATERIAL
-DATAPRISM_PROBE_LINK_KEY_MATERIAL="$(new_key)"
+DATAPRISM_PROBE_LINK_KEY_MATERIAL="$(openssl rand -hex 32)"
 probe "link key configured" "services:
   server-c:
     environment:
@@ -35,6 +39,6 @@ probe "link key configured" "services:
       DATAPRISM_LINKS_KEYS_PROBE_ENVIRONMENTVARIABLE: DATAPRISM_PROBE_LINK_KEY_MATERIAL
       DATAPRISM_PROBE_LINK_KEY_MATERIAL: \${DATAPRISM_PROBE_LINK_KEY_MATERIAL}"
 
-# Put server-c back as the overlay defines it.
-dc up -d --force-recreate --no-deps server-c >/dev/null 2>&1 || true
+# Put server-c back as the overlay defines it (the EXIT trap does it again if this point is not reached).
+restore_server_c
 note "$out" "server-c restored to the overlay definition"

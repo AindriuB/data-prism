@@ -320,7 +320,9 @@ final class LoadDriver {
                 subject, index);
         java.util.concurrent.atomic.AtomicReference<McpSchema.CallToolResult> received =
                 new java.util.concurrent.atomic.AtomicReference<>();
-        boolean context = planned.tool().equals("get_entity_context");
+        // The context envelope: get_entity_context, and a followed link, which answers with the same envelope.
+        boolean context = planned.tool().equals("get_entity_context") || planned.tool().equals("follow")
+                && planned.op() != MixedCalls.Op.INVALID_LINK;
         CallOutcome outcome = measuredCall(id -> {
             McpSchema.CallToolResult result = send.send(planned.request());
             received.set(result);

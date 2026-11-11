@@ -97,4 +97,48 @@ class LoadDriverMixedCallTest {
         assertThat(types).containsOnly("CUSTOMER");
         assertThat(LoadDriver.subjectOf(scenario(null, null), "generated-1", 3)).isEqualTo("generated-1");
     }
+
+    private static MixedCalls.State holdingLinks() {
+        MixedCalls.State state = new MixedCalls.State();
+        LoadDriver.mixedCall(request -> text("{\"sources\":{\"a\":{\"status\":\"ANSWERED\",\"_links\":["
+                + "{\"link\":\"D1\"},{\"link\":\"T1\",\"toNamespace\":\"ns\"}]}}}", false), state,
+                scenario(new Scenario.Mix(1, 0, 0, 0, 0, 0), null), "s", 0, 0, CLOCK);
+        return state;
+    }
+
+    @Test
+    void aFollowWhoseSourceFailedIsClassifiedByItsStatusesNotCountedAsCompletedClean() {
+        MixedCalls.State state = holdingLinks();
+        Scenario follow = scenario(new Scenario.Mix(0, 0, 0, 0, 1, 0), null);
+
+        LoadDriver.Called resolver = LoadDriver.mixedCall(
+                request -> text("{\"sources\":{\"a\":{\"status\":\"RESOLVER_FAILED\"}}}", false),
+                state, follow, "s", 1, 0, CLOCK);
+
+        assertThat(resolver.operation()).isEqualTo("follow");
+        assertThat(resolver.outcome().sourceStatuses()).containsEntry("a", "RESOLVER_FAILED");
+        assertThat(resolver.outcome().sourceStatuses().values().stream().noneMatch(SourceStatuses::isAnswered)).isTrue();
+
+        MixedCalls.State other = holdingLinks();
+        Scenario translated = scenario(new Scenario.Mix(0, 0, 0, 0, 0, 0, 1), null);
+        LoadDriver.Called failed = LoadDriver.mixedCall(
+                request -> text("{\"sources\":{\"a\":{\"status\":\"FAILED\"}}}", false),
+                other, translated, "s", 1, 0, CLOCK);
+
+        assertThat(failed.operation()).isEqualTo("followTranslated");
+        assertThat(failed.outcome().sourceStatuses()).containsEntry("a", "FAILED");
+    }
+
+    @Test
+    void aFollowWithNoReadableBodyIsAFailureAndARefusedLinkKeepsItsCode() {
+        Scenario follow = scenario(new Scenario.Mix(0, 0, 0, 0, 1, 0), null);
+
+        LoadDriver.Called unreadable = LoadDriver.mixedCall(request -> text("not json", false), holdingLinks(),
+                follow, "s", 1, 0, CLOCK);
+        LoadDriver.Called refused = LoadDriver.mixedCall(request -> text("The link is not valid.", true),
+                holdingLinks(), follow, "s", 1, 0, CLOCK);
+
+        assertThat(unreadable.outcome().completed()).isFalse();
+        assertThat(refused.outcome().refusalCode()).isEqualTo("LINK_INVALID");
+    }
 }

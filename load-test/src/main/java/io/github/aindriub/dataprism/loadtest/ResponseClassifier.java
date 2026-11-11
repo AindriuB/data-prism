@@ -46,9 +46,7 @@ final class ResponseClassifier {
      */
     static CallOutcome classifyOther(McpSchema.CallToolResult result, long latencyMicros) {
         if (Boolean.TRUE.equals(result.isError())) {
-            String text = firstText(result);
-            return CallOutcome.refused(latencyMicros,
-                    text != null && text.strip().equals(LINK_INVALID_TEXT) ? "LINK_INVALID" : refusalCode(text));
+            return CallOutcome.refused(latencyMicros, refusalCode(firstText(result)));
         }
         return CallOutcome.completed(latencyMicros, Map.of());
     }
@@ -72,6 +70,9 @@ final class ResponseClassifier {
     private static String refusalCode(String text) {
         if (text == null) {
             return UNCLASSIFIED;
+        }
+        if (text.strip().equals(LINK_INVALID_TEXT)) {
+            return "LINK_INVALID";
         }
         Matcher refused = REFUSED.matcher(text);
         if (refused.matches()) {
