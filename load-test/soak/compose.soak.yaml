@@ -14,7 +14,7 @@
 #   - links are disabled and no link key is configured, because a joining
 #     member refuses both with MISSING_SHARED_LINK_LIMITER: the three-member run
 #     has no `follow` and no page link;
-#   - a round-robin load balancer, `lb`, is the only service published to the host
+#   - a least-connections load balancer with MCP session affinity, `lb`, is the only service published to the host
 #     (loopback, port 8080). 5701 is published nowhere.
 # Compose >= 2.24.4 is needed for the `!reset` and `!override` tags. The trusted-network
 # caveat of the base file applies unchanged: it holds only on a Linux Docker engine
@@ -60,18 +60,21 @@ services:
         ipv4_address: 172.28.57.13
     ports: !reset []
 
-  # Round-robin over the three members on the default network. Instances are
-  # stateless for MCP calls, so no affinity is set. Buffering is off so a streamed
-  # response is not held back.
+  # Least-connections over the three members, with session affinity. An MCP session lives on the member
+  # that opened it (a streamable HTTP session id is not known to the other members), so a plain round robin
+  # makes every second request fail with "session not found". HAProxy learns the Mcp-Session-Id from the
+  # response that issues it and sends the session's later requests to the same member; a request with no id
+  # (the one that opens a session) is balanced. A member that dies takes its sessions with it, as for any
+  # stateful server: the client must open a new one.
   lb:
-    image: nginx:1.27-alpine
+    image: haproxy:3.0-alpine
     depends_on:
       - server-a
       - server-b
       - server-c
     configs:
       - source: lb-conf
-        target: /etc/nginx/conf.d/default.conf
+        target: /usr/local/etc/haproxy/haproxy.cfg
     networks:
       - default
     ports:
@@ -80,19 +83,20 @@ services:
 configs:
   lb-conf:
     content: |
-      upstream members {
-        least_conn;
-        server server-a:8080;
-        server server-b:8080;
-        server server-c:8080;
-      }
-      server {
-        listen 8080;
-        location / {
-          proxy_pass http://members;
-          proxy_http_version 1.1;
-          proxy_set_header Connection "";
-          proxy_buffering off;
-          proxy_read_timeout 120s;
-        }
-      }
+      defaults
+        mode http
+        timeout connect 5s
+        timeout client 120s
+        timeout server 120s
+        timeout tunnel 1h
+      frontend mcp
+        bind *:8080
+        default_backend members
+      backend members
+        balance leastconn
+        stick-table type string len 64 size 100k expire 24h
+        stick on req.hdr(mcp-session-id)
+        stick store-response res.hdr(mcp-session-id)
+        server server-a server-a:8080
+        server server-b server-b:8080
+        server server-c server-c:8080

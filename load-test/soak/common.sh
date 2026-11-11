@@ -28,14 +28,19 @@ summary_file() { printf '%s/%s-summary.txt' "$results_dir" "$1"; }
 # note <summary-file> <text>: one finding line, to the terminal and the summary.
 note() { printf '%s\n' "$2" | tee -a "$1"; }
 
-# health_code <service>: the HTTP status code of the member's readiness probe, or "none".
-# Path and port are the deployment's own; override HEALTH_PORT and HEALTH_PATH if they differ.
-# Only the status code is read; nothing of the body is kept.
+# health_code <service>: the HTTP status code of the member's health probe, or "none".
+# The default path is the server's unauthenticated /health, which answers 200 while the process is up
+# (liveness only: it does not reflect the clusterSecurity contributor). The actuator readiness path is
+# behind the caller's authentication on the packaged server; to read it (the hostile-member run must),
+# set HEALTH_PATH=/actuator/health/readiness and HEALTH_BEARER to a token. The token goes to the member
+# on stdin of the probe and is never printed. HEALTH_PORT overrides the port. Only the status code is read.
 health_code() {
-  local svc="$1" port="${HEALTH_PORT:-8080}" path="${HEALTH_PATH:-/actuator/health/readiness}"
-  dc exec -T "$svc" bash -c '
+  local svc="$1" port="${HEALTH_PORT:-8080}" path="${HEALTH_PATH:-/health}"
+  printf '%s' "${HEALTH_BEARER:-}" | dc exec -T "$svc" bash -c '
+    IFS= read -r bearer
     exec 3<>"/dev/tcp/127.0.0.1/$0" || exit 1
-    printf "GET %s HTTP/1.0\r\nHost: localhost\r\n\r\n" "$1" >&3
+    auth=""; [ -n "$bearer" ] && auth="Authorization: Bearer $bearer\r\n"
+    printf "GET %s HTTP/1.0\r\nHost: localhost\r\n%b\r\n" "$1" "$auth" >&3
     read -r _ code _ <&3
     printf "%s" "$code"' "$port" "$path" 2>/dev/null || printf 'none'
 }
