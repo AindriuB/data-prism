@@ -22,16 +22,26 @@ final class ResultWriter {
     private ResultWriter() { }
 
     static Path write(Path resultsDir, Scenario scenario, Instant startedAt, String commit, boolean dirty,
-                      LoadDriver.Run run) throws IOException {
+                      LoadDriver.Run run, String memberBuild) throws IOException {
         Files.createDirectories(resultsDir);
         Path file = resultsDir.resolve(scenario.name() + "-" + STAMP.format(startedAt) + ".json");
         JsonMapper mapper = JsonMapper.builder().enable(SerializationFeature.INDENT_OUTPUT).build();
-        Files.writeString(file, mapper.writeValueAsString(document(scenario, startedAt, commit, dirty, run)) + "\n");
+        Files.writeString(file, mapper.writeValueAsString(document(scenario, startedAt, commit, dirty, run, memberBuild)) + "\n");
         return file;
     }
 
     static Map<String, Object> document(Scenario scenario, Instant startedAt, String commit, boolean dirty,
                                         LoadDriver.Run run) {
+        return document(scenario, startedAt, commit, dirty, run, null);
+    }
+
+    /**
+     * {@code memberBuild} is the build identity the target's members run when the result is written (the caller reads
+     * it from the running containers); a target-mode result records it, or "unknown" when it was not read, so a
+     * result never names a build it did not see. {@code commit} and {@code dirty} are the driver's own checkout.
+     */
+    static Map<String, Object> document(Scenario scenario, Instant startedAt, String commit, boolean dirty,
+                                        LoadDriver.Run run, String memberBuild) {
         ResultAggregator.Summary s = run.summary();
         long causes = s.failureCauses().values().stream().mapToLong(Long::longValue).sum();
         if (causes != s.transportFailures()) {
@@ -46,7 +56,15 @@ final class ResultWriter {
         doc.put("jdk", System.getProperty("java.vendor") + " " + System.getProperty("java.version"));
         doc.put("host", host());
         doc.put("parameters", scenario);
-        doc.put("effectiveLimits", scenario.limits().asProperties());
+        boolean target = scenario.target() != null;
+        doc.put("mode", target ? "target" : "harness-server");
+        if (target) {
+            doc.put("memberBuild", memberBuild == null || memberBuild.isBlank() ? "unknown" : memberBuild);
+        }
+        if (!target) {
+            // A target applies its own limits and serves its own sources: none of this is the harness's to report.
+            doc.put("effectiveLimits", scenario.limits().asProperties());
+        }
         Map<String, Object> calls = new LinkedHashMap<>();
         calls.put("attempted", s.attempted());
         calls.put("completed", s.completed());
@@ -78,9 +96,17 @@ final class ResultWriter {
         doc.put("server", server);
         doc.put("throughputPerSecond", s.throughputPerSecond());
         doc.put("refusalCodes", s.refusalCodes());
-        doc.put("sourceStatusTotals", s.totalStatus());
-        doc.put("sourcesNotAnswered", s.sourcesNotAnswered());
-        doc.put("perSourceStatus", s.perSourceStatus());
+        if (!target) {
+            doc.put("sourceStatusTotals", s.totalStatus());
+            doc.put("sourcesNotAnswered", s.sourcesNotAnswered());
+            doc.put("perSourceStatus", s.perSourceStatus());
+        }
+        if (!s.perOperation().isEmpty()) {
+            doc.put("perOperation", s.perOperation());
+        }
+        if (!run.intervals().isEmpty()) {
+            doc.put("intervals", run.intervals());
+        }
         return doc;
     }
 

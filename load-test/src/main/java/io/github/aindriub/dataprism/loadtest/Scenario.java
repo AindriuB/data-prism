@@ -27,9 +27,107 @@ import java.util.Map;
  *                      of {@code sourceLatency}; 0 means none. Lets a scenario time out some sources and not all
  *                      (a call in which every source fails is refused, and reports no per-source statuses)
  * @param slowLatency   the band the slow sources answer within; required when {@code slowSources} is above 0
+ * @param mix           the weights of the calls the driver makes; absent means {@code get_entity_context} only,
+ *                      each call on a fresh or pooled subject. Present, the scenario also drives {@code list_sources},
+ *                      {@code describe_source}, {@code follow} and invalid links
+ * @param target        an already-running endpoint to drive instead of starting the synthetic sources and a server;
+ *                      absent means the harness starts its own
  */
 public record Scenario(String name, int sources, Latency sourceLatency, Load load, Limits limits, long seed,
-                       int slowSources, Latency slowLatency) {
+                       int slowSources, Latency slowLatency, Mix mix, Target target) {
+
+    /** A scenario with no call mix and no external target: the original shape. */
+    public Scenario(String name, int sources, Latency sourceLatency, Load load, Limits limits, long seed,
+                    int slowSources, Latency slowLatency) {
+        this(name, sources, sourceLatency, load, limits, seed, slowSources, slowLatency, null, null);
+    }
+
+    /**
+     * Relative weights of the calls one worker makes. A weight of 0 (or an absent field) means never. The
+     * names are the closed set of what the driver can issue; an unknown name is rejected when the scenario loads.
+     *
+     * @param entityContext         {@code get_entity_context} naming no sources
+     * @param targetedEntityContext {@code get_entity_context} naming sources taken from the last {@code list_sources}
+     * @param listSources           {@code list_sources}, continuing the worker's walk through its pages
+     * @param describeSource        {@code describe_source} of a label from the last {@code list_sources}
+     * @param follow                {@code follow} of a link from the last result's {@code _links}
+     * @param invalidLink           {@code follow} of a held link whose ciphertext was altered, so the server must refuse it
+     * @param followTranslated      {@code follow} of a held translated link (one carrying a {@code toNamespace})
+     */
+    public record Mix(int entityContext, int targetedEntityContext, int listSources, int describeSource,
+                      int follow, int invalidLink, int followTranslated) {
+
+        /** A mix with no translated follows. */
+        public Mix(int entityContext, int targetedEntityContext, int listSources, int describeSource,
+                   int follow, int invalidLink) {
+            this(entityContext, targetedEntityContext, listSources, describeSource, follow, invalidLink, 0);
+        }
+
+        public Mix {
+            for (var weight : Map.of("entityContext", entityContext, "targetedEntityContext", targetedEntityContext,
+                    "listSources", listSources, "describeSource", describeSource, "follow", follow,
+                    "invalidLink", invalidLink, "followTranslated", followTranslated).entrySet()) {
+                if (weight.getValue() < 0) {
+                    throw new IllegalArgumentException("scenario mix." + weight.getKey() + " must not be negative");
+                }
+            }
+            if (total(entityContext, targetedEntityContext, listSources, describeSource, follow, invalidLink,
+                    followTranslated) <= 0) {
+                throw new IllegalArgumentException("scenario mix needs at least one weight above 0");
+            }
+        }
+
+        /** Whether the server needs a key resolver for this mix. */
+        boolean needsResolver() {
+            return followTranslated > 0;
+        }
+
+        int total() {
+            return total(entityContext, targetedEntityContext, listSources, describeSource, follow, invalidLink,
+                    followTranslated);
+        }
+
+        /** Whether the server must have links enabled for this mix. */
+        boolean needsLinks() {
+            return follow > 0 || invalidLink > 0 || followTranslated > 0;
+        }
+
+        private static int total(int... weights) {
+            int sum = 0;
+            for (int weight : weights) {
+                sum += Math.max(weight, 0);
+            }
+            return sum;
+        }
+    }
+
+    /**
+     * An endpoint that is already running, such as the load balancer of the three-member overlay.
+     *
+     * @param baseUrl    the server's base URL; the MCP endpoint is {@code /mcp} under it
+     * @param tokenUrl   the token issuer's {@code POST /token} URL; a token lives {@code tokenLifetimeMinutes}
+     *                   and is replaced before it ends. An issuer whose certificate the JVM does not trust needs
+     *                   the usual {@code javax.net.ssl.trustStore} properties
+     * @param entityType the entity type asked for; default {@code PARCEL}
+     * @param subjects   the subject ids called, cycled; absent means generated ids as for a started server
+     * @param tokenLifetimeMinutes how long a minted token lives; default 60
+     * @param scopeLifetimeHours   how long a privacy scope lives on the target; default 8
+     */
+    public record Target(String baseUrl, String tokenUrl, String entityType, java.util.List<String> subjects,
+                         int tokenLifetimeMinutes, int scopeLifetimeHours) {
+        public Target {
+            if (baseUrl == null || !baseUrl.matches("https?://[^\\s/]+")) {
+                throw new IllegalArgumentException("scenario target.baseUrl must be an http or https origin");
+            }
+            if (tokenUrl == null || !tokenUrl.matches("https?://\\S+")) {
+                throw new IllegalArgumentException("scenario target.tokenUrl must be an http or https URL");
+            }
+            entityType = entityType == null || entityType.isBlank() ? SourceGenerator.ENTITY_TYPE : entityType;
+            subjects = subjects == null ? java.util.List.of() : java.util.List.copyOf(subjects);
+            tokenLifetimeMinutes = tokenLifetimeMinutes <= 0 ? 60 : tokenLifetimeMinutes;
+            scopeLifetimeHours = scopeLifetimeHours <= 0 ? 8 : scopeLifetimeHours;
+        }
+    }
 
     /** Uniform latency band, in milliseconds, each source responds within. */
     public record Latency(int minMs, int maxMs) { }
@@ -43,10 +141,22 @@ public record Scenario(String name, int sources, Latency sourceLatency, Load loa
      * @param callTimeoutSeconds how long the client waits for one call before counting a transport failure
      * @param subjectPool    0 asks for a different subject on every call; above 0 the calls cycle through that many
      *                       subjects, so the per-subject read budget is reached
+     * @param intervalSeconds how often the driver writes an interval row; 0 or absent means one hour
      */
     public record Load(int concurrency, int calls, int warmupCalls, int ratePerSecond, int durationSeconds,
-                       int callTimeoutSeconds, int subjectPool) {
+                       int callTimeoutSeconds, int subjectPool, int intervalSeconds) {
+
+        /** The interval rows' default spacing. */
+        public static final int DEFAULT_INTERVAL_SECONDS = 3600;
+
+        /** A load with the default interval. */
+        public Load(int concurrency, int calls, int warmupCalls, int ratePerSecond, int durationSeconds,
+                    int callTimeoutSeconds, int subjectPool) {
+            this(concurrency, calls, warmupCalls, ratePerSecond, durationSeconds, callTimeoutSeconds, subjectPool, 0);
+        }
+
         public Load {
+            intervalSeconds = intervalSeconds <= 0 ? DEFAULT_INTERVAL_SECONDS : intervalSeconds;
             callTimeoutSeconds = callTimeoutSeconds <= 0 ? 30 : callTimeoutSeconds;
             if (callTimeoutSeconds < LoadDriver.CONNECT_TIMEOUT.toSeconds()) {
                 // Below the connect timeout a connect timeout could never be told from a read timeout.
@@ -101,7 +211,16 @@ public record Scenario(String name, int sources, Latency sourceLatency, Load loa
             throw new IllegalArgumentException(
                     "scenario name must be lower-case letters, digits and hyphens (it names the result file): " + name);
         }
-        if (sources <= 0) {
+        if (target != null) {
+            // A target serves its own sources and applies its own limits: a scenario field the harness cannot
+            // apply would be reported as if it had been (a false result).
+            String set = sources != 0 ? "sources" : slowSources != 0 ? "slowSources"
+                    : slowLatency != null ? "slowLatency" : limits != null ? "limits" : null;
+            if (set != null) {
+                throw new IllegalArgumentException("scenario " + set + " cannot be set with a target:"
+                        + " the target serves its own sources and sets its own limits");
+            }
+        } else if (sources <= 0) {
             throw new IllegalArgumentException("scenario needs at least one source");
         }
         if (sourceLatency == null) {
@@ -130,7 +249,9 @@ public record Scenario(String name, int sources, Latency sourceLatency, Load loa
         if (load.calls() <= 0 && load.durationSeconds() <= 0) {
             throw new IllegalArgumentException("scenario load needs calls or durationSeconds");
         }
-        if (limits == null) {
+        if (target != null) {
+            limits = null;
+        } else if (limits == null) {
             limits = Limits.defaults(sources);
         } else if (limits.maxSources() == null) {
             // Unstated means "call every source": a scenario of N sources that can call only the

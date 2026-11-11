@@ -119,4 +119,13 @@ class ResponseClassifierTest {
 
         assertThat(outcome.sourceStatuses()).containsEntry("a", "RESOLVER_FAILED");
     }
+
+    @Test
+    void aRefusedFollowIsLinkInvalidNotUnclassified() {
+        assertThat(ResponseClassifier.classifyOther(error("The link is not valid."), 1).refusalCode())
+                .isEqualTo("LINK_INVALID");
+        assertThat(ResponseClassifier.classifyOther(error("something free-form"), 1).refusalCode())
+                .isEqualTo(ResponseClassifier.UNCLASSIFIED);
+        assertThat(ResponseClassifier.classifyOther(error("LINK_LOCKED"), 1).refusalCode()).isEqualTo("LINK_LOCKED");
+    }
 }

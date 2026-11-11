@@ -1,0 +1,14 @@
+{
+  "name": "soak-single-node",
+  "sources": 100,
+  "sourceLatency": { "minMs": 5, "maxMs": 25 },
+  "slowSources": 2,
+  "slowLatency": { "minMs": 2500, "maxMs": 3500 },
+  "load": { "concurrency": 8, "calls": 0, "warmupCalls": 200, "ratePerSecond": 4, "durationSeconds": 28800,
+            "callTimeoutSeconds": 60, "subjectPool": 15000 },
+  "limits": { "maxSources": 100, "maxRecords": 500, "maxResponseSize": "512KB",
+              "perSourceTimeout": "1s", "maxConcurrency": 8, "scopeReadBudget": 300 },
+  "mix": { "entityContext": 4, "targetedEntityContext": 3, "listSources": 3, "describeSource": 2,
+           "follow": 2, "followTranslated": 2, "invalidLink": 1 },
+  "seed": 263
+}

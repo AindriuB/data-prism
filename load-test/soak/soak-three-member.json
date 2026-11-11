@@ -1,0 +1,30 @@
+{
+  "name": "soak-three-member",
+  "load": {
+    "concurrency": 8,
+    "calls": 0,
+    "warmupCalls": 200,
+    "ratePerSecond": 4,
+    "durationSeconds": 14400,
+    "callTimeoutSeconds": 60,
+    "subjectPool": 15000
+  },
+  "mix": {
+    "entityContext": 4,
+    "targetedEntityContext": 3,
+    "listSources": 3,
+    "describeSource": 2
+  },
+  "target": {
+    "baseUrl": "http://127.0.0.1:8080",
+    "tokenUrl": "https://localhost:8544/token",
+    "entityType": "CUSTOMER",
+    "tokenLifetimeMinutes": 60,
+    "scopeLifetimeHours": 8,
+    "subjects": [
+      "1001",
+      "1002"
+    ]
+  },
+  "seed": 263
+}

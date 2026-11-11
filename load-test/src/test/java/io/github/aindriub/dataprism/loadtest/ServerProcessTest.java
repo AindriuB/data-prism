@@ -118,4 +118,44 @@ class ServerProcessTest {
         assertThat(LoadTestMain.boundedOutput(List.of("sh", "-c", "exit 3"), Duration.ofSeconds(10)))
                 .isEqualTo("unknown");
     }
+
+    @Test
+    void aScenarioWithNoMixAddsNoSettings() {
+        Scenario scenario = new Scenario("t", 2, new Scenario.Latency(1, 2), new Scenario.Load(1, 1, 0, 0, 0, 30, 0),
+                Scenario.Limits.defaults(2), 1L, 0, null);
+
+        assertThat(ServerProcess.mixArguments(scenario)).isEmpty();
+    }
+
+    @Test
+    void aMixGrantsTheOtherToolsAndEnablesLinksOnlyWhenItFollows() {
+        Scenario.Load load = new Scenario.Load(1, 1, 0, 0, 0, 30, 0);
+        Scenario following = new Scenario("t", 2, new Scenario.Latency(1, 2), load, Scenario.Limits.defaults(2), 1L,
+                0, null, new Scenario.Mix(1, 0, 1, 1, 1, 1), null);
+        Scenario browsing = new Scenario("t", 2, new Scenario.Latency(1, 2), load, Scenario.Limits.defaults(2), 1L,
+                0, null, new Scenario.Mix(1, 0, 1, 1, 0, 0), null);
+
+        assertThat(ServerProcess.mixArguments(following)).contains("--dataprism.links.enabled=true",
+                "--dataprism.security-policy.roles.investigator[3]=FOLLOW",
+                "--dataprism.links.invalid-attempt-limit=1000000");
+        assertThat(ServerProcess.mixArguments(browsing)).doesNotContain("--dataprism.links.enabled=true")
+                .contains("--dataprism.security-policy.roles.investigator[1]=LIST_SOURCES");
+    }
+
+    @Test
+    void theResolverJarIsOnTheLoaderPathOnlyForAMixThatFollowsTranslatedLinks(@org.junit.jupiter.api.io.TempDir
+                                                                              java.nio.file.Path root) throws Exception {
+        java.nio.file.Path rest = root.resolve("rest.jar");
+        java.nio.file.Files.createDirectories(root.resolve("load-test/target"));
+        java.nio.file.Files.writeString(root.resolve("load-test/target/data-prism-load-test-key-resolver.jar"), "x");
+        Scenario.Load load = new Scenario.Load(1, 1, 0, 0, 0, 30, 0);
+        Scenario translated = new Scenario("t", 2, new Scenario.Latency(1, 2), load, Scenario.Limits.defaults(2), 1L,
+                0, null, new Scenario.Mix(1, 0, 0, 0, 0, 0, 1), null);
+        Scenario direct = new Scenario("t", 2, new Scenario.Latency(1, 2), load, Scenario.Limits.defaults(2), 1L,
+                0, null, new Scenario.Mix(1, 0, 0, 0, 1, 0), null);
+
+        assertThat(ServerProcess.loaderPath(rest, translated, root)).isEqualTo(rest + ","
+                + root.resolve("load-test/target/data-prism-load-test-key-resolver.jar"));
+        assertThat(ServerProcess.loaderPath(rest, direct, root)).isEqualTo(rest.toString());
+    }
 }

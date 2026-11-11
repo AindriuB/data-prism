@@ -51,17 +51,33 @@ final class ServerProcess implements AutoCloseable {
         this.logFile = logFile;
     }
 
+    /**
+     * The extension jars the server loads: the REST connector and, for a mix that follows translated links, the
+     * harness's own key resolver (built by this module's package).
+     */
+    static String loaderPath(Path restJar, Scenario scenario, Path repoRoot) throws IOException {
+        return scenario.mix() != null && scenario.mix().needsResolver()
+                ? restJar + "," + single(repoRoot.resolve("load-test/target"), "data-prism-load-test-key-resolver.jar")
+                : restJar.toString();
+    }
+
+    /** The server child's process id, for reading its JVM. */
+    long pid() {
+        return process.pid();
+    }
+
     static ServerProcess start(Path repoRoot, Path workDir, Path resultsDir, Path catalogue, TokenIssuer issuer,
             Scenario scenario, RunCleanup cleanup)
             throws IOException, InterruptedException {
         Path serverJar = single(repoRoot.resolve("data-prism-server/target"), "data-prism-server-*.jar");
         Path restJar = single(repoRoot.resolve("data-prism-connectors-rest/target"), "data-prism-connectors-rest-*.jar");
+        String loaderPath = loaderPath(restJar, scenario, repoRoot);
         int port = freePort();
         Path log = workDir.resolve("server.log");
 
         List<String> command = new ArrayList<>(List.of(
                 Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                "-Dloader.path=" + restJar,
+                "-Dloader.path=" + loaderPath,
                 "-Ddataprism.json-sources.config-location=file:" + catalogue.toAbsolutePath(),
                 "-Djavax.net.ssl.trustStore=" + issuer.trustStore(),
                 "-Djavax.net.ssl.trustStorePassword=" + issuer.trustStorePassword(),
@@ -97,6 +113,7 @@ final class ServerProcess implements AutoCloseable {
                 "--dataprism.catalog.unselected-source-limit=" + scenario.limits().maxSources(),
                 "--dataprism.hazelcast.topology=single-node"));
         command.addAll(loggingArguments(log));
+        command.addAll(mixArguments(scenario));
         scenario.limits().asProperties().forEach((key, value) -> command.add("--" + key + "=" + value));
 
         // The JVM's own stdout and stderr (an uncaught exception, an OutOfMemoryError) go to a file of their own:
@@ -138,6 +155,30 @@ final class ServerProcess implements AutoCloseable {
             throw failed;
         }
         return server;
+    }
+
+    /**
+     * The settings a scenario with a call mix needs on top of the base ones: the other tools' capabilities for the
+     * load-test role, links when the mix follows any, and, for a mix with invalid links, a lockout limit the run
+     * cannot reach (the default 20 failed attempts in 10 minutes would lock the one caller out of every
+     * {@code follow} within seconds, and a soak is not a lockout test).
+     */
+    static List<String> mixArguments(Scenario scenario) {
+        Scenario.Mix mix = scenario.mix();
+        if (mix == null) {
+            return List.of();
+        }
+        List<String> arguments = new ArrayList<>(List.of(
+                "--dataprism.security-policy.roles.investigator[1]=LIST_SOURCES",
+                "--dataprism.security-policy.roles.investigator[2]=DESCRIBE_SOURCE",
+                "--dataprism.security-policy.roles.investigator[3]=FOLLOW"));
+        if (mix.needsLinks()) {
+            arguments.add("--dataprism.links.enabled=true");
+        }
+        if (mix.invalidLink() > 0) {
+            arguments.add("--dataprism.links.invalid-attempt-limit=1000000");
+        }
+        return arguments;
     }
 
     /**

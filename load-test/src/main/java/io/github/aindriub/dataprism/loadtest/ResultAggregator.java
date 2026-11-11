@@ -25,6 +25,9 @@ final class ResultAggregator {
     private final Map<String, Long> transportFailureKinds = new TreeMap<>();
     private final Map<String, Long> failureCauses = zeroedCauses();
     private final Map<String, Map<String, Long>> perSource = new TreeMap<>();
+    private final Map<String, OperationTally> perOperation = new TreeMap<>();
+    private OperationInterval current = new OperationInterval();
+    private final java.util.List<IntervalRow> rows = new java.util.ArrayList<>();
     private long attempted;
     private long completed;
     private long transportFailures;
@@ -77,6 +80,94 @@ final class ResultAggregator {
         });
     }
 
+    /**
+     * As {@link #record(CallOutcome, boolean, int)}, and the call is also tallied under the operation it made (a
+     * name from {@code MixedCalls.Op#key()}, not the MCP tool: a refused invalid link and a followed link are
+     * different operations), so a mixed run reports each operation's own counts and percentiles, in total and
+     * in the current interval.
+     */
+    synchronized void record(String operation, CallOutcome outcome, boolean afterDeadline, int scope) {
+        record(outcome, afterDeadline, scope);
+        current.record(operation, outcome);
+        OperationTally tally = perOperation.computeIfAbsent(operation, ignored -> new OperationTally());
+        tally.calls++;
+        if (!outcome.completed()) {
+            tally.failed++;
+        } else if (outcome.refusalCode() != null) {
+            tally.refused++;
+        }
+        if (outcome.completed() || outcome.timed()) {
+            tally.latency.recordValue(Math.min(Math.max(outcome.latencyMicros(), 0), HIGHEST_TRACKABLE_MICROS));
+        }
+    }
+
+    /** What one interval has seen so far. */
+    private static final class OperationInterval {
+        private final Map<String, OperationTally> operations = new TreeMap<>();
+        private final Map<String, Long> refusals = new TreeMap<>();
+
+        void record(String operation, CallOutcome outcome) {
+            OperationTally tally = operations.computeIfAbsent(operation, ignored -> new OperationTally());
+            tally.calls++;
+            if (!outcome.completed()) {
+                tally.failed++;
+            } else if (outcome.refusalCode() != null) {
+                tally.refused++;
+                refusals.merge(outcome.refusalCode(), 1L, Long::sum);
+            }
+            if (outcome.completed() || outcome.timed()) {
+                tally.latency.recordValue(Math.min(Math.max(outcome.latencyMicros(), 0), HIGHEST_TRACKABLE_MICROS));
+            }
+        }
+    }
+
+    /**
+     * Closes the current interval into a row and starts the next. {@code reading} is what the harness server's
+     * JVM reported at this moment, with nulls for what it could not read.
+     *
+     * @param endSeconds seconds since the measured phase began, at the end of the interval
+     */
+    synchronized IntervalRow closeInterval(long endSeconds, ServerJvmProbe.Reading reading) {
+        Map<String, OperationStats> operations = new TreeMap<>();
+        current.operations.forEach((operation, tally) -> operations.put(operation, stats(tally)));
+        IntervalRow row = new IntervalRow(rows.size() + 1, endSeconds, operations, new TreeMap<>(current.refusals),
+                reading.heapAfterGcBytes(), reading.liveThreads());
+        rows.add(row);
+        current = new OperationInterval();
+        return row;
+    }
+
+    /** Whether the current interval has seen a call. */
+    synchronized boolean intervalHasCalls() {
+        return !current.operations.isEmpty();
+    }
+
+    synchronized java.util.List<IntervalRow> intervals() {
+        return java.util.List.copyOf(rows);
+    }
+
+    private static OperationStats stats(OperationTally tally) {
+        boolean none = tally.latency.getTotalCount() == 0;
+        return new OperationStats(tally.calls, tally.failed, tally.refused,
+                none ? 0 : millis(tally.latency.getValueAtPercentile(50)),
+                none ? 0 : millis(tally.latency.getValueAtPercentile(95)),
+                none ? 0 : millis(tally.latency.getValueAtPercentile(99)));
+    }
+
+    /**
+     * One interval's row. {@code heapAfterGcBytes} and {@code liveThreads} are of the harness server's JVM, and
+     * null when the driver could not read them (a target's members are not readable by it).
+     */
+    record IntervalRow(int interval, long endSeconds, Map<String, OperationStats> operations,
+                       Map<String, Long> refusalsByCode, Long heapAfterGcBytes, Integer liveThreads) { }
+
+    private static final class OperationTally {
+        private final Histogram latency = new Histogram(HIGHEST_TRACKABLE_MICROS, 5);
+        private long calls;
+        private long failed;
+        private long refused;
+    }
+
     private void recordLatency(long micros) {
         if (micros > HIGHEST_TRACKABLE_MICROS) {
             clamped++;
@@ -97,6 +188,8 @@ final class ResultAggregator {
                 notAnswered += status.getValue();
             }
         }
+        Map<String, OperationStats> tools = new TreeMap<>();
+        perOperation.forEach((operation, tally) -> tools.put(operation, stats(tally)));
         double seconds = elapsed.toNanos() / 1e9;
         boolean empty = latency.getTotalCount() == 0;
         return new Summary(attempted, completed, transportFailures, new TreeMap<>(transportFailureKinds),
@@ -106,7 +199,7 @@ final class ResultAggregator {
                 empty ? 0 : millis(latency.getMaxValue()),
                 empty ? 0 : latency.getMean() / 1000.0,
                 seconds > 0 ? (completed - completedAfterDeadline) / seconds : 0, new TreeMap<>(refusalCodes), total,
-                sources, clamped, new LinkedHashMap<>(failureCauses), notAnswered, completedAfterDeadline);
+                sources, clamped, new LinkedHashMap<>(failureCauses), notAnswered, completedAfterDeadline, tools);
     }
 
     private static double millis(long micros) {
@@ -132,5 +225,21 @@ final class ResultAggregator {
                    double p50Ms, double p95Ms, double p99Ms, double maxMs, double meanMs,
                    double throughputPerSecond, Map<String, Long> refusalCodes, Map<String, Long> totalStatus,
                    Map<String, Map<String, Long>> perSourceStatus, long clamped,
-                   Map<String, Long> failureCauses, long sourcesNotAnswered, long completedAfterDeadline) { }
+                   Map<String, Long> failureCauses, long sourcesNotAnswered, long completedAfterDeadline,
+                   Map<String, OperationStats> perOperation) {
+
+        /** A summary of a run that tallied no per-tool figures. */
+        Summary(long attempted, long completed, long transportFailures, Map<String, Long> transportFailureKinds,
+                double p50Ms, double p95Ms, double p99Ms, double maxMs, double meanMs,
+                double throughputPerSecond, Map<String, Long> refusalCodes, Map<String, Long> totalStatus,
+                Map<String, Map<String, Long>> perSourceStatus, long clamped,
+                Map<String, Long> failureCauses, long sourcesNotAnswered, long completedAfterDeadline) {
+            this(attempted, completed, transportFailures, transportFailureKinds, p50Ms, p95Ms, p99Ms, maxMs,
+                    meanMs, throughputPerSecond, refusalCodes, totalStatus, perSourceStatus, clamped,
+                    failureCauses, sourcesNotAnswered, completedAfterDeadline, Map.of());
+        }
+    }
+
+    /** One tool's counts and latency percentiles, in milliseconds. */
+    record OperationStats(long calls, long failed, long refused, double p50Ms, double p95Ms, double p99Ms) { }
 }

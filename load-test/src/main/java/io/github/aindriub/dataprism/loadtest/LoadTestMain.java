@@ -64,6 +64,10 @@ public final class LoadTestMain {
         Path repoRoot = parsed.repoRoot();
         Path resultsDir = parsed.resultsDir();
         Scenario scenario = Scenario.load(scenarioFile);
+        if (scenario.target() != null) {
+            driveTarget(scenario, repoRoot, resultsDir);
+            return;
+        }
         List<SourceDefinition> sources = SourceGenerator.generate(scenario);
         Path workDir = Files.createTempDirectory("data-prism-load-test-");
         Instant startedAt = Instant.now();
@@ -75,16 +79,18 @@ public final class LoadTestMain {
         try (TokenIssuer issuer = new TokenIssuer(workDir);
                 SyntheticSources fixtures = new SyntheticSources(sources, scenario.seed(), issuer.tls())) {
             Path catalogue = workDir.resolve("json-sources.yaml");
-            Files.writeString(catalogue, SourceGenerator.catalogueYaml(sources, fixtures.baseUrl()));
+            Files.writeString(catalogue, SourceGenerator.catalogueYaml(sources, fixtures.baseUrl(),
+                    scenario.mix() != null && scenario.mix().needsLinks(),
+                    scenario.mix() != null && scenario.mix().needsResolver()));
             System.out.println("scenario " + scenario.name() + ": " + sources.size() + " sources, starting server");
             try (ServerProcess server = ServerProcess.start(repoRoot, workDir, resultsDir, catalogue, issuer, scenario, cleanup)) {
                 System.out.println("server healthy; driving " + scenario.load());
                 CredentialRotation credentials = new CredentialRotation(issuer::mintToken,
                         TokenIssuer.TOKEN_LIFETIME, ServerProcess.SCOPE_LIFETIME, System::nanoTime);
                 LoadDriver.Run run = new LoadDriver(server.mcpBaseUrl(), credentials, scenario,
-                        server::exitCode).run();
+                        server::exitCode, ServerJvmProbe.forProcess(server.pid())).run();
                 Path file = ResultWriter.write(resultsDir, scenario, startedAt, git(repoRoot, "rev-parse", "HEAD"),
-                        !git(repoRoot, "status", "--porcelain").isBlank(), run);
+                        !git(repoRoot, "status", "--porcelain").isBlank(), run, null);
                 System.out.println("wrote " + file);
                 if (run.serverExitCode() != null) {
                     Path kept = server.keepLog();
@@ -102,6 +108,27 @@ public final class LoadTestMain {
                 // The hook is the one running us; nothing to remove.
             }
         }
+    }
+
+    /**
+     * Drives an already-running endpoint (the scenario's {@code target}): no synthetic sources, no token issuer of
+     * the harness's own and no server child. Whatever the target serves is what is measured.
+     */
+    private static void driveTarget(Scenario scenario, Path repoRoot, Path resultsDir) throws Exception {
+        Instant startedAt = Instant.now();
+        Scenario.Target target = scenario.target();
+        System.out.println("scenario " + scenario.name() + ": driving the target endpoint; no server is started");
+        CredentialRotation credentials = new CredentialRotation(new TargetTokens(target),
+                Duration.ofMinutes(target.tokenLifetimeMinutes()), Duration.ofHours(target.scopeLifetimeHours()),
+                System::nanoTime);
+        LoadDriver.Run run = new LoadDriver(target.baseUrl(), credentials, scenario).run();
+        // The members' build is read when the result is written, not taken from the environment: what ran at the end
+        // of the run, or "unknown". The commit and dirty flag below are this driver's own checkout.
+        String memberBuild = boundedOutput(List.of("bash",
+                repoRoot.resolve("load-test/soak/member-image-id.sh").toString()), Duration.ofSeconds(30));
+        Path file = ResultWriter.write(resultsDir, scenario, startedAt, git(repoRoot, "rev-parse", "HEAD"),
+                !git(repoRoot, "status", "--porcelain").isBlank(), run, memberBuild);
+        System.out.println("wrote " + file);
     }
 
     private static String git(Path repoRoot, String... arguments) {
