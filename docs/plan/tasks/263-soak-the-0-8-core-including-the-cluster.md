@@ -13,8 +13,10 @@ Re-planned 2026-10-23 for owner decision (b): 1.0 supports multiple instances on
 - docs/plan/perf/soak-0.8.md *(new)*
 - .github/workflows/load-test.yml *(whole file; widened from the scenario choice list by the second 2026-11-10 amendment)*
 - load-test/src/** *(the harness driver; added by the second 2026-11-10 amendment)*
-- load-test/pom.xml *(system-scope dependencies and packaging for the harness `KeyResolver` only; added by the third amendment, 2026-11-11; scope corrected by the fourth)*
-- load-test/run.sh *(passing the reactor version to the load-test build and the missing-core-jar failure only; added by the fourth amendment, 2026-11-11)*
+- load-test/pom.xml *(system-scope dependencies and packaging for the harness `KeyResolver`, and the required `dataprism.version` property, only; added by the third amendment, 2026-11-11; scope corrected by the fourth; default removed by the fifth)*
+- load-test/run.sh *(passing the reactor version to the load-test build, the missing-core-jar failure and a `--build-only` option, only; added by the fourth amendment, 2026-11-11; `--build-only` added by the fifth)*
+- .github/workflows/supply-chain.yml *(the "Resolve the load-test tree to an SBOM" step only; added by the fifth amendment, 2026-11-11)*
+- load-test/README.md *(the build commands at about :19 and :182 only; added by the fifth amendment, 2026-11-11)*
 
 ## Goal
 The roadmap's 0.8 readiness includes a soak, including the cluster. Run the 0.8 core for hours, on a single node and on a three-member trusted-network cluster, with the agent-led surface in use (catalog pages, `_links`, `follow`, targeted and untargeted calls) and the failure paths of 258 mixed in, and record whether latency, memory, budget accounting and audit volume stay stable. Run the link timing test that sealed-links obligation 10 asks for. This task also runs the parts of the cluster soak of `cluster-security.md` 5.2 that apply to 1.0 (215's Outcome assigned it here): the fault and hostile-member runs, and the packet capture on the member port. Key rotation under load is deferred with 229.
@@ -65,6 +67,30 @@ Owner decision on review finding R2-2 (review round 2, at the end).
 
 **Decision.** Owns gains `load-test/run.sh`. After its reactor build, `run.sh` reads the reactor version from the root `pom.xml` and passes it to the load-test build (for example `-Ddataprism.version=<version>`). If the matching `data-prism-core` jar is missing, it fails with a clear message naming the expected jar. `.github/workflows/load-test.yml` (already owned) does the same wherever it builds load-test without `run.sh`. `load-test/pom.xml` keeps `system` scope for `data-prism-core`; the third amendment's "provided-scope" wording is corrected to system scope, because provided scope cannot resolve without `mvn install`, which is ruled out. A2's "`load-test/run.sh` (not in Owns)" no longer holds for this change only. *Reason:* a version hard-coded in `load-test/pom.xml` breaks the harness build on every version bump (R2-2).
 
+## Amendment 2026-11-11 (owner, fifth)
+Owner decision on R3-1 and R3-2 (review round 3, at the end): fail closed, and widen Owns.
+
+**Decision.**
+- `load-test/pom.xml` has no default for `dataprism.version`. A lifecycle build of it (`package`, `test`) without `-Ddataprism.version` stops in `validate` with a message naming the property and pointing at `load-test/run.sh`, for example through `maven-enforcer-plugin` `requireProperty`. It never resolves a stale jar. A goal invoked directly (such as `makeBom`) skips the lifecycle and so the enforcer, which is why every such invocation below passes the version.
+- `run.sh` gains `--build-only`: it runs both builds and the missing-jar guard, then exits 0 without starting the driver. The usage line names it. The fourth amendment's guard stays, but is not gated on its own: `run.sh` rebuilds the jar before the guard, so its failure cannot be provoked through `run.sh` (R3-2).
+- Owns gains the load-test step of `.github/workflows/supply-chain.yml`. It passes `-Ddataprism.version` from the reactor version, obtained with `help:evaluate -Dexpression=project.version` as the step already obtains the plugin version. 257, the previous owner of the workflows, is retired.
+- Owns gains the build commands in `load-test/README.md`. They pass `-Ddataprism.version=<reactor version>`, or say to use `load-test/run.sh --build-only`. A5's "`load-test/README.md` is not in Owns" still holds for everything else in that file.
+
+**Every invocation that builds `load-test/pom.xml`** (repo-wide grep, 2026-11-11, outside `target/` and `HISTORY.md`):
+| Where | Passes the version? | Action |
+|---|---|---|
+| `load-test/run.sh:25` | yes | none (already owned) |
+| `.github/workflows/supply-chain.yml:51-56` (`makeBom`) | no | add, newly owned |
+| `load-test/README.md:19` (`package`), `:182` (`test`) | no | add, newly owned |
+| `.github/workflows/load-test.yml:49` | through `run.sh` | none |
+| `load-test/soak/README.md:42` | through `run.sh` | none (already owned) |
+| `.github/dependabot.yml:26` (`/load-test`) | parses, does not build | none, not owned |
+| this file's `harness-build` check | no | fixed below |
+
+**Overlap.** No open task owns `supply-chain.yml` or `load-test/README.md`. The `load-test/src/**` overlap with 273 and 275 is unchanged (second amendment).
+
+*Reason:* a default lets a build without the version pick up a stale jar, or fail later with an unclear message. Two build paths outside Owns (R3-1) and an unobservable AC24 half (R3-2) prove it. *Size:* this brief is over 30 KB because it carries five amendments and three review rounds. Folding them into one contract is left for the next re-plan.
+
 ## Acceptance
 IDs AC1 to AC12 are the pre-split items in their original order. AC13 onwards are new in Part A.
 
@@ -81,7 +107,7 @@ IDs AC1 to AC12 are the pre-split items in their original order. AC13 onwards ar
 - [ ] AC21 `load-test.yml` meets A3: the artifact name has no scenario path in it, and `timeout-minutes` exceeds the longest soak scenario's duration.
 - [ ] AC22 (D1) A target-mode scenario that sets `sources`, `slowSources`, `slowLatency` or `limits` is refused at load, naming the field; a target-mode result has `mode: target` and no `effectiveLimits` or source counts. The overlay's `member-env` sets the scope read budget and per-source timeout, and the three-member scenario's subject count and the expected `SCOPE_READ_BUDGET` share are stated in `load-test/soak/README.md`, the share being below the whole run.
 - [ ] AC23 (D2) With the harness's own server, a `follow` of a translated link reaches the resolver's target namespace: a load-test module test shows the generated sources declare both namespaces, the resolver is on the server's `loader.path`, and the single-node scenario's mix includes translated follows. Nothing under `data-prism-*/src/main` or `docker/**` changes.
-- [ ] AC24 (amendment 4) After `versions:set` to another version, building load-test through `load-test/run.sh` succeeds with no edit to `load-test/pom.xml`; with the matching `data-prism-core` jar absent, the build fails with a message naming the missing jar.
+- [ ] AC24 (amendments 4, 5) (i) After `versions:set` to another version, `load-test/run.sh --build-only` exits 0 with no edit to `load-test/pom.xml`. (ii) `./mvnw -B -f load-test/pom.xml package` without `-Ddataprism.version` exits non-zero, and its output names `dataprism.version` and `run.sh`. (iii) The supply-chain load-test step and the `load-test/README.md` build commands pass the version or use `run.sh`.
 
 ### Part B (owner-run, release cut)
 Executed on a dedicated host, never on a shared CI runner. Carried in PLAN.md's 0.8.0 release-cut obligations once Part A lands.
@@ -100,7 +126,7 @@ Executed on a dedicated host, never on a shared CI runner. Carried in PLAN.md's 
 ## Checks
 Part A only. Part B is proved by the owner's filled-in `soak-0.8.md` at the release cut.
 - `harness-build` command — AC11, AC13, AC22, AC23
-  run: `./mvnw -B -q -pl data-prism-server,data-prism-connectors-rest -am -DskipTests package && ./mvnw -B -q -f load-test/pom.xml package`
+  run: `./mvnw -B -q -pl data-prism-server,data-prism-connectors-rest -am -DskipTests package && ./mvnw -B -q -f load-test/pom.xml -Ddataprism.version="$(./mvnw -B -q -DforceStdout help:evaluate -Dexpression=project.version)" package`
   (this runs the load-test module's own tests; new driver behaviour for A1 and A2 gets tests there)
 - `scripts-parse` command — AC15, AC16, AC18
   run: `for f in load-test/soak/*.sh; do bash -n "$f" || exit 1; done`
@@ -112,8 +138,11 @@ Part A only. Part B is proved by the owner's filled-in `soak-0.8.md` at the rele
   run: `./mvnw -B -q -pl data-prism-orchestration -am -Dtest=LinkTimingSoakTest -Dsurefire.failIfNoSpecifiedTests=false -Ddataprism.timing=true test`
   report: `data-prism-orchestration/target/surefire-reports/TEST-*LinkTimingSoakTest.xml`
   min-passing: 1  max-skipped: 0
-- `version-bump` command — AC24
-  run (in a disposable worktree, never this branch): `./mvnw -B -q versions:set -DnewVersion=0.0.0-vcheck -DgenerateBackupPoms=false`, then build load-test through `load-test/run.sh` (exit 0) and `git diff --exit-code -- load-test/pom.xml`; then delete `data-prism-core/target/data-prism-core-*.jar` and rebuild load-test the same way, which must exit non-zero with the missing-jar message.
+- `version-bump` command — AC24 (i), (ii)
+  run (i), in a disposable worktree, never this branch: `./mvnw -B -q versions:set -DnewVersion=0.0.0-vcheck -DgenerateBackupPoms=false && load-test/run.sh --build-only && git diff --exit-code -- load-test/pom.xml`. The build step's exit is the check; no scenario runs.
+  run (ii), on this branch: `if out="$(./mvnw -B -f load-test/pom.xml package 2>&1)"; then exit 1; fi; grep -q 'dataprism.version' <<<"$out" && grep -q 'run.sh' <<<"$out"`
+- `version-passed` read — AC24 (iii)
+  how: the supply-chain load-test step passes `-Ddataprism.version` from `help:evaluate -Dexpression=project.version`; each `load-test/README.md` build command passes it or uses `run.sh`.
 - `scaffold-shape` read — AC11, AC13, AC14, AC15, AC16, AC17, AC19, AC21, AC22
   how: the choice-list entries resolve to existing files; the driver issues each A1 tool and rejects unknown fields; the artifact name and timeout meet AC21; each scenario has the AC13 mix and duration; the overlay sets the AC14 properties; no script or template line writes an address, payload or key; the template's result tables are empty; the Outcome's smoke record is labelled and has no host detail.
 
@@ -159,3 +188,11 @@ Reviewed HEAD: ac67b8834aefbb9839c3aa4b575b6d7204c5bcd4 (code-reviewer re-review
 
 - R2-1 [P2] load-test/soak/capture-member-port.sh:43-47 — With `--cap-drop ALL` and `-Z root` dropped (ac67b883), the capture sidecar cannot write its pcap into the host results directory on a rootful Linux Docker engine (owner-owned load-test/results, mode 755; no CAP_DAC_OVERRIDE). `|| true` hides the tcpdump error; the script exits 3 "capture: no packets recorded" in every profile, so AC8 cannot run on the platform the cluster soak requires. Fix inside the script, keeping 243-6 (pinned digest, no NET_ADMIN): e.g. capture to the container's /tmp and `docker cp` it out, or a dedicated writable capture subdirectory. Surface tcpdump's error instead of `|| true`.
 - R2-2 [P2] load-test/pom.xml:34,66-69 — load-test compiles against `../data-prism-core/target/data-prism-core-0.7.0.jar` (system scope, hard-coded version); the release-cut `versions:set` does not touch load-test/pom.xml, so at 0.8.0 every scenario fails to build on a clean checkout, or silently compiles against a stale jar. Settled by Amendment 4 (owner): run.sh passes the reactor version.
+
+## Review round 3 — findings
+
+Reviewed HEAD: 3739198f58e283689cdbcde0458b14131bc54eec (code-reviewer re-review of round 2; R2-1 and R2-2 FIXED).
+
+- R3-1 [P2] .github/workflows/supply-chain.yml:52-56 and load-test/README.md:19,182 — These build load-test without -Ddataprism.version; after versions:set 0.8.0 the supply-chain "Resolve the load-test tree" step (`-f load-test/pom.xml … makeBom`) uses the default 0.7.0, the systemPath does not exist, and the scan fails (or silently builds against a stale 0.7.0 jar). Settled by Amendment 5 (owner).
+- R3-2 [P2] task file AC24 and its `version-bump` check — the missing-jar half cannot be observed through run.sh, which rebuilds the jar before its guard. Settled by Amendment 5 (owner).
+- R3-3 [STYLE] load-test/pom.xml:31 — rewritten comment line is 186 characters; the rest of the block wraps at ~117. Rewrap.
