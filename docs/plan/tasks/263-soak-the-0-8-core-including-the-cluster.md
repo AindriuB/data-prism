@@ -168,7 +168,7 @@ Part A only. Part B is proved by the owner's filled-in `soak-0.8.md` at the rele
 - `overlay-builds` command — AC25
   run: `SOAK_IMAGE_TAG=dummy docker compose -f docker/multi-instance/compose.yaml -f load-test/soak/compose.soak.yaml config --format json | jq -e '([.services["server-a","server-b","server-c","cert-init","issuer","fixtures"] | (.build == null) and (.pull_policy == "never") and (.image | startswith("data-prism-soak-"))] | all) and (.services.lb.image | contains("@sha256:"))'`
 - `provenance` read — AC25
-  how: each fault, probe and capture script's summary and the driver's target-mode result write the member image ID and short SHA with a dirty flag; `common.sh` builds by default; `load-test/soak/README.md` documents the build rule and the fields.
+  how: `load-test/soak/build-images.sh` builds the four images from a snapshot of the checkout and writes the stamp file (tag, image IDs, hash, commit, dirty); `common.sh` takes `SOAK_IMAGE_TAG` from the stamp, never builds, and refuses on a missing stamp or ID mismatch; each fault, probe and capture summary records each of the six containers' image ID and build labels at start and end; the driver's target-mode result records the member build as read at write time; lookup failure is `unknown`, no container is `absent`; `load-test/soak/README.md` documents the build step, the fields and `SOAK_ALLOW_DIRTY`.
 - `multi-instance-untouched` command — AC14, AC20, AC23
   run: `git diff --exit-code origin/main...HEAD -- docker data-prism-*/src/main docs/plan/PLAN.md`
 - `link-timing` test — AC18
