@@ -132,7 +132,8 @@ Read a status as `sources[alias].status` and a field as
 
 `status` is one of seven stable codes: `ANSWERED`, `NO_DATA`, `TIMED_OUT`,
 `FAILED`, `CIRCUIT_OPEN`, `SKIPPED_OVER_LIMIT` and the new `REFUSED`.
-`SKIPPED_OVER_LIMIT` is removed in 0.8 (see [the 0.8 migration notes](migration-0.8.md)). The full
+`SKIPPED_OVER_LIMIT` is removed in 0.8, and 0.8 adds `RESOLVER_FAILED` (see
+[the 0.8 migration notes](migration-0.8.md)). The full
 table is in [the tool reference](tools.md#get_entity_context).
 
 **An unknown status means "not answered".** Later releases may add codes. Read

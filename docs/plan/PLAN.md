@@ -35,16 +35,8 @@ Owner decisions:
 - D-RM-14 (a): HATEOAS links: sealed, one-step, built from adapter and resolver declarations.
 - D-RM-15 (b): paging plus status-only bulk follow with drill-in links.
 
-Facts found during design, for the 0.7 planner (each checked against the code on 2026-10-09):
+Design facts found for the 0.7 planner (2026-10-09) are in `archive/PLAN-2026-11-11-wave-13b.md` (block 1).
 
-- `RequestLimits.DEFAULT` (maxSources 8, maxRecords 500, maxResponseBytes 512 KiB, per-source timeout 3 s, concurrency 4, read budget 100) is hard-wired: `RequestLimits.java:41`, passed in `OrchestrationWiring.java:50` and also `ConfiguredJsonSourcesAutoConfiguration.java:145`. Nothing binds it from configuration.
-- The per-source timeout is measured from the start of the fan-out, not from each call: `SourceFanOut.java:102` and `:139`.
-- The read budget is charged once per request, not per source called: `DefaultContextOrchestrator.java:174`.
-- `maxRecords` and `maxResponseBytes` are validated in the `RequestLimits` constructor (`:47-48`) and read nowhere else in main code.
-- The merged tree overwrites same-named fields across sources: `merged.setAll(scrubbed.tree())`, `DefaultContextOrchestrator.java:343`.
-- `SourceFanOut` marks every source past `maxSources` as `SKIPPED_OVER_LIMIT` (`:84-90`). It is visible as a per-source status, but the call still succeeds with a partial answer.
-- `SecurityPolicy` holds only `allowedPurposes` and `roleCapabilities` (`SecurityPolicy.java:23`); there is no per-source authorisation.
-- `DataSourceAdapter` declares only `sourceName()`, `responseType()` and `fetch()` (`DataSourceAdapter.java:12-16`); there is no description or input-key declaration.
 
 
 ### Open work and execution state (updated 2026-10-21)
@@ -88,7 +80,7 @@ Waves 1 to 12 have landed (the table below carries one row for waves 1 to 11 and
 |---|---|
 | 1 to 11 | landed 2026-10-21 to 2026-11-09 (268, 218, 219, 238, 239, 243, 258, 259, 220, 221, 240, 222, 242, 265, 244, 257, 203, 206, 223, 241, 248, 269, 245, 267, 207, 210, 225, 271, 285, 288, 208, 227, 246, 262, 284, 289, 290, 211, 228, 247, 256, 292, 294, 249, 250, 251, 272, 287, 291, 296, 297, 298, 293, 299, 252, 254, 300, 253, 286, 301, 302). 295 was deferred past 0.8.0 (`tasks/deferred/295-ack-gated-tombstone-gc-for-the-pause-document.md`) and must be reissued against F1 to F5 of the 228 contract before pickup. Per-wave detail: `archive/PLAN-2026-11-10.md:141-151` and `HISTORY-INDEX.md` |
 | 12 | 255 (landed 2026-11-10, PR #236), 304 (landed 2026-11-10, PR #237) (253, 286 and 301 landed earlier. 304: client content out of the MCP SDK's inbound parse-error logs; filed 2026-11-09) |
-| 13 | 260 (landed 2026-11-10, PR #240), 261 (landed 2026-11-10, PR #239), 263 (Part A, agent scaffolding, in progress; Part B, the owner-run soak, is a 0.8.0 release-cut obligation below. 263 was split at `3ce5d195`). 306 (links-enabled capture fixture for `follow` and `_links`, filed 2026-11-10, unscheduled; `tasks/306-links-enabled-capture-fixture.md`) |
+| 13 | 260 (landed 2026-11-10, PR #240), 261 (landed 2026-11-10, PR #239), 263 Part A (landed 2026-11-11, PR #243, `95cfee34`; Part B, the owner-run soak, stays open as a 0.8.0 release-cut obligation below and `tasks/263-*.md` is now its contract). Filed 2026-11-10: 306 (links-enabled capture fixture for `follow` and `_links`, unscheduled; `tasks/306-links-enabled-capture-fixture.md`). Filed 2026-11-11 from PR #243: 307 (soak provenance, should land before the Part B soaks), 308 (HazelcastOversightTest grace-race test fix), 309 (stdio leak-test teardown, **wanted before the 0.8.0 cut**; security-relevant) |
 | last (14) | 213 (depends on 208, 210, 211, 261, 225, 227, 228 and 284 to 287) |
 | 15 (0.9) | 273, 274 (0.9 starter onboarding, filed 2026-10-23; see "0.9 starter onboarding plan" below. 273's OD-273-3 (a) mechanism, rewritten 2026-10-26, is in `tasks/273-default-low-stakes-settings-and-derive-from-spring.md`; the pre-cut row is `archive/PLAN-2026-11-10.md:155`) |
 | 16 (0.9) | 275, 277 |
@@ -103,10 +95,12 @@ Waves 1 to 12 have landed (the table below carries one row for waves 1 to 11 and
 
 Obligations for the 0.8.0 release cut (no brief filed yet; whoever files it copies these into its Acceptance):
 
-- The obligations marked done on 2026-10-27, 11-06, 11-07 and 11-09 (tasks 210, 299, 300, 301, 302) were met and moved verbatim to `archive/PLAN-2026-11-10-wave-13a.md`. Still live from them: `EveryToolValidatesInputTest` needed an edit when `follow` landed (253, landed); the 0.8.0 CHANGELOG and 213's docs must say that startup refuses with `MISSING_CASE_AUTHORIZER` or `MISSING_CLIENT_ALLOWLIST` unless configured.
+- The obligations marked done on 2026-10-27, 11-06, 11-07 and 11-09 (tasks 210, 299, 300, 301, 302) were met and moved verbatim to `archive/PLAN-2026-11-10-wave-13a.md`. Still live from them: the 0.8.0 CHANGELOG and 213's docs must say that startup refuses with `MISSING_CASE_AUTHORIZER` or `MISSING_CLIENT_ALLOWLIST` unless configured.
 - Re-run 262's clean-checkout `docker compose up` against the published 0.8.0 images, not the local build overlay (coordinator decision 2026-10-23). 262 has merged (PR #182); the cut also reruns the `docs/quickstart.md` walkthrough capture and `docker/smoke/reidentification-smoke.sh` with `SMOKE_IMAGES=published`.
 - Decide the Sonatype Central File Count choice (owner decision 2026-11-04; see the open item near the top). The grace period ends 2026-11-08; the release can be deferred.
-- 263 Part B, the owner-run soak: run the 0.8 core on one node and on a three-member trusted-network cluster for hours, with the evidence recorded in `docs/plan/perf/soak-0.8.md`. Part A (the scaffolding, scenario files and scripts) is the agent task and is still open; do not retire 263 until Part B is recorded.
+- 263 Part B, the owner-run soak: run the 0.8 core on one node (8 hours) and on a three-member trusted-network cluster (4 hours), with the faults, startup probes, captures and `LinkTimingSoakTest`, and record the evidence in `docs/plan/perf/soak-0.8.md`. Part A (the scaffolding) landed in PR #243; `tasks/263-*.md` is the Part B contract and 263 is not retired until Part B is recorded. It must run from a clean committed snapshot: `build-images.sh` refuses a dirty tree without `SOAK_ALLOW_DIRTY`, and evidence runs never set it. The hostile-member run needs `TAMPER_FLOOD_CMD`, `HEALTH_PATH` and `HEALTH_BEARER`, and the clock-skew run needs `FAKETIME_LIB`. Land 307 first, and 309 before the cut. `load-test/pom.xml` no longer needs a manual `dataprism.version` bump (`run.sh` passes it).
+- Triage the Dependabot report on the default branch before the cut: a push on 2026-11-11 reported 116 vulnerabilities (10 critical). This is on top of the two GHSA advisories listed below; Dependabot cannot see BOM-managed versions (see the 0.8 backlog), so also read the resolved tree.
+- 309 (stdio leak tests fail open) is wanted before the cut: those tests are the guard for 304's no-client-content-in-logs guarantee.
 - Publish the 0.7.x security advisory with the release (draft GHSA-hcfg-rxg3-mgw6, not published; owner decision 2026-11-06: no 0.7.2). Publish it alongside the GHSA-f94h-6mxv-c957 update below.
 - Keep `compose.yaml` and `docker/multi-instance/kubernetes.yaml` on the version-literal list, and confirm that no image reference is older than the released version.
 - Update the GitHub security advisory GHSA-f94h-6mxv-c957 with the patched version 0.8.0, and with the affected range and workaround as OD-290-2 (b) records (OD-290-2 (b), decided 2026-10-27: every release through 0.7.1 is affected, there is no workaround, and the fix is 0.8.0; 270 and its Outcome no longer exist, so there is no per-tag proof to cite). The advisory was drafted on 2026-10-23, ahead of the release (owner decision H1 (a)). The 0.8.0 release-cut brief owns this, when it is filed; 261 does not. Owner decision OD-270-2 (a), 2026-10-23, stands. Owner decision 4 below: the name-swap leak is a known-gap note in the 0.8.0 CHANGELOG only.
@@ -169,7 +163,7 @@ Follow-ups from wave 10, each belonging to the task named (Lows unless said othe
 
 - 253: settle `entityType` in the follow response against the output schema, which lists none (252 builds it in `followFinish`). 253 must use `ToolInput`.
 - 252: `SourceLabels.Collision` is not handled in follow (about `DefaultContextOrchestrator.java:780`). The `budget.reserve` wait is unbounded (a Hazelcast lock, for example). Budget `settle` and `continue` tests are missing (mutants M09 and M13). `LinkKeyResolution.java:56` drops a retiring key id's shape silently. Whether the in-process budget should key as the shared one does is open (it holds raw subject keys on the heap, OD-08-15 (a)).
-- 300: `EveryToolValidatesInputTest` needs an edit when `follow` lands. A lone unknown property does not invalidate a call.
+- 300: `EveryToolValidatesInputTest` needed an edit when `follow` landed; it already covers `follow` (met, 242-3). A lone unknown property does not invalidate a call.
 - 302: the SDK's ERROR lines may quote tokens; 302 measured the stdio leak, which is filed as 304.
 - 254: lazy singletons that are never created are invisible to the raw `FactoryBean` guard.
 - 255 (still open after it landed): `LINKS_REFUSED` and `LINKS_ATTEMPTS_EXHAUSTED` (`Metric.java:58-59`) are incremented nowhere in main code.
@@ -295,10 +289,20 @@ Open items from the external reviews, none blocking. The review text is not on G
 - Not documented because they do not exist in 0.8: the proposed-0.9 codes `BATCH_*`, `BULK_*`, `INVALID_SOURCE_NAME`, `ENTITY_MODEL_NOT_AVAILABLE`. `load-test/` and the design documents still reference `SKIPPED_OVER_LIMIT`.
 - Items elsewhere in this file that name 261 as owner (for example the 228 "Design-doc facts", the 249 documentation list and the plain-Java `McpSdkLogPin` note) were not itemised in PR #239's Outcome; check them against the pages before relying on them being done.
 
+##### 263 Part A follow-ups (PR #243 review, 2026-11-11)
+
+Open Lows and Nits from the owner's review (round 4) and our code reviews; none blocks. Security items are under "Untasked security follow-ups". 307 takes 243-45 to 243-49 and 243-52 and the dirty-flag note; the rest are untasked. Paths are under `load-test/` (`soak/` for scripts).
+
+- Scripts (Low): 243-16 `common.sh:44` the health probe read has no timeout, and `wait_joined` calls it (use `read -t 5`); 243-17 `fault-clock-skew.sh:25` leaves the member skewed, and the undo names `dc` (restore after `SKEW_SECONDS`, wait ready); 243-18 `probe-startup-refusals.sh:19` infers a refusal from a log line (also require not ready or not running); 243-35 `capture-member-port.sh:64` hides tcpdump read errors (treat 0 packets with a pcap as not run); 243-36 `fault-network-partition.sh:22` silences a failed reconnect and never checks the address (check `ip`, note a restore failure); 243-37 `soak-three-member.json:10` `subjectPool` is ignored in target mode but recorded (remove or refuse).
+- Harness code (Low): 243-22 `TargetTokens.java:52` mint ignores `lifetime` (use `lifetime.toMinutes()`); 243-33 `LoadDriver.java:122` `shutdownNow` does not await the sampler, so final rows can duplicate or arrive out of order (`awaitTermination`); 243-34 `ResultAggregator.java:89` no-mix scenarios get empty hourly rows (record under `entityContext` or skip); 243-38 `pom.xml:37` `spring-boot.version` is copied by hand (pass in or check); also `Scenario.java` target mode still records `sourceLatency`, and the pom's empty `-Ddataprism.version=` passes the enforcer (add `<regex>.+</regex>`).
+- Docs and workflow (Low): 243-24 `load-test.yml:18` the three-member choice needs the overlay and the workflow does not say (comment: self-hosted with overlay); 243-25 `soak-0.8.md:73` FAILED causes are per run with no per-member "Resolving class" table (add Hour and a per-member table); the README's manual `docker compose up` bypasses `dc`'s running-image guard (`pull_policy: never` still prevents pulls), and kill, start and restart do not go through `up` (a FINDING only); PR #243's Outcome lacks run durations for kill-restart, kill-owner-and-backup and roll-all (AC19 wording).
+- Nits: 243-27 `LoadDriver.java:109` inline fully qualified names (import); 243-41 `pom.xml:35` comment orphan break and long line; 243-42 `fault-full-restart-key-change.sh:24` the guard accepts 32 characters where 64 hex are required (validate before stopping); 243-43 `LoadDriverMixedCallTest.java:26` static mutable `CLOCK` (per test); 243-50 `LoadDriver.java:324` mixed `||` and `&&` without parentheses; 243-51 `ResultWriter.java:33` the five-argument overload is used only by tests (remove).
+
 ##### Untasked security follow-ups from landed work
 
 Open follow-ups on security, privacy, audit or fail-closed behaviour that no open task file covers. They were in the cut text and are carried here so the 2026-11-10 cut did not drop them. Each cites its archive line (`archive/PLAN-2026-11-10.md`). The older items (archive:788 to archive:1524) are carried as filed and have not been re-checked against the current code, except archive:794, which was (`PrivacyExtensionPoints.java:130` still lists `dataPrismToolAdmission` as `REPLACEABLE`, `Guard.NONE`).
 
+- 263 Part A review (PR #243, 2026-11-11), Lows: 243-15 `capture-member-port.sh:84` the full-payload pcap is kept indefinitely, mode 0644 after `docker cp` (delete after counting unless `KEEP_PCAP`, else `chmod 600`); 243-19 `Scenario.java:119` plain-http target URLs are accepted for any host (http only for loopback); 243-20 `ResultWriter.java:48` parameters echo target subjects and URLs and results are uploaded as artifacts (record a subject count); 243-21 `TargetTokens.java:41` a non-JSON issuer answer can carry token text in the exception chain (fixed message, no cause); 243-30 `capture-member-port.sh:63` ids are not trimmed or validated and the control plants only the first id (trim, validate, control per id); 243-31 `capture-member-port.sh:66` four-digit fixture ids match unrelated digits (delimited matches or a long distinctive id). Nits: 243-26 `fault-clock-skew.sh:19` `FAKETIME_LIB` and the offset are spliced into YAML (validate); 243-39 `HarnessKeyResolverAutoConfiguration.java:8` auto-configures if the jar is on the loader path (gate on a harness property); 243-40 `ServerJvmProbe.java:34` leaves a local JMX agent running in the harness server (note in the README or use `jcmd`).
 - 239-13 (from 261's review, PR #239): `docs/migration-0.8.md:130`. A bare `*` in `real-names-scopes` is accepted and opts every scope in, with no warning. Warn about it in the migration notes, or file a code follow-up to refuse it.
 - archive:309: `TrustedNetwork.java` should reject `0.0.0.0/8` ranges (no match for it in the current file).
 - archive:314: a caller without `FOLLOW` still sees source relationships (from 251; an authorisation gap).
@@ -866,102 +870,7 @@ of them up only if a future task already owns the file.
   neither the source nor the cause; only blankness is validated at
   `ConfiguredJsonSources.java:104`.
 
-Found during `/verify` on tasks 21-24, 2026-09-14. None blocks anything; pick
-any of them up only if a future task already owns the file.
-
-- The JWKS discovery success path now has no positive coverage in either
-  module: task 21 removed `SecurityConfigTest.discovers_jwks_when_the_issuer_discovery_location_is_configured`
-  because it depended on the removed plaintext relaxation. A positive test is
-  still constructible — serve metadata over plaintext, return an `https://`
-  `jwks_uri`, assert the decoder builds and `metadataRequests == 1`, since
-  `NimbusJwtDecoder` fetches lazily. Token decoding itself remains proven by
-  `ServerSecurityBoundaryTest` and `McpHttpEndToEndTest`, so this is a gap, not
-  a hole.
-- `STANDALONE_HTTP_ONLY` is now asserted by no test anywhere.
-- `ServerIntegrationsConfiguration.java:22`'s `isFixtureDevelopment()` disjunct
-  is now dead code, since fixture implies STDIO.
-- `PrivacyExtensionPoints`' `COMPETING_BEAN_REFUSAL` is read from the same file
-  the sweep checks, so a future bean can self-certify a guard that does not
-  exist; only the `@ConditionalOnMissingBean`/`@Primary` halves are
-  independently verified.
-- `ServerArchitectureTest`'s `that()` side constrains every dataprism class on
-  the server's test classpath rather than just `..dataprism.server..`; a
-  future edge module using Spring Security would go red in a test owned by a
-  different module.
-- `data-prism-server`'s `spring-boot-maven-plugin` repackage replaces its
-  plain jar, so its classes are invisible to any ordinary Maven-classpath scan
-  after the `package` phase. Task 23 worked around it inside its own module;
-  the underlying fix is a `<classifier>` on that plugin execution in
-  `data-prism-server/pom.xml`.
-- ~~`data-prism-connectors-rest` is an unconsumed leaf — nothing in the
-  reactor depends on it.~~ **Resolved 2026-09-15.** Task 20 wired it: the
-  configuration-driven JSON REST mode is its first real caller, and its test
-  count went from 13 to 49. (`data-prism-hazelcast` was resolved the same
-  way one wave earlier: task 25 gives it a real caller through the
-  autoconfigure module's `embedded` topology.)
-
-Found during `/verify` on task 18, 2026-09-14. Neither blocks anything; pick
-either up only if a future task already owns the file.
-
-- ~~`ServerPackagingIT.DEVELOPMENT_KEY_MARKERS`
-  (`data-prism-server/src/test/java/.../ServerPackagingIT.java:42-51`) was
-  not extended with the quickstart's HMAC literal,
-  `quickstart-demo-hmac-key-not-a-real-secret-32-bytes-long`, and that file's
-  own javadoc obliges whoever adds a development key to extend the list.~~
-  **Retracted 2026-09-15.** This recommendation was wrong: `data-prism-server`
-  never compiles or reads the quickstart env file, so no artefact this scan
-  inspects can ever emit the literal, and the class's own javadoc forbids a
-  marker no build artefact emits — extending the list would itself have
-  violated the file's rule. Task 20 added the marker, then correctly removed
-  it once this was established; a tester confirmed by unzip-scanning the
-  freshly repackaged jar that the literal appears zero times. Do not
-  re-propose this.
-- `QuickstartSmokeIT.java:164` asserts the synthetic name's shape, not its
-  stability. A second call for the same subject in the same scope returning
-  the same value would make the pseudonymisation claim materially stronger,
-  and consistency-within-a-scope is the core guarantee this product sells.
-
-Found during `/verify` on task 25, 2026-09-14. None blocks anything; pick any
-of them up only if a future task already owns the file.
-
-- `dataprism.privacy.hmac-key`'s neighbour `identity-cache-ttl` is bound,
-  validated, and read by nothing — `CachingSyntheticValueSource.java:142-147`
-  derives its TTL from `context.expiresAt()`, and `PrivacyCluster.configure()`
-  (`PrivacyCluster.java:71-75`) replaces any pre-set `MapConfig`, so no caller
-  can wire it. Pre-existing, confirmed by review, not introduced by task 25.
-  Same defect shape as `topology` was, one layer down: a property an operator
-  can set that changes nothing. `docs/configuration.md:63` makes no false
-  claim about it, but the refusal column still implies the property means
-  something. Fixing it needs `data-prism-hazelcast`, which task 25 was
-  explicitly scoped out of.
-- `DataPrismAutoConfiguration.java:225` — `@ConditionalOnBean` also suppresses
-  the bean definition, so `topology: embedded` with Hazelcast present but no
-  `DataSourceAdapter` refuses with `MISSING_SHARED_BUDGET` and a message
-  claiming Hazelcast is missing from the classpath, which is false. Fails
-  closed, but reports the wrong cause.
-- `DataPrismAutoConfiguration.java:188` — `matchIfMissing=true` is untested;
-  flipping it to `false` leaves all 36 autoconfigure tests green. It makes no
-  refusal unreachable, so it is not a fail-open, but the default is unproven.
-- `DataPrismAutoConfiguration.java:225` — `"embedded".equals(...)` is
-  case-sensitive while the `@ConditionalOnProperty` above it matches
-  case-insensitively, so `topology=Embedded` under stdio fixture-development
-  with Hazelcast absent fails closed on an `UnsatisfiedDependencyException`
-  rather than the stable code.
-
-Left by task 09's close-out. Neither blocks anything; pick either up only if a
-future task already owns the file.
-
-- `PiiLogScanTest.java:191-193` — the sum assertion (`auditCount + nonAuditCount
-  == total`) is tautological: the second count is defined as the complement of
-  the first, so the assertion cannot fail. The two non-empty assertions either
-  side of it are the load-bearing checks and do work. Harmless, but the sixth
-  instance in this repository of an assertion that cannot fail — this one came
-  from the task brief itself rather than from the implementer.
-- `PiiLogScanTest.java:104-112` — `AUDIT_KEYS` holds 19 names while the javadoc
-  says "twenty placeholders": the sink's `seq={}/{}` is two placeholders folded
-  into one field. `docs/conventions.md` forbids a comment asserting a state
-  nobody established; this one should be corrected to 19, or the javadoc
-  reworded to explain the fold, next time this file is touched.
+Found during `/verify` on tasks 21-24, 18 and 25 (2026-09-14): moved verbatim to `archive/PLAN-2026-11-11-wave-13b.md` (block 2). None blocked anything and no open task owns those files.
 
 Found by the 2026-09-09 documentation audit, not fixed there because none of
 it is a doc fix:
