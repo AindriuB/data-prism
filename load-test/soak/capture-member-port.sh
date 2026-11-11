@@ -36,7 +36,7 @@ image="${CAPTURE_IMAGE:-nicolaka/netshoot@sha256:b09d9b21381f47a79b3cbcb30da2526
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 pcap="capture-$profile-$platform-$stamp.pcap"
 out="$(summary_file "capture-$profile-$platform")"; : > "$out"
-provenance "$out"
+provenance_begin "$out"
 
 cid="$(dc ps -q server-a)"
 [ -n "$cid" ] || { note "$out" "capture: not run (server-a is not up)"; exit 3; }
@@ -45,7 +45,7 @@ cid="$(dc ps -q server-a)"
 # Linux engine would refuse a write into the owner-owned results directory without CAP_DAC_OVERRIDE. The file is
 # copied out with docker cp afterwards. tcpdump's own error output is kept and shown if nothing was recorded.
 cap_name="soak-capture-$stamp-$$"
-trap 'docker rm -f "$cap_name" >/dev/null 2>&1 || true' EXIT
+on_exit 'docker rm -f "$cap_name" >/dev/null 2>&1 || true'
 docker run --name "$cap_name" --network "container:$cid" --cap-drop ALL --cap-add NET_RAW --cap-add SETUID --cap-add SETGID \
   "$image" timeout "$secs" tcpdump -i any -n -s 0 -U -w "/tmp/$pcap" "tcp port 5701" >/dev/null 2>"$results_dir/.capture-$stamp.err" || true
 docker cp "$cap_name:/tmp/$pcap" "$results_dir/$pcap" >/dev/null 2>>"$results_dir/.capture-$stamp.err" || true

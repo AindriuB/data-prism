@@ -7,7 +7,7 @@ set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 svc="${1:-server-b}"
 out="$(summary_file fault-kill-restart-member)"; : > "$out"
-provenance "$out"
+provenance_begin "$out"
 note "$out" "members answering health before: $(member_count)"
 dc kill "$svc" >/dev/null
 sleep 10

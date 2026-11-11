@@ -80,17 +80,19 @@ class ResultWriterTest {
     }
 
     @Test
-    void aTargetResultRecordsTheMemberImageOrSaysUnrecorded() {
+    void aTargetResultRecordsTheMemberBuildOrSaysUnknown() {
         Scenario target = new Scenario("t", 0, null, new Scenario.Load(1, 5, 0, 0, 0, 30, 0), null, 1L, 0, null,
                 null, new Scenario.Target("http://h:1", "http://h:2/t", null, null, 0, 0));
 
-        assertThat(ResultWriter.document(target, Instant.EPOCH, "abc", true, run(new ResultAggregator()), "sha256:feed"))
-                .containsEntry("memberImageId", "sha256:feed").containsEntry("commit", "abc")
+        assertThat(ResultWriter.document(target, Instant.EPOCH, "abc", true, run(new ResultAggregator()), "feed source=ab commit=c dirty=no"))
+                .containsEntry("memberBuild", "feed source=ab commit=c dirty=no").containsEntry("commit", "abc")
                 .containsEntry("workingTreeDirty", true);
         assertThat(ResultWriter.document(target, Instant.EPOCH, "abc", false, run(new ResultAggregator())))
-                .containsEntry("memberImageId", "unrecorded");
+                .containsEntry("memberBuild", "unknown");
+        assertThat(ResultWriter.document(target, Instant.EPOCH, "abc", false, run(new ResultAggregator()), " "))
+                .containsEntry("memberBuild", "unknown");
         assertThat(ResultWriter.document(SCENARIO, Instant.EPOCH, "abc", false, run(new ResultAggregator()), "x"))
-                .doesNotContainKey("memberImageId");
+                .doesNotContainKey("memberBuild");
     }
 
     @Test

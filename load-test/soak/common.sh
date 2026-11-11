@@ -13,12 +13,43 @@ repo_root="$(CDPATH= cd "$soak_dir/../.." && pwd)"
 results_dir="${SOAK_RESULTS_DIR:-$repo_root/load-test/results}"   # git-ignored
 mkdir -p "$results_dir"
 
-# The members are always built from this checkout: compose.soak.yaml gives each a build: with pull_policy: build,
-# so `up` never pulls the server image and never reuses a tag. There is no switch to turn that off.
+# Images (amendment 7): build-images.sh builds every data-prism image from one snapshot of the checkout and writes
+# the stamp. Nothing here builds or pulls. compose.soak.yaml has no build: and pull_policy: never; `dc` takes the
+# tag from the stamp (never from the caller's shell), refuses when the stamp is missing or a tag's image ID differs
+# from it, and passes --no-build --pull never to `up`, so a recreate runs exactly the bring-up image.
+stamp_file="$results_dir/soak-images.stamp"
 compose_files=(-f "$repo_root/docker/multi-instance/compose.yaml" -f "$soak_dir/compose.soak.yaml")
-dc() { docker compose "${compose_files[@]}" "$@"; }
+soak_images=(server issuer fixtures certs-init)
+project="${COMPOSE_PROJECT_NAME:-data-prism-multi-instance}"
+label_key=io.github.aindriub.dataprism.soak
+
+# stamp_get <key>: a value from the stamp, empty when absent.
+stamp_get() { grep -m1 "^$1=" "$stamp_file" 2>/dev/null | cut -d= -f2- || true; }
+
+# stamp_check: 0 when the stamp exists and every tag it names still resolves to the image ID it holds.
+stamp_check() {
+  local img tag id now
+  [ -s "$stamp_file" ] || { echo "no image stamp: run load-test/soak/build-images.sh first" >&2; return 1; }
+  tag="$(stamp_get tag)"; [ -n "$tag" ] || { echo "image stamp has no tag" >&2; return 1; }
+  for img in "${soak_images[@]}"; do
+    id="$(stamp_get "image.$img")"
+    now="$(docker image inspect --format '{{.Id}}' "data-prism-soak-$img:$tag" 2>/dev/null)" || now=""
+    [ -n "$id" ] && [ "$id" = "$now" ] || { echo "image data-prism-soak-$img:$tag is missing or differs from the stamp: run build-images.sh" >&2; return 1; }
+  done
+}
+
+dc() {
+  stamp_check || return 1
+  local args=() a
+  for a in "$@"; do
+    args+=("$a")
+    [ "$a" != up ] || args+=(--no-build --pull never)
+  done
+  SOAK_IMAGE_TAG="$(stamp_get tag)" docker compose "${compose_files[@]}" "${args[@]}"
+}
 
 members=(server-a server-b server-c)
+containers=(server-a server-b server-c cert-init issuer fixtures)
 
 # summary_file <name>: where a script's counts-and-findings summary goes.
 summary_file() { printf '%s/%s-summary.txt' "$results_dir" "$1"; }
@@ -26,31 +57,68 @@ summary_file() { printf '%s/%s-summary.txt' "$results_dir" "$1"; }
 # note <summary-file> <text>: one finding line, to the terminal and the summary.
 note() { printf '%s\n' "$2" | tee -a "$1"; }
 
-# member_image_id <service>: the ID (12 hex characters, no registry or tag) of the image the member's container
-# runs, or "none" when the member has no container.
-member_image_id() {
-  local cid id=""
-  cid="$(dc ps -aq "$1" 2>/dev/null | head -n 1 || true)"
-  [ -z "$cid" ] || id="$(docker inspect --format '{{.Image}}' "$cid" 2>/dev/null || true)"
-  id="${id#sha256:}"
-  printf '%s' "${id:0:12}"
-  [ -n "$id" ] || printf 'none'
+# container_identity <service>: what one compose container runs, as "<12 hex of the image ID> source=<hash12>
+# commit=<sha> dirty=<yes|no>" from the image's own build labels. "absent" when the service has no container;
+# "unknown" when docker fails or a label is unreadable. Looked up by compose project and service labels with
+# docker ps: no compose interpolation, so it needs neither keys nor the stamp.
+container_identity() {
+  local cid line id
+  cid="$(docker ps -aq --filter "label=com.docker.compose.project=$project" --filter "label=com.docker.compose.service=$1" 2>/dev/null)" || { printf unknown; return 0; }
+  [ -n "$cid" ] || { printf absent; return 0; }
+  cid="${cid%%$'\n'*}"
+  line="$(docker inspect --format "{{.Image}} {{index .Config.Labels \"$label_key.source-hash\"}} {{index .Config.Labels \"$label_key.commit\"}} {{index .Config.Labels \"$label_key.dirty\"}}" "$cid" 2>/dev/null)" || { printf unknown; return 0; }
+  set -- $line
+  id="${1#sha256:}"
+  if [ -z "$id" ] || [ $# -ne 4 ]; then printf unknown; return 0; fi
+  printf '%s source=%s commit=%s dirty=%s' "${id:0:12}" "${2:0:12}" "$3" "$4"
 }
 
-# git_commit: the short SHA of the checkout and whether its working tree is dirty, as "abc1234 dirty=no".
-git_commit() {
-  local sha dirty=no
-  sha="$(git -C "$repo_root" rev-parse --short HEAD 2>/dev/null || echo none)"
-  [ -z "$(git -C "$repo_root" status --porcelain 2>/dev/null)" ] || dirty=yes
-  printf '%s dirty=%s' "$sha" "$dirty"
+# running_image_id <service>: the full image ID of the container, "" when absent or unreadable.
+running_image_id() {
+  local cid
+  cid="$(docker ps -aq --filter "label=com.docker.compose.project=$project" --filter "label=com.docker.compose.service=$1" 2>/dev/null | head -n 1)" || return 0
+  [ -z "$cid" ] || docker inspect --format '{{.Image}}' "$cid" 2>/dev/null || true
 }
 
-# provenance <summary-file>: which build ran. One line per member with its image ID, then the commit. Every
-# script's summary starts with it.
-provenance() {
-  local m
-  for m in "${members[@]}"; do note "$1" "image $m: $(member_image_id "$m")"; done
-  note "$1" "commit: $(git_commit)"
+# provenance_lines: one line per container, in the form of container_identity.
+provenance_lines() { local m; for m in "${containers[@]}"; do printf 'image %s: %s\n' "$m" "$(container_identity "$m")"; done; }
+
+# provenance_begin <summary-file>: record what runs now, and arrange for provenance_end to run when the script
+# exits. Every script calls it once, right after it opens its summary. A script's own cleanup goes through
+# on_exit, so that it runs first and the end identity is read after it (a recreate has then happened).
+soak_summary=""; soak_start_lines=""; soak_exit_cmds=()
+on_exit() { soak_exit_cmds+=("$1"); }
+soak_run_exit() {
+  local c rc=$?
+  trap - EXIT
+  for c in "${soak_exit_cmds[@]+"${soak_exit_cmds[@]}"}"; do eval "$c" || true; done
+  provenance_end
+  exit "$rc"
+}
+provenance_begin() {
+  soak_summary="$1"
+  soak_start_lines="$(provenance_lines)"
+  printf '%s\n' "$soak_start_lines" | sed 's/^image /start image /' | tee -a "$soak_summary"
+  provenance_stamp_check start
+  trap soak_run_exit EXIT
+}
+# provenance_stamp_check <when>: a finding for every container whose running image ID differs from the stamp.
+provenance_stamp_check() {
+  local m img id run
+  for m in "${containers[@]}"; do
+    case "$m" in server-*) img=server ;; *) img="$m" ;; esac
+    run="$(running_image_id "$m")"
+    [ -n "$run" ] || continue
+    id="$(stamp_get "image.$img")"
+    [ -n "$id" ] && [ "$run" = "$id" ] || note "$soak_summary" "FINDING ($1): $m runs an image that is not the stamp's ($img)"
+  done
+}
+provenance_end() {
+  [ -n "$soak_summary" ] || return 0
+  local end; end="$(provenance_lines)"
+  printf '%s\n' "$end" | sed 's/^image /end image /' | tee -a "$soak_summary"
+  [ "$end" = "$soak_start_lines" ] || note "$soak_summary" "FINDING: the identities at the end differ from those at the start"
+  provenance_stamp_check end
 }
 
 # health_code <service>: the HTTP status code of the member's health probe, or "none".

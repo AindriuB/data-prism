@@ -9,32 +9,41 @@ What is here, and what is not. Running the soaks is the owner's job on a dedicat
 | `soak-three-member.json` | The context, `list_sources` and `describe_source` mix for 4 hours, without any `follow` (a joining member refuses links), through the overlay's load balancer: its `target` names the endpoint, so the driver starts no server, no sources and sets no limits; see "The three-member run" |
 | `compose.soak.yaml` | Overlay on `docker/multi-instance/compose.yaml`: three members, a load balancer, trusted network, private member interface, links off, no link key |
 | `common.sh` | Helpers the scripts source |
-| `member-image-id.sh` | Prints the image ID the three members run, for `SOAK_MEMBER_IMAGE_ID` |
+| `build-images.sh` | Builds the four data-prism images from one snapshot of the checkout, tags them by its hash, writes the stamp |
+| `member-image-id.sh` | Prints the build identity the three members run now; `unknown` and exit 1 when it cannot read it |
 | `fault-*.sh`, `probe-startup-refusals.sh` | The Part B faults and the AC3 startup probes |
 | `capture-member-port.sh` | Member-port capture for one transport profile |
 | `link-timing.sh` | `LinkTimingSoakTest` with `-Ddataprism.timing=true` |
 
 ## The build rule and provenance
 
-The overlay builds `server-a`, `server-b` and `server-c` from this checkout (`build:` with `pull_policy: build`).
-Bringing it up never pulls the server image and never reuses a tag, so a stale local `:0.8.0` cannot stand in for
-the branch. There is no switch to turn the build off, and `compose.build.yaml` is not needed. Bring it up with
+Build first, then bring up from the stamp. `build-images.sh` snapshots the checkout (`git ls-files -co
+--exclude-standard`, so ignored paths never enter), hashes the snapshot's paths and contents, and builds the four
+data-prism images (server, issuer, fixtures, certs-init) once with their existing Dockerfiles, tagged
+`data-prism-soak-<image>:<12 hex of the hash>`. A tag that exists is reused (same content). It writes
+`load-test/results/soak-images.stamp` (git-ignored): the tag, the four image IDs, the hash, the commit and `dirty`.
+A snapshot that differs from HEAD is refused unless `SOAK_ALLOW_DIRTY=1` (the images are then labelled `dirty=yes`);
+a git failure also refuses. The overlay has no `build:` and uses `pull_policy: never`; `lb` is pinned by digest.
+Nothing builds or pulls on `up`, on a recreate, or inside a measured window.
 
 ```
-docker compose -f docker/multi-instance/compose.yaml -f load-test/soak/compose.soak.yaml up -d
+load-test/soak/build-images.sh
+export DATAPRISM_CLUSTER_KEY_MATERIAL="$(openssl rand -hex 32)" DATAPRISM_NAME_KEY_MATERIAL="$(openssl rand -hex 32)"
+SOAK_IMAGE_TAG="$(grep ^tag= load-test/results/soak-images.stamp | cut -d= -f2)" \
+  docker compose -f docker/multi-instance/compose.yaml -f load-test/soak/compose.soak.yaml up -d --no-build
 ```
 
-Which build ran is recorded, not assumed. Every fault, probe and capture summary starts with one line per member
-(`image server-a: <12 hex characters of the image ID>`) and a `commit: <short SHA> dirty=<yes|no>` line. For the
-three-member scenario, export the image ID before the driver runs; its target-mode result then carries
-`memberImageId` (`unrecorded` when it was not exported), next to the `commit` and `workingTreeDirty` it always
-holds:
+The scripts' `dc` takes the tag from the stamp (never from your shell), refuses when the stamp is missing or a tag's
+image ID differs from it, and passes `--no-build --pull never` to `up`.
 
-```
-export SOAK_MEMBER_IMAGE_ID="$(load-test/soak/member-image-id.sh)"
-```
-
-Three IDs joined with `+` mean the members run different builds, which is a finding.
+Which build ran is recorded, not assumed. Every fault, probe and capture script writes, at its start and again on
+exit (after any recreate), one line per container (server-a/b/c, cert-init, issuer, fixtures):
+`<12 hex of the image ID> source=<hash12> commit=<short SHA> dirty=<yes|no>`, read from the running container and
+its image labels. A start/end mismatch, or a running image ID that is not the stamp's, is printed as a `FINDING`.
+`absent` means the service has no container; `unknown` means docker failed or a label was unreadable. The driver's
+target-mode result runs `member-image-id.sh` when it writes and records its output as `memberBuild` (`unknown` when
+the script fails, for instance with docker unavailable); the `commit` and `workingTreeDirty` beside it are the
+driver's own checkout. Three identities joined with ` + ` mean the members run different builds, which is a finding.
 
 Every script writes counts and findings only, to `load-test/results/<name>-summary.txt`
 (git-ignored), never an address, a payload byte or a key.

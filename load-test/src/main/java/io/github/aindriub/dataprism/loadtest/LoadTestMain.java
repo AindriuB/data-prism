@@ -122,8 +122,12 @@ public final class LoadTestMain {
                 Duration.ofMinutes(target.tokenLifetimeMinutes()), Duration.ofHours(target.scopeLifetimeHours()),
                 System::nanoTime);
         LoadDriver.Run run = new LoadDriver(target.baseUrl(), credentials, scenario).run();
+        // The members' build is read when the result is written, not taken from the environment: what ran at the end
+        // of the run, or "unknown". The commit and dirty flag below are this driver's own checkout.
+        String memberBuild = boundedOutput(List.of("bash",
+                repoRoot.resolve("load-test/soak/member-image-id.sh").toString()), Duration.ofSeconds(30));
         Path file = ResultWriter.write(resultsDir, scenario, startedAt, git(repoRoot, "rev-parse", "HEAD"),
-                !git(repoRoot, "status", "--porcelain").isBlank(), run, System.getenv("SOAK_MEMBER_IMAGE_ID"));
+                !git(repoRoot, "status", "--porcelain").isBlank(), run, memberBuild);
         System.out.println("wrote " + file);
     }
 

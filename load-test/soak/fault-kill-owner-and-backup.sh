@@ -9,7 +9,7 @@ set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 a="${1:-server-b}"; b="${2:-server-c}"
 out="$(summary_file fault-kill-owner-and-backup)"; : > "$out"
-provenance "$out"
+provenance_begin "$out"
 note "$out" "members answering health before: $(member_count)"
 dc kill "$a" "$b" >/dev/null
 sleep 15

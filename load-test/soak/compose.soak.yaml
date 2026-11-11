@@ -1,14 +1,17 @@
 # Overlay for the three-member soak (task 263, Part A). Apply it on top of
 # docker/multi-instance/compose.yaml, which it does not edit:
 #
+#   load-test/soak/build-images.sh        # builds from a snapshot of the checkout, writes the stamp
 #   export DATAPRISM_CLUSTER_KEY_MATERIAL="$(openssl rand -hex 32)"
 #   export DATAPRISM_NAME_KEY_MATERIAL="$(openssl rand -hex 32)"
-#   docker compose -f docker/multi-instance/compose.yaml \
-#     -f load-test/soak/compose.soak.yaml up -d
+#   SOAK_IMAGE_TAG="$(grep ^tag= load-test/results/soak-images.stamp | cut -d= -f2)" \
+#     docker compose -f docker/multi-instance/compose.yaml -f load-test/soak/compose.soak.yaml up -d --no-build
 #
-# The three members are always built from this checkout (`build:` with `pull_policy: build`): `up` never pulls
-# the server image and never reuses a tag, so the soak runs the branch under test. compose.build.yaml is not
-# needed. What it changes:
+# Images (amendment 7): the six data-prism services (server-a/b/c, cert-init, issuer, fixtures) use
+# data-prism-soak-<image>:${SOAK_IMAGE_TAG}, built by build-images.sh from one snapshot and tagged by its content
+# hash. There is no `build:` here and `pull_policy: never`, so an `up` or a recreate never builds and never
+# pulls, and a missing tag fails. `common.sh`'s `dc` exports the tag from the stamp and checks it; the other
+# scripts use that. compose.build.yaml is not needed. What this overlay changes:
 #   - a third member, server-c, on the member network;
 #   - every member lists all three members, trusts the network by assertion
 #     (trusted-network: true) and binds only the private member subnet;
@@ -38,22 +41,29 @@ x-member-env: &member-env
   DATAPRISM_LIMITS_SCOPEREADBUDGET: "12000"
   DATAPRISM_LIMITS_PERSOURCETIMEOUT: 3s
 
-# Paths are relative to the first file's directory (docker/multi-instance), as compose.build.yaml's are.
-x-member-build: &member-build
-  context: ../..
-  dockerfile: docker/server/Dockerfile
-
 services:
+  cert-init:
+    image: data-prism-soak-certs-init:${SOAK_IMAGE_TAG:?run load-test/soak/build-images.sh}
+    pull_policy: never
+
+  issuer:
+    image: data-prism-soak-issuer:${SOAK_IMAGE_TAG:?run load-test/soak/build-images.sh}
+    pull_policy: never
+
+  fixtures:
+    image: data-prism-soak-fixtures:${SOAK_IMAGE_TAG:?run load-test/soak/build-images.sh}
+    pull_policy: never
+
   server-a:
-    build: *member-build
-    pull_policy: build
+    image: data-prism-soak-server:${SOAK_IMAGE_TAG:?run load-test/soak/build-images.sh}
+    pull_policy: never
     environment:
       <<: *member-env
     ports: !reset []
 
   server-b:
-    build: *member-build
-    pull_policy: build
+    image: data-prism-soak-server:${SOAK_IMAGE_TAG:?run load-test/soak/build-images.sh}
+    pull_policy: never
     environment:
       <<: *member-env
 
@@ -61,8 +71,8 @@ services:
     extends:
       file: ../../compose.yaml
       service: server
-    build: *member-build
-    pull_policy: build
+    image: data-prism-soak-server:${SOAK_IMAGE_TAG:?run load-test/soak/build-images.sh}
+    pull_policy: never
     environment:
       <<: *member-env
       DATAPRISM_HAZELCAST_TOPOLOGY: embedded
@@ -89,7 +99,9 @@ services:
   # (the one that opens a session) is balanced. A member that dies takes its sessions with it, as for any
   # stateful server: the client must open a new one.
   lb:
-    image: haproxy:3.0-alpine
+    # Pinned by digest (the manifest digest of 3.0-alpine when this was written): a tag can move.
+    image: haproxy:3.0-alpine@sha256:d2b3567d836f3b7d174edb6d6f611ed5308e7966e53a9cd9a597e0415a298efd
+    pull_policy: if_not_present
     depends_on:
       - server-a
       - server-b

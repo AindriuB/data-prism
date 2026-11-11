@@ -10,7 +10,7 @@ set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 svc="${1:-server-c}"; secs="${PARTITION_SECONDS:-120}"
 out="$(summary_file fault-network-partition)"; : > "$out"
-provenance "$out"
+provenance_begin "$out"
 cid="$(dc ps -q "$svc")"
 net="$(printf '%s' "$cid" | xargs docker inspect --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' | tr ' ' '\n' | grep -m1 'cluster$' || true)"
 if [ -z "$net" ]; then note "$out" "partition: not run (member network not found)"; exit 3; fi
@@ -23,7 +23,7 @@ restore() {
     cut=0
   fi
 }
-trap restore EXIT INT TERM
+on_exit restore; trap 'exit 130' INT TERM
 docker network disconnect "$net" "$cid"; cut=1
 note "$out" "$svc cut from the member network for $secs s; issue the pause now"
 sleep "$secs"
