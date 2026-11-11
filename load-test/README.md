@@ -16,7 +16,8 @@ That one command
 
 1. builds `data-prism-server` and `data-prism-connectors-rest` from this checkout
    (`./mvnw -pl data-prism-server,data-prism-connectors-rest -am -DskipTests package`),
-2. builds the harness and runs its unit tests (`./mvnw -f load-test/pom.xml package`),
+2. builds the harness and runs its unit tests (`load-test/run.sh --build-only` builds both without starting a scenario; by hand,
+   `./mvnw -f load-test/pom.xml -Ddataprism.version=<reactor version> package`),
 3. starts the stack, drives the scenario and writes
    `load-test/results/<scenario>-<timestamp>.json` (git-ignored).
 
@@ -179,7 +180,7 @@ response is not in the response, so it cannot be recorded here.
 
 ## Tests
 
-`./mvnw -f load-test/pom.xml test` runs the harness's own unit tests: source
+`./mvnw -f load-test/pom.xml -Ddataprism.version=<reactor version> test` runs the harness's own unit tests: source
 generation, exact percentiles of a known sample, status and refusal-code
 tallies from canned responses, and scenario loading (including every shipped
 scenario file), failure-cause classification, credential rotation, the failure

@@ -51,7 +51,9 @@ jobs:
       - name: Resolve the load-test tree to an SBOM
         run: |
           plugin="$(./mvnw -B -q -DforceStdout help:evaluate -Dexpression=cyclonedx-plugin.version)"
+          version="$(./mvnw -B -q -DforceStdout help:evaluate -Dexpression=project.version)"
           ./mvnw -B --no-transfer-progress -f load-test/pom.xml \
+            -Ddataprism.version="${version}" \
             "org.cyclonedx:cyclonedx-maven-plugin:${plugin}:makeBom" \
             -DoutputFormat=json
 

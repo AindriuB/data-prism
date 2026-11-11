@@ -3,15 +3,21 @@
 # load-test/results/<scenario>-<timestamp>.json. See load-test/README.md.
 #
 #   load-test/run.sh load-test/scenarios/sources-8.json
+#   load-test/run.sh --build-only      # both builds and the jar guard, no scenario
 set -euo pipefail
 
-if [ "$#" -ne 1 ]; then
-  echo "usage: load-test/run.sh <scenario.json>" >&2
+build_only=false
+if [ "$#" -eq 1 ] && [ "$1" = "--build-only" ]; then
+  build_only=true
+elif [ "$#" -ne 1 ]; then
+  echo "usage: load-test/run.sh <scenario.json> | --build-only" >&2
   exit 2
 fi
 
 root="$(CDPATH= cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-scenario="$(CDPATH= cd "$(dirname "$1")" && pwd)/$(basename "$1")"
+if ! $build_only; then
+  scenario="$(CDPATH= cd "$(dirname "$1")" && pwd)/$(basename "$1")"
+fi
 
 # The real server and the one extension the harness loads onto it, built from this checkout.
 (cd "$root" && ./mvnw -B -q -pl data-prism-server,data-prism-connectors-rest -am -DskipTests package)
@@ -23,6 +29,10 @@ core="$root/data-prism-core/target/data-prism-core-$version.jar"
 [ -f "$core" ] || { echo "run.sh: missing $core (the reactor build did not produce data-prism-core $version)" >&2; exit 1; }
 # The harness, with its own unit tests; it is not part of the root reactor.
 (cd "$root" && ./mvnw -B -q -f load-test/pom.xml -Ddataprism.version="$version" package)
+
+if $build_only; then
+  exit 0
+fi
 
 cd "$root/load-test"
 exec java -jar target/data-prism-load-test.jar "$scenario" --repo-root "$root" --results-dir "$root/load-test/results"

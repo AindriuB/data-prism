@@ -28,10 +28,12 @@
     <assertj.version>3.27.7</assertj.version>
     <slf4j.version>2.0.17</slf4j.version>
     <!-- The harness key resolver (task 263, D2) compiles against the reactor's own data-prism-core jar and Spring
-         Boot (the core jar in system scope): it runs only inside the harness server. Spring Boot is kept in step with ../pom.xml; the core version is passed by run.sh. KeyResolver is in
-         no published release and `mvn install` is not used, so the core jar is the one run.sh's reactor build
-         leaves in ../data-prism-core/target. -->
-    <dataprism.version>0.7.0</dataprism.version><!-- default only; load-test/run.sh passes the reactor version with -Ddataprism.version -->
+         Boot (the core jar in system scope): it runs only inside the harness server. Spring Boot is kept in step
+         with ../pom.xml. The core version has no default: pass -Ddataprism.version=<reactor version>, which
+         load-test/run.sh does. The core
+         dependency sits in a profile active only when it is passed, so a build without it reaches the enforcer
+         rule below and stops there with a clear message. KeyResolver is in no published release and `mvn install` is not
+         used, so the core jar is the one run.sh's reactor build leaves in ../data-prism-core/target. -->
     <spring-boot.version>4.1.1</spring-boot.version>
   </properties>
 
@@ -62,13 +64,6 @@
       <version>${slf4j.version}</version>
     </dependency>
     <dependency>
-      <groupId>io.github.aindriub</groupId>
-      <artifactId>data-prism-core</artifactId>
-      <version>${dataprism.version}</version>
-      <scope>system</scope>
-      <systemPath>${project.basedir}/../data-prism-core/target/data-prism-core-${dataprism.version}.jar</systemPath>
-    </dependency>
-    <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-autoconfigure</artifactId>
       <version>${spring-boot.version}</version>
@@ -88,9 +83,49 @@
     </dependency>
   </dependencies>
 
+  <profiles>
+    <profile>
+      <id>core-jar</id>
+      <activation>
+        <property><name>dataprism.version</name></property>
+      </activation>
+      <dependencies>
+        <dependency>
+          <groupId>io.github.aindriub</groupId>
+          <artifactId>data-prism-core</artifactId>
+          <version>${dataprism.version}</version>
+          <scope>system</scope>
+          <systemPath>${project.basedir}/../data-prism-core/target/data-prism-core-${dataprism.version}.jar</systemPath>
+        </dependency>
+      </dependencies>
+    </profile>
+  </profiles>
+
   <build>
     <finalName>data-prism-load-test</finalName>
     <plugins>
+      <plugin>
+        <!-- No default for dataprism.version: a build without it stops here, never on a stale jar. -->
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <version>3.6.3</version>
+        <executions>
+          <execution>
+            <id>require-dataprism-version</id>
+            <phase>validate</phase>
+            <goals><goal>enforce</goal></goals>
+            <configuration>
+              <rules>
+                <requireProperty>
+                  <property>dataprism.version</property>
+                  <message>dataprism.version is not set. Pass -Ddataprism.version=&lt;reactor version&gt;, or build with load-test/run.sh (load-test/run.sh --build-only builds without running a scenario).</message>
+                </requireProperty>
+              </rules>
+              <fail>true</fail>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
