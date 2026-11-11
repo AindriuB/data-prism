@@ -7,6 +7,7 @@
 set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 out="$(summary_file fault-roll-all-members)"; : > "$out"
+provenance "$out"
 note "$out" "members answering health before: $(member_count)"
 for m in "${members[@]}"; do
   dc restart "$m" >/dev/null

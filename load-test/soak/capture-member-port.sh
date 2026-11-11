@@ -36,6 +36,7 @@ image="${CAPTURE_IMAGE:-nicolaka/netshoot@sha256:b09d9b21381f47a79b3cbcb30da2526
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 pcap="capture-$profile-$platform-$stamp.pcap"
 out="$(summary_file "capture-$profile-$platform")"; : > "$out"
+provenance "$out"
 
 cid="$(dc ps -q server-a)"
 [ -n "$cid" ] || { note "$out" "capture: not run (server-a is not up)"; exit 3; }

@@ -19,6 +19,7 @@
 set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 out="$(summary_file fault-hostile-member)"; : > "$out"
+provenance "$out"
 if [ -z "${TAMPER_FLOOD_CMD:-}" ]; then
   note "$out" "hostile member: not run (TAMPER_FLOOD_CMD not set)"
   exit 3

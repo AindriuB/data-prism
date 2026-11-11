@@ -22,16 +22,25 @@ final class ResultWriter {
     private ResultWriter() { }
 
     static Path write(Path resultsDir, Scenario scenario, Instant startedAt, String commit, boolean dirty,
-                      LoadDriver.Run run) throws IOException {
+                      LoadDriver.Run run, String memberImageId) throws IOException {
         Files.createDirectories(resultsDir);
         Path file = resultsDir.resolve(scenario.name() + "-" + STAMP.format(startedAt) + ".json");
         JsonMapper mapper = JsonMapper.builder().enable(SerializationFeature.INDENT_OUTPUT).build();
-        Files.writeString(file, mapper.writeValueAsString(document(scenario, startedAt, commit, dirty, run)) + "\n");
+        Files.writeString(file, mapper.writeValueAsString(document(scenario, startedAt, commit, dirty, run, memberImageId)) + "\n");
         return file;
     }
 
     static Map<String, Object> document(Scenario scenario, Instant startedAt, String commit, boolean dirty,
                                         LoadDriver.Run run) {
+        return document(scenario, startedAt, commit, dirty, run, null);
+    }
+
+    /**
+     * {@code memberImageId} is the image the target's members run, passed in by the caller (the soak scripts read it
+     * from Docker); a target-mode result records it, or "unrecorded", so a result never hides which build ran.
+     */
+    static Map<String, Object> document(Scenario scenario, Instant startedAt, String commit, boolean dirty,
+                                        LoadDriver.Run run, String memberImageId) {
         ResultAggregator.Summary s = run.summary();
         long causes = s.failureCauses().values().stream().mapToLong(Long::longValue).sum();
         if (causes != s.transportFailures()) {
@@ -48,6 +57,9 @@ final class ResultWriter {
         doc.put("parameters", scenario);
         boolean target = scenario.target() != null;
         doc.put("mode", target ? "target" : "harness-server");
+        if (target) {
+            doc.put("memberImageId", memberImageId == null || memberImageId.isBlank() ? "unrecorded" : memberImageId);
+        }
         if (!target) {
             // A target applies its own limits and serves its own sources: none of this is the harness's to report.
             doc.put("effectiveLimits", scenario.limits().asProperties());

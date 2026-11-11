@@ -9,6 +9,7 @@ set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 offset="${1:-+90s}"; svc="${2:-server-c}"
 out="$(summary_file fault-clock-skew)"; : > "$out"
+provenance "$out"
 if [ -z "${FAKETIME_LIB:-}" ]; then note "$out" "clock skew: not run (FAKETIME_LIB not set)"; exit 3; fi
 # Stage the skew in a throwaway override so the repository files stay untouched.
 override="$(mktemp)"; trap 'rm -f "$override"' EXIT

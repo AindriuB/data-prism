@@ -9,9 +9,32 @@ What is here, and what is not. Running the soaks is the owner's job on a dedicat
 | `soak-three-member.json` | The context, `list_sources` and `describe_source` mix for 4 hours, without any `follow` (a joining member refuses links), through the overlay's load balancer: its `target` names the endpoint, so the driver starts no server, no sources and sets no limits; see "The three-member run" |
 | `compose.soak.yaml` | Overlay on `docker/multi-instance/compose.yaml`: three members, a load balancer, trusted network, private member interface, links off, no link key |
 | `common.sh` | Helpers the scripts source |
+| `member-image-id.sh` | Prints the image ID the three members run, for `SOAK_MEMBER_IMAGE_ID` |
 | `fault-*.sh`, `probe-startup-refusals.sh` | The Part B faults and the AC3 startup probes |
 | `capture-member-port.sh` | Member-port capture for one transport profile |
 | `link-timing.sh` | `LinkTimingSoakTest` with `-Ddataprism.timing=true` |
+
+## The build rule and provenance
+
+The overlay builds `server-a`, `server-b` and `server-c` from this checkout (`build:` with `pull_policy: build`).
+Bringing it up never pulls the server image and never reuses a tag, so a stale local `:0.8.0` cannot stand in for
+the branch. There is no switch to turn the build off, and `compose.build.yaml` is not needed. Bring it up with
+
+```
+docker compose -f docker/multi-instance/compose.yaml -f load-test/soak/compose.soak.yaml up -d
+```
+
+Which build ran is recorded, not assumed. Every fault, probe and capture summary starts with one line per member
+(`image server-a: <12 hex characters of the image ID>`) and a `commit: <short SHA> dirty=<yes|no>` line. For the
+three-member scenario, export the image ID before the driver runs; its target-mode result then carries
+`memberImageId` (`unrecorded` when it was not exported), next to the `commit` and `workingTreeDirty` it always
+holds:
+
+```
+export SOAK_MEMBER_IMAGE_ID="$(load-test/soak/member-image-id.sh)"
+```
+
+Three IDs joined with `+` mean the members run different builds, which is a finding.
 
 Every script writes counts and findings only, to `load-test/results/<name>-summary.txt`
 (git-ignored), never an address, a payload byte or a key.

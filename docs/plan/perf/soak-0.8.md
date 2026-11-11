@@ -28,8 +28,9 @@ A run passes only if every line holds.
 **AC2, per run (single node, three members):**
 1. No upward trend in heap after GC over the last half of the run.
 2. No upward trend in live threads over the last half of the run.
-3. No FAILED source status or failed call without a cause (every one has an entry in
-   `calls.failureCauses`).
+3. No `FAILED` or `RESOLVER_FAILED` source status in any call. The run fails on any one. Its cause is recorded
+   as the source statuses by source (the result's `perSourceStatus`) and, for transport failures, the entries of
+   `calls.failureCauses`.
 4. The budget counters equal the reads made.
 5. No privacy refusal other than those the scenario provoked: `SCOPE_READ_BUDGET` (the read budget, in both
    runs) and `LINK_INVALID` (the single-node run's invalid-link calls, whose refusal text the driver counts
@@ -70,7 +71,7 @@ cannot read a member's JVM.
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | | | | | | | | | | | | |
 
-FAILED causes, with counts:
+`FAILED` and `RESOLVER_FAILED` source statuses by source, and transport failures by cause (`failureCauses`), with counts:
 
 | Cause | Count |
 |---|---|
@@ -88,7 +89,7 @@ Pass or fail against the AC2 criteria:
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | | | | | | | | | | | | |
 
-FAILED causes, with counts:
+`FAILED` and `RESOLVER_FAILED` source statuses by source, and transport failures by cause (`failureCauses`), with counts:
 
 | Cause | Count |
 |---|---|

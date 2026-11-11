@@ -90,7 +90,7 @@ public final class LoadTestMain {
                 LoadDriver.Run run = new LoadDriver(server.mcpBaseUrl(), credentials, scenario,
                         server::exitCode, ServerJvmProbe.forProcess(server.pid())).run();
                 Path file = ResultWriter.write(resultsDir, scenario, startedAt, git(repoRoot, "rev-parse", "HEAD"),
-                        !git(repoRoot, "status", "--porcelain").isBlank(), run);
+                        !git(repoRoot, "status", "--porcelain").isBlank(), run, null);
                 System.out.println("wrote " + file);
                 if (run.serverExitCode() != null) {
                     Path kept = server.keepLog();
@@ -123,7 +123,7 @@ public final class LoadTestMain {
                 System::nanoTime);
         LoadDriver.Run run = new LoadDriver(target.baseUrl(), credentials, scenario).run();
         Path file = ResultWriter.write(resultsDir, scenario, startedAt, git(repoRoot, "rev-parse", "HEAD"),
-                !git(repoRoot, "status", "--porcelain").isBlank(), run);
+                !git(repoRoot, "status", "--porcelain").isBlank(), run, System.getenv("SOAK_MEMBER_IMAGE_ID"));
         System.out.println("wrote " + file);
     }
 

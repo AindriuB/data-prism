@@ -13,11 +13,9 @@ repo_root="$(CDPATH= cd "$soak_dir/../.." && pwd)"
 results_dir="${SOAK_RESULTS_DIR:-$repo_root/load-test/results}"   # git-ignored
 mkdir -p "$results_dir"
 
+# The members are always built from this checkout: compose.soak.yaml gives each a build: with pull_policy: build,
+# so `up` never pulls the server image and never reuses a tag. There is no switch to turn that off.
 compose_files=(-f "$repo_root/docker/multi-instance/compose.yaml" -f "$soak_dir/compose.soak.yaml")
-if [ "${SOAK_BUILD:-0}" = "1" ]; then
-  compose_files=(-f "$repo_root/docker/multi-instance/compose.yaml" -f "$repo_root/docker/multi-instance/compose.build.yaml" \
-                 -f "$soak_dir/compose.soak.yaml")
-fi
 dc() { docker compose "${compose_files[@]}" "$@"; }
 
 members=(server-a server-b server-c)
@@ -27,6 +25,33 @@ summary_file() { printf '%s/%s-summary.txt' "$results_dir" "$1"; }
 
 # note <summary-file> <text>: one finding line, to the terminal and the summary.
 note() { printf '%s\n' "$2" | tee -a "$1"; }
+
+# member_image_id <service>: the ID (12 hex characters, no registry or tag) of the image the member's container
+# runs, or "none" when the member has no container.
+member_image_id() {
+  local cid id=""
+  cid="$(dc ps -aq "$1" 2>/dev/null | head -n 1 || true)"
+  [ -z "$cid" ] || id="$(docker inspect --format '{{.Image}}' "$cid" 2>/dev/null || true)"
+  id="${id#sha256:}"
+  printf '%s' "${id:0:12}"
+  [ -n "$id" ] || printf 'none'
+}
+
+# git_commit: the short SHA of the checkout and whether its working tree is dirty, as "abc1234 dirty=no".
+git_commit() {
+  local sha dirty=no
+  sha="$(git -C "$repo_root" rev-parse --short HEAD 2>/dev/null || echo none)"
+  [ -z "$(git -C "$repo_root" status --porcelain 2>/dev/null)" ] || dirty=yes
+  printf '%s dirty=%s' "$sha" "$dirty"
+}
+
+# provenance <summary-file>: which build ran. One line per member with its image ID, then the commit. Every
+# script's summary starts with it.
+provenance() {
+  local m
+  for m in "${members[@]}"; do note "$1" "image $m: $(member_image_id "$m")"; done
+  note "$1" "commit: $(git_commit)"
+}
 
 # health_code <service>: the HTTP status code of the member's health probe, or "none".
 # The default path is the server's unauthenticated /health, which answers 200 while the process is up

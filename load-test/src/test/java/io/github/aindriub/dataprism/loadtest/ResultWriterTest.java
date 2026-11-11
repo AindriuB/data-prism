@@ -80,6 +80,20 @@ class ResultWriterTest {
     }
 
     @Test
+    void aTargetResultRecordsTheMemberImageOrSaysUnrecorded() {
+        Scenario target = new Scenario("t", 0, null, new Scenario.Load(1, 5, 0, 0, 0, 30, 0), null, 1L, 0, null,
+                null, new Scenario.Target("http://h:1", "http://h:2/t", null, null, 0, 0));
+
+        assertThat(ResultWriter.document(target, Instant.EPOCH, "abc", true, run(new ResultAggregator()), "sha256:feed"))
+                .containsEntry("memberImageId", "sha256:feed").containsEntry("commit", "abc")
+                .containsEntry("workingTreeDirty", true);
+        assertThat(ResultWriter.document(target, Instant.EPOCH, "abc", false, run(new ResultAggregator())))
+                .containsEntry("memberImageId", "unrecorded");
+        assertThat(ResultWriter.document(SCENARIO, Instant.EPOCH, "abc", false, run(new ResultAggregator()), "x"))
+                .doesNotContainKey("memberImageId");
+    }
+
+    @Test
     void intervalRowsAreWrittenWhenTheRunHasThem() {
         ResultAggregator aggregator = new ResultAggregator();
         aggregator.record("listSources", CallOutcome.completed(5000, Map.of()), false, 1);

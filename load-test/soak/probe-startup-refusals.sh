@@ -9,6 +9,7 @@ set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 require_keys
 out="$(summary_file probe-startup-refusals)"; : > "$out"
+provenance "$out"
 
 # However the script ends (a probe failing, an interrupt), put server-c back as the overlay defines it.
 restore_server_c() { dc up -d --force-recreate --no-deps server-c >/dev/null 2>&1 || true; }
@@ -39,6 +40,8 @@ probe "link key configured" "services:
       DATAPRISM_LINKS_KEYS_PROBE_ENVIRONMENTVARIABLE: DATAPRISM_PROBE_LINK_KEY_MATERIAL
       DATAPRISM_PROBE_LINK_KEY_MATERIAL: \${DATAPRISM_PROBE_LINK_KEY_MATERIAL}"
 
-# Put server-c back as the overlay defines it (the EXIT trap does it again if this point is not reached).
+# Put server-c back as the overlay defines it. Cleared first so the EXIT trap does not recreate it a second time;
+# the trap covers only an exit before this point.
+trap - EXIT
 restore_server_c
 note "$out" "server-c restored to the overlay definition"

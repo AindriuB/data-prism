@@ -4,10 +4,11 @@
 #   export DATAPRISM_CLUSTER_KEY_MATERIAL="$(openssl rand -hex 32)"
 #   export DATAPRISM_NAME_KEY_MATERIAL="$(openssl rand -hex 32)"
 #   docker compose -f docker/multi-instance/compose.yaml \
-#     -f docker/multi-instance/compose.build.yaml \
-#     -f load-test/soak/compose.soak.yaml up --build
+#     -f load-test/soak/compose.soak.yaml up -d
 #
-# (drop compose.build.yaml to use published 0.8.0 images). What it changes:
+# The three members are always built from this checkout (`build:` with `pull_policy: build`): `up` never pulls
+# the server image and never reuses a tag, so the soak runs the branch under test. compose.build.yaml is not
+# needed. What it changes:
 #   - a third member, server-c, on the member network;
 #   - every member lists all three members, trusts the network by assertion
 #     (trusted-network: true) and binds only the private member subnet;
@@ -37,13 +38,22 @@ x-member-env: &member-env
   DATAPRISM_LIMITS_SCOPEREADBUDGET: "12000"
   DATAPRISM_LIMITS_PERSOURCETIMEOUT: 3s
 
+# Paths are relative to the first file's directory (docker/multi-instance), as compose.build.yaml's are.
+x-member-build: &member-build
+  context: ../..
+  dockerfile: docker/server/Dockerfile
+
 services:
   server-a:
+    build: *member-build
+    pull_policy: build
     environment:
       <<: *member-env
     ports: !reset []
 
   server-b:
+    build: *member-build
+    pull_policy: build
     environment:
       <<: *member-env
 
@@ -51,6 +61,8 @@ services:
     extends:
       file: ../../compose.yaml
       service: server
+    build: *member-build
+    pull_policy: build
     environment:
       <<: *member-env
       DATAPRISM_HAZELCAST_TOPOLOGY: embedded

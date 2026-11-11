@@ -21,6 +21,7 @@ case "$which" in
   *) echo "usage: $0 cluster|name" >&2; exit 2 ;;
 esac
 out="$(summary_file "fault-key-change-$which")"; : > "$out"
+provenance "$out"
 if [ "${#new}" -lt 32 ]; then
   note "$out" "key change: not run (export NEW_$(printf '%s' "$which" | tr a-z A-Z)_KEY_MATERIAL, 32 or more characters)"
   exit 3
