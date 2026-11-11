@@ -76,20 +76,7 @@ The owner has asked to record the options and return to this later; nothing is d
 
 0.7.0 (2026-10-20) and 0.7.1 (2026-10-22, tag `v0.7.1` at `256d5e16`) are released; see `HISTORY.md`. The 0.7.1 plan, the backport commit lists and the 0.7.0 gate are in the archive (`archive/PLAN-2026-11-10.md:75-130`). What 0.7.1 left owed to 261 (user pages, on `main`) stays here, word for word:
 
-Documentation owed by 245 and 268 (2026-10-21), for 266 (CHANGELOG, on the release branch) and 261 (user pages, on `main`):
-
-- `docs/reidentification.md` and the operator API page: a re-identification refusal or operator denial whose DENY audit write fails answers `AUDIT_UNAVAILABLE` (HTTP 503 on the operator API) instead of its own code. `resume` writes `ALLOW:RESUMED` first and, if applying the resume then fails, writes a linked `DENY:<code>` under the same correlation id; if that DENY also fails, the answer is 503 `AUDIT_UNAVAILABLE`. 261.
-- CHANGELOG `[0.7.1]` Fixed (245) text is already drafted in 266's Context; the behaviour above is what it must say. 266.
-- CHANGELOG `[0.7.1]` Security (268): Spring Boot 4.1.1 manages embedded Tomcat 11.0.24, affected by GHSA-9xv2-5v5q-p794 / CVE-2026-65905, GHSA-gcx9-497g-6cp6 / CVE-2026-65182 and GHSA-h3x4-894j-xpx5 / CVE-2026-68525 (fixed in 11.0.25). Data Prism now manages 11.0.27 for the server, the starter and the quickstart images. Consumer action: an application that embeds `data-prism-spring-boot-starter` and imports its own Spring Boot BOM must manage `org.apache.tomcat.embed` at 11.0.25 or later (`docs/extending.md`, "The pom shape"). The brief's filing-time check found no container-managed DIGEST or FORM authentication in the repository (authentication is Spring Security JWT and a signing issuer); 266 states exposure from that, and does not claim a re-run. 266.
-
-Documentation owed by 244 (2026-10-21), for 266 (the `[0.7.1]` CHANGELOG, on the release branch) and 261 (the user pages, on `main`):
-
-- `docs/tools.md`: the new tool result (error result, exact text `refused: AUDIT_UNAVAILABLE`, no `_meta` correlation id) and its correlation section. 261.
-- `docs/audit.md`: list the metric `dataprism.audit.denial_unavailable`. 261.
-- `docs/conventions.md:74-77`: stop naming `AuditUnavailableException` as client-visible; add the orchestrator log site. 261.
-- `docs/plan/design/contract-register.md:253`: point `AUDIT_UNAVAILABLE` at `DenialAuditFailedException` and `ToolCalls`; add the metric row and the deprecation. 261.
-- `docs/eu-ai-act.md:114-117` and `docs/configuration.md:359-361` say denials answer `AUDIT_CHECKPOINT_UNAVAILABLE` when a checkpoint write fails; after 244 a denial answers `AUDIT_UNAVAILABLE`. Correct the pages, or flag it as an owner decision whether to map the checkpoint code through. 261.
-- CHANGELOG `[0.7.1]` Changed: clients that got an MCP protocol error or "the request could not be completed" when a denial's audit write failed now get an `isError` tool result `refused: AUDIT_UNAVAILABLE`; the new metric `dataprism.audit.denial_unavailable`; `AuditUnavailableException` is deprecated for removal. 266.
+Documentation owed by 245, 268 and 244 for 261 landed in PR #239 (moved verbatim to `archive/PLAN-2026-11-10-wave-13a.md`). Still owed after it: `docs/conventions.md:74-77` (stop naming `AuditUnavailableException` as client-visible; add the orchestrator log site) and `docs/plan/design/contract-register.md:253` (point `AUDIT_UNAVAILABLE` at `DenialAuditFailedException` and `ToolCalls`; add the metric row and the deprecation), both untouched by 261 (outside its Owns); and the owner decision whether a checkpoint failure on an allowed call should answer `AUDIT_UNAVAILABLE` instead of a generic error with no code (the docs now describe the code as it is).
 
 Related, not fixed in 0.7.1: a Map of a record type has a similar element-type bug. 265 refuses it; proper support (walking `Map<String, Record>` entries) is planned for 0.9. 267 refuses records inside nested containers; descending into them needs `FieldMetadata` widened (0.9), and wildcard lower bounds in `recordBeyondFirstArray` also wait for 0.9 (they fail closed). Open: whether `Optional` shapes should be refused at startup.
 
@@ -101,7 +88,7 @@ Waves 1 to 12 have landed (the table below carries one row for waves 1 to 11 and
 |---|---|
 | 1 to 11 | landed 2026-10-21 to 2026-11-09 (268, 218, 219, 238, 239, 243, 258, 259, 220, 221, 240, 222, 242, 265, 244, 257, 203, 206, 223, 241, 248, 269, 245, 267, 207, 210, 225, 271, 285, 288, 208, 227, 246, 262, 284, 289, 290, 211, 228, 247, 256, 292, 294, 249, 250, 251, 272, 287, 291, 296, 297, 298, 293, 299, 252, 254, 300, 253, 286, 301, 302). 295 was deferred past 0.8.0 (`tasks/deferred/295-ack-gated-tombstone-gc-for-the-pause-document.md`) and must be reissued against F1 to F5 of the 228 contract before pickup. Per-wave detail: `archive/PLAN-2026-11-10.md:141-151` and `HISTORY-INDEX.md` |
 | 12 | 255 (landed 2026-11-10, PR #236), 304 (landed 2026-11-10, PR #237) (253, 286 and 301 landed earlier. 304: client content out of the MCP SDK's inbound parse-error logs; filed 2026-11-09) |
-| 13 | 260, 261, 263 (next. 261 depends on 304, which landed in wave 12, because 261 carries 304's CHANGELOG and migration line, in `tasks/retired/304-no-client-token-in-sdk-stdio-parse-errors.md`) |
+| 13 | 260 (landed 2026-11-10, PR #240), 261 (landed 2026-11-10, PR #239), 263 (Part A, agent scaffolding, in progress; Part B, the owner-run soak, is a 0.8.0 release-cut obligation below. 263 was split at `3ce5d195`). 306 (links-enabled capture fixture for `follow` and `_links`, filed 2026-11-10, unscheduled; `tasks/306-links-enabled-capture-fixture.md`) |
 | last (14) | 213 (depends on 208, 210, 211, 261, 225, 227, 228 and 284 to 287) |
 | 15 (0.9) | 273, 274 (0.9 starter onboarding, filed 2026-10-23; see "0.9 starter onboarding plan" below. 273's OD-273-3 (a) mechanism, rewritten 2026-10-26, is in `tasks/273-default-low-stakes-settings-and-derive-from-spring.md`; the pre-cut row is `archive/PLAN-2026-11-10.md:155`) |
 | 16 (0.9) | 275, 277 |
@@ -116,14 +103,10 @@ Waves 1 to 12 have landed (the table below carries one row for waves 1 to 11 and
 
 Obligations for the 0.8.0 release cut (no brief filed yet; whoever files it copies these into its Acceptance):
 
-- Done 2026-10-27: task 210 has merged (PR #168, into `wave/0.8-wave4`). There is no release gate any more: a deployment must set `dataprism.security-policy.case-authorisation` (or supply a `CaseAuthorizer` bean) and either `dataprism.security-policy.allowed-clients` or `dataprism.security-policy.client-allowlist` (or supply a `ClientAllowlist` bean), or startup refuses with `MISSING_CASE_AUTHORIZER` or `MISSING_CLIENT_ALLOWLIST`. The 0.8.0 CHANGELOG and 213's docs must say so. 0.8.0 still reaches `main` only through PR #163.
+- The obligations marked done on 2026-10-27, 11-06, 11-07 and 11-09 (tasks 210, 299, 300, 301, 302) were met and moved verbatim to `archive/PLAN-2026-11-10-wave-13a.md`. Still live from them: `EveryToolValidatesInputTest` needed an edit when `follow` landed (253, landed); the 0.8.0 CHANGELOG and 213's docs must say that startup refuses with `MISSING_CASE_AUTHORIZER` or `MISSING_CLIENT_ALLOWLIST` unless configured.
 - Re-run 262's clean-checkout `docker compose up` against the published 0.8.0 images, not the local build overlay (coordinator decision 2026-10-23). 262 has merged (PR #182); the cut also reruns the `docs/quickstart.md` walkthrough capture and `docker/smoke/reidentification-smoke.sh` with `SMOKE_IMAGES=published`.
 - Decide the Sonatype Central File Count choice (owner decision 2026-11-04; see the open item near the top). The grace period ends 2026-11-08; the release can be deferred.
-- Done 2026-11-06: task 299 has merged (PR #216) and 254 (PR #221) builds the `CatalogQueries` bean from the orchestrator, so `describe_source` describes configured sources in a running deployment. The obligation is met.
-- Done 2026-11-06: task 300 has merged (PR #220). SDK input validation is off on both transports and all four tools validate in the handler. `follow` (253) must use `ToolInput`, and `EveryToolValidatesInputTest` needs an edit when `follow` lands, or the obligation lapses for the fifth tool.
-- Done 2026-11-07: task 301 has merged (PR #224), so configured JSON sources issue links and a multi-type configured source can declare its type mapping. The obligation is met.
-- Done 2026-11-09: task 302 has merged (PR #227) and pins the `io.modelcontextprotocol` logger to WARN on the Spring Boot path, so the SDK no longer logs raw JSON-RPC messages at DEBUG there. The obligation is met.
-- 261 upgrade note (from 254): `dataprism.limits.max-sources` below 8 refuses startup unless `dataprism.catalog.unselected-source-limit` is lowered to at most `max-sources`. 261 also adds `TOOL_INPUT_INVALID` to `docs/tools.md`.
+- 263 Part B, the owner-run soak: run the 0.8 core on one node and on a three-member trusted-network cluster for hours, with the evidence recorded in `docs/plan/perf/soak-0.8.md`. Part A (the scaffolding, scenario files and scripts) is the agent task and is still open; do not retire 263 until Part B is recorded.
 - Publish the 0.7.x security advisory with the release (draft GHSA-hcfg-rxg3-mgw6, not published; owner decision 2026-11-06: no 0.7.2). Publish it alongside the GHSA-f94h-6mxv-c957 update below.
 - Keep `compose.yaml` and `docker/multi-instance/kubernetes.yaml` on the version-literal list, and confirm that no image reference is older than the released version.
 - Update the GitHub security advisory GHSA-f94h-6mxv-c957 with the patched version 0.8.0, and with the affected range and workaround as OD-290-2 (b) records (OD-290-2 (b), decided 2026-10-27: every release through 0.7.1 is affected, there is no workaround, and the fix is 0.8.0; 270 and its Outcome no longer exist, so there is no per-tag proof to cite). The advisory was drafted on 2026-10-23, ahead of the release (owner decision H1 (a)). The 0.8.0 release-cut brief owns this, when it is filed; 261 does not. Owner decision OD-270-2 (a), 2026-10-23, stands. Owner decision 4 below: the name-swap leak is a known-gap note in the 0.8.0 CHANGELOG only.
@@ -142,7 +125,7 @@ Follow-ups from wave 5, each belonging to the task named (Lows unless said other
 
 Follow-ups from wave 6, each belonging to the task named (Lows unless said otherwise):
 
-- 261 and 254: `SKIPPED_OVER_LIMIT` is still referenced in `load-test/` (README, `SourceStatuses.java`, `ResultAggregatorTest`, `FailureScenarioTest`, `ResponseClassifierTest`, baselines JSON), `docs/architecture.md`, `docs/configuration.md`, `docs/tools.md`, `docs/migration-0.7.md`, `docs/plan/perf/baseline-0.7.md` and design docs. `docs/configuration.md` (the `per-source-timeout` and `max-sources` rows, around line 612) and the `LimitsProperties` wording still describe the old per-fan-out timeout; `docs/configuration.md` and `docs/tools.md` need the new limits and `SOURCE_SELECTION_TOO_LARGE`. 254 binds `request-timeout` and `scope-total-read-budget`. 261's migration notes also take the 246 behaviour changes (per-source timeout from the call's start, per-source read charging, `TIMED_OUT` / busy instead of `CIRCUIT_OPEN` while a trial call runs) and 290's list (PR #184 body).
+- 254: `SKIPPED_OVER_LIMIT` is still referenced in `load-test/` (README, `SourceStatuses.java`, `ResultAggregatorTest`, `FailureScenarioTest`, `ResponseClassifierTest`, baselines JSON), `docs/plan/perf/baseline-0.7.md` and design docs. 261 corrected the user pages (`docs/architecture.md` and `docs/migration-0.7.md` in the 13a record). `docs/migration-0.8.md` still says "eight status codes"; see 239-12.
 - 262:
   - `examples/quickstart-demo/run.sh` is broken on the new stack (it reads `structuredContent.entity`, which sits under `sources`);
   - `README.md` line 105 still says `QUICKSTART_IMAGE_TAG=0.7.0`;
@@ -285,10 +268,38 @@ Second external review round on PR #163 (Lows and Nits; none scheduled, each fol
 
 - `AuditChainVerifierCli`:274: readKey failures should report a category.
 
+##### 260 and 261 follow-ups (PR #240 and PR #239, 2026-11-10)
+
+Open items from the external reviews, none blocking. The review text is not on GitHub; it comes from the owner's pasted reviews and the task files (`tasks/retired/260-*.md`, `tasks/retired/261-*.md`).
+
+- 213 owns the `FREE_TEXT_RECOGNISED`, `FREE_TEXT_RECOGNISER_FAILED` and `PAUSE_DOCUMENT_*` codes: they are in task 260's `codes.txt` and on no user page until 213 documents the FREE_TEXT actions and the pause document. `NOT_PENDING` is internal (mapped to `APPROVAL_NOT_PENDING`); `INVALID_SOURCE_NAME` is 0.9.
+- 306: captured `follow` and `_links` examples need a links-enabled fixture (successor to the 261 deferral).
+- 240-6: a reverse SPI check would freeze the 11 public types that are not in register 7.1 (for example `Chainable`, `LinkAttemptLimiter`, `ClusterWideLinkAttemptLimiter`). The register section 7.1 must list those types first; the register is outside 260's Owns.
+- 240-8 (Low, `codes.txt:157`): wrong surfaces: `INVALID_TOKEN_REQUEST` is the demo issuer, `EXPIRED` never reaches a client, `PAUSE_DOCUMENT_*` are log prefixes, verifier verdicts are marked not-a-code. Fix: relabel each.
+- 240-9 (Low, `MapNamesFreezeTest.java:5`): unused imports `IOException` and `Arrays`. Fix: remove them.
+- 240-10 (Low, `MapNamesFreezeTest.java:32`): name fields off the suffix convention are skipped silently. Fix: fail on any unclassified static field valued `dataprism.*`.
+- 240-11 (Low, `OperatorEndpointsFreezeTest.java:33`): endpoints are scoped by source directory, so an `/operator` mapping elsewhere is not frozen. Fix: scan all modules for paths starting `/operator`.
+- 240-12 (Low, `SingleWordCodesFreezeTest.java:42`): the still-exists direction accepts the word anywhere, comments and resources included. Fix: restrict to the operator file set, comments stripped.
+- 240-13 (Low, `SpiSignaturesFreezeTest.java:45`): exact package match drops `audit.sink`, `audit.checkpoint` and `audit.format`, contrary to the Javadoc. Fix: add the packages or correct the Javadoc.
+- 240-14 (Low, `SpiSignaturesFreezeTest.java:88`): the `URLClassLoader` is parent-first and never closed; without `-am` stale SNAPSHOT jars can pass a change. Fix: child-first loader in try-with-resources, or fix the Javadoc.
+- 240-15 (Nit, `EnumVocabularyFreezeTest.java:77`): `enumsInMainClasses` duplicates `MainSources.mainClasses`. Fix: reuse it.
+- 240-16 (Nit, `SpiSignaturesFreezeTest.java:144`): only `Retention` and `Target` are pinned; `Inherited`, `Repeatable`, `Documented` changes pass. Fix: record every `java.lang.annotation` meta-annotation.
+- 240-17 (Nit, `ToolsListGoldenTest.java:12`): imports out of order. Fix: reorder.
+- 240-18 (Nit, `enums.txt:45`): the `TrustedNetwork.Verdict` note names `MemberInterfaceCheck`; the mapping is in `PrivacyCluster:668`. Fix: correct the note.
+- 240-19 (Nit, `operator-endpoints.txt:3`): the error controller is frozen as two identical lines, losing the `produces` difference. Fix: include `produces` in the line.
+- 240-20 (Low, `CodeSetFreezeTest.java:50`): concatenated codes need an area passed to `usableId` or `ref`; a new concatenation site with another helper yields no codes, silently. Fix: fail when a file has a SUFFIX match and no AREA match.
+- 260 round-1 P3: `OperatorEndpointsFreezeTest` keeps only the first path of a multi-path mapping, records a constant path as empty, and can mistake Javadoc text like "class <word>" before a class-level `@RequestMapping` for a method mapping (none occurs today). `CodeSetFreezeTest`'s E2 pattern misses `enum Code implements X {`.
+- 260 notes: unused imports in `MapNamesFreezeTest`; `EnumVocabularyFreezeTest` duplicates `MainSources.mainClasses()`. No automated test ties the operator surface in `codes.txt` to what the controllers return (240-3 added the lines by hand).
+- 239-8 to 239-20 (Lows, docs, PR #239 round 3): `docs/audit.md:330` `AUDIT_RETENTION_FAILED` is a fallback, a JSON listing failure is `DELETE_FAILED`, and `ANCHOR` means nothing further is deleted (239-8); `docs/configuration.md:1062` alias rule 5 also forbids a source name, adapter class name or base-url host (239-9); `docs/extending.md:256` an `IllegalArgumentException` from `description()` is `INVALID_SOURCE_DESCRIPTION` rule 4 (239-10); `docs/migration-0.8.md:10` the CHANGELOG `[Unreleased]` omits page approval, the audit-sink thread, the trusted-network rule and the paging codes (239-11); `docs/migration-0.8.md:115` and `docs/tools.md:142` say eight status codes, `SourceOutcome.Status` has seven (239-12); `docs/multiple-instances.md:140` `PUBLIC_MEMBER_INTERFACE` fires only for an address beyond the private and trusted ranges (239-14); `docs/operations.md:101` a link key equal to the cluster or name key is refused with `CLUSTER_KEY_SHARED` or `NAME_KEY_SHARED`, not `LINK_KEY_SHARED` (239-15); `docs/operations.md:122` a retired key id reaches the client as `LINK_INVALID`, `LINK_UNKNOWN_KEY` is only the audit reason (239-16); `docs/tools.md:458` the catalog input schemas lack `additionalProperties: false`, so a typo returns everything (239-17); `docs/tools.md:515` expired, filter-mismatch and catalog-change page-link refusals are uncounted (239-18); `docs/tools.md:642` `items` and `itemsTruncated` leave out deadline truncation and that refused items are dropped (239-19); `docs/tools.md:649` `LINK_ATTEMPTS_EXHAUSTED` also fires when the limiter is full, and a locked caller's valid links are refused but not counted (239-20). 239-13 is under "Untasked security follow-ups".
+- 239-21 to 239-24 (Nits): the duplicate CHANGELOG line; the incomplete `KeyResolutionException` list in `docs/extending.md:302`; "1.0" where `docs/operations.md:16` should say 0.8; the "two calls" example at `docs/tools.md:523`.
+- Not documented because they do not exist in 0.8: the proposed-0.9 codes `BATCH_*`, `BULK_*`, `INVALID_SOURCE_NAME`, `ENTITY_MODEL_NOT_AVAILABLE`. `load-test/` and the design documents still reference `SKIPPED_OVER_LIMIT`.
+- Items elsewhere in this file that name 261 as owner (for example the 228 "Design-doc facts", the 249 documentation list and the plain-Java `McpSdkLogPin` note) were not itemised in PR #239's Outcome; check them against the pages before relying on them being done.
+
 ##### Untasked security follow-ups from landed work
 
 Open follow-ups on security, privacy, audit or fail-closed behaviour that no open task file covers. They were in the cut text and are carried here so the 2026-11-10 cut did not drop them. Each cites its archive line (`archive/PLAN-2026-11-10.md`). The older items (archive:788 to archive:1524) are carried as filed and have not been re-checked against the current code, except archive:794, which was (`PrivacyExtensionPoints.java:130` still lists `dataPrismToolAdmission` as `REPLACEABLE`, `Guard.NONE`).
 
+- 239-13 (from 261's review, PR #239): `docs/migration-0.8.md:130`. A bare `*` in `real-names-scopes` is accepted and opts every scope in, with no warning. Warn about it in the migration notes, or file a code follow-up to refuse it.
 - archive:309: `TrustedNetwork.java` should reject `0.0.0.0/8` ranges (no match for it in the current file).
 - archive:314: a caller without `FOLLOW` still sees source relationships (from 251; an authorisation gap).
 - archive:307: `FileAuditCheckpointSink` has the same write pattern as 297's sinks, so an interrupt can close its channel.
@@ -456,68 +467,7 @@ brief; the reasoning and the rejected alternatives are in
 
 ## Release checklists
 
-### 0.4.1 release checklist (owner go-ahead required)
-
-Per D-0.4.1-F: publish to Maven Central (library modules; `data-prism-server`
-stays off Central), GHCR and the MCP Registry. Each step is an outward action
-and needs the owner's go-ahead. Nothing has been pushed.
-
-1. Push `claude/release-0.4.1` and open a PR to `main`.
-2. Wait for CI green (including the lychee link check, not run locally), then merge.
-3. Done: Dependabot superseded the old PRs with grouped PRs. Dependabot PRs are not closed by hand.
-4. Push an annotated tag `v0.4.1` on the merge commit, matching `v0.4.0`. It is not signed.
-5. Watch the `release.yml` run for `v0.4.1`; create the GitHub Release if the workflow has not.
-6. Dispatch `publish-central`, then verify the library modules at 0.4.1 on Central (`data-prism-server` must not appear).
-7. Dispatch `publish-image` with `-f version=0.4.1`, then verify the GHCR manifests for `data-prism-server` and the four `data-prism-quickstart-*` images.
-8. Dispatch `publish-mcp`, then verify the registry lists 0.4.1 as latest.
-9. Re-verify the `docs/extending.md` consumer snippet against Central 0.4.1 (throwaway project, no local repository), and drop any remaining "(recorded against ...)" markers if it passes. Still open.
-
-**0.4.1 release complete (2026-10-07).** Steps 1 to 8 are done and verified:
-
-- The GitHub Release exists.
-- Maven Central has the 13 library modules at 0.4.1. `data-prism-server` is absent, as intended, and the parent pom pins Hazelcast 5.7.0.
-- GHCR has 5 images at 0.4.1, each for amd64 and arm64.
-- The MCP Registry lists 0.4.1 as latest.
-
-Only step 9 remains.
-
-### 0.5.0 release checklist (0.5.0 released 2026-10-08; owner steps remain)
-
-Task 151 did the local cut on 2026-10-07 (merge 98b42144). Nothing has been pushed. Every outward action needs the owner's go-ahead.
-
-Done by task 151:
-
-- Version bump 0.4.1 to 0.5.0 and the CHANGELOG `[0.5.0] - 2026-10-07` section.
-- `docs/extending.md` snippet and the "verified" paragraph. The post-publish rebuild of the extension pom is still open, below.
-- `README.md:203`, the `docs/audit.md` stale record-version text and hashed-field list, and the (ae) rewraps.
-- The 0.4.1 step 9 re-verify: the consumer snippet passed against Central on 2026-10-07.
-- Class-version check: the owner ran `check-class-version.sh 65` over the 19 `data-prism-*-0.5.0.jar` files on 2026-10-08. All passed at major 65.
-
-**0.5.0 is released in git.** PR #117 merged to `main` on 2026-10-08, the Javadoc fix merged through PR #119, and `v0.5.0` is tagged at c850c3e2. CI was green on JDK 21 and 25 plus `container-smoke`, the `-Prelease` build and class-version gate ran in `release.yml` and publish-central's stage, and Dependabot's docker run proposed no Java 26 tags (task 145's proof). Nothing is published yet.
-
-Still open, owner-gated:
-
-- Dispatch `publish-central`, then `publish-image` (`version=0.5.0`), then `publish-mcp`, following the 0.4.1 steps 1 to 8 pattern.
-- #114, #115 and #116 were closed by Dependabot itself after the merge.
-- **Done 2026-10-08:** rebuild of the `docs/extending.md` extension snippet against Central 0.5.0 with `mvn package` (D-151-A fallback). It resolved and built; the doc's "verified" paragraph records the result.
-- PR #118 (maven-dependency-plugin 3.11.0) was folded into task 155 on 2026-10-08, which also did follow-up (d). Original note: follow-up (d) should move that plugin version into root `pluginManagement`; do it with or after merging #118.
-- Follow-up (ap): `release.yml` should build with the release profile.
-
-### 0.4.0 release checklist (owner go-ahead required)
-
-Owner decision D-129(a): publish to Maven Central (library modules), GHCR and
-the MCP Registry. `data-prism-server` stays off Central (`skipPublishing`) and
-comes from source, a GitHub Release or GHCR. Each remaining
-step is an outward action and needs the owner's go-ahead.
-
-1. Done: pushed `claude/data-prism-eu-compliance-04cf83` and opened PR #112 to `main`.
-2. Done: CI green, merged as `1e79904`.
-3. Done: annotated tag `v0.4.0` pushed on the merge commit, matching `v0.3.1`. It is not signed.
-4. In progress: the `release.yml` run for `v0.4.0`. When it finishes, create the GitHub Release for `v0.4.0` if the workflow has not.
-5. Dispatch `publish-central`, then verify the library modules at 0.4.0 on Central (`data-prism-server` must not appear).
-6. Dispatch `publish-image` with `-f version=0.4.0`, then verify the GHCR manifests for `data-prism-server` and the four `data-prism-quickstart-*` images.
-7. Dispatch `publish-mcp`, then verify the registry lists 0.4.0 as latest.
-8. After Central publishes, re-verify the `docs/extending.md` consumer snippet against Central 0.4.0 (throwaway project, no local repository). If it passes, drop the "(recorded against 0.3.0)" markers (four, around lines 513, 528, 539, 701) in a follow-up commit.
+The 0.4.0, 0.4.1 and 0.5.0 release checklists are closed and moved verbatim to `archive/PLAN-2026-11-10-wave-13a.md`.
 
 ## Closed work, moved to the archive
 

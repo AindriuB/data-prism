@@ -113,8 +113,8 @@ audit record. See [Re-identification](reidentification.md).
 **Failing closed.** If pause state, the approval store or the audit write cannot
 be reached, the call is refused (`OVERSIGHT_UNAVAILABLE`, `AUDIT_UNAVAILABLE`)
 and not let through. The same holds while an audit checkpoint cannot be written:
-audited calls are refused with `AUDIT_CHECKPOINT_UNAVAILABLE` until the next
-checkpoint succeeds. That is an availability trade the deployer must plan for,
+an allowed audited call answers with a generic error that carries no code,
+and not `AUDIT_UNAVAILABLE`, until the next checkpoint succeeds. That is an availability trade the deployer must plan for,
 for example by monitoring the checkpoint file's storage.
 
 With a shared cluster, losing the owner and backup of a pause flag together
