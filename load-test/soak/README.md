@@ -33,8 +33,9 @@ SOAK_IMAGE_TAG="$(grep ^tag= load-test/results/soak-images.stamp | cut -d= -f2)"
   docker compose -f docker/multi-instance/compose.yaml -f load-test/soak/compose.soak.yaml up -d --no-build
 ```
 
-The scripts' `dc` takes the tag from the stamp (never from your shell), refuses when the stamp is missing or a tag's
-image ID differs from it, and passes `--no-build --pull never` to `up`.
+The scripts' `dc` takes the tag from the stamp (never from your shell), refuses when the stamp is missing, a tag's
+image ID differs from it, a running container is not on the stamp's image, or the running-container lookup fails
+(`docker ps` errors), and passes `--no-build --pull never` to `up`.
 
 Which build ran is recorded, not assumed. Every fault, probe and capture script writes, at its start and again on
 exit (after any recreate), one line per container (server-a/b/c, cert-init, issuer, fixtures):

@@ -15,8 +15,9 @@ mkdir -p "$results_dir"
 
 # Images (amendment 7): build-images.sh builds every data-prism image from one snapshot of the checkout and writes
 # the stamp. Nothing here builds or pulls. compose.soak.yaml has no build: and pull_policy: never; `dc` takes the
-# tag from the stamp (never from the caller's shell), refuses when the stamp is missing or a tag's image ID differs
-# from it, and passes --no-build --pull never to `up`, so a recreate runs exactly the bring-up image.
+# tag from the stamp (never from the caller's shell), refuses when the stamp is missing, a tag's image ID differs
+# from it, a running container is not on the stamp's image, or the running-container lookup fails, and passes
+# --no-build --pull never to `up`, so a recreate runs exactly the bring-up image.
 stamp_file="$results_dir/soak-images.stamp"
 compose_files=(-f "$repo_root/docker/multi-instance/compose.yaml" -f "$soak_dir/compose.soak.yaml")
 soak_images=(server issuer fixtures certs-init)
@@ -45,7 +46,12 @@ running_match_check() {
   local m img id cid run bad=0
   for m in "${containers[@]}"; do
     case "$m" in server-*) img=server ;; cert-init) img=certs-init ;; *) img="$m" ;; esac
-    cid="$(docker ps -q --filter "label=com.docker.compose.project=$project" --filter "label=com.docker.compose.service=$m" 2>/dev/null | head -n 1)" || cid=""
+    if ! cid="$(docker ps -q --filter "label=com.docker.compose.project=$project" --filter "label=com.docker.compose.service=$m" 2>/dev/null)"; then
+      echo "refused: cannot tell whether $m is running (docker ps failed); not assuming it is not" >&2
+      bad=1
+      continue
+    fi
+    cid="${cid%%$'\n'*}"
     [ -n "$cid" ] || continue
     run="$(docker inspect --format '{{.Image}}' "$cid" 2>/dev/null)" || run=""
     id="$(stamp_get "image.$img")"
