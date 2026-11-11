@@ -51,17 +51,33 @@ final class ServerProcess implements AutoCloseable {
         this.logFile = logFile;
     }
 
+    /**
+     * The extension jars the server loads: the REST connector and, for a mix that follows translated links, the
+     * harness's own key resolver (built by this module's package).
+     */
+    static String loaderPath(Path restJar, Scenario scenario, Path repoRoot) throws IOException {
+        return scenario.mix() != null && scenario.mix().needsResolver()
+                ? restJar + "," + single(repoRoot.resolve("load-test/target"), "data-prism-load-test-key-resolver.jar")
+                : restJar.toString();
+    }
+
+    /** The server child's process id, for reading its JVM. */
+    long pid() {
+        return process.pid();
+    }
+
     static ServerProcess start(Path repoRoot, Path workDir, Path resultsDir, Path catalogue, TokenIssuer issuer,
             Scenario scenario, RunCleanup cleanup)
             throws IOException, InterruptedException {
         Path serverJar = single(repoRoot.resolve("data-prism-server/target"), "data-prism-server-*.jar");
         Path restJar = single(repoRoot.resolve("data-prism-connectors-rest/target"), "data-prism-connectors-rest-*.jar");
+        String loaderPath = loaderPath(restJar, scenario, repoRoot);
         int port = freePort();
         Path log = workDir.resolve("server.log");
 
         List<String> command = new ArrayList<>(List.of(
                 Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                "-Dloader.path=" + restJar,
+                "-Dloader.path=" + loaderPath,
                 "-Ddataprism.json-sources.config-location=file:" + catalogue.toAbsolutePath(),
                 "-Djavax.net.ssl.trustStore=" + issuer.trustStore(),
                 "-Djavax.net.ssl.trustStorePassword=" + issuer.trustStorePassword(),

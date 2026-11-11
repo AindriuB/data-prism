@@ -35,7 +35,15 @@ final class LoadDriver {
      *                  duration, so the calls still in flight at the deadline do not stretch it
      */
     record Run(ResultAggregator.Summary summary, Duration elapsed, long notDispatched, Duration measured,
-               long tokenReissues, long scopeRotations, Integer serverExitCode) { }
+               long tokenReissues, long scopeRotations, Integer serverExitCode,
+               List<ResultAggregator.IntervalRow> intervals) {
+
+        /** A run with no interval rows. */
+        Run(ResultAggregator.Summary summary, Duration elapsed, long notDispatched, Duration measured,
+            long tokenReissues, long scopeRotations, Integer serverExitCode) {
+            this(summary, elapsed, notDispatched, measured, tokenReissues, scopeRotations, serverExitCode, List.of());
+        }
+    }
 
     /** The longest the client waits to open a connection. */
     static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
@@ -54,6 +62,7 @@ final class LoadDriver {
     private final Scenario scenario;
 
     private final Supplier<Integer> serverExit;
+    private final Supplier<ServerJvmProbe.Reading> probe;
     private volatile ServerWatch watch;
 
     LoadDriver(String baseUrl, CredentialRotation credentials, Scenario scenario) {
@@ -62,10 +71,17 @@ final class LoadDriver {
 
     /** @param serverExit the server's exit code, or null while it is alive; polled to stop a run whose server died */
     LoadDriver(String baseUrl, CredentialRotation credentials, Scenario scenario, Supplier<Integer> serverExit) {
+        this(baseUrl, credentials, scenario, serverExit, () -> ServerJvmProbe.Reading.NONE);
+    }
+
+    /** @param probe reads the harness server's JVM for each interval row; a target has none to read */
+    LoadDriver(String baseUrl, CredentialRotation credentials, Scenario scenario, Supplier<Integer> serverExit,
+               Supplier<ServerJvmProbe.Reading> probe) {
         this.baseUrl = baseUrl;
         this.credentials = credentials;
         this.scenario = scenario;
         this.serverExit = serverExit;
+        this.probe = probe;
     }
 
     static HttpClient.Builder boundConnect(HttpClient.Builder builder) {
@@ -90,15 +106,32 @@ final class LoadDriver {
             }
             ResultAggregator aggregator = new ResultAggregator();
             long started = System.nanoTime();
-            long notDispatched = phase(clients, load.calls(), load.durationSeconds(), load.ratePerSecond(),
-                    aggregator, "m");
+            java.util.concurrent.ScheduledExecutorService sampler = java.util.concurrent.Executors
+                    .newSingleThreadScheduledExecutor(task -> {
+                        Thread thread = new Thread(task, "interval-sampler");
+                        thread.setDaemon(true);
+                        return thread;
+                    });
+            sampler.scheduleAtFixedRate(() -> closeInterval(aggregator, started), load.intervalSeconds(),
+                    load.intervalSeconds(), java.util.concurrent.TimeUnit.SECONDS);
+            long notDispatched;
+            try {
+                notDispatched = phase(clients, load.calls(), load.durationSeconds(), load.ratePerSecond(),
+                        aggregator, "m");
+            } finally {
+                sampler.shutdownNow();
+            }
+            if (aggregator.intervalHasCalls()) {
+                closeInterval(aggregator, started);
+            }
             Duration elapsed = Duration.ofNanos(System.nanoTime() - started);
             Duration measured = load.durationSeconds() > 0
                     ? elapsed.compareTo(Duration.ofSeconds(load.durationSeconds())) > 0
                             ? Duration.ofSeconds(load.durationSeconds()) : elapsed
                     : elapsed;
             return new Run(aggregator.summary(measured), elapsed, notDispatched, measured,
-                    credentials.tokenReissues(), credentials.scopeRotations(), serverWatch.exitCode());
+                    credentials.tokenReissues(), credentials.scopeRotations(), serverWatch.exitCode(),
+                    aggregator.intervals());
         } finally {
             // A session that will not close must not hold the run (or the result file) up.
             Bounded.run(() -> clients.forEach(client -> {
@@ -109,6 +142,16 @@ final class LoadDriver {
                 }
             }), CLOSE_BOUND);
         }
+    }
+
+    private void closeInterval(ResultAggregator aggregator, long startedNanos) {
+        ServerJvmProbe.Reading reading;
+        try {
+            reading = probe.get();
+        } catch (RuntimeException unreadable) {
+            reading = ServerJvmProbe.Reading.NONE;
+        }
+        aggregator.closeInterval((System.nanoTime() - startedNanos) / 1_000_000_000L, reading);
     }
 
     private McpSyncClient newClient(Scenario.Load load) {
@@ -160,13 +203,14 @@ final class LoadDriver {
                     end, System::nanoTime, LockSupport::parkNanos, (index, due) -> {
                 // The scope is read before the call: a rotation landing mid-call can mislabel that one call.
                 int scope = credentials.scopeNumber();
-                Called called = call(client, state, subjectFor(subjectPrefix, index, subjectPool), index, due);
+                Called called = mixedCall(client::callTool, state, scenario, subjectFor(subjectPrefix, index, subjectPool),
+                        index, due, System::nanoTime);
                 if (recordTo != null) {
                     boolean afterDeadline = System.nanoTime() >= end;
-                    if (called.tool() == null) {
+                    if (called.operation() == null) {
                         recordTo.record(called.outcome(), afterDeadline, scope);
                     } else {
-                        recordTo.record(called.tool(), called.outcome(), afterDeadline, scope);
+                        recordTo.record(called.operation(), called.outcome(), afterDeadline, scope);
                     }
                 }
             }, () -> watch != null && watch.halted()), "load-worker");
@@ -240,19 +284,37 @@ final class LoadDriver {
         return Math.max(0, scheduled - dispatched);
     }
 
-    /** A finished call: the tool it called (null for a scenario with no mix) and what it came to. */
-    private record Called(String tool, CallOutcome outcome) { }
+    /** A finished call: the operation it made (null for a scenario with no mix) and what it came to. */
+    record Called(String operation, CallOutcome outcome) { }
 
-    private Called call(McpSyncClient client, MixedCalls.State state, String generatedSubject, long index, long due) {
+    /** Sends one request; the seam around the MCP client's {@code callTool}. */
+    @FunctionalInterface
+    interface Sender {
+        McpSchema.CallToolResult send(McpSchema.CallToolRequest request);
+    }
+
+    /** The subject a call asks for: one of a target's listed subjects (cycled), else the generated one. */
+    static String subjectOf(Scenario scenario, String generatedSubject, long index) {
+        Scenario.Target target = scenario.target();
+        return target != null && !target.subjects().isEmpty()
+                ? target.subjects().get((int) (index % target.subjects().size())) : generatedSubject;
+    }
+
+    /**
+     * One call of the scenario: planned from the mix (or a plain {@code get_entity_context} with no mix), sent,
+     * classified by the classifier its tool needs, and then what it returned (or, when it threw, nothing) is
+     * absorbed into the worker's state.
+     */
+    static Called mixedCall(Sender send, MixedCalls.State state, Scenario scenario, String generatedSubject,
+                            long index, long due, LongSupplier clock) {
         Duration timeout = Duration.ofSeconds(scenario.load().callTimeoutSeconds());
         Scenario.Target target = scenario.target();
         String entityType = target != null ? target.entityType() : SourceGenerator.ENTITY_TYPE;
-        String subject = target != null && !target.subjects().isEmpty()
-                ? target.subjects().get((int) (index % target.subjects().size())) : generatedSubject;
+        String subject = subjectOf(scenario, generatedSubject, index);
         if (scenario.mix() == null) {
-            return new Called(null, measuredCall(id -> client.callTool(new McpSchema.CallToolRequest(
+            return new Called(null, measuredCall(id -> send.send(new McpSchema.CallToolRequest(
                     "get_entity_context", Map.of("entityType", entityType, "subjectId", id))),
-                    System::nanoTime, subject, due, timeout));
+                    clock, subject, due, timeout));
         }
         MixedCalls.Planned planned = MixedCalls.plan(MixedCalls.choose(scenario.mix(), index), state, entityType,
                 subject, index);
@@ -260,13 +322,12 @@ final class LoadDriver {
                 new java.util.concurrent.atomic.AtomicReference<>();
         boolean context = planned.tool().equals("get_entity_context");
         CallOutcome outcome = measuredCall(id -> {
-            McpSchema.CallToolResult result = client.callTool(planned.request());
+            McpSchema.CallToolResult result = send.send(planned.request());
             received.set(result);
             return result;
-        }, context ? ResponseClassifier::classify : ResponseClassifier::classifyOther,
-                System::nanoTime, subject, due, timeout);
+        }, context ? ResponseClassifier::classify : ResponseClassifier::classifyOther, clock, subject, due, timeout);
         MixedCalls.absorb(planned, received.get(), state);
-        return new Called(planned.tool(), outcome);
+        return new Called(planned.op().key(), outcome);
     }
 
     /** The seam around {@code callTool}. */

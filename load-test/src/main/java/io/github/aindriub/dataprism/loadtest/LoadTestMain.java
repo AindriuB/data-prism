@@ -80,14 +80,15 @@ public final class LoadTestMain {
                 SyntheticSources fixtures = new SyntheticSources(sources, scenario.seed(), issuer.tls())) {
             Path catalogue = workDir.resolve("json-sources.yaml");
             Files.writeString(catalogue, SourceGenerator.catalogueYaml(sources, fixtures.baseUrl(),
-                    scenario.mix() != null && scenario.mix().needsLinks()));
+                    scenario.mix() != null && scenario.mix().needsLinks(),
+                    scenario.mix() != null && scenario.mix().needsResolver()));
             System.out.println("scenario " + scenario.name() + ": " + sources.size() + " sources, starting server");
             try (ServerProcess server = ServerProcess.start(repoRoot, workDir, resultsDir, catalogue, issuer, scenario, cleanup)) {
                 System.out.println("server healthy; driving " + scenario.load());
                 CredentialRotation credentials = new CredentialRotation(issuer::mintToken,
                         TokenIssuer.TOKEN_LIFETIME, ServerProcess.SCOPE_LIFETIME, System::nanoTime);
                 LoadDriver.Run run = new LoadDriver(server.mcpBaseUrl(), credentials, scenario,
-                        server::exitCode).run();
+                        server::exitCode, ServerJvmProbe.forProcess(server.pid())).run();
                 Path file = ResultWriter.write(resultsDir, scenario, startedAt, git(repoRoot, "rev-parse", "HEAD"),
                         !git(repoRoot, "status", "--porcelain").isBlank(), run);
                 System.out.println("wrote " + file);

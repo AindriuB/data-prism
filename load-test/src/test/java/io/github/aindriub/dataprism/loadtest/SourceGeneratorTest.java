@@ -85,4 +85,17 @@ class SourceGeneratorTest {
         assertThat(linkable).contains("input-keys: [parcel-id]").contains("keyNamespace: parcel-id");
         assertThat(plain).doesNotContain("chainable").doesNotContain("input-keys");
     }
+
+    @Test
+    void aTranslatedCatalogueDeclaresBothKeyNamespacesAndPlainOneDeclaresOne() {
+        List<SourceDefinition> sources = SourceGenerator.generate(scenario(10, 5, 40));
+
+        String both = SourceGenerator.catalogueYaml(sources, "https://x", true, true);
+        String plain = SourceGenerator.catalogueYaml(sources, "https://x", true);
+
+        assertThat(both).contains("input-keys: [parcel-id]").contains("input-keys: [parcel-ref]")
+                .contains("keyNamespace: parcel-ref");
+        assertThat(both.split("input-keys: \\[parcel-ref\\]", -1)).hasSize(3); // sources 5 and 10 of 10
+        assertThat(plain).doesNotContain("parcel-ref");
+    }
 }

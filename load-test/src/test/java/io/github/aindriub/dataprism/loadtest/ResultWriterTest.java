@@ -63,4 +63,32 @@ class ResultWriterTest {
                 new LoadDriver.Run(broken, Duration.ofSeconds(1), 0, Duration.ofSeconds(1), 0, 0, null)))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("do not add up");
     }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void aTargetResultSaysTargetAndHoldsNoLimitsOrSourceCounts() {
+        Scenario target = new Scenario("t", 0, null, new Scenario.Load(1, 5, 0, 0, 0, 30, 0), null, 1L, 0, null,
+                null, new Scenario.Target("http://h:1", "http://h:2/t", null, null, 0, 0));
+
+        Map<String, Object> doc = ResultWriter.document(target, Instant.EPOCH, "abc", false,
+                run(new ResultAggregator()));
+
+        assertThat(doc).containsEntry("mode", "target").doesNotContainKeys("effectiveLimits", "sourceStatusTotals",
+                "sourcesNotAnswered", "perSourceStatus");
+        assertThat(ResultWriter.document(SCENARIO, Instant.EPOCH, "abc", false, run(new ResultAggregator())))
+                .containsEntry("mode", "harness-server").containsKey("effectiveLimits");
+    }
+
+    @Test
+    void intervalRowsAreWrittenWhenTheRunHasThem() {
+        ResultAggregator aggregator = new ResultAggregator();
+        aggregator.record("listSources", CallOutcome.completed(5000, Map.of()), false, 1);
+        aggregator.closeInterval(3600, new ServerJvmProbe.Reading(1024L, 40));
+        LoadDriver.Run withRows = new LoadDriver.Run(aggregator.summary(Duration.ofSeconds(10)),
+                Duration.ofSeconds(12), 0, Duration.ofSeconds(10), 0, 0, null, aggregator.intervals());
+
+        assertThat(ResultWriter.document(SCENARIO, Instant.EPOCH, "abc", false, withRows)).containsKey("intervals");
+        assertThat(ResultWriter.document(SCENARIO, Instant.EPOCH, "abc", false, run(new ResultAggregator())))
+                .doesNotContainKey("intervals");
+    }
 }

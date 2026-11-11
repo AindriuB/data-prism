@@ -51,30 +51,45 @@ public record Scenario(String name, int sources, Latency sourceLatency, Load loa
      * @param listSources           {@code list_sources}, continuing the worker's walk through its pages
      * @param describeSource        {@code describe_source} of a label from the last {@code list_sources}
      * @param follow                {@code follow} of a link from the last result's {@code _links}
-     * @param invalidLink           {@code follow} of a well-formed link the server never issued
+     * @param invalidLink           {@code follow} of a held link whose ciphertext was altered, so the server must refuse it
+     * @param followTranslated      {@code follow} of a held translated link (one carrying a {@code toNamespace})
      */
     public record Mix(int entityContext, int targetedEntityContext, int listSources, int describeSource,
-                      int follow, int invalidLink) {
+                      int follow, int invalidLink, int followTranslated) {
+
+        /** A mix with no translated follows. */
+        public Mix(int entityContext, int targetedEntityContext, int listSources, int describeSource,
+                   int follow, int invalidLink) {
+            this(entityContext, targetedEntityContext, listSources, describeSource, follow, invalidLink, 0);
+        }
+
         public Mix {
             for (var weight : Map.of("entityContext", entityContext, "targetedEntityContext", targetedEntityContext,
                     "listSources", listSources, "describeSource", describeSource, "follow", follow,
-                    "invalidLink", invalidLink).entrySet()) {
+                    "invalidLink", invalidLink, "followTranslated", followTranslated).entrySet()) {
                 if (weight.getValue() < 0) {
                     throw new IllegalArgumentException("scenario mix." + weight.getKey() + " must not be negative");
                 }
             }
-            if (total(entityContext, targetedEntityContext, listSources, describeSource, follow, invalidLink) <= 0) {
+            if (total(entityContext, targetedEntityContext, listSources, describeSource, follow, invalidLink,
+                    followTranslated) <= 0) {
                 throw new IllegalArgumentException("scenario mix needs at least one weight above 0");
             }
         }
 
+        /** Whether the server needs a key resolver for this mix. */
+        boolean needsResolver() {
+            return followTranslated > 0;
+        }
+
         int total() {
-            return total(entityContext, targetedEntityContext, listSources, describeSource, follow, invalidLink);
+            return total(entityContext, targetedEntityContext, listSources, describeSource, follow, invalidLink,
+                    followTranslated);
         }
 
         /** Whether the server must have links enabled for this mix. */
         boolean needsLinks() {
-            return follow > 0 || invalidLink > 0;
+            return follow > 0 || invalidLink > 0 || followTranslated > 0;
         }
 
         private static int total(int... weights) {
@@ -126,10 +141,22 @@ public record Scenario(String name, int sources, Latency sourceLatency, Load loa
      * @param callTimeoutSeconds how long the client waits for one call before counting a transport failure
      * @param subjectPool    0 asks for a different subject on every call; above 0 the calls cycle through that many
      *                       subjects, so the per-subject read budget is reached
+     * @param intervalSeconds how often the driver writes an interval row; 0 or absent means one hour
      */
     public record Load(int concurrency, int calls, int warmupCalls, int ratePerSecond, int durationSeconds,
-                       int callTimeoutSeconds, int subjectPool) {
+                       int callTimeoutSeconds, int subjectPool, int intervalSeconds) {
+
+        /** The interval rows' default spacing. */
+        public static final int DEFAULT_INTERVAL_SECONDS = 3600;
+
+        /** A load with the default interval. */
+        public Load(int concurrency, int calls, int warmupCalls, int ratePerSecond, int durationSeconds,
+                    int callTimeoutSeconds, int subjectPool) {
+            this(concurrency, calls, warmupCalls, ratePerSecond, durationSeconds, callTimeoutSeconds, subjectPool, 0);
+        }
+
         public Load {
+            intervalSeconds = intervalSeconds <= 0 ? DEFAULT_INTERVAL_SECONDS : intervalSeconds;
             callTimeoutSeconds = callTimeoutSeconds <= 0 ? 30 : callTimeoutSeconds;
             if (callTimeoutSeconds < LoadDriver.CONNECT_TIMEOUT.toSeconds()) {
                 // Below the connect timeout a connect timeout could never be told from a read timeout.
@@ -184,7 +211,16 @@ public record Scenario(String name, int sources, Latency sourceLatency, Load loa
             throw new IllegalArgumentException(
                     "scenario name must be lower-case letters, digits and hyphens (it names the result file): " + name);
         }
-        if (sources <= 0) {
+        if (target != null) {
+            // A target serves its own sources and applies its own limits: a scenario field the harness cannot
+            // apply would be reported as if it had been (a false result).
+            String set = sources != 0 ? "sources" : slowSources != 0 ? "slowSources"
+                    : slowLatency != null ? "slowLatency" : limits != null ? "limits" : null;
+            if (set != null) {
+                throw new IllegalArgumentException("scenario " + set + " cannot be set with a target:"
+                        + " the target serves its own sources and sets its own limits");
+            }
+        } else if (sources <= 0) {
             throw new IllegalArgumentException("scenario needs at least one source");
         }
         if (sourceLatency == null) {
@@ -213,7 +249,9 @@ public record Scenario(String name, int sources, Latency sourceLatency, Load loa
         if (load.calls() <= 0 && load.durationSeconds() <= 0) {
             throw new IllegalArgumentException("scenario load needs calls or durationSeconds");
         }
-        if (limits == null) {
+        if (target != null) {
+            limits = null;
+        } else if (limits == null) {
             limits = Limits.defaults(sources);
         } else if (limits.maxSources() == null) {
             // Unstated means "call every source": a scenario of N sources that can call only the

@@ -233,10 +233,53 @@ class ResultAggregatorTest {
         ResultAggregator.Summary summary = aggregator.summary(Duration.ofSeconds(1));
 
         assertThat(summary.attempted()).isEqualTo(12);
-        assertThat(summary.perTool().get("list_sources").calls()).isEqualTo(10);
-        assertThat(summary.perTool().get("list_sources").p50Ms()).isEqualTo(5.0);
-        assertThat(summary.perTool().get("follow").calls()).isEqualTo(2);
-        assertThat(summary.perTool().get("follow").refused()).isEqualTo(1);
-        assertThat(summary.perTool().get("follow").failed()).isEqualTo(1);
+        assertThat(summary.perOperation().get("list_sources").calls()).isEqualTo(10);
+        assertThat(summary.perOperation().get("list_sources").p50Ms()).isEqualTo(5.0);
+        assertThat(summary.perOperation().get("follow").calls()).isEqualTo(2);
+        assertThat(summary.perOperation().get("follow").refused()).isEqualTo(1);
+        assertThat(summary.perOperation().get("follow").failed()).isEqualTo(1);
+    }
+
+    @Test
+    void anIntervalRowHoldsOnlyItsOwnCallsPerOperationAndRefusalsByCode() {
+        ResultAggregator aggregator = new ResultAggregator();
+        for (int ms = 1; ms <= 10; ms++) {
+            aggregator.record("listSources", CallOutcome.completed(ms * 1000L, Map.of()), false, 1);
+        }
+        aggregator.record("invalidLink", CallOutcome.refused(7_000, "LINK_INVALID"), false, 1);
+        aggregator.record("follow", CallOutcome.completed(3_000, Map.of()), false, 1);
+
+        ResultAggregator.IntervalRow first = aggregator.closeInterval(3600, new ServerJvmProbe.Reading(2048L, 55));
+        aggregator.record("listSources", CallOutcome.completed(90_000, Map.of()), false, 1);
+        ResultAggregator.IntervalRow second = aggregator.closeInterval(7200, ServerJvmProbe.Reading.NONE);
+
+        assertThat(first.interval()).isEqualTo(1);
+        assertThat(first.endSeconds()).isEqualTo(3600);
+        assertThat(first.operations().get("listSources").calls()).isEqualTo(10);
+        assertThat(first.operations().get("listSources").p50Ms()).isEqualTo(5.0);
+        assertThat(first.operations().get("listSources").p99Ms()).isEqualTo(10.0);
+        assertThat(first.operations().get("invalidLink").refused()).isEqualTo(1);
+        assertThat(first.operations().get("follow").refused()).isZero();
+        assertThat(first.refusalsByCode()).containsExactly(Map.entry("LINK_INVALID", 1L));
+        assertThat(first.heapAfterGcBytes()).isEqualTo(2048L);
+        assertThat(first.liveThreads()).isEqualTo(55);
+        assertThat(second.operations()).containsOnlyKeys("listSources");
+        assertThat(second.operations().get("listSources").p50Ms()).isEqualTo(90.0);
+        assertThat(second.heapAfterGcBytes()).isNull();
+        assertThat(second.liveThreads()).isNull();
+        assertThat(aggregator.intervals()).hasSize(2);
+        assertThat(aggregator.intervalHasCalls()).isFalse();
+    }
+
+    @Test
+    void aRefusedInvalidLinkIsNotMixedIntoFollow() {
+        ResultAggregator aggregator = new ResultAggregator();
+        aggregator.record("follow", CallOutcome.completed(1000, Map.of()), false, 1);
+        aggregator.record("invalidLink", CallOutcome.refused(1000, "LINK_INVALID"), false, 1);
+
+        ResultAggregator.Summary summary = aggregator.summary(Duration.ofSeconds(1));
+
+        assertThat(summary.perOperation().get("follow").refused()).isZero();
+        assertThat(summary.perOperation().get("invalidLink").refused()).isEqualTo(1);
     }
 }

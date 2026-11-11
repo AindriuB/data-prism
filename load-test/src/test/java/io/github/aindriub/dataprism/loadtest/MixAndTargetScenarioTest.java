@@ -23,9 +23,44 @@ class MixAndTargetScenarioTest {
         return Scenario.load(file);
     }
 
+    private Scenario loadTarget(String extra) throws IOException {
+        Path file = dir.resolve("x.json");
+        Files.writeString(file, "{\"name\":\"x\",\"load\":{\"concurrency\":1,\"calls\":3}" + extra + "}");
+        return Scenario.load(file);
+    }
+
+    private static final String TARGET = ",\"target\":{\"baseUrl\":\"http://h:1\",\"tokenUrl\":\"http://h:2/t\"}";
+
+    @Test
+    void aTargetScenarioThatSetsWhatItCannotApplyIsRefusedNamingTheField() {
+        for (String field : new String[] {"\"sources\":5", "\"slowSources\":1",
+                "\"slowLatency\":{\"minMs\":1,\"maxMs\":2}", "\"limits\":{\"scopeReadBudget\":9}"}) {
+            String name = field.substring(1, field.indexOf('"', 1));
+            assertThatThrownBy(() -> loadTarget("," + field + TARGET)).as(name)
+                    .isInstanceOf(IllegalArgumentException.class).hasMessageContaining(name);
+        }
+    }
+
+    @Test
+    void aTargetScenarioNeedsNoSourcesAndHasNoLimits() throws IOException {
+        Scenario scenario = loadTarget(TARGET);
+
+        assertThat(scenario.sources()).isZero();
+        assertThat(scenario.limits()).isNull();
+    }
+
+    @Test
+    void theIntervalDefaultsToAnHourAndIsSetByTheScenario() throws IOException {
+        assertThat(load("").load().intervalSeconds()).isEqualTo(3600);
+        Path file = dir.resolve("x.json");
+        Files.writeString(file, "{\"name\":\"x\",\"sources\":2,\"load\":{\"concurrency\":1,\"calls\":3,"
+                + "\"intervalSeconds\":60}}");
+        assertThat(Scenario.load(file).load().intervalSeconds()).isEqualTo(60);
+    }
+
     @Test
     void aMixAndATargetLoad() throws IOException {
-        Scenario scenario = load(",\"mix\":{\"entityContext\":2,\"follow\":1},"
+        Scenario scenario = loadTarget(",\"mix\":{\"entityContext\":2,\"follow\":1},"
                 + "\"target\":{\"baseUrl\":\"http://127.0.0.1:8080\",\"tokenUrl\":\"https://127.0.0.1:8544/token\"}");
 
         assertThat(scenario.mix().total()).isEqualTo(3);
@@ -87,11 +122,14 @@ class MixAndTargetScenarioTest {
         assertThat(single.target()).isNull();
         assertThat(List.of(single.mix().entityContext(), single.mix().targetedEntityContext(),
                 single.mix().listSources(), single.mix().describeSource(), single.mix().follow(),
-                single.mix().invalidLink())).allMatch(weight -> weight > 0);
+                single.mix().invalidLink(), single.mix().followTranslated())).allMatch(weight -> weight > 0);
 
         Scenario cluster = Scenario.load(soak.resolve("soak-three-member.json"));
         assertThat(cluster.load().durationSeconds()).isGreaterThanOrEqualTo(4 * 3600);
         assertThat(cluster.target()).isNotNull();
+        assertThat(cluster.limits()).isNull();
+        assertThat(cluster.sources()).isZero();
+        assertThat(cluster.slowSources()).isZero();
         assertThat(cluster.mix().follow()).isZero();
         assertThat(cluster.mix().invalidLink()).isZero();
         assertThat(cluster.mix().needsLinks()).isFalse();

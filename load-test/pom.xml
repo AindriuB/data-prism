@@ -27,6 +27,12 @@
     <junit.version>6.0.3</junit.version>
     <assertj.version>3.27.7</assertj.version>
     <slf4j.version>2.0.17</slf4j.version>
+    <!-- The harness key resolver (task 263, D2) compiles against the reactor's own data-prism-core jar and Spring
+         Boot, provided: it runs only inside the harness server. Keep both in step with ../pom.xml. KeyResolver is in
+         no published release and `mvn install` is not used, so the core jar is the one run.sh's reactor build
+         leaves in ../data-prism-core/target. -->
+    <dataprism.version>0.7.0</dataprism.version>
+    <spring-boot.version>4.1.1</spring-boot.version>
   </properties>
 
   <dependencies>
@@ -54,6 +60,19 @@
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-simple</artifactId>
       <version>${slf4j.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.github.aindriub</groupId>
+      <artifactId>data-prism-core</artifactId>
+      <version>${dataprism.version}</version>
+      <scope>system</scope>
+      <systemPath>${project.basedir}/../data-prism-core/target/data-prism-core-${dataprism.version}.jar</systemPath>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-autoconfigure</artifactId>
+      <version>${spring-boot.version}</version>
+      <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>org.junit.jupiter</groupId>
@@ -104,15 +123,37 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-jar-plugin</artifactId>
         <version>3.5.1</version>
-        <configuration>
-          <archive>
-            <manifest>
-              <mainClass>io.github.aindriub.dataprism.loadtest.LoadTestMain</mainClass>
-              <addClasspath>true</addClasspath>
-              <classpathPrefix>lib/</classpathPrefix>
-            </manifest>
-          </archive>
-        </configuration>
+        <executions>
+          <execution>
+            <id>default-jar</id>
+            <configuration>
+              <excludes>
+                <exclude>**/loadtest/resolver/**</exclude>
+                <exclude>META-INF/spring/**</exclude>
+              </excludes>
+              <archive>
+                <manifest>
+                  <mainClass>io.github.aindriub.dataprism.loadtest.LoadTestMain</mainClass>
+                  <addClasspath>true</addClasspath>
+                  <classpathPrefix>lib/</classpathPrefix>
+                </manifest>
+              </archive>
+            </configuration>
+          </execution>
+          <execution>
+            <!-- The harness server's extension jar: only the resolver and its auto-configuration, for loader.path. -->
+            <id>key-resolver-jar</id>
+            <phase>package</phase>
+            <goals><goal>jar</goal></goals>
+            <configuration>
+              <classifier>key-resolver</classifier>
+              <includes>
+                <include>**/loadtest/resolver/**</include>
+                <include>META-INF/spring/**</include>
+              </includes>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>

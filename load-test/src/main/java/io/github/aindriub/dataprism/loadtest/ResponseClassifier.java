@@ -20,6 +20,9 @@ final class ResponseClassifier {
 
     static final String UNCLASSIFIED = "UNCLASSIFIED_ERROR";
 
+    /** {@code FollowTool}'s fixed text for a refused link (LINK_INVALID); it carries no code, by design. */
+    private static final String LINK_INVALID_TEXT = "The link is not valid.";
+
     private static final Pattern REFUSED = Pattern.compile("^refused: ([A-Z][A-Z0-9_]*) at .*", Pattern.DOTALL);
     private static final Pattern DENIAL = Pattern.compile("^([A-Z][A-Z0-9_]+)( approvalId=\\S+)?$");
     private static final JsonMapper MAPPER = JsonMapper.builder().build();
@@ -43,7 +46,9 @@ final class ResponseClassifier {
      */
     static CallOutcome classifyOther(McpSchema.CallToolResult result, long latencyMicros) {
         if (Boolean.TRUE.equals(result.isError())) {
-            return CallOutcome.refused(latencyMicros, refusalCode(firstText(result)));
+            String text = firstText(result);
+            return CallOutcome.refused(latencyMicros,
+                    text != null && text.strip().equals(LINK_INVALID_TEXT) ? "LINK_INVALID" : refusalCode(text));
         }
         return CallOutcome.completed(latencyMicros, Map.of());
     }

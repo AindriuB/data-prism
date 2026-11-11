@@ -46,7 +46,12 @@ final class ResultWriter {
         doc.put("jdk", System.getProperty("java.vendor") + " " + System.getProperty("java.version"));
         doc.put("host", host());
         doc.put("parameters", scenario);
-        doc.put("effectiveLimits", scenario.limits().asProperties());
+        boolean target = scenario.target() != null;
+        doc.put("mode", target ? "target" : "harness-server");
+        if (!target) {
+            // A target applies its own limits and serves its own sources: none of this is the harness's to report.
+            doc.put("effectiveLimits", scenario.limits().asProperties());
+        }
         Map<String, Object> calls = new LinkedHashMap<>();
         calls.put("attempted", s.attempted());
         calls.put("completed", s.completed());
@@ -78,11 +83,16 @@ final class ResultWriter {
         doc.put("server", server);
         doc.put("throughputPerSecond", s.throughputPerSecond());
         doc.put("refusalCodes", s.refusalCodes());
-        doc.put("sourceStatusTotals", s.totalStatus());
-        doc.put("sourcesNotAnswered", s.sourcesNotAnswered());
-        doc.put("perSourceStatus", s.perSourceStatus());
-        if (!s.perTool().isEmpty()) {
-            doc.put("perTool", s.perTool());
+        if (!target) {
+            doc.put("sourceStatusTotals", s.totalStatus());
+            doc.put("sourcesNotAnswered", s.sourcesNotAnswered());
+            doc.put("perSourceStatus", s.perSourceStatus());
+        }
+        if (!s.perOperation().isEmpty()) {
+            doc.put("perOperation", s.perOperation());
+        }
+        if (!run.intervals().isEmpty()) {
+            doc.put("intervals", run.intervals());
         }
         return doc;
     }

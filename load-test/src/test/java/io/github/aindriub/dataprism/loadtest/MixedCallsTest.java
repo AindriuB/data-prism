@@ -104,14 +104,57 @@ class MixedCallsTest {
         assertThat(third.tool()).isEqualTo("get_entity_context");
     }
 
-    @Test
-    void anInvalidLinkIsWellFormedAndDiffersByCall() {
-        String one = MixedCalls.invalidLink(1);
+    private static final byte[] HELD = {1, 7, 'k', 9, 9, 9, 9, 9, 9, 9, 9, 'x', 'y', 'z', 42, 43, 44, 45};
+    private static final String HELD_LINK = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(HELD);
 
-        assertThat(one).matches("[A-Za-z0-9_-]+").hasSizeLessThanOrEqualTo(1024);
-        assertThat(one).isNotEqualTo(MixedCalls.invalidLink(2));
+    @Test
+    void anInvalidLinkIsAHeldLinkWithOnlyItsLastByteChanged() {
+        MixedCalls.State state = new MixedCalls.State();
+        MixedCalls.absorb(MixedCalls.plan(MixedCalls.Op.ENTITY_CONTEXT, state, "PARCEL", "s", 0), json(
+                "{\"sources\":{\"a\":{\"_links\":[{\"link\":\"" + HELD_LINK + "\"}]}}}"), state);
+
+        MixedCalls.Planned planned = MixedCalls.plan(MixedCalls.Op.INVALID_LINK, state, "PARCEL", "s", 1);
+        String sent = (String) planned.request().arguments().get("link");
+        byte[] raw = java.util.Base64.getUrlDecoder().decode(sent);
+
+        assertThat(planned.tool()).isEqualTo("follow");
+        assertThat(sent).matches("[A-Za-z0-9_-]+").hasSameSizeAs(HELD_LINK).isNotEqualTo(HELD_LINK);
+        // The header bytes (the version first) are the issued link's own, so the server gets past the cheap checks.
+        assertThat(raw[0]).isEqualTo(HELD[0]);
+        assertThat(java.util.Arrays.copyOf(raw, raw.length - 1)).isEqualTo(java.util.Arrays.copyOf(HELD, HELD.length - 1));
+        assertThat(raw[raw.length - 1]).isNotEqualTo(HELD[HELD.length - 1]);
+        // The held link is still there to be followed.
+        assertThat(MixedCalls.plan(MixedCalls.Op.FOLLOW, state, "PARCEL", "s", 2).request().arguments().get("link"))
+                .isEqualTo(HELD_LINK);
+    }
+
+    @Test
+    void anInvalidLinkWithNoHeldLinkGetsOneFirst() {
         assertThat(MixedCalls.plan(MixedCalls.Op.INVALID_LINK, new MixedCalls.State(), "PARCEL", "s", 1).tool())
-                .isEqualTo("follow");
+                .isEqualTo("get_entity_context");
+    }
+
+    @Test
+    void translatedLinksAreKeptApartAndFollowedOnTheirOwn() {
+        MixedCalls.State state = new MixedCalls.State();
+        MixedCalls.absorb(MixedCalls.plan(MixedCalls.Op.ENTITY_CONTEXT, state, "PARCEL", "s", 0), json("""
+                {"sources":{"a":{"_links":[{"link":"D1","rel":"direct"},
+                  {"link":"T1","rel":"translated","toNamespace":"parcel-ref"}]}}}
+                """), state);
+
+        assertThat(MixedCalls.plan(MixedCalls.Op.FOLLOW_TRANSLATED, state, "PARCEL", "s", 1)
+                .request().arguments().get("link")).isEqualTo("T1");
+        assertThat(MixedCalls.plan(MixedCalls.Op.FOLLOW, state, "PARCEL", "s", 2)
+                .request().arguments().get("link")).isEqualTo("D1");
+        assertThat(MixedCalls.plan(MixedCalls.Op.FOLLOW_TRANSLATED, state, "PARCEL", "s", 3).tool())
+                .isEqualTo("get_entity_context");
+    }
+
+    @Test
+    void operationsAreNamedByCallKind() {
+        assertThat(MixedCalls.Op.INVALID_LINK.key()).isEqualTo("invalidLink");
+        assertThat(MixedCalls.Op.TARGETED_ENTITY_CONTEXT.key()).isEqualTo("targetedEntityContext");
+        assertThat(MixedCalls.Op.FOLLOW_TRANSLATED.key()).isEqualTo("followTranslated");
     }
 
     @Test

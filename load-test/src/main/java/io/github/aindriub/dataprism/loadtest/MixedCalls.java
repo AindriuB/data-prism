@@ -25,7 +25,8 @@ final class MixedCalls {
         LIST_SOURCES("list_sources"),
         DESCRIBE_SOURCE("describe_source"),
         FOLLOW("follow"),
-        INVALID_LINK("follow");
+        INVALID_LINK("follow"),
+        FOLLOW_TRANSLATED("follow");
 
         private final String tool;
 
@@ -36,6 +37,21 @@ final class MixedCalls {
         String tool() {
             return tool;
         }
+
+        /** The operation's name in a result: lower camel case, one per call kind (not per MCP tool). */
+        String key() {
+            StringBuilder out = new StringBuilder();
+            boolean upper = false;
+            for (char c : name().toCharArray()) {
+                if (c == '_') {
+                    upper = true;
+                } else {
+                    out.append(upper ? c : Character.toLowerCase(c));
+                    upper = false;
+                }
+            }
+            return out.toString();
+        }
     }
 
     /** One worker's memory of what earlier results offered. */
@@ -43,6 +59,7 @@ final class MixedCalls {
         private static final int MAX_HELD = 50;
         private List<String> labels = List.of();
         private List<String> links = List.of();
+        private List<String> translatedLinks = List.of();
         private String pageNext;
     }
 
@@ -58,7 +75,7 @@ final class MixedCalls {
     /** The operation for call {@code index}: a fixed hash of the index over the weights, so a run is repeatable. */
     static Op choose(Scenario.Mix mix, long index) {
         int[] weights = {mix.entityContext(), mix.targetedEntityContext(), mix.listSources(), mix.describeSource(),
-                mix.follow(), mix.invalidLink()};
+                mix.follow(), mix.invalidLink(), mix.followTranslated()};
         long pick = Math.floorMod(splitMix(index), (long) mix.total());
         for (int i = 0; i < weights.length; i++) {
             if (pick < weights[i]) {
@@ -82,7 +99,9 @@ final class MixedCalls {
         if ((op == Op.TARGETED_ENTITY_CONTEXT || op == Op.DESCRIBE_SOURCE) && state.labels.isEmpty()) {
             op = Op.LIST_SOURCES;
         }
-        if (op == Op.FOLLOW && state.links.isEmpty()) {
+        if (op == Op.FOLLOW && state.links.isEmpty()
+                || op == Op.FOLLOW_TRANSLATED && state.translatedLinks.isEmpty()
+                || op == Op.INVALID_LINK && state.links.isEmpty() && state.translatedLinks.isEmpty()) {
             op = Op.ENTITY_CONTEXT;
         }
         Map<String, Object> arguments = new LinkedHashMap<>();
@@ -113,15 +132,27 @@ final class MixedCalls {
                 arguments.put("link", held.remove(held.size() - 1));
                 state.links = held;
             }
-            case INVALID_LINK -> arguments.put("link", invalidLink(index));
+            case FOLLOW_TRANSLATED -> {
+                List<String> held = new ArrayList<>(state.translatedLinks);
+                arguments.put("link", held.remove(held.size() - 1));
+                state.translatedLinks = held;
+            }
+            // Not consumed: the held link is still a valid one to follow later.
+            case INVALID_LINK -> arguments.put("link", tamper(
+                    state.links.isEmpty() ? state.translatedLinks.get(0) : state.links.get(0)));
         }
         return new Planned(op, new McpSchema.CallToolRequest(tool, arguments));
     }
 
-    /** Well-formed (the served pattern and length) and never issued, so the server must refuse it. */
-    static String invalidLink(long index) {
-        String filler = Long.toString(Math.abs(splitMix(index)), 36);
-        return ("AAAA-" + filler + "_").repeat(12);
+    /**
+     * A held link with its last byte changed. The version byte, the key id, the expiry and the structure are all
+     * the server's own, so it reads the link's header, looks up the key and runs the AEAD, which fails on the
+     * altered tag: the costly refusal path, not the cheap one a link of made-up bytes would take.
+     */
+    static String tamper(String link) {
+        byte[] raw = java.util.Base64.getUrlDecoder().decode(link);
+        raw[raw.length - 1] ^= 0x01;
+        return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(raw);
     }
 
     /** Keeps what a successful result offers to later calls. A failed one clears what it would have replaced. */
@@ -156,19 +187,25 @@ final class MixedCalls {
                     return;
                 }
                 List<String> links = new ArrayList<>();
-                collectLinks(body.path("_links"), links);
-                body.path("sources").properties().forEach(source -> collectLinks(source.getValue().path("_links"), links));
+                List<String> translated = new ArrayList<>();
+                collectLinks(body.path("_links"), links, translated);
+                body.path("sources").properties()
+                        .forEach(source -> collectLinks(source.getValue().path("_links"), links, translated));
                 if (!links.isEmpty()) {
                     state.links = List.copyOf(links);
+                }
+                if (!translated.isEmpty()) {
+                    state.translatedLinks = List.copyOf(translated);
                 }
             }
             default -> { }
         }
     }
 
-    private static void collectLinks(JsonNode array, List<String> into) {
+    private static void collectLinks(JsonNode array, List<String> direct, List<String> translated) {
         array.forEach(node -> {
             String link = node.path("link").asString("");
+            List<String> into = node.path("toNamespace").asString("").isEmpty() ? direct : translated;
             if (!link.isEmpty() && into.size() < State.MAX_HELD) {
                 into.add(link);
             }
