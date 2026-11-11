@@ -38,12 +38,34 @@ stamp_check() {
   done
 }
 
+# running_match_check: 0 when every RUNNING data-prism container's image ID is the stamp's for its service (and when
+# nothing runs). A rebuild with different content while the overlay runs makes it fail, so a recreate cannot swap a
+# member's build inside a measured window; nothing is touched.
+running_match_check() {
+  local m img id cid run bad=0
+  for m in "${containers[@]}"; do
+    case "$m" in server-*) img=server ;; cert-init) img=certs-init ;; *) img="$m" ;; esac
+    cid="$(docker ps -q --filter "label=com.docker.compose.project=$project" --filter "label=com.docker.compose.service=$m" 2>/dev/null | head -n 1)" || cid=""
+    [ -n "$cid" ] || continue
+    run="$(docker inspect --format '{{.Image}}' "$cid" 2>/dev/null)" || run=""
+    id="$(stamp_get "image.$img")"
+    if [ -z "$run" ] || [ "$run" != "$id" ]; then
+      echo "refused: running $m is not the stamp's image ($img); the stamp changed since bring-up. Rebuild the original content, or bring the overlay down first" >&2
+      bad=1
+    fi
+  done
+  return "$bad"
+}
+
 dc() {
   stamp_check || return 1
   local args=() a
   for a in "$@"; do
     args+=("$a")
-    [ "$a" != up ] || args+=(--no-build --pull never)
+    if [ "$a" = up ]; then
+      running_match_check || return 1
+      args+=(--no-build --pull never)
+    fi
   done
   SOAK_IMAGE_TAG="$(stamp_get tag)" docker compose "${compose_files[@]}" "${args[@]}"
 }
