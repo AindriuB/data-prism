@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -71,8 +72,9 @@ class StdioSdkLogPinTest {
         StringBuffer stderr = new StringBuffer();
         StringBuffer stdout = new StringBuffer();
         BlockingQueue<String> responses = new LinkedBlockingQueue<>();
-        Thread errReader = new Thread(() -> drain(process.getErrorStream(), stderr, null));
-        Thread outReader = new Thread(() -> drain(process.getInputStream(), stdout, responses));
+        AtomicReference<IOException> readFailure = new AtomicReference<>();
+        Thread errReader = new Thread(() -> drain(process.getErrorStream(), stderr, null, readFailure));
+        Thread outReader = new Thread(() -> drain(process.getInputStream(), stdout, responses, readFailure));
         errReader.setDaemon(true);
         outReader.setDaemon(true);
         errReader.start();
@@ -95,12 +97,12 @@ class StdioSdkLogPinTest {
             }
             in.close();
         } finally {
-            process.destroy();
+            process.toHandle().destroy();
             if (!process.waitFor(10, TimeUnit.SECONDS)) {
                 process.destroyForcibly().waitFor(10, TimeUnit.SECONDS);
             }
-            errReader.join(5000);
         }
+        joinToEndOfStream(errReader, outReader, readFailure);
         return stderr.toString();
     }
 
@@ -121,7 +123,7 @@ class StdioSdkLogPinTest {
         }
     }
 
-    private static void drain(InputStream stream, StringBuffer into, BlockingQueue<String> lines) {
+    private static void drain(InputStream stream, StringBuffer into, BlockingQueue<String> lines, AtomicReference<IOException> failure) {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
@@ -130,8 +132,24 @@ class StdioSdkLogPinTest {
                     lines.add(line);
                 }
             }
-        } catch (IOException ignored) {
-            // the child was destroyed
+        } catch (IOException e) {
+            failure.compareAndSet(null, e);
+        }
+    }
+
+    /**
+     * Waits for both readers to reach end of stream and fails if either ended on an IOException: a
+     * leak check must never pass on output that was not fully read.
+     */
+    private static void joinToEndOfStream(Thread errReader, Thread outReader,
+            AtomicReference<IOException> readFailure) throws InterruptedException {
+        errReader.join(5000);
+        outReader.join(5000);
+        if (errReader.isAlive() || outReader.isAlive()) {
+            throw new AssertionError("child output readers did not reach end of stream");
+        }
+        if (readFailure.get() != null) {
+            throw new AssertionError("child output ended on an IOException, so it was not fully read", readFailure.get());
         }
     }
 }
