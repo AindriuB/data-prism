@@ -29,8 +29,9 @@ configuration.md:
 tools.md:
   title: Tool reference
   description: >-
-    Reference for Data Prism's two MCP tools, get_entity_context and
-    compare_entity_sources, and their arguments.
+    Reference for the MCP tools list_sources, describe_source,
+    get_entity_context, compare_entity_sources and follow: arguments,
+    results and refusal codes.
 
 extending.md:
   title: "Extending Data Prism: writing a reviewed adapter"

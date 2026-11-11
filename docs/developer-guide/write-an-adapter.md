@@ -56,6 +56,16 @@ treated as data, not failure — returning `null` lets the orchestrator record
 this source's outcome as `NO_DATA` instead of tripping its circuit breaker.
 Full reference: [Implement `DataSourceAdapter`](../extending.md#implement-datasourceadapter).
 
+**Describe the source (optional).** An agent chooses sources by reading a short description of each one through
+`list_sources`. Override `description()` to say what the source holds: its entity types, the key namespaces it
+accepts, a neutral sentence and the advisory cost and freshness. Without it the source is listed as `A data
+source.`, which tells an agent nothing. The sentence is shown to a model, so it says what the data is, never where
+it lives: no URL, host name or address, no system name, and no "e.g." (a dotted run reads as a host name; write "for
+example"). Startup checks the text and refuses with `INVALID_SOURCE_DESCRIPTION` or
+`SOURCE_DESCRIPTION_LEAKS_NAME`; the check is a guard rail, and you remain the reviewer of what the sentence says. The
+rules, and `@Chainable` for a field that holds another source's key, are in
+[Describing a source](../extending.md#describing-a-source).
+
 ## 3. Wire it up with auto-configuration
 
 Nothing on a `-Dloader.path` jar is component-scanned, so Spring Boot has to

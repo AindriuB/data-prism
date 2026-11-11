@@ -608,7 +608,8 @@ all of these is in `design-review.md` under the section named.
 - **2026-10-09 — Seven per-source status codes are a contract, and an unknown
   code means "not answered" (D-070-3, OD-200-1).** `ANSWERED`, `NO_DATA`,
   `TIMED_OUT`, `FAILED`, `CIRCUIT_OPEN`, `SKIPPED_OVER_LIMIT`, `REFUSED`, pinned
-  against `source-status-codes.txt`. A client reads any other value as a gap
+  against `source-status-codes.txt`. (0.8 removed `SKIPPED_OVER_LIMIT`: too
+  many sources is now refused up front with `SOURCE_SELECTION_TOO_LARGE`.) A client reads any other value as a gap
   (the owner decided this explicitly on 2026-10-20; the first wording said "an
   error"), so a later release can add a code without breaking a client.
   Rejected: telling clients to fail on an unknown code, which makes every added

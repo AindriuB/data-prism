@@ -1,0 +1,335 @@
+{
+  "tools" : [ {
+    "name" : "compare_entity_sources",
+    "inputSchema" : {
+      "properties" : {
+        "entityType" : {
+          "description" : "The kind of entity, e.g. CUSTOMER",
+          "type" : "string"
+        },
+        "subjectId" : {
+          "description" : "The correlation identifier for the subject",
+          "type" : "string"
+        },
+        "targetSources" : {
+          "description" : "Source labels as returned by list_sources. When absent, every permitted source is asked, and the call is refused if there are too many.",
+          "items" : {
+            "maxLength" : 128,
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "minItems" : 1,
+          "type" : "array",
+          "uniqueItems" : true
+        }
+      },
+      "required" : [ "entityType", "subjectId" ],
+      "type" : "object"
+    }
+  }, {
+    "name" : "describe_source",
+    "inputSchema" : {
+      "$schema" : "https://json-schema.org/draft/2020-12/schema",
+      "properties" : {
+        "source" : {
+          "$comment" : "64 from 0.9, with INVALID_SOURCE_NAME; OD-200-4, OD-C18 (c)",
+          "description" : "A source label exactly as returned by list_sources.",
+          "maxLength" : 128,
+          "minLength" : 1,
+          "type" : "string"
+        }
+      },
+      "required" : [ "source" ],
+      "title" : "describe_source input",
+      "type" : "object"
+    },
+    "outputSchema" : {
+      "$defs" : {
+        "field" : {
+          "additionalProperties" : false,
+          "dependentRequired" : {
+            "chainable" : [ "keyNamespace" ],
+            "keyNamespace" : [ "chainable" ]
+          },
+          "properties" : {
+            "chainable" : {
+              "const" : true
+            },
+            "keyNamespace" : {
+              "$ref" : "#/$defs/keyNamespace"
+            },
+            "path" : {
+              "description" : "The field as it appears in a response; an array element is written with [].",
+              "maxLength" : 64,
+              "pattern" : "^[A-Za-z_][A-Za-z0-9_]*(\\[\\])?(\\.[A-Za-z_][A-Za-z0-9_]*(\\[\\])?)*$",
+              "type" : "string"
+            },
+            "protection" : {
+              "enum" : [ "VERBATIM", "SYNTHETIC", "TOKEN", "MARKER", "BUCKET", "ABSENT" ]
+            },
+            "valueNamespace" : {
+              "pattern" : "^[A-Z][A-Z0-9_]{0,63}$",
+              "type" : "string"
+            }
+          },
+          "required" : [ "path", "protection" ],
+          "type" : "object"
+        },
+        "keyNamespace" : {
+          "pattern" : "^[a-z][a-z0-9-]{0,31}$",
+          "type" : "string"
+        }
+      },
+      "$schema" : "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties" : false,
+      "properties" : {
+        "correlationId" : {
+          "type" : "string"
+        },
+        "cost" : {
+          "enum" : [ "LOW", "MEDIUM", "HIGH" ]
+        },
+        "description" : {
+          "maxLength" : 240,
+          "minLength" : 1,
+          "type" : "string"
+        },
+        "entityTypes" : {
+          "items" : {
+            "pattern" : "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+            "type" : "string"
+          },
+          "type" : "array",
+          "uniqueItems" : true
+        },
+        "fields" : {
+          "items" : {
+            "$ref" : "#/$defs/field"
+          },
+          "type" : "array"
+        },
+        "freshness" : {
+          "enum" : [ "LIVE", "NEAR_LIVE", "HOURLY", "DAILY", "PERIODIC" ]
+        },
+        "inputKeys" : {
+          "items" : {
+            "$ref" : "#/$defs/keyNamespace"
+          },
+          "maxItems" : 8,
+          "type" : "array",
+          "uniqueItems" : true
+        },
+        "labels" : {
+          "enum" : [ "ALIAS", "REAL" ]
+        },
+        "source" : {
+          "$comment" : "64 from 0.9, with INVALID_SOURCE_NAME; OD-200-4, OD-C18 (c)",
+          "maxLength" : 128,
+          "minLength" : 1,
+          "type" : "string"
+        },
+        "undeclared" : {
+          "description" : "What happens to a property the model does not declare: the response is refused, the property is renamed to a placeholder, or it is dropped.",
+          "enum" : [ "REFUSE", "RENAME", "DROP" ]
+        }
+      },
+      "required" : [ "correlationId", "labels", "source", "description", "inputKeys", "undeclared", "fields" ],
+      "title" : "describe_source output",
+      "type" : "object"
+    }
+  }, {
+    "name" : "follow",
+    "inputSchema" : {
+      "$schema" : "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties" : false,
+      "properties" : {
+        "link" : {
+          "description" : "A link taken exactly as it was returned in a result's _links. Nothing else is accepted.",
+          "maxLength" : 1024,
+          "minLength" : 1,
+          "pattern" : "^[A-Za-z0-9_-]+$",
+          "type" : "string"
+        }
+      },
+      "required" : [ "link" ],
+      "title" : "follow input (0.8)",
+      "type" : "object"
+    }
+  }, {
+    "name" : "get_entity_context",
+    "inputSchema" : {
+      "properties" : {
+        "entityType" : {
+          "description" : "The kind of entity, e.g. CUSTOMER",
+          "type" : "string"
+        },
+        "subjectId" : {
+          "description" : "The correlation identifier for the subject",
+          "type" : "string"
+        },
+        "targetSources" : {
+          "description" : "Source labels as returned by list_sources. When absent, every permitted source is asked, and the call is refused if there are too many.",
+          "items" : {
+            "maxLength" : 128,
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "minItems" : 1,
+          "type" : "array",
+          "uniqueItems" : true
+        }
+      },
+      "required" : [ "entityType", "subjectId" ],
+      "type" : "object"
+    }
+  }, {
+    "name" : "list_sources",
+    "inputSchema" : {
+      "$schema" : "https://json-schema.org/draft/2020-12/schema",
+      "properties" : {
+        "entityType" : {
+          "description" : "Only sources that serve this entity type, plus sources that declare none.",
+          "pattern" : "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+          "type" : "string"
+        },
+        "keyNamespace" : {
+          "description" : "Only sources that accept a key in this namespace.",
+          "pattern" : "^[a-z][a-z0-9-]{0,31}$",
+          "type" : "string"
+        },
+        "page" : {
+          "description" : "The next value of the previous page of this same listing. Absent for the first page.",
+          "maxLength" : 1024,
+          "minLength" : 1,
+          "pattern" : "^[A-Za-z0-9_-]+$",
+          "type" : "string"
+        },
+        "pageSize" : {
+          "description" : "The most entries to return. Above the configured ceiling the ceiling applies and the response says so. Absent: the configured default, or the size recorded in the page link.",
+          "minimum" : 1,
+          "type" : "integer"
+        }
+      },
+      "title" : "list_sources input (0.8 with paging)",
+      "type" : "object"
+    },
+    "outputSchema" : {
+      "$defs" : {
+        "entry" : {
+          "additionalProperties" : false,
+          "properties" : {
+            "cost" : {
+              "enum" : [ "LOW", "MEDIUM", "HIGH" ]
+            },
+            "description" : {
+              "maxLength" : 240,
+              "minLength" : 1,
+              "type" : "string"
+            },
+            "entityTypes" : {
+              "items" : {
+                "pattern" : "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+                "type" : "string"
+              },
+              "type" : "array",
+              "uniqueItems" : true
+            },
+            "freshness" : {
+              "enum" : [ "LIVE", "NEAR_LIVE", "HOURLY", "DAILY", "PERIODIC" ]
+            },
+            "inputKeys" : {
+              "items" : {
+                "$ref" : "#/$defs/keyNamespace"
+              },
+              "maxItems" : 8,
+              "type" : "array",
+              "uniqueItems" : true
+            },
+            "source" : {
+              "$comment" : "64 from 0.9, with INVALID_SOURCE_NAME; OD-200-4, OD-C18 (c)",
+              "maxLength" : 128,
+              "minLength" : 1,
+              "type" : "string"
+            }
+          },
+          "required" : [ "source", "description", "inputKeys" ],
+          "type" : "object"
+        },
+        "keyNamespace" : {
+          "pattern" : "^[a-z][a-z0-9-]{0,31}$",
+          "type" : "string"
+        },
+        "page" : {
+          "additionalProperties" : false,
+          "else" : {
+            "not" : {
+              "anyOf" : [ {
+                "required" : [ "next" ]
+              }, {
+                "required" : [ "expiresAt" ]
+              } ]
+            }
+          },
+          "if" : {
+            "properties" : {
+              "last" : {
+                "const" : false
+              }
+            }
+          },
+          "properties" : {
+            "expiresAt" : {
+              "description" : "When next stops being accepted. Present exactly when next is present.",
+              "format" : "date-time",
+              "type" : "string"
+            },
+            "last" : {
+              "description" : "True when no entry follows this page. The end-of-collection marker.",
+              "type" : "boolean"
+            },
+            "next" : {
+              "description" : "Sealed link to the next page. Present exactly when last is false.",
+              "maxLength" : 1024,
+              "minLength" : 1,
+              "pattern" : "^[A-Za-z0-9_-]+$",
+              "type" : "string"
+            },
+            "size" : {
+              "description" : "The page size that applied (after the ceiling). Not the number of entries returned.",
+              "minimum" : 1,
+              "type" : "integer"
+            }
+          },
+          "required" : [ "size", "last" ],
+          "then" : {
+            "required" : [ "next", "expiresAt" ]
+          },
+          "type" : "object"
+        }
+      },
+      "$schema" : "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties" : false,
+      "properties" : {
+        "correlationId" : {
+          "type" : "string"
+        },
+        "labels" : {
+          "description" : "Whether the source labels below are aliases or real names (the effective setting).",
+          "enum" : [ "ALIAS", "REAL" ]
+        },
+        "page" : {
+          "$ref" : "#/$defs/page"
+        },
+        "sources" : {
+          "items" : {
+            "$ref" : "#/$defs/entry"
+          },
+          "type" : "array"
+        }
+      },
+      "required" : [ "correlationId", "labels", "sources", "page" ],
+      "title" : "list_sources output (0.8 with paging)",
+      "type" : "object"
+    }
+  } ]
+}
