@@ -164,9 +164,9 @@ Part A only. Part B is proved by the owner's filled-in `soak-0.8.md` at the rele
 - `scripts-parse` command — AC15, AC16, AC18
   run: `for f in load-test/soak/*.sh; do bash -n "$f" || exit 1; done`
 - `overlay-config` command — AC14
-  run: `docker compose -f docker/multi-instance/compose.yaml -f load-test/soak/<overlay> config -q`
+  run: `export DATAPRISM_CLUSTER_KEY_MATERIAL=$(openssl rand -hex 32) DATAPRISM_NAME_KEY_MATERIAL=$(openssl rand -hex 32); SOAK_IMAGE_TAG=dummy docker compose -f docker/multi-instance/compose.yaml -f load-test/soak/<overlay> config -q`
 - `overlay-builds` command — AC25
-  run: `SOAK_IMAGE_TAG=dummy docker compose -f docker/multi-instance/compose.yaml -f load-test/soak/compose.soak.yaml config --format json | jq -e '([.services["server-a","server-b","server-c","cert-init","issuer","fixtures"] | (.build == null) and (.pull_policy == "never") and (.image | startswith("data-prism-soak-"))] | all) and (.services.lb.image | contains("@sha256:"))'`
+  run: `export DATAPRISM_CLUSTER_KEY_MATERIAL=$(openssl rand -hex 32) DATAPRISM_NAME_KEY_MATERIAL=$(openssl rand -hex 32); SOAK_IMAGE_TAG=dummy docker compose -f docker/multi-instance/compose.yaml -f load-test/soak/compose.soak.yaml config --format json | jq -e '([.services["server-a","server-b","server-c","cert-init","issuer","fixtures"] | (.build == null) and (.pull_policy == "never") and (.image | startswith("data-prism-soak-"))] | all) and (.services.lb.image | contains("@sha256:"))'`
 - `provenance` read — AC25
   how: `load-test/soak/build-images.sh` builds the four images from a snapshot of the checkout and writes the stamp file (tag, image IDs, hash, commit, dirty); `common.sh` takes `SOAK_IMAGE_TAG` from the stamp, never builds, and refuses on a missing stamp or ID mismatch; each fault, probe and capture summary records each of the six containers' image ID and build labels at start and end; the driver's target-mode result records the member build as read at write time; lookup failure is `unknown`, no container is `absent`; `load-test/soak/README.md` documents the build step, the fields and `SOAK_ALLOW_DIRTY`.
 - `multi-instance-untouched` command — AC14, AC20, AC23
@@ -261,3 +261,11 @@ Reviewed HEAD: 8e39e4a116dbe8477cf9c3680869fab23b5296b0 (code-reviewer re-review
 - R6-4 [P2] LoadTestMain.java:126, README.md:27-35 — stale SOAK_MEMBER_IMAGE_ID export recorded as fact beside a fresh commit.
 - R6-5 [P2] README.md:21, compose.soak.yaml:7-11 — cert-init, issuer, fixtures still pulled at unpublished :0.8.0 or reused stale.
 - R6-6 [NOTE→fixed by Amendment 7] common.sh:44 — git_commit reports dirty=no when git status fails.
+
+## Attempt 1 (verify) — failed
+
+/verify at 8b4cd1a5161741582eded0a8f360c9344cba0d7a, 2026-11-11: tester PASS (all command checks, full `./mvnw -B test`), reviewer REQUEST CHANGES on AC19 only.
+
+- AC19: the PR #243 Outcome does not mark the round 5 overlay smoke superseded (built under amendment 6's pull_policy: build, replaced by amendment 7). Under amendment 7 only the three-member scenario, probe-startup-refusals.sh, fault-full-restart-key-change.sh and member-image-id.sh have run. kill-restart, kill-owner-and-backup, roll-all, network-partition and capture last ran in superseded rounds 1–4; partition and capture had their cleanup moved onto on_exit in round 6 and have not run since. The Outcome does not say which scripts are left to Part B.
+  Fix: re-smoke kill-restart, kill-owner-and-backup, roll-all, network-partition and capture (SUBJECT_IDS=1001,1002) under the amendment 7 build rule; mark the round 5 overlay smoke superseded; state that fault-hostile-member.sh and fault-clock-skew.sh (owner inputs) are left to Part B.
+- Check text (orchestrator): `overlay-config` and `overlay-builds` fail as written — they need SOAK_IMAGE_TAG set (amendment 7's `:?` guard) and DATAPRISM_CLUSTER_KEY_MATERIAL / DATAPRISM_NAME_KEY_MATERIAL exported (throwaway values). Reworded in this commit.
