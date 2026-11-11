@@ -107,6 +107,22 @@ Owner decisions on R5-1 and R5-3 (review round 5, at the end).
 
 *Reason:* a stale local tag was reused silently and nothing recorded which image ran (R5-1); `RESOLVER_FAILED` passed every criterion, and the cause criterion asked for an entry the harness never writes (R5-3).
 
+## Amendment 2026-11-11 (owner, seventh)
+Owner adopted the architect's design for R6-1..R6-6 (review round 6, at the end), choosing: a dirty snapshot is refused unless `SOAK_ALLOW_DIRTY=1` (smokes opt in and stay marked dirty). **Supersedes the sixth amendment's R5-1 building bullets** (its R5-3 decision and the AC19 re-run stand). **Owns is unchanged.** AC14 and AC20 hold.
+
+**Invariants.** I1 every data-prism container (server-a/b/c, cert-init, issuer, fixtures) runs an image built from one identified source state. I2 identity is fixed at bring-up. I3 recreates reuse exactly the bring-up image ID: no build, no pull. I4 no build inside a measured window. I5 every summary and result records the identity running when written. I6 unknown is recorded as `unknown`, never a plausible value. I7 third-party images pinned (haproxy by digest; netshoot already is). I8 kill/start/restart/disconnect keep container and image.
+
+1. **`load-test/soak/build-images.sh` (new).** Snapshot `git ls-files -co --exclude-standard` (skip tracked-deleted) into a temp dir; ignored paths never enter; no `.dockerignore` change. Content hash over path+contents; record commit and dirty (snapshot differs from HEAD); git failure = refuse. Dirty = refuse unless `SOAK_ALLOW_DIRTY=1`. Plain `docker build` of server, issuer, fixtures, certs-init with the existing `docker/*/Dockerfile`; tag `data-prism-soak-<image>:<hash12>`; labels for source hash, commit, dirty. Existing tag = reuse. Writes a stamp under the git-ignored results dir: tag, four image IDs, hash, commit, dirty. Runs before any driver starts.
+2. **`compose.soak.yaml`.** No `build:`. The six data-prism services use `data-prism-soak-<image>:${SOAK_IMAGE_TAG:?run load-test/soak/build-images.sh}` with `pull_policy: never`, merged onto base services; `docker/multi-instance/**` unchanged. `lb` (haproxy) pinned by digest.
+3. **`common.sh`.** `dc` exports `SOAK_IMAGE_TAG` from the stamp, never the caller's shell; refuses if the stamp is missing or a tag's image ID differs from it; recreates pass `--no-build`. `member_image_id` uses `docker ps` by compose project/service labels (no compose interpolation) and distinguishes `absent` (no container) from `unknown` (docker call failed). `provenance` prints each of the six containers' image ID and build labels (not the live checkout commit). Every script calls it at start and on exit (trap); a start/end mismatch, or any running ID differing from the stamp, is printed as a finding.
+4. **`member-image-id.sh`.** Prints member build identity from the running members; any lookup failure prints `unknown` and exits non-zero; never prints `none/none/none` as agreement.
+5. **Driver (`LoadTestMain`/`ResultWriter`).** In target mode, at result-write time run `member-image-id.sh` via `boundedOutput` (failure → `unknown`) and record it as the member build. Drop the `SOAK_MEMBER_IMAGE_ID` env read and `unrecorded`; update `ResultWriterTest`. Checkout commit/`workingTreeDirty` stay, documented as the driver's own checkout.
+6. **README.** Build first, then up via the stamp; provenance fields; `unknown`/`absent`; `SOAK_ALLOW_DIRTY`.
+
+AC25 and the `overlay-builds` check are rewritten in place. The AC19 overlay smoke is re-run under this rule. *Verify by running:* Compose lets the overlay set `image`/`pull_policy` on services the base pulls in via `extends`.
+
+*Reason:* `pull_policy: build` rebuilt inside measured windows and on recreates, provenance was captured before faults, and compose/git failures were recorded as `none` or clean (R6-1..R6-6).
+
 ## Acceptance
 IDs AC1 to AC12 are the pre-split items in their original order. AC13 onwards are new in Part A.
 
@@ -123,7 +139,7 @@ IDs AC1 to AC12 are the pre-split items in their original order. AC13 onwards ar
 - [ ] AC21 `load-test.yml` meets A3: the artifact name has no scenario path in it, and `timeout-minutes` exceeds the longest soak scenario's duration.
 - [ ] AC22 (D1) A target-mode scenario that sets `sources`, `slowSources`, `slowLatency` or `limits` is refused at load, naming the field; a target-mode result has `mode: target` and no `effectiveLimits` or source counts. The overlay's `member-env` sets the scope read budget and per-source timeout, and the three-member scenario's subject count and the expected `SCOPE_READ_BUDGET` share are stated in `load-test/soak/README.md`, the share being below the whole run.
 - [ ] AC23 (D2) With the harness's own server, a `follow` of a translated link reaches the resolver's target namespace: a load-test module test shows the generated sources declare both namespaces, the resolver is on the server's `loader.path`, and the single-node scenario's mix includes translated follows. Nothing under `data-prism-*/src/main` or `docker/**` changes.
-- [ ] AC25 (amendment 6) The overlay builds `server-a`, `server-b` and `server-c` from the checkout with `pull_policy: build` (or an equivalent that never pulls or reuses a tag); bringing it up never pulls the server image. `common.sh` builds by default. Every fault, probe and capture summary, and the driver's target-mode result, records the member image ID and the git commit (short SHA, dirty flag). `load-test/soak/README.md` documents both.
+- [ ] AC25 (amendment 7) Every data-prism image the overlay runs (members and cert-init/issuer/fixtures) comes from one build of a snapshot of the checkout, tagged by the snapshot's content hash; the overlay has no `build:` and uses `pull_policy: never`; no up or recreate builds or pulls, and a missing tag fails; a tag is reused only for identical snapshot content; a dirty snapshot is refused unless `SOAK_ALLOW_DIRTY=1`; the `lb` image is pinned by digest; every summary records each container's image ID and build labels at start and end, and the driver's target-mode result records them as read at write time; anything unreadable is `unknown`.
 - [ ] AC24 (amendments 4, 5) (i) After `versions:set` to another version, `load-test/run.sh --build-only` exits 0 with no edit to `load-test/pom.xml`. (ii) `./mvnw -B -f load-test/pom.xml package` without `-Ddataprism.version` exits non-zero, and its output names `dataprism.version` and `run.sh`. (iii) The supply-chain load-test step and the `load-test/README.md` build commands pass the version or use `run.sh`.
 
 ### Part B (owner-run, release cut)
@@ -150,7 +166,7 @@ Part A only. Part B is proved by the owner's filled-in `soak-0.8.md` at the rele
 - `overlay-config` command — AC14
   run: `docker compose -f docker/multi-instance/compose.yaml -f load-test/soak/<overlay> config -q`
 - `overlay-builds` command — AC25
-  run: `docker compose -f docker/multi-instance/compose.yaml -f load-test/soak/compose.soak.yaml config --format json | jq -e '[.services["server-a","server-b","server-c"] | (.build != null) and (.pull_policy == "build")] | all'`
+  run: `SOAK_IMAGE_TAG=dummy docker compose -f docker/multi-instance/compose.yaml -f load-test/soak/compose.soak.yaml config --format json | jq -e '([.services["server-a","server-b","server-c","cert-init","issuer","fixtures"] | (.build == null) and (.pull_policy == "never") and (.image | startswith("data-prism-soak-"))] | all) and (.services.lb.image | contains("@sha256:"))'`
 - `provenance` read — AC25
   how: each fault, probe and capture script's summary and the driver's target-mode result write the member image ID and short SHA with a dirty flag; `common.sh` builds by default; `load-test/soak/README.md` documents the build rule and the fields.
 - `multi-instance-untouched` command — AC14, AC20, AC23
@@ -234,3 +250,14 @@ Reviewed HEAD: f46b3df693a195c3ae4e5601589532c7c588ef9d (code-reviewer re-review
 - R5-1 [P2] load-test/soak/compose.soak.yaml:10,50-53; load-test/soak/common.sh:16-20 — The overlay never ensures members run the branch's build and nothing records which image ran. All three members use ghcr.io/aindriub/data-prism-quickstart-server:${QUICKSTART_IMAGE_TAG:-0.8.0}; compose.build.yaml builds server-a/b only; common.sh defaults SOAK_BUILD=0; SOAK_BUILD and QUICKSTART_IMAGE_TAG are undocumented; 0.8.0 is unpublished. A stale local :0.8.0 tag is reused silently under the default pull policy. Settled by Amendment 6 (owner).
 - R5-2 [P3, owner-approved for this round] load-test/soak/probe-startup-refusals.sh:14,43 — On success server-c is force-recreated twice (explicit restore, then the uncleared EXIT trap); the :42 comment is wrong. Fix: `trap - EXIT` after the explicit restore and correct the comment.
 - R5-3 [P3] docs/plan/perf/soak-0.8.md:31 — Criterion 3 names only FAILED; RESOLVER_FAILED passes every criterion, and the cause entry it asks for cannot exist for a FAILED source (failureCauses holds transport failures only). Settled by Amendment 6 (owner).
+
+## Review round 6 — findings
+
+Reviewed HEAD: 8e39e4a116dbe8477cf9c3680869fab23b5296b0 (code-reviewer re-review of round 5; R5-2 and R5-3 FIXED). Second freshness/provenance round in the same subsystem triggered a design pass; all five are settled by Amendment 7 (owner).
+
+- R6-1 [P2] compose.soak.yaml:48-66 — pull_policy: build rebuilds on every up, including mid-soak recreates (clock-skew:23, key-change:37, probe:15,22); results/ in the build context busts the cache; full Maven build inside the measured window; recreated member can get a new image ID or run edited code.
+- R6-2 [P2] common.sh:50-54 — provenance written before the script recreates members, so summaries name pre-fault images.
+- R6-3 [P2] member-image-id.sh:9, common.sh:31-38 — compose interpolation error (keys unset) swallowed, prints `none`, recorded as memberImageId "none".
+- R6-4 [P2] LoadTestMain.java:126, README.md:27-35 — stale SOAK_MEMBER_IMAGE_ID export recorded as fact beside a fresh commit.
+- R6-5 [P2] README.md:21, compose.soak.yaml:7-11 — cert-init, issuer, fixtures still pulled at unpublished :0.8.0 or reused stale.
+- R6-6 [NOTE→fixed by Amendment 7] common.sh:44 — git_commit reports dirty=no when git status fails.
