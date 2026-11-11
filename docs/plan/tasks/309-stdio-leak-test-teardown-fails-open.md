@@ -38,3 +38,11 @@
 
 ## Out of scope
 Product code; the SDK logger pin; other tests; editing `known-flakes.md`; two `mvn` processes at once in one worktree.
+
+## Attempt 1 — failed
+
+Verified at dc86ab245bbafc8aa54531396027d7fe29d070fb: tester PASS (stdio-classes 9 + 2, class-repeat 20/20, scope clean, full `verify` green); reviewer REQUEST CHANGES.
+
+- AC4 not met: `StdioParseErrorLeakTest.java:216-217` and `StdioSdkLogPinTest.java:146-147` join each reader for 10 s (up to 20 s in a row). The existing timeout was `errReader.join(5000)`, and AC4 allows only the 10 s `waitFor` above existing timeouts. Fix: join both readers with the existing 5000 ms; a reader still alive still fails the test.
+- AC2 evidence gap: the Outcome reports 7 of 9 failing on the base commit with the 100 ms lag but does not name `errorWrongType`. Show `errorWrongType` failing on the base commit and passing after the fix.
+- AC3 evidence gap: the two `assertSdkErrorReply` cases (`toolCallArgumentsString`, `initializeCapabilitiesString`, `StdioParseErrorLeakTest.java:83-96`) also call `assertNoLeak`, but no mutation is shown making them fail. Show a temporary mutation (reverted before commit) that makes them fail, or state why they fall outside AC3's three checks.
