@@ -143,8 +143,8 @@ class StdioSdkLogPinTest {
      */
     private static void joinToEndOfStream(Thread errReader, Thread outReader,
             AtomicReference<IOException> readFailure) throws InterruptedException {
-        errReader.join(10_000);
-        outReader.join(10_000);
+        errReader.join(5000);
+        outReader.join(5000);
         if (errReader.isAlive() || outReader.isAlive()) {
             throw new AssertionError("child output readers did not reach end of stream");
         }
