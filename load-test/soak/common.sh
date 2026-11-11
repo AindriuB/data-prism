@@ -106,7 +106,7 @@ provenance_begin() {
 provenance_stamp_check() {
   local m img id run
   for m in "${containers[@]}"; do
-    case "$m" in server-*) img=server ;; *) img="$m" ;; esac
+    case "$m" in server-*) img=server ;; cert-init) img=certs-init ;; *) img="$m" ;; esac
     run="$(running_image_id "$m")"
     [ -n "$run" ] || continue
     id="$(stamp_get "image.$img")"
