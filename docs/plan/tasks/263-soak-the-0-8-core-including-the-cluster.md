@@ -164,7 +164,7 @@ Part A only. Part B is proved by the owner's filled-in `soak-0.8.md` at the rele
 - `scripts-parse` command — AC15, AC16, AC18
   run: `for f in load-test/soak/*.sh; do bash -n "$f" || exit 1; done`
 - `overlay-config` command — AC14
-  run: `export DATAPRISM_CLUSTER_KEY_MATERIAL=$(openssl rand -hex 32) DATAPRISM_NAME_KEY_MATERIAL=$(openssl rand -hex 32); SOAK_IMAGE_TAG=dummy docker compose -f docker/multi-instance/compose.yaml -f load-test/soak/<overlay> config -q`
+  run: `export DATAPRISM_CLUSTER_KEY_MATERIAL=$(openssl rand -hex 32) DATAPRISM_NAME_KEY_MATERIAL=$(openssl rand -hex 32); SOAK_IMAGE_TAG=dummy docker compose -f docker/multi-instance/compose.yaml -f load-test/soak/compose.soak.yaml config -q`
 - `overlay-builds` command — AC25
   run: `export DATAPRISM_CLUSTER_KEY_MATERIAL=$(openssl rand -hex 32) DATAPRISM_NAME_KEY_MATERIAL=$(openssl rand -hex 32); SOAK_IMAGE_TAG=dummy docker compose -f docker/multi-instance/compose.yaml -f load-test/soak/compose.soak.yaml config --format json | jq -e '([.services["server-a","server-b","server-c","cert-init","issuer","fixtures"] | (.build == null) and (.pull_policy == "never") and (.image | startswith("data-prism-soak-"))] | all) and (.services.lb.image | contains("@sha256:"))'`
 - `provenance` read — AC25
