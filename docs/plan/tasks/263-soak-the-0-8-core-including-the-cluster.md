@@ -196,3 +196,12 @@ Reviewed HEAD: 3739198f58e283689cdbcde0458b14131bc54eec (code-reviewer re-review
 - R3-1 [P2] .github/workflows/supply-chain.yml:52-56 and load-test/README.md:19,182 — These build load-test without -Ddataprism.version; after versions:set 0.8.0 the supply-chain "Resolve the load-test tree" step (`-f load-test/pom.xml … makeBom`) uses the default 0.7.0, the systemPath does not exist, and the scan fails (or silently builds against a stale 0.7.0 jar). Settled by Amendment 5 (owner).
 - R3-2 [P2] task file AC24 and its `version-bump` check — the missing-jar half cannot be observed through run.sh, which rebuilds the jar before its guard. Settled by Amendment 5 (owner).
 - R3-3 [STYLE] load-test/pom.xml:31 — rewritten comment line is 186 characters; the rest of the block wraps at ~117. Rewrap.
+
+## Review round 4 — findings
+
+Reviewed HEAD: 162d4571ad4255cc9bef68c2b43563bc22ef99c9. Source: the owner's PR #243 review, round 2. Owner approved a fourth round for these two only; its Lows and Nits are follow-ups.
+
+| ID | Sev | Where | Issue | Fix |
+|---|---|---|---|---|
+| 243-28 | High | probe-startup-refusals.sh:30 | Calls new_key, which round 1 removed from common.sh; set -e exits after probe 1, server-c left refusing, AC3 key probe never runs | Generate inline (openssl rand -hex 32) or restore new_key; EXIT trap restores server-c |
+| 243-29 | Medium | LoadDriver.java:328 | follow and followTranslated go through classifyOther, so a source or resolver failure inside a follow counts as completed | Classify follow ops with classify; test a RESOLVER_FAILED follow |
