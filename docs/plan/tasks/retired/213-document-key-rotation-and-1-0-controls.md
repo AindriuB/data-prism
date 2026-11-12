@@ -11,8 +11,8 @@
 > | 5 cluster procedure, map formats | 310 AC3 |
 > | 6 audit keys, CLI, segments, transition | 311 AC1 |
 > | 7 limits and D-1.0-4 | 311 AC2 |
-> | 8 architecture records | 311 AC3 |
-> | 9 case authorisation, allowlist, FREE_TEXT, recognisers, depth cap | 313 AC1 |
+> | 8 case authorisation, allowlist, FREE_TEXT, recognisers, depth cap | 313 AC1 |
+> | 9 architecture records | 311 AC3 |
 > | 10 `extending.md` loading and constructors | 313 AC2 |
 > | 11 migration and changelog cover all changes | 314 AC2 |
 > | 12 rotation link; `audit-*.log` segments | 310 AC4 |

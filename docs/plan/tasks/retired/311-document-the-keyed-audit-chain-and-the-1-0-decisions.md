@@ -64,3 +64,7 @@ Split from 213 on 2026-11-12 (owner agreement of that day: 213 becomes four para
 Verified at cc005580a11c6a2064646487d0d05a24b482148e: tester PASS (docs-site, scope, additions-only, no-compliance-wording); reviewer REQUEST CHANGES. Code review (CLEAN) raised the same point as a P3.
 
 - docs/architecture.md:712-714 and the pointer at :584 date the keyed chain as "shipped in 0.8 on 2026-10-23 (206, 207, 211)". Only 206 landed on 2026-10-23; 207 landed on 2026-10-28 and 211 (the configuration the record describes: key reference resolved at startup, retired keys, `AUDIT_KEY_REUSES_PSEUDONYMISATION_KEY`) on 2026-11-04 (HISTORY-INDEX.md:37, :39, :40). 0.8.0 is unreleased. Fix: say it was built by 206 (2026-10-23), 207 (2026-10-28) and 211 (2026-11-04) for 0.8.0, and do not say "shipped". Additions-only still holds: these are lines this task added.
+
+## Outcome
+
+Landed on `main` as PR #259 (`4001d053`), verified PASS and APPROVE at `8386f32428cb210631bdb778c12dd074f9cc2691` (2026-11-12), on the second verify. `docs/audit.md` documents the keyed chain, retired keys, the verifier flags, segments, retention and the limits; `docs/architecture.md` records the October 15 and October 19 decisions and the October 23 amendment of D-RM-1 (a). Attempt 1 (kept in the file) was refused for dating the keyed chain "shipped in 0.8 on 2026-10-23" when 207 and 211 landed later and 0.8.0 is unreleased. Open: "since 0.8" should read "in 0.8.0" (PLAN.md, "Wave 14a follow-ups").

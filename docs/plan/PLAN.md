@@ -81,7 +81,8 @@ Waves 1 to 12 have landed (the table below carries one row for waves 1 to 11 and
 | 1 to 11 | landed 2026-10-21 to 2026-11-09 (268, 218, 219, 238, 239, 243, 258, 259, 220, 221, 240, 222, 242, 265, 244, 257, 203, 206, 223, 241, 248, 269, 245, 267, 207, 210, 225, 271, 285, 288, 208, 227, 246, 262, 284, 289, 290, 211, 228, 247, 256, 292, 294, 249, 250, 251, 272, 287, 291, 296, 297, 298, 293, 299, 252, 254, 300, 253, 286, 301, 302). 295 was deferred past 0.8.0 (`tasks/deferred/295-ack-gated-tombstone-gc-for-the-pause-document.md`) and must be reissued against F1 to F5 of the 228 contract before pickup. Per-wave detail: `archive/PLAN-2026-11-10.md:141-151` and `HISTORY-INDEX.md` |
 | 12 | 255 (landed 2026-11-10, PR #236), 304 (landed 2026-11-10, PR #237) (253, 286 and 301 landed earlier. 304: client content out of the MCP SDK's inbound parse-error logs; filed 2026-11-09) |
 | 13 | 260 (landed 2026-11-10, PR #240), 261 (landed 2026-11-10, PR #239), 263 Part A (landed 2026-11-11, PR #243, `95cfee34`; Part B, the owner-run soak, stays open as a 0.8.0 release-cut obligation below and `tasks/263-*.md` is now its contract). Filed 2026-11-10: 306 (links-enabled capture fixture for `follow` and `_links`, unscheduled; `tasks/306-links-enabled-capture-fixture.md`). Filed 2026-11-11 from PR #243: 307 (soak provenance; landed 2026-11-12, PR #254, `64af8265`; follow-ups under "307 follow-ups"), 308 (HazelcastOversightTest grace-race test fix), 309 (stdio leak-test teardown; landed 2026-11-11, PR #249, `8c41a1f1`; its review follow-ups are under "309 follow-ups"), 309-F1 (stdio reader end-of-stream and child-exit checks; landed 2026-11-12, PR #252, `4059d4bd`; follow-ups under "309-F1 follow-ups") |
-| last (14) | 213 (depends on 208, 210, 211, 261, 225, 227, 228 and 284 to 287) |
+| 14a | 310 (key-rotation guide, PR #260, `1036a6c0`), 311 (audit and architecture, PR #259, `4001d053`), 312 (multiple-instances, eu-ai-act, cluster-security, PR #258, `3a4ea595`), 313 (extending, tools, faq, PR #257, `52781007`): done 2026-11-12. 213 was split into these and 314 (`tasks/retired/213-*.md`) |
+| 14b | 314 (0.8 migration notes and changelog; `tasks/314-write-the-0-8-migration-notes-and-changelog.md`; depends on 310 to 313, now landed) |
 | 15 (0.9) | 273, 274 (0.9 starter onboarding, filed 2026-10-23; see "0.9 starter onboarding plan" below. 273's OD-273-3 (a) mechanism, rewritten 2026-10-26, is in `tasks/273-default-low-stakes-settings-and-derive-from-spring.md`; the pre-cut row is `archive/PLAN-2026-11-10.md:155`) |
 | 16 (0.9) | 275, 277 |
 | 17 (0.9) | 276 (moved from 16 on 2026-10-24: it now adds `MISSING_MCP_SECURITY`, so it follows 275 on `freeze/codes.txt`) |
@@ -246,7 +247,7 @@ Follow-ups from the external review of PR #154, round 5 (2026-10-23). Each belon
 Follow-ups from wave 3 (222 and 242 landed 2026-10-22), each belonging to the brief named (also recorded as dated Context bullets in the briefs, except where noted):
 
 - 211, 254, 255: extend `ClusterKeyResolution`'s shared-key check (today the privacy HMAC key only) to the audit key and the link keys. The file, its test and the `CLUSTER_KEY_SHARED` / `NAME_KEY_SHARED` rows are in all three Owns since 2026-10-23 (255's in its Owns lines only).
-- 255: supply `LinkKeys`' held-key-id set (only the current key verifies until then) and add a health signal for a supplier that returns null or throws.
+- 255: supplying `LinkKeys`' held-key-id set and the health signal for a supplier that returns null or throws are done (`LinkKeyResolution.java:56`, `LinkKeysHealth.java:39-55`); no longer open.
 - 213 (corrected 2026-10-23): `docs/multiple-instances.md` calls `member.interface` optional and says a member without it binds every interface; correct it. `docs/migration-0.8.md` is not wrong but is missing the `member.interface` entry; add it. The packaged server's environment resolver no longer reads every reference with `System.getenv`: since 222's round-2 fix it refuses a `provider-reference` with `MISSING_KEY_PROVIDER`, and it is registered only when `dataprism.privacy.hmac-key.environment-variable` is set, so a cluster or name key given as `provider-reference` needs a reviewed resolver extension, as the HMAC key does.
 - Design: sealed-links obligation 10's timing soak is still unwritten (252 writes it, 263 runs it).
 
@@ -287,6 +288,17 @@ Open items from the external reviews, none blocking. The review text is not on G
 - 239-21 to 239-24 (Nits): the duplicate CHANGELOG line; the incomplete `KeyResolutionException` list in `docs/extending.md:302`; "1.0" where `docs/operations.md:16` should say 0.8; the "two calls" example at `docs/tools.md:523`.
 - Not documented because they do not exist in 0.8: the proposed-0.9 codes `BATCH_*`, `BULK_*`, `INVALID_SOURCE_NAME`, `ENTITY_MODEL_NOT_AVAILABLE`. `load-test/` and the design documents still reference `SKIPPED_OVER_LIMIT`.
 - Items elsewhere in this file that name 261 as owner (for example the 228 "Design-doc facts", the 249 documentation list and the plain-Java `McpSdkLogPin` note) were not itemised in PR #239's Outcome; check them against the pages before relying on them being done.
+
+##### Wave 14a follow-ups (PRs #257 to #260 reviews, 2026-11-12)
+
+Lows and Notes from the reviews of 310 to 313 that the owner did not fix in the round. Docs items belong to whoever next edits the named page; 314 owns only `docs/migration-0.8.md` and `CHANGELOG.md`.
+
+- Docs, from 310 (`docs/key-rotation.md`): the wording of the id clash; the "change both keys" route; which of the oldest and newest segment is meant; the audit id check; the collision-counter signal; "two phases" against "three phases".
+- Docs, from 311 (`docs/audit.md`, `docs/architecture.md`): "since 0.8" should read "in 0.8.0", because 0.8.0 is unreleased.
+- Docs, from 312: `docs/multiple-instances.md` near :510 still has the stale `endScope` sentence; the `docs/plan/design/cluster-security.md` fence and Write rows; Hazelcast clients against "members are verified"; "the map exists" should read "is configured".
+- Docs, from 313: `docs/faq.md:52` names the per-source refusal and the blank strings imprecisely; `docs/faq.md:41` is one very long line; the recogniser page needs a note that a recogniser sees a scalar; the allowlist-by-value note.
+- Docs: `docs/eu-ai-act.md:47` still calls the audit chain unkeyed.
+- Code: `AuditMaintenance.java:28`: the `SEGMENT` pattern misses size-capped `audit-YYYY-MM-DD.NNNN.log` segments, which the verifier (`AuditChainVerifier.java:382`) already handles. What it affects (the pattern is applied to a message at :70) is not confirmed; check before filing.
 
 ##### 263 Part A follow-ups (PR #243 review, 2026-11-11)
 
@@ -345,7 +357,7 @@ Open follow-ups on security, privacy, audit or fail-closed behaviour that no ope
 - archive:229, archive:230, archive:231: from 293's review (172-9 to 172-11). `fromJsonLine` does not reject `bootWaived` on other kinds; no test asserts the recorder and retention share one checkpoint sink, and a split sink would make the waiver routine; `bootWaived` needs a caveat that it is only as trustworthy as the store.
 - archive:1514: a whole deleted boot is detectable only if that boot wrote a checkpoint past sequence 0; consider a periodic checkpoint soon after boot.
 - archive:485, archive:486, archive:487: from 245. Operator read endpoints write `ALLOW` before a read that can then fail; `pause` and `resume` can race and leave state and audit disagreeing; `collect` can spend the approval and then answer `AUDIT_UNAVAILABLE`.
-- archive:442, archive:473, archive:478: the verifier counts a broken writer as "unkeyed allowed" under `--allow-unkeyed-writers`, and `verifyWithKeys` pairs writers by list index, not instance id.
+- archive:442, archive:473, archive:478: done. `AuditChainVerifier` now pairs writers by instance id and reports a writer that verifies under no key as broken; under `--allow-unkeyed-writers` only an unkeyed-verifying writer is counted as `unkeyedAllowed` (`AuditChainVerifier.java:459-461`). Kept as history.
 - archive:1095: audit verifier wording for unterminated and truncation-equivalent tails should read "unverified, tampering not ruled out"; consider covering a writer's tail with `--checkpoints`.
 - archive:1121: a failed JSON-projection purge only logs; it should surface through `auditIntegrity` health.
 - archive:1106, archive:1428: the PII log scan misses the tool-level `toolAudit` recorder's events, and `UndeclaredNameToolResultScanTest` never plants an `AuditEvent`, so neither scan proves it can fail on an audit leak.
@@ -529,170 +541,8 @@ deprecated it for removal since 4.0.0.
 - 0.8.x byte-cap task (decided OD-291-2 (b), `DECISIONS.md:158`, archive:187): still to be filed. It depends on 291 (landed). On landing, add the byte cap to the docs' memory clause; the clause stays, since neither cap is a memory limit.
 - Jackson 3 port (scrubbing module, mcp-json-jackson3, flip the enforcer ban) before a Boot release removes Jackson 2 support. D-139-A keeps 0.5.0 on Jackson 2.
 
-Found across v0.3.0 wave 1 (tasks 63, 64, 68), 2026-09-22. None blocks 63,
-64 or 68, all merged; several are load-bearing for the wave-2 tasks named.
+The "Found" lists from v0.3.0 wave 1 and tasks 81, 84, 82, 77 and 69 (2026-09-22 and 2026-09-23) moved verbatim to `archive/PLAN-2026-11-12-wave-14a.md` (block 1). Read them before touching the files they name.
 
-1. `FileAuditSink`'s poison is per instance, so after a torn write an
-   operator restarts, the new sink opens `APPEND` on the same path, and its
-   first record lands directly after the fragment — recreating the
-   concatenated mid-file line the poisoning exists to prevent. Closing it
-   needs inspecting the file's last byte at open, which this release
-   deliberately makes an operator responsibility instead. Not a defect;
-   task 66's verifier and its documentation must say so rather than
-   rediscover it.
-2. Tasks 63 and 64's contracts now interlock: 63's rollback-on-throw and
-   64's poisoning are jointly correct only because chains are per-writer
-   with a fresh `instanceId` per process (`docs/architecture.md` §A6). If
-   either changes, re-establish the interlock explicitly.
-3. `AuditSink`'s own javadoc still says nothing about the all-or-nothing
-   requirement `AuditRecorder`'s rollback implicitly imposes on any
-   implementation — it lives only in `AuditRecorder`'s javadoc and task 64's
-   now-deleted task file, neither of which a future sink implementor reads.
-4. `AuditRecorder` catches `RuntimeException` but not `Error`; a sink
-   throwing `AssertionError` or an `OutOfMemoryError` leaves the sequence
-   consumed. A gap, not corruption.
-5. `FileAuditSink` catches `IOException` and `RuntimeException` but an
-   `Error` thrown from inside the write loop escapes unpoisoned.
-6. `AuditSinkFailureAbortsResponseTest` pins the sink's raw exception
-   message reaching the MCP client. With the file sink, that message would
-   name a server filesystem path — a disclosure to a client in a product
-   whose premise is controlling what reaches the model. Two reviewers agreed
-   the disclosure originates in the propagation path that maps a sink
-   exception into an MCP response, not in the sink itself. Fix it where that
-   mapping lives, before task 67 wires the sink.
-7. `PRIVACY_MODULES_DO_NOT_MUTATE_OBJECT_GRAPHS_REFLECTIVELY` scopes to
-   `..core..`, `..pseudonymisation..`, `..validation..`, `..orchestration..`
-   — `connectors` is not in scope, and its `methodHandleFieldAccess()`
-   predicate names `findGetter`/`findSetter`/`findVarHandle`/`unreflect*`,
-   not `defineHiddenClass`/`defineClass`. Nothing stops a future connector
-   reintroducing runtime class generation the way task 60's attempt 1 did.
-   `data-prism-architecture` was not in any wave-1 task's `Owns`, so this
-   needs its own task.
-8. Test coverage still missing for properties currently safe by construction
-   but unasserted in `FileAuditSink`: an already-closed channel followed by
-   a second `record()` throwing `PoisonedException`; `ClosedByInterruptException`;
-   a second sink opened on a path after the first was poisoned.
-9. `data-prism-integration-tests` shares a surefire fork, and
-   `java.net.http.HttpClient`'s default builder eagerly calls
-   `SSLContext.getDefault()`, a JVM-wide singleton cached on first use. Any
-   test building a default-SSLContext client before `McpHttpEndToEndTest`
-   sets its own `javax.net.ssl.trustStore` poisons the cache and breaks that
-   test's self-signed JWKS handshake for the rest of the fork. Task 63
-   worked around it by giving its own client an explicit non-default
-   `SSLContext`, but `McpHttpEndToEndTest` still owns the shared default, so
-   the module is one careless new test away from the same failure.
-   Recommended fix: give `McpHttpEndToEndTest` its own explicit `SSLContext`
-   and retire the trustStore property.
-
-Found on task 81 (outreach drafts), merged 2026-09-23. None blocks the
-merge; tracing one launch-post sentence against the code turned up (4) and,
-separately, the doc defect now filed as task 84.
-
-1. No startup guard exists for an unclassified-unsafe profile:
-   `PrivacyProfile.releasesUnclassifiedData()` (`PrivacyProfile.java:87`) has
-   no callers anywhere in the reactor. **First verify reachability** — check
-   whether a same-named `/privacy-profiles-default.yaml` earlier on the
-   classpath (e.g. an extension jar on `LOADER_PATH`) can shadow the bundled
-   one, since `DataPrismAutoConfiguration` loads it by classpath name alone
-   (`DataPrismAutoConfiguration.java:356`, `:572`, both
-   `getResourceAsStream("/privacy-profiles-default.yaml")`). If shadowing is
-   possible, `PASS_THROUGH_UNSAFE` is reachable today with no refusal, and
-   the guard is urgent rather than a nice-to-have. While there, consider
-   putting the classification and path into the DENY audit event itself
-   (see item 2) rather than leaving it only in the caller's error.
-2. `docs/tools.md:120` says "unclassified values dropped" as the only
-   behaviour; the code's default is `FAIL_REQUEST` (refuse the whole
-   response), and drop is only one of the four `UnclassifiedBehaviour`
-   settings.
-3. `README.md:12` and `docs/use-cases/gdpr-data-minimisation-mcp.md:25` both
-   say unclassified fields are "redacted or refused" — that names two of
-   four settings (`REDACT_AND_WARN`, `FAIL_REQUEST`) and omits `DROP_AND_WARN`
-   and `PASS_THROUGH_UNSAFE`.
-4. `privacy-profiles-default.yaml:8`'s comment says unclassified "has only
-   two settings by design" — `PrivacyProfile.UnclassifiedBehaviour`
-   (`PrivacyProfile.java:46`) has four values, not two.
-
-Found on task 84 (correct the `dataprism.privacy` row's false startup-refusal
-claims), merged 2026-09-23. Neither blocks the merge.
-
-1. `docs/configuration.md:73`'s "a production scope lifetime is required"
-   understates the rule: `protectedDeployment()`
-   (`DataPrismProperties.java` ~:127-129, :165) requires it in every
-   deployment mode except stdio fixture-development, not only "production".
-2. In stdio fixture-development mode, an unset `profile` skips
-   `MISSING_PRIVACY_PROFILE` entirely; `validateProfile` then likely NPEs on
-   `Map.copyOf(...).containsKey(null)` instead of returning a clean refusal
-   code. Startup still fails either way, but with a stack trace instead of a
-   named refusal — a code follow-up, not a docs one.
-
-Found on task 82 (build and deploy the docs site), merged 2026-09-23. None
-blocks the merge.
-
-1. The llms-leak guard checks only the first line of at least 40 characters
-   per excluded doc — a partial include of an excluded page's content could
-   still slip past it undetected.
-2. The link-rewrite hook gives a nested badge image
-   (`[![alt](../img)](../x)`) the same `blob/main/…` treatment as a page
-   link, when the image itself should get a `raw` URL like a bare image
-   reference does.
-3. A link leaving `docs/` with a `?query` suffix or a percent-encoded path
-   component fails the build loudly (target-not-found) rather than being
-   handled — acceptable today since no such link exists, but worth a
-   deliberate rule if one is ever added.
-4. MkDocs 1.6.x and Material 9.x are pinned for good reason: Material's own
-   docs flag a coming backward-incompatible MkDocs 2.0, and Zensical reads
-   `mkdocs.yml` as the documented migration path. Re-check both before ever
-   bumping the pins.
-
-Found on task 77 (FAQ and comparison page), merged 2026-09-23. None blocks
-the merge; all three are wording gaps in `docs/faq.md`.
-
-1. `docs/faq.md:125-126` sources "deferred by design" for the
-   re-identification surface only — the Elasticsearch connector is also not
-   built, but for a different reason (task 78/S11 scope, not a deferral
-   decision), and the FAQ does not distinguish the two.
-2. `docs/faq.md:41` (does it detect PII in free text) omits the scanner's
-   depth cap of 16, beyond which it fails closed. Worth adding since a
-   reader could otherwise assume unbounded scanning.
-3. `docs/faq.md:68-70` (do I need Java) cites the README's MCP-registry
-   section, which names only the adapter path — it does not by itself rule
-   out every non-adapter, non-Java route a reader might ask about.
-
-Found on task 69 (restore the reviewed-adapter allow-list), merged
-2026-09-23. Neither blocks the merge; the first item matters more than it
-looks.
-
-1. **The autoconfigure/connector contract is a bean-name string duplicated
-   as three literals** (`dataPrismConfiguredJsonSourceNames`, in
-   `ConfiguredJsonSourcesAutoConfiguration`, `DataPrismAutoConfiguration`,
-   and `DataPrismContractValidator`), with no shared constant — unavoidable,
-   since keeping autoconfigure free of a compile edge to the connector is
-   the whole point. A typo on either side fails closed (the provider comes
-   back empty, the allow-list narrows, a legitimate configured-JSON adapter
-   is refused) — the safe direction, but a confusing failure to debug. It is
-   caught only by `ConfiguredJsonSourcesPackagingIT`, which runs under `mvn
-   verify`, not `mvn test` — the same blind spot that hid attempt 1's crash
-   (unit tests passed 22/22 there too, because connectors-rest sits on the
-   autoconfigure test classpath; only `mvn verify` saw the
-   `TypeNotPresentException`). Twice in one task, a real defect was invisible
-   to `mvn test` alone. File a follow-up task for either a unit-level
-   assertion tying the three literals together, or a documented requirement
-   that this area be verified with `mvn verify` rather than `mvn test`. Until
-   then: "the tests pass" means less here than usual unless it was `verify`.
-2. The generic `Set<String>` injection point looks like it could collide
-   with an unrelated `Set<String>` bean elsewhere in an application context,
-   which for an allow-list would be a rule-1 widening. Verified empirically
-   in real Spring contexts that it cannot: a named bean present alongside an
-   unrelated `Set<String>` resolves only the intended one; the named bean
-   absent alongside an unrelated `Set<String>` resolves to null (empty
-   provider), it does not fall back to the other bean. Two candidates for the
-   same name throw `NoUniqueBeanDefinitionException` (fail loud); none leaves
-   the provider empty (fail closed). Do not re-litigate this: the only way to
-   subvert it is an application deliberately defining a bean named
-   `dataPrismConfiguredJsonSourceNames` in the vendor's own namespace. A
-   core-owned marker type would be marginally stricter; the reviewer
-   explicitly recommended against a third attempt to get it, and the
-   recommendation stands.
 
 Found on task 75 (per-boot audit chain identity), merged 2026-09-23. Neither
 blocks the merge; the owner has not yet decided whether to schedule the
