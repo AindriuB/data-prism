@@ -119,6 +119,9 @@ final class HttpInboundGuard extends HttpServlet {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         byte[] chunk = new byte[8192];
         long total = 0;
+        if (request.getContentLengthLong() > limit) {
+            return null;
+        }
         InputStream in = request.getInputStream();
         int n;
         while ((n = in.read(chunk)) != -1) {

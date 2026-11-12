@@ -185,6 +185,21 @@ class HttpInboundGuardTest {
     }
 
     @Test
+    @DisplayName("a declared Content-Length over the limit is refused without reading the body")
+    void declaredLengthOverLimitIsRefusedUnread() throws Exception {
+        Recording sdk = new Recording();
+        Exchange exchange = new Exchange();
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getMethod()).thenReturn("POST");
+        when(request.getContentLengthLong()).thenReturn(4097L);
+        run(new HttpInboundGuard(sdk, JSON, 4096), request, exchange.response);
+        assertThat(sdk.calls).isZero();
+        verify(request, never()).getInputStream();
+        verify(request, never()).getReader();
+        assertRefusal(exchange, -32600, "null");
+    }
+
+    @Test
     @DisplayName("an id that is neither a number nor a string is answered as null")
     void structuredIdIsNull() throws Exception {
         Recording sdk = new Recording();
