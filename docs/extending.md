@@ -882,6 +882,140 @@ during your compile, not a class your adapter code calls; giving it a real
 dependency scope would put a build tool on the classpath a `-Dloader.path`
 extension eventually ships from.
 
+## Authorise cases and restrict clients
+
+Two decisions have no default. A deployment that has made neither refuses to start, with
+`MISSING_CASE_AUTHORIZER` or `MISSING_CLIENT_ALLOWLIST`. You make each by supplying a bean, or by one of the
+settings listed in
+[`dataprism.security-policy`: case authorisation and client allowlist](configuration.md#dataprismsecurity-policy-case-authorisation-and-client-allowlist),
+which also lists the other startup codes (a setting together with a bean of the same type is a conflict, for
+example). This page covers the bean route.
+
+A `CaseAuthorizer` decides whether a principal may work on the case named in its token. `ScopeResolver` calls it
+once per request, after the purpose check and before any privacy context is built:
+
+```java
+public final class AssignmentCaseAuthorizer implements CaseAuthorizer {
+
+    private final CaseAssignments assignments; // your own lookup; not a Data Prism type
+
+    public AssignmentCaseAuthorizer(CaseAssignments assignments) {
+        this.assignments = assignments;
+    }
+
+    @Override
+    public boolean isAuthorised(CaseAccessRequest request) {
+        return assignments.isAssigned(request.principalId(), request.caseId());
+    }
+}
+```
+
+`CaseAccessRequest` carries `principalId`, `clientId`, `caseId`, `purpose` and `roles`, all from the verified
+token. Returning `false` refuses the call with `CASE_NOT_AUTHORISED`. Throwing any `RuntimeException` refuses it
+with `CASE_AUTHORISATION_UNAVAILABLE`; an `Error` is not caught and propagates. Both refusals are listed in
+[Caller and call refusals](tools.md#caller-and-call-refusals).
+
+Keep case data out of the messages of exceptions you throw. Data Prism logs only the exception's class and
+returns only the code to the client, but a message that quotes a case id or a name can still reach whatever
+collects your own logs and tracing.
+
+A `ClientAllowlist` restricts which client ids may call at all. `ClientAllowlist.of(Set.of("client-a", "client-b"))`
+admits exactly those ids (case-sensitive, nothing trimmed; an empty set or a blank entry is an
+`IllegalArgumentException`), and a caller outside it is refused with `CLIENT_NOT_ALLOWED` before capabilities
+are checked. The allowlist is an access check on the caller's client id. It does not control which model
+endpoint a client sends output to, or where data goes afterwards: enforcing that belongs to a gateway or egress
+control outside Data Prism.
+
+Two beans of either type fail startup with Spring's own `NoUniqueBeanDefinitionException` unless one is
+`@Primary`. A bean that is injected but never used, because an application `ScopeResolver` or
+`AuthorizationService` was built around another authorizer or allowlist, is refused with
+`CASE_AUTHORIZER_BYPASSED` or `CLIENT_ALLOWLIST_BYPASSED`. If you build those two by hand, pass your own beans:
+
+```java
+ScopeResolver scopeResolver = new ScopeResolver(
+        pseudonymisationVersion, Duration.ofHours(8), purposeValidator, caseAuthorizer);
+AuthorizationService authorizationService = new AuthorizationService(
+        policy, "DEFAULT", PrivacyScopeType.INVESTIGATION, ClientAllowlist.of(Set.of("client-a")));
+```
+
+### Load a `CaseAuthorizer` into a standalone server
+
+The packaged server has no place for Java in its YAML, so a `CaseAuthorizer` arrives the way an adapter does:
+an extension jar on `loader.path`, registered through an `@AutoConfiguration` as in
+[Register the extension](#register-the-extension) and loaded as in [Load the extension](#load-the-extension).
+The jar's classes compile against `data-prism-security` (add it, `provided`, next to the dependencies in
+[The pom shape](#the-pom-shape)):
+
+```java
+@AutoConfiguration
+public class CaseAuthorizerExtensionAutoConfiguration {
+
+    @Bean
+    CaseAuthorizer assignmentCaseAuthorizer() {
+        // Build your own lookup here; nothing in Data Prism or the server supplies a CaseAssignments bean.
+        return new AssignmentCaseAuthorizer(new CaseAssignments());
+    }
+}
+```
+
+The jar's bean must be the only `CaseAuthorizer`, and `case-authorisation` must stay unset. The published server
+image bakes `case-authorisation: token-trusted` and `client-allowlist: unrestricted` into its default
+configuration, so an extension jar with that image is refused as a conflict (`CASE_AUTHORISATION_CONFLICT`):
+override `/app/config/application.yaml`, or build your own image, as the configuration page explains.
+Data Prism checks that a decision was made, not what it decides: a bean that always returns `true` starts.
+
+## Add a free-text recogniser
+
+Data Prism's shape scan looks for a fixed set of identifier formats. A `FreeTextRecogniser` lets you add your own
+check, for example a call to an entity-recognition service, on every string the scan reads:
+
+```java
+@FunctionalInterface
+public interface FreeTextRecogniser {
+    Set<DataClassification> recognise(String value);
+}
+```
+
+It is called for every string value and every property name, because a map key can carry data as readily as a
+value can. Return an empty set when you recognise nothing, and the classifications you recognised otherwise;
+never return `null`. A recogniser can only add refusals: a non-empty result withholds the source or response with
+`FREE_TEXT_RECOGNISED`, and nothing it returns relaxes another validator's refusal. It is given only the value,
+never the privacy context or the path. Values that are the scope's own pseudonyms are not passed to it.
+
+In a Spring deployment, declare each recogniser as a bean. They run in `@Order` order (lowest first):
+
+```java
+@Bean
+@Order(10)
+FreeTextRecogniser caseNoteRecogniser(NoteClassifier classifier) { // NoteClassifier is yours
+    return value -> classifier.mentionsPerson(value)
+            ? Set.of(DataClassification.PII)
+            : Set.of();
+}
+```
+
+Outside Spring, pass the list to the validator yourself; the list order is the run order:
+
+```java
+SensitivePatternValidator validator = new SensitivePatternValidator(
+        new SensitiveDataScanner(), List.of(firstRecogniser, secondRecogniser));
+```
+
+`DataClassification` is in `io.github.aindriub.dataprism.annotations`; the recogniser types are in
+`data-prism-validation`.
+
+A recogniser that throws, or returns `null`, fails closed: the value is not cleared, and the result is
+`FREE_TEXT_RECOGNISER_FAILED`. Nothing from the exception is kept, because its message may quote the value. The
+recogniser runs on the request thread, so it must bound its own runtime: give any remote call a timeout, because
+Data Prism does not interrupt a recogniser that is slow. Recognisers share the scan's depth and size budget, and
+an exhausted budget stops them as it stops the shape scan.
+
+The shape scan itself (`SensitivePatternValidator`) first runs in the Spring starter, the packaged server and the
+configured-JSON-sources mode in 0.7.0; recognisers arrive in 0.8. A `FREE_TEXT`-classified
+model field is redacted under the `DEFAULT` profile and removed under `STRICT`, whether or not you add a
+recogniser. The two codes the client-facing result can carry are in
+[Scrub and validation refusals](tools.md#scrub-and-validation-refusals).
+
 ## Register the extension
 
 Spring Boot needs to be told which auto-configuration class to load from a

@@ -68,9 +68,10 @@ are read from the command line rather than fixed in source:
 Set<String> capabilities = /* parsed from argv[1] */;
 DataPrismAssembly assembly = DataPrismAssembly.standard();
 SecurityPolicy policy = new SecurityPolicy(Set.of("demonstration"), Map.of("harness-role", capabilities));
-AuthorizationService authorizationService = new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.INVESTIGATION);
+AuthorizationService authorizationService = new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.INVESTIGATION,
+        ClientAllowlist.unrestricted());
 ScopeResolver scopeResolver = new ScopeResolver(assembly.pseudonymisationVersion(), Duration.ofHours(8),
-        new PurposeValidator(Set.of("demonstration")));
+        new PurposeValidator(Set.of("demonstration")), CaseAuthorizer.tokenTrusted());
 AuthenticatedCaller caller = new AuthenticatedCaller("harness-principal", "harness-client",
         Set.of("harness-role"), "demonstration", /* caseId from argv[0] */, null);
 McpSyncServer server = DataPrismMcpServer.stdio(assembly.orchestrator(), authorizationService,
@@ -81,6 +82,11 @@ McpSyncServer server = DataPrismMcpServer.stdio(assembly.orchestrator(), authori
 `ToolOptions` has no default admission: the caller names one, so approvals are never switched
 off by leaving something out. `ToolAdmission.none()` still needs a fingerprinter when passed
 through `.admission(...)`; `ToolOptions.defaults().noAdmission()` is the way to omit one.
+
+The harness trusts the token's case claim (`CaseAuthorizer.tokenTrusted()`) and admits every client
+(`ClientAllowlist.unrestricted()`), because a driver for captures has no case assignments to check. Before 0.8
+neither argument existed. A real deployment decides both; see
+[Authorise cases and restrict clients](extending.md#authorise-cases-and-restrict-clients).
 
 Every type it uses is a public class already in this repository
 (`data-prism-mcp`, `data-prism-security`, `data-prism-core`, and the same
@@ -618,6 +624,10 @@ Captured with the stdio fixture. A selection of one source answers only that sou
 A label that does not resolve (`"targetSources":["nope"]`) is refused with the text `refused: SOURCE_NOT_AVAILABLE at $`.
 Under `ALIAS` labels the keys of `sources` in every result are these same labels.
 
+In 0.8 the schemas that carry a source label cap it at 128 characters, and `targetSources` entries are capped at the
+same 128 code points (64 from 0.9). A source whose name is longer than 128 characters does not fit them, so keep
+source names within the limit. 0.8 does not warn about a longer name at startup.
+
 ## Links and `follow`
 
 With `dataprism.links.enabled: true` a result can carry sealed links toward other sources, and the `follow` tool is
@@ -757,7 +767,7 @@ refusals"), which takes the call's place when every source that answered was ref
 | `TOKEN_EXPIRED` | The token's expiry has passed. |
 | `UNKNOWN_PURPOSE` | The token's purpose is not in `dataprism.security-policy.purposes`. |
 | `NO_CAPABILITIES` | The caller's roles grant no capability at all. |
-| `CLIENT_NOT_ALLOWED` | The caller's client is not on the client allowlist (an exact, case-sensitive match), checked before capabilities. |
+| `CLIENT_NOT_ALLOWED` | The caller's client is not on the client allowlist (an exact, case-sensitive match), checked before capabilities. The allowlist limits who may call; it does not limit where a client sends what it receives. |
 | `CASE_NOT_AUTHORISED` | The `CaseAuthorizer` refused the case for this caller. |
 | `CASE_AUTHORISATION_UNAVAILABLE` | The `CaseAuthorizer` threw. The refusal never carries the exception's message. |
 | `TOOL_NOT_PERMITTED` | The role lacks the tool's capability (see the next section). |
@@ -790,6 +800,8 @@ a path and never a value.
 | `SOURCE_TREE_TOO_LARGE` | One source value holds more than 1,000,000 nodes. The cap counts nodes, not bytes, so it is not a memory limit. That source alone is refused. |
 | `RAW_SOURCE_VALUE` | A validator found a response value equal to a raw source value. |
 | `SENSITIVE_PATTERN` | A validator found a value shaped like a sensitive one (a card number, an IBAN, an identifier pattern) in a field not classified sensitive. |
+| `FREE_TEXT_RECOGNISED` | A `FreeTextRecogniser` the deployment supplied ([Add a free-text recogniser](extending.md#add-a-free-text-recogniser)) reported a classification for a string value or a property name. The source is withheld (`REFUSED`), or the call is refused when every source that answered is. The client sees `VALIDATION_FAILED` at path `$`; this code and the recognised classification names are not in that text, and the value never is. |
+| `FREE_TEXT_RECOGNISER_FAILED` | A recogniser threw or returned `null`, so the value could not be cleared. The result is the same as for `FREE_TEXT_RECOGNISED`: the source or response is withheld and the client sees `VALIDATION_FAILED` at `$`. Nothing from the failure is kept, because its message may quote the value. |
 | `RESPONSE_TOO_LARGE_TO_SCAN` | The shape scan ran out of depth or size budget, so it could not examine the whole response. It fails closed. |
 | `VALIDATION_FAILED` | A validator refused a source or the final response. Per source it appears as `REFUSED:VALIDATION_FAILED`. |
 
