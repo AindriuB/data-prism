@@ -36,9 +36,9 @@ rm -f "$files.all"
 tar -C "$repo_root" --null -T "$files" -cf - | tar -C "$snap" -xf -
 if stat -c %a / >/dev/null 2>&1; then modefmt=(-c '%a %n'); else modefmt=(-f '%Lp %N'); fi
 hash="$(cd "$snap" && {
-  find . \( -type f -o -type l \) -print0 | LC_ALL=C sort -z | xargs -0 shasum -a 256
-  find . \( -type f -o -type l \) -print0 | LC_ALL=C sort -z | xargs -0 stat "${modefmt[@]}"
-} | shasum -a 256 | cut -d' ' -f1)"
+  find . \( -type f -o -type l \) -print0 | LC_ALL=C sort -z | xargs -0 shasum -a 256 || exit 1
+  find . \( -type f -o -type l \) -print0 | LC_ALL=C sort -z | xargs -0 stat "${modefmt[@]}" || exit 1
+} | shasum -a 256 | cut -d' ' -f1)" || { echo "refused: could not hash the snapshot" >&2; exit 1; }
 [ "${#hash}" -eq 64 ] || { echo "refused: could not hash the snapshot" >&2; exit 1; }
 tag="${hash:0:12}"
 # Dirty: the snapshot as copied, staged into a throwaway index (objects go to a throwaway directory that borrows the
@@ -53,7 +53,7 @@ snap_git() {
     GIT_ALTERNATE_OBJECT_DIRECTORIES="$common_dir/objects" git "$@"
 }
 mkdir -p "$scratch/objects"
-snap_git add -A -f . >/dev/null 2>&1 || { echo "refused: could not stage the snapshot to compare it with HEAD" >&2; exit 1; }
+snap_git -c core.fileMode=true -c core.autocrlf=false add -A -f . >/dev/null 2>&1 || { echo "refused: could not stage the snapshot to compare it with HEAD" >&2; exit 1; }
 rc=0; snap_git diff-index --cached --quiet "$full_sha" -- || rc=$?
 case "$rc" in 0) dirty=no ;; 1) dirty=yes ;; *) echo "refused: could not compare the snapshot with HEAD" >&2; exit 1 ;; esac
 if [ "$dirty" = yes ] && [ "${SOAK_ALLOW_DIRTY:-}" != 1 ]; then
