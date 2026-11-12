@@ -128,6 +128,86 @@ class HttpParseErrorLeakTest {
                 + "\"version\":\"1\"}}}", false);
     }
 
+    @Test
+    @DisplayName("E: the connection stays open and the session answers the next request after a type error")
+    void keepAliveSurvivesTypeError() throws Exception {
+        int port = start();
+        try (java.net.Socket socket = new java.net.Socket("127.0.0.1", port)) {
+            socket.setSoTimeout(30_000);
+            java.io.OutputStream out = socket.getOutputStream();
+            java.io.InputStream in = new java.io.BufferedInputStream(socket.getInputStream());
+
+            String[] init = rawPost(out, in, null, INITIALIZE);
+            assertThat(init[0]).isEqualTo("200");
+            String session = init[1];
+            assertThat(rawPost(out, in, session, "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}")[0])
+                    .isEqualTo("202");
+            String[] bad = rawPost(out, in, session, "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\","
+                    + "\"params\":{\"name\":\"get_entity_context\",\"arguments\":\"" + SENTINEL + "\"}}");
+            String[] list = rawPost(out, in, session, "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\"}");
+            assertThat(list[0]).isEqualTo("200");
+            assertThat(list[2]).contains("get_entity_context");
+            assertThat(bad[0]).isEqualTo("400");
+        }
+    }
+
+    /** One HTTP/1.1 request on an open socket; returns {status, Mcp-Session-Id or null, body}. */
+    private static String[] rawPost(java.io.OutputStream out, java.io.InputStream in, String session, String body)
+            throws Exception {
+        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        StringBuilder head = new StringBuilder("POST /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                + "Content-Type: application/json\r\nAccept: application/json, text/event-stream\r\n"
+                + "Content-Length: " + bytes.length + "\r\n");
+        if (session != null) {
+            head.append("Mcp-Session-Id: ").append(session).append("\r\nMCP-Protocol-Version: 2025-03-26\r\n");
+        }
+        out.write(head.append("\r\n").toString().getBytes(StandardCharsets.US_ASCII));
+        out.write(bytes);
+        out.flush();
+
+        String status = line(in);
+        if (status == null) {
+            throw new java.io.EOFException("the server closed the connection before answering");
+        }
+        String sessionId = null;
+        int length = -1;
+        boolean chunked = false;
+        for (String header = line(in); header != null && !header.isEmpty(); header = line(in)) {
+            String lower = header.toLowerCase(java.util.Locale.ROOT);
+            if (lower.startsWith("mcp-session-id:")) {
+                sessionId = header.substring(header.indexOf(':') + 1).trim();
+            } else if (lower.startsWith("content-length:")) {
+                length = Integer.parseInt(header.substring(header.indexOf(':') + 1).trim());
+            } else if (lower.startsWith("transfer-encoding:") && lower.contains("chunked")) {
+                chunked = true;
+            }
+        }
+        ByteArrayOutputStream payload = new ByteArrayOutputStream();
+        if (chunked) {
+            for (int size = Integer.parseInt(line(in).trim(), 16); size > 0;
+                    size = Integer.parseInt(line(in).trim(), 16)) {
+                payload.write(in.readNBytes(size));
+                line(in);
+            }
+            line(in);
+        } else if (length > 0) {
+            payload.write(in.readNBytes(length));
+        }
+        return new String[] {status.split(" ")[1], sessionId, payload.toString(StandardCharsets.UTF_8)};
+    }
+
+    private static String line(java.io.InputStream in) throws java.io.IOException {
+        StringBuilder text = new StringBuilder();
+        int c;
+        while ((c = in.read()) != -1) {
+            if (c == '\n') {
+                return text.toString().replace("\r", "");
+            }
+            text.append((char) c);
+        }
+        return text.length() == 0 ? null : text.toString();
+    }
+
     /**
      * Posts the body to an initialised session, then asserts the refusal, that no response or captured
      * log line holds the sentinel, and that the session still answers {@code tools/list}.
@@ -161,11 +241,20 @@ class HttpParseErrorLeakTest {
         }
         String log = captured.toString(StandardCharsets.UTF_8);
 
+        assertThat(refusal.statusCode()).isEqualTo(400);
+        assertThat(refusal.body()).contains("\"jsonrpc\":\"2.0\"").containsPattern("\"code\":-32\\d+");
         if (transportRefusal) {
-            assertThat(refusal.statusCode()).isEqualTo(400);
             assertThat(log).contains("Failed to deserialize message");
+            assertThat(refusal.body()).containsPattern("\"id\":null");
+        } else {
+            // Refused by the inbound guard before the SDK is reached.
+            assertThat(refusal.body()).contains("\"id\":2").contains("\"code\":-32602");
+            assertThat(log).doesNotContain("asyncComplete()").doesNotContain("\tat ");
         }
-        assertThat(refusal.body()).contains("\"code\":-32");
+        for (String forbidden : new String[] {"stackTrace", "\"cause\"", "io.modelcontextprotocol.", "org.apache.",
+                "java.", "jdk."}) {
+            assertThat(refusal.body()).doesNotContain(forbidden);
+        }
         assertThat(list.statusCode()).isEqualTo(200);
         assertThat(list.body()).contains("get_entity_context");
         for (String text : new String[] {refusal.body(), list.body(), log}) {
