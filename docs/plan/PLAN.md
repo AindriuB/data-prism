@@ -82,7 +82,7 @@ Waves 1 to 12 have landed (the table below carries one row for waves 1 to 11 and
 | 12 | 255 (landed 2026-11-10, PR #236), 304 (landed 2026-11-10, PR #237) (253, 286 and 301 landed earlier. 304: client content out of the MCP SDK's inbound parse-error logs; filed 2026-11-09) |
 | 13 | 260 (landed 2026-11-10, PR #240), 261 (landed 2026-11-10, PR #239), 263 Part A (landed 2026-11-11, PR #243, `95cfee34`; Part B, the owner-run soak, stays open as a 0.8.0 release-cut obligation below and `tasks/263-*.md` is now its contract). Filed 2026-11-10: 306 (links-enabled capture fixture for `follow` and `_links`, unscheduled; `tasks/306-links-enabled-capture-fixture.md`). Filed 2026-11-11 from PR #243: 307 (soak provenance; landed 2026-11-12, PR #254, `64af8265`; follow-ups under "307 follow-ups"), 308 (HazelcastOversightTest grace-race test fix), 309 (stdio leak-test teardown; landed 2026-11-11, PR #249, `8c41a1f1`; its review follow-ups are under "309 follow-ups"), 309-F1 (stdio reader end-of-stream and child-exit checks; landed 2026-11-12, PR #252, `4059d4bd`; follow-ups under "309-F1 follow-ups") |
 | 14a | 310 (key-rotation guide, PR #260, `1036a6c0`), 311 (audit and architecture, PR #259, `4001d053`), 312 (multiple-instances, eu-ai-act, cluster-security, PR #258, `3a4ea595`), 313 (extending, tools, faq, PR #257, `52781007`): done 2026-11-12. 213 was split into these and 314 (`tasks/retired/213-*.md`) |
-| 14b | 314 (0.8 migration notes and changelog; `tasks/314-write-the-0-8-migration-notes-and-changelog.md`; depends on 310 to 313, now landed) |
+| 14b | 314 (0.8 migration notes and changelog, PR #262, `703528ae`): done 2026-11-12 (`tasks/retired/314-*.md`) |
 | 15 (0.9) | 273, 274 (0.9 starter onboarding, filed 2026-10-23; see "0.9 starter onboarding plan" below. 273's OD-273-3 (a) mechanism, rewritten 2026-10-26, is in `tasks/273-default-low-stakes-settings-and-derive-from-spring.md`; the pre-cut row is `archive/PLAN-2026-11-10.md:155`) |
 | 16 (0.9) | 275, 277 |
 | 17 (0.9) | 276 (moved from 16 on 2026-10-24: it now adds `MISSING_MCP_SECURITY`, so it follows 275 on `freeze/codes.txt`) |
@@ -299,6 +299,16 @@ Lows and Notes from the reviews of 310 to 313 that the owner did not fix in the 
 - Docs, from 313: `docs/faq.md:52` names the per-source refusal and the blank strings imprecisely; `docs/faq.md:41` is one very long line; the recogniser page needs a note that a recogniser sees a scalar; the allowlist-by-value note.
 - Docs: `docs/eu-ai-act.md:47` still calls the audit chain unkeyed.
 - Code: `AuditMaintenance.java:28`: the `SEGMENT` pattern misses size-capped `audit-YYYY-MM-DD.NNNN.log` segments, which the verifier (`AuditChainVerifier.java:382`) already handles. What it affects (the pattern is applied to a message at :70) is not confirmed; check before filing.
+
+##### Wave 14b follow-ups (PR #262 review, 2026-11-12)
+
+Docs, P3. None blocks 0.8.0; whoever next edits the page takes them.
+
+- (a) `docs/migration-0.8.md:403`: the `SensitivePatternValidator(SensitiveDataScanner)` removal note sits under "## Added: free-text recognisers". Give it its own `## Breaking:` heading, as the `DefaultContextOrchestrator` constructor has at :264.
+- (b) The migration page omits that `DataClassification.FREE_TEXT`, a new constant in an enum released in 0.7.1, breaks integrators' exhaustive `switch` statements that have no default.
+- (c) Note: CHANGELOG puts the `ClusterSecurityStatus` change under Breaking, while the migration page heads it "Changed". Make them agree.
+- (d) The load-test `SourceStatuses.java` and its tests still list `SKIPPED_OVER_LIMIT`, which product code has removed.
+- (e) `docs/multiple-instances.md` "Shared state" says raw subject ids (a 312 docs bug).
 
 ##### 263 Part A follow-ups (PR #243 review, 2026-11-11)
 
