@@ -14,13 +14,16 @@ to join the instances, and what Data Prism does not do for you.
     the open-source distribution Data Prism uses (Hazelcast 5.7.0). Member TLS
     and member authentication are Enterprise features. Data Prism refuses to
     start with TLS settings it cannot honour. Anyone who can reach the member
-    port can read and write cluster state, including forging an approval,
-    lifting a pause and resetting read budgets and rate limits. Isolating the
-    member port is the deployer's job, covered in [Network isolation](#network-isolation-is-your-responsibility).
+    port can read and write the approvals and the counters, including forging
+    an approval and resetting read budgets and rate limits. The pause
+    document, the identity entries and the re-identification entries are
+    sealed, so a forged entry fails verification and never changes a returned
+    value. Sealing does not stop deletion: a deleted re-identification entry is
+    lost for good, and a deleted or overwritten pause document pauses everything,
+    which denies service. Sealing does not stop anyone reaching the port. Isolating the member port is the
+    deployer's job, covered in [Network isolation](#network-isolation-is-your-responsibility).
 
 ## When you need it
-
-Multi-member: trusted network only. Approvals and counters are unsealed, and `trusted-network: true` is the operator's assertion that only Data Prism members can reach the member port.
 
 `dataprism.hazelcast.topology` is `single-node` or `embedded`, never a default.
 With `single-node` each process keeps its own state. With N instances that means:
@@ -46,31 +49,97 @@ Hazelcast member and the members that have joined one cluster share the state
 below. An instance that has not joined, for example because it was given a
 different cluster name or cannot reach the others, keeps its own state.
 
+## What a cluster seals, verifies and leaves open
+
+Multi-member: trusted network only. Approvals and counters are unsealed, and `trusted-network: true` is the operator's assertion that only Data Prism members can reach the member port.
+
+This is what a 0.8 cluster protects and what it leaves open. The sealing and the
+verification rest on a cluster key and a name key that every member holds.
+
+- **Sealed: the pause document.** A deleted, forged or replayed document cannot
+  lift a pause. An absent or stale one means everything is paused.
+- **Verified: members.** A member with the wrong key refuses to start
+  (`CLUSTER_KEY_MISMATCH`). A joined member without a valid member card is
+  counted, and after the grace period, under the default `refuse`, every
+  instance stops serving and readiness goes `DOWN` until that member leaves.
+  Data Prism cannot evict it: this is detection and failing closed, not
+  prevention. [Operations](operations.md) describes the readiness contributor.
+- **Sealed: identity and re-identification entries.** Their values are
+  envelopes under the cluster key. Subject ids appear in the cluster only inside
+  those envelopes, and a forged entry never changes a returned value. A deleted
+  re-identification entry is lost for good. The entries are sealed under the
+  current key only. Key rotation is deferred, so a change of cluster key is a
+  planned full restart that empties both maps, and pseudonyms issued before it
+  can no longer be re-identified.
+- **Not sealed: approvals and counters.** Approvals, their id claims, pending
+  slots and the empty consumed-tombstone map, and the budget and caller-rate counters are plain. Anyone who can reach
+  the member port can read and write them. Their map keys are keyed names, so a
+  reader learns no scope or subject from a key, but the values are readable.
+- **Required on `tcp-ip` and `kubernetes`:**
+  `dataprism.hazelcast.trusted-network: true` and a private `member.interface`
+  (or a `member.trusted-ranges` entry that covers it). The refusals are
+  `MISSING_TRUSTED_NETWORK`, `PUBLIC_MEMBER_INTERFACE` and
+  `INVALID_TRUSTED_RANGE`. A plain-Java embedder makes the same declaration
+  with `ClusterSecuritySettings.withTrustedNetwork(true, ranges, ...)`. You must
+  still isolate the member port with a firewall, a `NetworkPolicy` or a private
+  network, because member traffic is not encrypted.
+- **Links and page links are refused on a joining member** unless the
+  application supplies a limiter declared as `ClusterWideLinkAttemptLimiter`
+  (`MISSING_SHARED_LINK_LIMITER`); none ships in 1.0. `list_sources` therefore
+  answers on one page there.
+- **Planned, not built.** Cluster security for untrusted networks is planned
+  after 1.0.
+
+### What `trusted-network` is
+
+`trusted-network: true` is your assertion that only Data Prism members can reach
+the member port. It is not inferred from a private address. Data Prism checks
+that you made the assertion and that the interface and the addresses the member
+advertises are private or in your declared ranges, and nothing more. It does not
+stop an untrusted host that can reach the port from joining, and it does not
+make a cluster safe on a network you do not control. Without the assertion, a
+`tcp-ip` or `kubernetes` member does not start.
+
 ## Shared state
 
 Backup count is 1 for every map: each entry lives on an owner member and one
 backup. Maps are not written to disk and have no `MapStore`.
 
-| Map | Holds | Keys hold raw subject ids | Backups |
+| Map | Holds | Sealed | Backups |
 |---|---|---|---|
-| `dataprism.identity` | Cached synthetic values. Recomputable, so losing it costs CPU only | Yes | 1 |
-| `dataprism.reidentification` | Pseudonym to subject, only with re-identification enabled. A store, not a cache | Yes | 1 |
-| `dataprism.budget` | Per-subject read counts | Yes | 1 |
-| `dataprism.oversight` | Pause flags: global, per tool, per scope. No eviction | No | 1 |
-| `dataprism.approval` | Approval requests, each until its expiry, each with the random token of the creation that wrote it | No | 1 |
-| `dataprism.approval.id` | One claim per approval id, which keeps an id unique across scopes. It names the approval entry and the token of the creation that made it. A claim has no TTL and is valid while the approval entry it names exists; a swept or taken-over claim goes once that entry is gone. No eviction | No | 1 |
-| `dataprism.approval.pending` | Per (kind, requester): the ids of their pending approvals with their expiries and the owner of each (the scope and the token of the creation that reserved the slot), which the pending cap counts. Changed only by an entry processor. No TTL and no eviction; a periodic sweep removes ids long past their expiry | No | 1 |
-| `dataprism.callerrate` | Per-caller fixed-window request counts. No eviction | No | 1 |
+| `dataprism.identity.s1` | Cached synthetic values. Recomputable, so losing it costs CPU only | Yes, values are envelopes | 1 |
+| `dataprism.reidentification.s1` | Pseudonym to subject, only with re-identification enabled. A store, not a cache | Yes, values are envelopes | 1 |
+| `dataprism.oversight.s1` | The pause document: one entry that holds every pause. Never evicted | Yes, signed and leased | 1 |
+| `dataprism.oversight` | The pre-0.8 map. Each serving 0.8 member writes one fence entry, `all`, on a best-effort basis, so a 0.7 member that joins reads everything as paused. It does not stop a 0.7 member joining, and anyone on the network can delete the entry until a member writes it again. It is the one literal key, not a keyed name. Never evicted | No | 1 |
+| `dataprism.membercard.s1` | One sealed card per member, and the cluster's sentinel | Yes | 1 |
+| `dataprism.budget.s1` | Per-subject read counts and reservations | No | 1 |
+| `dataprism.approval.s1` | Approval requests, each until its expiry, each with the random token of the creation that wrote it | No | 1 |
+| `dataprism.approval.id.s1` | One claim per approval id, which keeps an id unique across scopes. It names the approval entry and the token of the creation that made it. A claim has no TTL and is valid while the approval entry it names exists; a swept or taken-over claim goes once that entry is gone. No eviction | No | 1 |
+| `dataprism.approval.pending.s1` | Per (kind, requester): the ids of their pending approvals with their expiries and the owner of each (the scope and the token of the creation that reserved the slot), which the pending cap counts. Changed only by an entry processor. No TTL and no eviction; a periodic sweep removes ids long past their expiry | No | 1 |
+| `dataprism.approval.consumed.s1` | Reserved for one tombstone per used approval, which is deferred work (task 224). The map exists and is never evicted, and nothing writes to it in 0.8; it has no TTL. A used approval is kept used only by the `CONSUMED` status on its approval entry | No | 1 |
+| `dataprism.callerrate.s1` | Per-caller fixed-window request counts. No eviction | No | 1 |
+
+Every map key except the fence entry's `all` is a keyed name (an HMAC under the
+name key), so a key reveals neither a scope nor a subject. The values of the first three sealed maps and the
+member cards are authenticated under the cluster key. The values of the
+unsealed maps are plain. An approval entry holds the whole encoded request:
+the approval id, kind, requester principal and client id, scope, tool, binding
+fingerprint, namespace, the synthetic value (the pseudonym), the free-text
+purpose, the case id, the timestamps, the status and the approver. Pending
+entries carry approval ids, their expiries and the scope. Claims carry nothing in clear: a claim holds the keyed name of its approval entry and a random token. Anyone who
+can reach the member port reads all of it, and no subject id is among it.
 
 The other maps evict least-recently-used entries beyond 100,000 per member.
-`dataprism.oversight` and `dataprism.callerrate` are never evicted, because an
-evicted pause flag reopens a paused path and an evicted counter resets a
-caller's window. `dataprism.approval.id` and `dataprism.approval.pending` are
-never evicted either, because an evicted claim lets an id be used twice and an
-evicted pending set lets a requester pass the cap.
-
-Anyone who can reach the member port can read what is in these maps, including
-the raw subject ids in the keys of the first three.
+The pause document, the fence map `dataprism.oversight`, the member cards and
+`dataprism.callerrate.s1` are never evicted: an evicted counter resets a caller's window, and a missing pause
+document means everything is paused, so a pause is never lost by eviction.
+`dataprism.approval.id.s1`, `dataprism.approval.pending.s1` and
+`dataprism.approval.consumed.s1` are never evicted either, because an evicted
+claim lets an id be used twice and an evicted pending set lets a requester pass the
+cap. Nothing writes the consumed map in 0.8, so replay protection for a used
+approval is only the `CONSUMED` status on the approval entry, which is unsealed:
+anyone who can reach the member port can rewrite it. Tombstones are deferred
+(task 224).
 
 ## Configuration
 
@@ -90,7 +159,10 @@ applies, because the stores are built over that bean. Relaxed binding drops hyph
 | `dataprism.hazelcast.join.kubernetes.service-name` | For `kubernetes` only. API mode. Exactly one of this and `service-dns` |
 | `dataprism.hazelcast.join.kubernetes.service-dns` | For `kubernetes` only. DNS mode. Exactly one of this and `service-name` |
 | `dataprism.hazelcast.member.port` | Optional. Default 5701, never auto-incremented |
-| `dataprism.hazelcast.member.interface` | Optional. An IPv4 literal or wildcard such as `10.0.*.*` |
+| `dataprism.hazelcast.member.interface` | Required for `tcp-ip` and `kubernetes` (`MISSING_MEMBER_INTERFACE`); refused with `none`. An IPv4 literal or wildcard such as `10.0.*.*`, private or inside a `member.trusted-ranges` entry, and not one that matches every address (`UNBOUNDED_MEMBER_INTERFACE`) |
+| `dataprism.hazelcast.trusted-network` | Required, `true`, for `tcp-ip` and `kubernetes` (`MISSING_TRUSTED_NETWORK`). Your assertion that only Data Prism members can reach the member port. See [What `trusted-network` is](#what-trusted-network-is) |
+| `dataprism.hazelcast.member.trusted-ranges` | Optional. IPv4 CIDR blocks you trust beyond the private ones, for the member interface and the advertised addresses. See [configuration](configuration.md#dataprismhazelcast) |
+| `dataprism.hazelcast.security.*` | The cluster key and the name key, each by `environment-variable` or `provider-reference` and a `key-id`. Required for `tcp-ip` and `kubernetes`. See [configuration](configuration.md#dataprismhazelcast) |
 | `dataprism.hazelcast.lock-timeout` | Optional. Default `PT2S`, from `PT100MS` to `PT30S`. How long a call waits for a cluster lock before it is refused. See [Failure behaviour](#failure-behaviour) |
 | `dataprism.hazelcast.approval-sweep-interval` | Optional `Duration`. Default `PT5M`, from `PT1S` to `P1D`. How often each member sweeps the pending-approval entries and approval-id claims it owns. Fixed when the cluster is built. See [Failure behaviour](#failure-behaviour) |
 | `dataprism.hazelcast.approval-minimum-members` | Optional integer, at least 1. The fewest members that must see each other for approvals to be created, decided or consumed. `tcp-ip`: unset means a majority of the distinct `join.members` entries, so the list must name every member, this one included. Members are counted after expanding entries separated by commas, semicolons or spaces and last-octet ranges such as `10.0.0.1-3`; an entry without a port is the configured `member.port`, so `10.0.0.1` and `10.0.0.1:5701` are one member only when `member.port` is 5701. `none`: 1, and the key is refused. The checks below apply only when approvals are in use, that is `dataprism.oversight.approval-required-tools` is not empty or `dataprism.reidentification.enabled` is true; otherwise no quorum is computed or required. A form that cannot be counted reliably (a wildcard, a range in another octet) is then refused with `INVALID_APPROVAL_QUORUM`. If any entry is a hostname, the count is unknown, because Hazelcast resolves a hostname to every address it has, so you must set the minimum (`MISSING_APPROVAL_QUORUM` otherwise). `kubernetes`: required when approvals are in use. Application code that builds its own `ToolAdmission` or `ReidentificationService` over the starter's `ApprovalStore`, without setting the starter properties that put approvals in use, should set `approval-minimum-members` explicitly: the starter applies no protection otherwise. See [Failure behaviour](#failure-behaviour) |
@@ -102,10 +174,9 @@ a new random suffix each time the member starts, so no other process can match
 it. That suffix is internal and appears in logs. A `none` member refuses both
 members and clients.
 
-Without `member.interface`, a `tcp-ip` or `kubernetes` member binds **every**
-network interface of the host, which is Hazelcast's default. Set the interface
-to the address on your private member network so the member does not listen
-anywhere else.
+A `tcp-ip` or `kubernetes` member needs `member.interface`, set to the address
+on your private member network, so the member does not listen anywhere else.
+Without it the member refuses to start with `MISSING_MEMBER_INTERFACE`.
 
 Auto-detection, multicast and phone-home are always off, so a member only ever
 joins what you named.
@@ -125,7 +196,7 @@ leaves it running. The code is on the configuration failure.
 | `INVALID_CLUSTER_MEMBERS` | `tcp-ip` with no members, or a blank member, no host or a port outside 1-65535. Also **`join.members` set with `kubernetes` or `none`** |
 | `INVALID_KUBERNETES_JOIN` | `kubernetes` without a namespace, or with both or neither of `service-name` and `service-dns`. Also **`join.kubernetes.*` set with `tcp-ip` or `none`** |
 | `INVALID_CLUSTER_PORT` | `member.port` outside 1-65535 |
-| `INVALID_CLUSTER_INTERFACE` | `member.interface` is not an IPv4 literal or wildcard pattern, or is set with `none`; also a `hazelcast.*` address property that makes a single member reachable |
+| `INVALID_CLUSTER_INTERFACE` | `member.interface` is not an IPv4 literal or wildcard pattern, or is set with `none`; also a `hazelcast.*` address property that makes a single member reachable, for a keyed solo member only; a keyless one refuses with `MISSING_CLUSTER_KEY` instead |
 | `CLUSTER_PORT_SHARED` | `member.port` equals `server.port`, `management.server.port` or an enabled `dataprism.operator.port` |
 | `CLUSTER_SETTINGS_IGNORED` | Cluster settings with `single-node`, or with an application-supplied `PrivacyCluster` |
 | `INVALID_LOCK_TIMEOUT` | `lock-timeout` below `PT100MS`, above `PT30S`, zero or negative |
@@ -166,6 +237,10 @@ for one server on loopback and does not publish 5701. It needs Docker Compose
 2.24.4 or later.
 
 !!! warning "A Compose network is not a security boundary"
+    The example is a local demo only. It sets `trusted-network: true`, and that
+    assertion holds only on a Linux Docker engine where you have checked that a
+    container on another network cannot route to the member port. It does not
+    hold on OrbStack or Docker Desktop, which may route to it across networks.
     Whether a container on another Docker network can route to the `cluster`
     addresses depends on the engine. OrbStack was observed to route across
     Docker networks: a container on the `default` network only could not use
@@ -207,23 +282,29 @@ RoleBinding are in the commented block at the end of
 
 Member traffic is plaintext and unauthenticated in OSS Hazelcast 5.7.0. The
 cluster name is a label, not a secret: it does not stop a process that can reach
-the port from joining. A process that joins can read every map, including raw
-subject ids in the keys, and can write to them. That means anyone who can reach
-the member port can **read and write** cluster state: read subject ids, **forge
-an APPROVED approval and bypass four-eyes**, **lift a pause by deleting its
-flag**, and **reset read budgets and rate limits**. This includes a plain
-Hazelcast *client* configured with the cluster name: it can connect to a
-`tcp-ip` or `kubernetes` member's port and read or write maps. A `none` member
-refuses both members and clients.
+the port from joining. A process that joins can read and write every map. Of
+what it can reach, the approvals and counters are plain, so it can read them,
+**forge an APPROVED approval and bypass four-eyes**, and **reset read budgets and
+rate limits**. It can delete a re-identification entry, which is lost for good,
+and it can delete or overwrite the pause document, which cannot lift a pause but
+pauses everything. The sealed maps make forgery fail, not reachability. This
+includes a plain Hazelcast *client* configured with the cluster name: it can
+connect to a `tcp-ip` or `kubernetes` member's port and read or write maps. A
+`none` member refuses both members and clients.
 
-Data Prism supports a deployment that provides isolation from outside. It does
-not provide it:
+`trusted-network: true` is how you state that this is not possible on your
+network, and the isolation below is what makes the statement true. Data Prism
+does not provide it:
 
 - Use a private network for the members, enforced by a host firewall or your
   platform. A Docker `internal` network is not enough on every engine (see
   [Docker Compose](#docker-compose)).
-- On Kubernetes, enforce a `NetworkPolicy` on port 5701. It only works if your
-  CNI enforces policies.
+- On Kubernetes, enforce a `NetworkPolicy` on port 5701, shown below. It only
+  works if your network plugin enforces policies: flannel and kind's default do
+  not. A pod with `hostNetwork` bypasses it, so allow none in the namespace.
+- The policy admits any pod labelled `app: data-prism`, so "only Data Prism
+  members" means anyone who can create pods in that namespace. Run the members in
+  a dedicated namespace.
 - Or use a service mesh with mutual TLS between pods.
 - Never publish 5701 to a host, a load balancer or the internet.
 - Set `member.interface` so the member listens only on the member network.
@@ -274,13 +355,87 @@ gets 5.7.0 only if its build says so; without that, it can get an older Hazelcas
 0.4.0's multi-member behaviour was only ever exercised on 5.5.0 in the server
 module.
 
+## Plain Java: `PrivacyCluster.using()`
+
+An application that starts its own Hazelcast instance and hands it to
+`PrivacyCluster.using(instance, ...)` must make the instance meet what Data Prism
+cannot change afterwards. `using()` refuses an instance that does not, with
+`UNSAFE_HAZELCAST_SERIALIZATION`. The instance needs:
+
+- A `java-serialization-filter` with defaults disabled that allows what
+  `PrivacyCluster.requiredSerializationFilter()` returns and names no other prefix
+  or package. Set that filter on the `Config`, or one that also names classes of
+  your own. A hand-built filter must include
+  `com.hazelcast.internal.partition.PartitionStateVersionMismatchException`.
+- A non-empty Management Center `trustedInterfaces` list. An empty list is
+  unrestricted. `PrivacyCluster.embedded` sets it to `255.255.255.255`, an address
+  that matches nothing, so no Management Center can connect; which addresses a
+  list of yours names is your responsibility.
+- Phone-home off (`hazelcast.phone.home.enabled` set to `false`), no memcache
+  protocol, and a REST API that enables no group beyond `HEALTH_CHECK`.
+- No Jet, no user-code deployment and no global serializer that overrides Java
+  serialization.
+
+An instance in a cluster that joins others also needs the trusted-network
+declaration (`ClusterSecuritySettings.withTrustedNetwork(true, ranges, ...)`) and
+the cluster and name keys, as above. `PrivacyCluster.embedded(Config)` forces
+these settings on and refuses the rest; `using()` can only check them.
+
+### Keys and snapshots
+
+The environment-variable resolver belongs to the packaged server
+(`ServerIntegrationsConfiguration`), and it exists only when
+`dataprism.privacy.hmac-key.environment-variable` is set. The starter and the
+autoconfigure module define no `HmacKeyReferenceResolver` bean, so with the
+starter alone an `environment-variable` reference is not resolved and startup
+refuses. Supply a reviewed `HmacKeyReferenceResolver` bean. In the packaged
+server, a cluster key or a name key given as `provider-reference` is refused with
+`MISSING_KEY_PROVIDER` unless you supply such an extension that resolves it.
+
+Never restore one snapshot of a running process, container or virtual machine
+more than once. A member seals each entry with a nonce counter, and every restored
+copy continues the same counter under the same key, which reuses an AES-GCM nonce
+and breaks the encryption. Restart from a fresh start, not from a copy.
+
+## Operations
+
+What an operator sees when members start, rejoin or fill the pause document.
+
+- **A member that starts or rejoins can refuse tool calls with
+  `CLUSTER_LOCK_TIMEOUT`.** For about one tick interval after a peer's write, until
+  the peers republish their member cards, the call can be refused. A start-up card
+  write waits up to Hazelcast's 5 second backup timeout. Both pass without
+  action. Retry the call, and see [A lock someone holds](#a-lock-someone-holds).
+- **`endScope` is refused with `OVERSIGHT_UNAVAILABLE` until the first pause
+  document exists.** After a full cluster start that takes about one pause lease,
+  30 seconds by default. The same code is returned while the document is absent,
+  unreadable or not accepted by the freshness gate.
+- **The pause document has a cap.** It holds at most 8,176 non-`all` elements.
+  Nothing removes an element in 0.8, because garbage collection of resumed
+  pauses is deferred: a resumed pause still counts. Past the cap, a further pause
+  of a tool or a scope is refused with `CLUSTER_OPERATION_REFUSED`, which fails
+  closed, and a pause of everything still works. The recovery is a planned full
+  restart of the cluster, which empties the document. Do not script pause and
+  resume in a loop, because each pause uses an element for good.
+- **Four log lines, all at `WARN`, name pause-document events.** They are log
+  prefixes, not codes a client sees. Each is rate limited.
+
+| Log prefix | What it means |
+|---|---|
+| `PAUSE_DOCUMENT_LAPSED` | The document is not fresh on this member, so reads refuse until the gate passes again |
+| `PAUSE_DOCUMENT_FRESH` | The document is fresh again after a lapse |
+| `PAUSE_DOCUMENT_MAINTENANCE_FAILED` | A background step that keeps the document current did not complete. The line names the step and the exception class only. The next tick tries again |
+| `PAUSE_DOCUMENT_WRITE_DID_NOT_LAND` | An operator's pause was not written to the cluster. It is held and enforced on this member, but the cluster may not have it. Read the pause state before relying on it |
+
 ## Failure behaviour
 
 An entry lives on an owner and one backup. Losing one member loses nothing.
 Losing the owner and the backup of an entry together loses that entry:
 
-- A **pause flag** is gone, which reopens the paused path. After losing more
-  than one member at once, assert the pause again and check that it holds.
+- The **pause document** is one sealed entry. If both copies are lost it is
+  absent, and an absent document means everything is paused, so losing it
+  refuses calls until a member writes a new document. It does not reopen a
+  paused path.
 - **Budgets** and **caller-rate windows** reset when their holders leave.
 - **Approvals** pending on the lost members are gone and must be requested again.
 - The **re-identification index** cannot be recomputed. It is a store, and its
@@ -426,8 +581,8 @@ of any number of callers racing on any members, exactly one succeeds. Hazelcast'
 locks give no such guarantee under split brain, so correctness does not rest on
 them; they only bound the wait.
 
-An approval id is claimed by `putIfAbsent` in `dataprism.approval.id`, and the pending
-cap is one entry processor on the requester's entry in `dataprism.approval.pending`. A
+An approval id is claimed by `putIfAbsent` in `dataprism.approval.id.s1`, and the pending
+cap is one entry processor on the requester's entry in `dataprism.approval.pending.s1`. A
 creation claims the id (taking over a claim whose entry is gone), then reserves the cap (each pending id records the owner of the slot), then checks it still holds the claim, inserts the approval and checks again, and undoes in
 reverse order when a step fails. An undo that fails can leave an id unusable, or a
 requester over-counted, until the approval expires; it never under-counts, with the clock tolerance stated under Retention below. An approval
@@ -439,8 +594,9 @@ carries no personal data and is derived from nothing). The token is stored in th
 entry, in the id claim (the entry key and the token) and in the pending slot's owner (the scope
 and the token). Every release, removal, withdrawal, undo, takeover, sweep and merge compares the
 whole token, so a clean-up that belongs to one creation of an id cannot touch a later creation of
-the same id in the same scope, even when the two requests are identical. The principal, the
-approval id and the scope stay in clear in these maps, as before.
+the same id in the same scope, even when the two requests are identical. Pending entries
+hold approval ids, their expiries and the scope in clear. Claims hold nothing in clear: only
+the keyed name of their approval entry and the random token.
 
 **When an approval is usable.** An approval is usable by `find`, `findPending`, `approve`,
 `reject` and `consumeApproved` only while the claim for its id names its entry key and its token.
@@ -464,9 +620,10 @@ latest writer), a release by an entry that does not own the slot, and a heal tha
 sides disagreeing on the owner (the slot then has no owner and stays until it expires). None of
 those removes a slot early.
 
-**Retention.** The id claim and the requester's pending entry carry the principal, the
-approval id and the scope in clear, so they must not outlive the approvals they guard by
-much, and they must never be dropped early. The two are handled differently.
+**Retention.** The requester's pending entry holds approval ids, their expiries and the
+scope in clear, and the id claim holds only the keyed name of its approval entry and a random
+token, so they must not outlive the approvals they guard by much, and they must never be
+dropped early. The two are handled differently.
 
 - A claim has **no TTL and depends on no clock**. It is valid if and only if the approval entry it
   names still exists. A claim whose entry is gone (expired, scope ended, or its creator died before
@@ -558,6 +715,6 @@ every use as well.
 
 A `PrivacyCluster` you build yourself with `PrivacyCluster.using(instance)` gets
 none of these map settings: not the merge policy, not the quorum and not the
-no-eviction setting of `dataprism.approval.id` and `dataprism.approval.pending`.
+no-eviction setting of `dataprism.approval.id.s1` and `dataprism.approval.pending.s1`.
 Configure them on the instance, or accept the defaults above. `PrivacyCluster.embedded(Config)`
 adds the merge policy but, unless you pass a minimum, not the quorum.
