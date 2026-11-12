@@ -27,6 +27,8 @@
   and leaves the MCP session intact. Tomcat 11.0.27 closes after a 400 by design (see Attempt 2). 304's
   "refused without ending the session" is read as the MCP session (`Mcp-Session-Id`), not the TCP connection,
   as A to D already behave.
+- Owner, 2026-11-12, verbatim: "Yes, extend Owns". Owns gains the 9 bean-inventory golden files, limited to
+  the `dataPrismMcpServlet` line in each (see Attempt 3).
 
 **Review:** this changes fail-closed behaviour on the request path. It is not a small change: full review
 (code-reviewer, adversarial and regression passes), whatever the line count.
@@ -37,6 +39,9 @@
 - data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/ContentFreeMcpJsonMapper.java
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/McpTransportWiring.java
   (`dataPrismMcpServlet` at `:121-128` only)
+- data-prism-spring-boot-autoconfigure/src/test/resources/bean-inventory/{default,cluster,hash-chained,
+  hash-chained-json,oversight,pass-through-identity,reidentification,slf4j-sink,bean-methods}.txt
+  (the `dataPrismMcpServlet` line in each only)
 - data-prism-mcp/src/test/java/io/github/aindriub/dataprism/mcp/HttpInboundGuardTest.java *(new)*
 - data-prism-mcp/src/test/java/io/github/aindriub/dataprism/mcp/DataPrismMcpServerTest.java
 - data-prism-mcp/src/test/java/io/github/aindriub/dataprism/mcp/ContentFreeMcpJsonMapperTest.java
@@ -178,7 +183,7 @@ No body in any row holds `stackTrace`, `"cause"`, a Java class name (`io.modelco
 - `no-pom` command — AC15
   run: `git diff --exit-code origin/main...HEAD -- pom.xml`
 - `scope` command — Owns
-  run: `git diff --name-only origin/main...HEAD | grep -v -e '^data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/\(DataPrismMcpServer\|ContentFreeMcpJsonMapper\|HttpInboundGuard\)\.java$' -e '^data-prism-mcp/src/test/java/io/github/aindriub/dataprism/mcp/\(DataPrismMcpServerTest\|ContentFreeMcpJsonMapperTest\|HttpInboundGuardTest\)\.java$' -e '^data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/McpTransportWiring\.java$' -e '^data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/http/\(HttpParseErrorLeakTest\|ToolInputHttpTest\)\.java$' | (! grep .)`
+  run: `git diff --name-only origin/main...HEAD | grep -v -e '^data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/\(DataPrismMcpServer\|ContentFreeMcpJsonMapper\|HttpInboundGuard\)\.java$' -e '^data-prism-mcp/src/test/java/io/github/aindriub/dataprism/mcp/\(DataPrismMcpServerTest\|ContentFreeMcpJsonMapperTest\|HttpInboundGuardTest\)\.java$' -e '^data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/McpTransportWiring\.java$' -e '^data-prism-spring-boot-autoconfigure/src/test/resources/bean-inventory/\(default\|cluster\|hash-chained\|hash-chained-json\|oversight\|pass-through-identity\|reidentification\|slf4j-sink\|bean-methods\)\.txt$' -e '^data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/http/\(HttpParseErrorLeakTest\|ToolInputHttpTest\)\.java$' | (! grep .)`
 - `fail-closed-and-evidence` read — AC1, AC2, AC3, AC5, AC9, AC12, AC14, AC15, AC20
   how: reviewer reads the product diff for any path where a guard failure, an over-cap body or an
   undecidable message is forwarded; any path that builds a tool result outside `ToolCalls`; any log line
@@ -245,6 +250,16 @@ variant at `refused:152` stays `open` and is not explained by this."
 - The SDK request-size limit exists: `DEFAULT_REQUEST_MAX_SIZE` = 16 MiB, mirrored as
   `HttpInboundGuard.SDK_REQUEST_MAX_SIZE`.
 - Resolved by the owner's "Yes, keep 400" (Decisions).
+
+## Attempt 3 — blocked, stopped for owner
+- AC20 changes the registration bean to `ServletRegistrationBean<HttpServlet>`.
+- The 9 golden files in `data-prism-spring-boot-autoconfigure/src/test/resources/bean-inventory/` still record
+  `ServletRegistrationBean<HttpServletStreamableServerTransportProvider>` for `dataPrismMcpServlet`, so all 9
+  tests in `AutoConfiguredBeanInventoryTest` fail. The files are `default.txt`, `cluster.txt`,
+  `hash-chained.txt`, `hash-chained-json.txt`, `oversight.txt`, `pass-through-identity.txt`,
+  `reidentification.txt`, `slf4j-sink.txt` and `bean-methods.txt`.
+- Resolved by the owner's "Yes, extend Owns" (Decisions): the 9 files join Owns, limited to the
+  `dataPrismMcpServlet` line in each, and the `scope` check admits them.
 
 
 ## Appendix: superseded
