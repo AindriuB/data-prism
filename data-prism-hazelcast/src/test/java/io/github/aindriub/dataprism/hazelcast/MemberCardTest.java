@@ -1823,14 +1823,14 @@ class MemberCardTest {
         PrivacyCluster[] wrappers = twoWrappers();
         MemberCards cards = wrappers[0].memberCards().orElseThrow();
         HazelcastOversightState state = new HazelcastOversightState(wrappers[0]);
-        java.util.concurrent.CountDownLatch built = new java.util.concurrent.CountDownLatch(1);
-        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        CountDownLatch built = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
         PauseDocument.Digest atStart = state.document().heldDigest();
         // Holds a card built from the document as it is before the pause, until the pause has landed.
         cards.afterCardBuilt = () -> {
             built.countDown();
             try {
-                release.await(10, java.util.concurrent.TimeUnit.SECONDS);
+                release.await(10, TimeUnit.SECONDS);
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
             }
@@ -1838,7 +1838,7 @@ class MemberCardTest {
         Thread writer = new Thread(cards::publishNow);
         writer.start();
         try {
-            assertThat(built.await(30, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            assertThat(built.await(30, TimeUnit.SECONDS)).isTrue();
             state.pauseTool("p");
             assertThat(state.document().heldDigest()).as("the pause moved the held digest").isNotEqualTo(atStart);
             release.countDown();
