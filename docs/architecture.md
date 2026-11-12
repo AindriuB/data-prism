@@ -581,8 +581,8 @@ all of these is in `design-review.md` under the section named.
   third-party verification would need the key, which also lets its holder
   forge. Tamper evidence rests on the unkeyed hash chain plus external
   checkpoints (task 97), with the checkpoints held under separate custody.
-  *Partly reversed by D-1.0-4 (imported 2026-10-15, kept 2026-10-19, shipped in
-  0.8 on 2026-10-23): see the entry "An optional keyed audit chain" below. The
+  *Partly reversed by D-1.0-4 (imported 2026-10-15, kept 2026-10-19, built for
+  0.8.0 by tasks 206, 207 and 211 between 2026-10-23 and 2026-11-04): see the entry "An optional keyed audit chain" below. The
   operator-threat reasoning above stands.*
 - *The next seven entries (D-070-1 to D-070-7) are dated by the owner decision
   of 2026-10-09, not by the day each landed; the tasks that built them landed
@@ -711,14 +711,15 @@ all of these is in `design-review.md` under the section named.
   2026-10-23 entry below amends the cluster part again.
 - **2026-10-23 — An optional keyed audit chain: D-1.0-4 partly reverses the
   2026-09-23 rejection of keying (206, 207, 211).** D-1.0-4 was imported on
-  2026-10-15 and kept by the 2026-10-19 reconciliation; this is the date it shipped. The chain can now be
+  2026-10-15 and kept by the 2026-10-19 reconciliation; it was built for 0.8.0 by task 206 (2026-10-23),
+  task 207 (2026-10-28) and task 211 (2026-11-04), and 0.8.0 is unreleased. The chain can now be
   HMAC-SHA256 under a key of the operator's choosing, off by default. What
   reverses is only the rejection of offering a keyed chain at all: a keyed chain
   does resist a writer who lacks the key, which the unkeyed SHA-256 chain never
   could. What stands is the operator-threat reasoning in the 2026-09-23 entry:
   the key lives in the operator's own process, so a keyed chain does not resist
   the operator or anyone else who holds the key, and verifying it needs the
-  key, which also lets its holder forge. The shipped design accepts those limits
+  key, which also lets its holder forge. The design accepts those limits
   instead of denying them. The key is a reference resolved at startup, never a
   value in configuration; it must be at least 32 bytes and must differ from the
   pseudonymisation key (`AUDIT_KEY_REUSES_PSEUDONYMISATION_KEY`) and the cluster
