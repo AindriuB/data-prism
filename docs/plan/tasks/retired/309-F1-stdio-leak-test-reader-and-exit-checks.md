@@ -46,3 +46,11 @@ Close the owner's PR #249 review Lows 249-1 and 249-3. A reader thread that dies
 - 249-2 (a recorded run of the old `destroy()` failing with the new message) and 249-5 (extracting `drain` and `joinToEndOfStream` into a shared helper). Both are separate follow-ups in PLAN.md.
 - Anything under `data-prism-mcp/`, including how `StdioInboundGuard` or the SDK transport handles EOF.
 - Other stdio tests, the HTTP leak tests (305), `known-flakes.md`, and running two `mvn` processes at once in one worktree.
+
+## Outcome
+
+Landed on `main` as PR #252 (`4059d4bd`), verified PASS and APPROVE at `88d8295b` (2026-11-12). Both leak test classes record end of stream and any `Throwable` in the readers, wait for the child's own exit (status 0) before `destroy`, and `ExampleApplication` exits 0 on stdin EOF with no change under `data-prism-mcp/`. Mutation evidence for AC4 and AC5 is in the PR #252 body.
+
+The scope check as written (`wc -l | grep -qx 0`) fails on macOS because `wc` pads its output; future Checks should use `grep -c` or `test -z`.
+
+Open from the owner's reviews (PRs #251 and #252, nothing Medium or above): 252-1 to 252-5 and 251-1, in PLAN.md under "309-F1 follow-ups". 252-1 and 252-2 are marked owner to place.
