@@ -56,3 +56,10 @@ Reviewed HEAD aa06388589569656d72acfdf8eb3ffa56752398d.
 Reviewed HEAD 639ef4b96fc02766e339d894be070a8ea55ef695. Round 1's P2 and STYLE are fixed.
 
 - [STYLE] load-test/soak/build-images.sh:45 — the round 1 fix lengthened this comment line to 169 characters; it is the only comment line in the file over 120. Wrap it at ≤120 like lines 44 and 46.
+
+## Review round 3 — findings (owner review of PR #254, round 1)
+
+Reviewed HEAD cbbcf9d9dec83b34b5c1630251cfa34e2c920904. Only the two Mediums are in this round; the owner's Lows and Nit (254-3 to 254-10) are follow-ups for /record.
+
+- 254-1 (Medium) load-test/soak/build-images.sh:39 — the hash group returns only the mode pipeline's exit status; a failing content `shasum` (for example a dangling symlink) still yields a 64-character hash, so reuse can pick an image with other content. Fix: fail on each pipeline separately (temp files, or `|| exit 1` inside the group).
+- 254-2 (Medium) load-test/soak/build-images.sh:56 — the throwaway-index `git add` inherits repository config; with `core.fileMode=false` executables stage as 644, so a clean tree is always dirty and refused. Fix: pass `-c core.fileMode=true -c core.autocrlf=false` to that add.
