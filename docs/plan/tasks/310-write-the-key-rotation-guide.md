@@ -68,3 +68,9 @@ Publish one operator page with the key-rotation procedures for every key 0.8 shi
 - `docs/data-protection.md` (214), code, `docs/configuration.md`.
 - The rest of `docs/operations.md`, including 239-15, 239-16 and 239-23 (PLAN.md, 261's review leftovers, untasked).
 - 0.7 release documentation, version cuts, release publication and new 1.0 features.
+
+## Review round 1 — findings
+
+Reviewed HEAD a84ff0584633d031c67fdeb0b31ad9a77715868b (code review CLEAN). Owner decision 2026-11-12: findings that would mislead an operator on security or data loss are fixed in this round despite the docs Mediums rule; the other P3s and NOTEs are follow-ups.
+
+- [P3, fix now] docs/key-rotation.md:255-257 — the name-key section says "use the cluster procedure above", but that procedure's step 4 says "Keep the name key unchanged" and step 7 says "Destroy the old cluster key"; pseudonymisation step 6 (:82-83) also sends readers to "the cluster steps… for the order". An operator changing only the name key could generate an unneeded cluster key or destroy the cluster key in use, and the next member restart fails to resolve its key or refuses `CLUSTER_KEY_MISMATCH` — an unplanned full restart with state loss. Fix: say exactly which steps a name-key-only change follows (generate, set and destroy the name key; leave the cluster key alone), and for a pseudonymisation-key change say that only the stop-all/start-all order applies.
