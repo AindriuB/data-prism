@@ -63,3 +63,15 @@ Reviewed HEAD cbbcf9d9dec83b34b5c1630251cfa34e2c920904. Only the two Mediums are
 
 - 254-1 (Medium) load-test/soak/build-images.sh:39 — the hash group returns only the mode pipeline's exit status; a failing content `shasum` (for example a dangling symlink) still yields a 64-character hash, so reuse can pick an image with other content. Fix: fail on each pipeline separately (temp files, or `|| exit 1` inside the group).
 - 254-2 (Medium) load-test/soak/build-images.sh:56 — the throwaway-index `git add` inherits repository config; with `core.fileMode=false` executables stage as 644, so a clean tree is always dirty and refused. Fix: pass `-c core.fileMode=true -c core.autocrlf=false` to that add.
+
+## Outcome
+
+Landed on `main` as PR #254 (`64af8265`), verified PASS and APPROVE at `d2e7dd91e50de8644a1e5ce8ddce329a62aaf8d3` (2026-11-12). Every item in the brief is fixed. The tester's note, `new flake: HttpParseErrorLeakTest 404 variant`, was accepted by the owner as unrelated and is in `known-flakes.md` (task 305).
+
+The agents' throwaway-repo demonstrations for 254-1 and 254-2 were denied by permissions, so the owner ran them on 2026-11-12:
+
+- With `core.fileMode=false` on a clean tree, the fixed script gives `dirty=no`; the old script refused.
+- A dropped executable bit refuses.
+- A dangling symlink refuses with "could not hash the snapshot"; the old script printed a hash.
+
+Open from the owner's review round 2 (nothing Medium or above): 254-3 to 254-10, in PLAN.md under "307 follow-ups".
