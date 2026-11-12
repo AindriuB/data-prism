@@ -951,8 +951,9 @@ The jar's classes compile against `data-prism-security` (add it, `provided`, nex
 public class CaseAuthorizerExtensionAutoConfiguration {
 
     @Bean
-    CaseAuthorizer assignmentCaseAuthorizer(CaseAssignments assignments) {
-        return new AssignmentCaseAuthorizer(assignments);
+    CaseAuthorizer assignmentCaseAuthorizer() {
+        // Build your own lookup here; nothing in Data Prism or the server supplies a CaseAssignments bean.
+        return new AssignmentCaseAuthorizer(new CaseAssignments());
     }
 }
 ```
@@ -1010,7 +1011,7 @@ Data Prism does not interrupt a recogniser that is slow. Recognisers share the s
 an exhausted budget stops them as it stops the shape scan.
 
 The shape scan itself (`SensitivePatternValidator`) first runs in the Spring starter, the packaged server and the
-configured-JSON-sources mode in 0.7.0 (task 209); recognisers arrive in 0.8 (task 208). A `FREE_TEXT`-classified
+configured-JSON-sources mode in 0.7.0; recognisers arrive in 0.8. A `FREE_TEXT`-classified
 model field is redacted under the `DEFAULT` profile and removed under `STRICT`, whether or not you add a
 recogniser. The two codes the client-facing result can carry are in
 [Scrub and validation refusals](tools.md#scrub-and-validation-refusals).
