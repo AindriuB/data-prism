@@ -400,6 +400,9 @@ not break a released API.
 
 ## Added: free-text recognisers
 
+**Breaking:** the public constructor `SensitivePatternValidator(SensitiveDataScanner)` is removed. Before:
+`new SensitivePatternValidator(scanner)`. After: `new SensitivePatternValidator(scanner, List.of())`.
+
 A `FreeTextRecogniser` bean (`Set<DataClassification> recognise(String)`) lets you add your own recognition of free
 text. The Spring bean collects them in `@Order`. In plain Java, `new SensitivePatternValidator()` still compiles and has
 no recognisers; pass them with `new SensitivePatternValidator(new SensitiveDataScanner(), List.of(recogniser))`. A match

@@ -78,6 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ClusterSecurityStatus` gains the components `pauseFresh` and `pauseAgeSeconds` and the reason `PAUSE_NOT_FRESH`: a
   deconstruction pattern over the old four components, and an exhaustive `switch` over `Reason`, no longer compile. The
   four-argument constructor is kept. The type was added after 0.7.1, so no released API breaks.
+- The public constructor `SensitivePatternValidator(SensitiveDataScanner)` is removed. `new SensitivePatternValidator(scanner)`
+  becomes `new SensitivePatternValidator(scanner, List.of())`; the no-argument constructor still compiles.
 
 ### Added
 
