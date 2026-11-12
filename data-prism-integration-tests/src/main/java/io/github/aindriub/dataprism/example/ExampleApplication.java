@@ -19,10 +19,15 @@ import io.github.aindriub.dataprism.security.SecurityPolicy;
 import io.github.aindriub.dataprism.security.ToolAdmission;
 import io.modelcontextprotocol.server.McpSyncServer;
 
+import java.io.FilterInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Runs the MCP server on stdio.
@@ -63,18 +68,69 @@ public final class ExampleApplication {
     }
 
     public static void main(String[] args) throws InterruptedException {
+        // The MCP stdio shutdown sequence: the client closes stdin and waits for the server to exit,
+        // signalling only if it does not. The inbound guard reads System.in when the server is built,
+        // so the EOF watcher must be installed first.
+        CountDownLatch inputEnded = new CountDownLatch(1);
+        System.setIn(new EndOfInputSignal(System.in, inputEnded));
         McpSyncServer server = buildServer(activeProfiles());
 
-        Runtime.getRuntime().addShutdownHook(new Thread(server::closeGracefully));
+        AtomicBoolean closed = new AtomicBoolean();
+        Runnable closeOnce = () -> {
+            if (closed.compareAndSet(false, true)) {
+                server.closeGracefully();
+            }
+        };
+        Runtime.getRuntime().addShutdownHook(new Thread(closeOnce));
         System.err.println("data-prism listening on stdio; tools: get_entity_context, compare_entity_sources, "
                 + "list_sources, describe_source");
 
-        Thread.currentThread().join();
+        inputEnded.await();
+        closeOnce.run();
+        System.exit(0);
+    }
+
+    /** Counts down once the wrapped stream reaches end of input or faults, which the guard treats as end of input. */
+    private static final class EndOfInputSignal extends FilterInputStream {
+        private final CountDownLatch ended;
+
+        EndOfInputSignal(InputStream in, CountDownLatch ended) {
+            super(in);
+            this.ended = ended;
+        }
+
+        @Override
+        public int read() throws IOException {
+            try {
+                int b = super.read();
+                if (b < 0) {
+                    ended.countDown();
+                }
+                return b;
+            } catch (IOException e) {
+                ended.countDown();
+                throw e;
+            }
+        }
+
+        @Override
+        public int read(byte[] b, int off, int len) throws IOException {
+            try {
+                int n = super.read(b, off, len);
+                if (n < 0) {
+                    ended.countDown();
+                }
+                return n;
+            } catch (IOException e) {
+                ended.countDown();
+                throw e;
+            }
+        }
     }
 
     /**
-     * Everything {@link #main} does except register the shutdown hook and block
-     * on {@code join()} — visible for {@code StdioProductionProfileTest}, which
+     * Everything {@link #main} does except watch stdin, register the shutdown hook and
+     * wait for end of input — visible for {@code StdioProductionProfileTest}, which
      * wants the server (or the refusal) without a launcher that never returns.
      *
      * @throws io.github.aindriub.dataprism.security.SecurityRefusedException with code
