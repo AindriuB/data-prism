@@ -15,7 +15,7 @@ import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.ToolAdmission;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.McpTransportContextExtractor;
-import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
+import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -118,10 +118,10 @@ class McpTransportWiring {
     @ConditionalOnProperty(prefix = "dataprism.transport", name = "mode", havingValue = "HTTP",
             matchIfMissing = true)
     @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
-    ServletRegistrationBean<HttpServletStreamableServerTransportProvider> dataPrismMcpServlet(
+    ServletRegistrationBean<HttpServlet> dataPrismMcpServlet(
             DataPrismMcpServer.HttpTransport transport, DataPrismProperties properties) {
-        ServletRegistrationBean<HttpServletStreamableServerTransportProvider> registration =
-                new ServletRegistrationBean<>(transport.transportProvider(),
+        ServletRegistrationBean<HttpServlet> registration =
+                new ServletRegistrationBean<>(transport.servlet(),
                         properties.getTransport().getHttp().getPath());
         registration.setAsyncSupported(true);
         return registration;

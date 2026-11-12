@@ -305,7 +305,7 @@ class HttpParseErrorLeakTest {
         tomcat.setPort(0);
         tomcat.getConnector();
         Context context = tomcat.addContext("", tempDir.toString());
-        Tomcat.addServlet(context, "mcp", transport.transportProvider()).setAsyncSupported(true);
+        Tomcat.addServlet(context, "mcp", transport.servlet()).setAsyncSupported(true);
         context.addServletMappingDecoded("/mcp", "mcp");
         tomcat.start();
         return tomcat.getConnector().getLocalPort();
