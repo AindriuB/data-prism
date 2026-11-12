@@ -72,7 +72,7 @@ verification rest on a cluster key and a name key that every member holds.
   planned full restart that empties both maps, and pseudonyms issued before it
   can no longer be re-identified.
 - **Not sealed: approvals and counters.** Approvals, their id claims, pending
-  slots and consumed tombstones, and the budget and caller-rate counters are plain. Anyone who can reach
+  slots and the empty consumed-tombstone map, and the budget and caller-rate counters are plain. Anyone who can reach
   the member port can read and write them. Their map keys are keyed names, so a
   reader learns no scope or subject from a key, but the values are readable.
 - **Required on `tcp-ip` and `kubernetes`:**
@@ -116,7 +116,7 @@ backup. Maps are not written to disk and have no `MapStore`.
 | `dataprism.approval.s1` | Approval requests, each until its expiry, each with the random token of the creation that wrote it | No | 1 |
 | `dataprism.approval.id.s1` | One claim per approval id, which keeps an id unique across scopes. It names the approval entry and the token of the creation that made it. A claim has no TTL and is valid while the approval entry it names exists; a swept or taken-over claim goes once that entry is gone. No eviction | No | 1 |
 | `dataprism.approval.pending.s1` | Per (kind, requester): the ids of their pending approvals with their expiries and the owner of each (the scope and the token of the creation that reserved the slot), which the pending cap counts. Changed only by an entry processor. No TTL and no eviction; a periodic sweep removes ids long past their expiry | No | 1 |
-| `dataprism.approval.consumed.s1` | One tombstone per approval that was used, so a used approval stays used after its entry is gone. No size eviction; entries leave by TTL | No | 1 |
+| `dataprism.approval.consumed.s1` | Reserved for one tombstone per used approval, which is deferred work (task 224). The map exists and is never evicted, and nothing writes to it in 0.8; it has no TTL. A used approval is kept used only by the `CONSUMED` status on its approval entry | No | 1 |
 | `dataprism.callerrate.s1` | Per-caller fixed-window request counts. No eviction | No | 1 |
 
 Every map key except the fence entry's `all` is a keyed name (an HMAC under the
@@ -125,8 +125,8 @@ member cards are authenticated under the cluster key. The values of the
 unsealed maps are plain. An approval entry holds the whole encoded request:
 the approval id, kind, requester principal and client id, scope, tool, binding
 fingerprint, namespace, the synthetic value (the pseudonym), the free-text
-purpose, the case id, the timestamps, the status and the approver. Claim and
-pending entries carry the principal, the approval id and the scope. Anyone who
+purpose, the case id, the timestamps, the status and the approver. Pending
+entries carry approval ids, their expiries and the scope. Claims carry nothing in clear: a claim holds the keyed name of its approval entry and a random token. Anyone who
 can reach the member port reads all of it, and no subject id is among it.
 
 The other maps evict least-recently-used entries beyond 100,000 per member.
@@ -135,8 +135,11 @@ The pause document, the fence map `dataprism.oversight`, the member cards and
 document means everything is paused, so a pause is never lost by eviction.
 `dataprism.approval.id.s1`, `dataprism.approval.pending.s1` and
 `dataprism.approval.consumed.s1` are never evicted either, because an evicted
-claim lets an id be used twice, an evicted pending set lets a requester pass the
-cap and an evicted tombstone lets a used approval be used again.
+claim lets an id be used twice and an evicted pending set lets a requester pass the
+cap. Nothing writes the consumed map in 0.8, so replay protection for a used
+approval is only the `CONSUMED` status on the approval entry, which is unsealed:
+anyone who can reach the member port can rewrite it. Tombstones are deferred
+(task 224).
 
 ## Configuration
 
