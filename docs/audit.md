@@ -171,6 +171,47 @@ reports a break. That fails loud, which is the intended direction. The records
 in a deleted segment are gone; nothing here archives them. Archiving to
 external storage before purge is an operator responsibility.
 
+### Size-capped segments
+
+By default a UTC day is one file. With `dataprism.audit.segment-max-size` (a
+size of at least `1MB`; it needs `dataprism.audit.directory`) a day's segment is
+capped. The first segment keeps the name `audit-YYYY-MM-DD.log`; the next are
+`audit-YYYY-MM-DD.0001.log`, `audit-YYYY-MM-DD.0002.log` and so on, up to
+`.9999`. Before a write that would take the current segment past the cap, the
+sink closes it and opens the next. A record larger than the cap is written whole
+into a fresh segment and never split. After a restart the sink appends to the
+highest-numbered segment already on disk for that day. A day that would need a
+segment beyond `.9999` fails the write with `AUDIT_SINK_OPEN_FAILED`. The
+configuration refusals are `AUDIT_SEGMENT_SIZE_REQUIRES_DIRECTORY` and
+`INVALID_AUDIT_SEGMENT_SIZE`; see [Configuration](configuration.md).
+
+The hash chain is unaffected by rotation: a writer's chain runs on across
+segments exactly as it runs across days. The verifier's [directory
+mode](#directory-mode) reads a day's segments in index order, the unindexed
+`audit-YYYY-MM-DD.log` first and then `.0001`, `.0002` and so on, and only then
+the next day.
+
+Purge treats the segments of one day as a unit. It deletes a day whole, highest
+index first, and records a `RETENTION_ANCHOR` for each writer's last record of
+that day, before deleting anything. Because deletion of a day's
+segments is several file operations, a crash can leave a day partly deleted. The
+next purge finishes it from the anchors it recorded, but only after the
+remaining segments of that day verify on their own. That check uses the same
+chain keys, never joins the day to the next one, and requires no break, no
+structural anomaly and no unterminated tail, and that every writer's first
+remaining record either starts at `GENESIS` or follows a recorded anchor. The
+anchor rule is judged on records the verifier hashed, not on raw lines: anchors
+and the partial-day decision come only from hashed records, and a complete line
+that was not hashed refuses its day. Purge also refuses at a duplicate sequence.
+A refusal is `AUDIT_RETENTION_CHAIN_UNVERIFIED`, and nothing further is deleted.
+
+Two limits follow. The retention anchor store is trusted: `AuditRetention`
+assumes whoever can write it is not forging anchors, which is why the checkpoint
+file belongs under custody separate from the audit directory. And a
+failed purge reports its segment date in `auditIntegrity` health only when the
+refusal names a day's first segment (`audit-YYYY-MM-DD.log`); for a refused
+indexed segment the status carries the code without a date.
+
 ### Retention anchors
 
 Deleting the front of a chain would otherwise look like tampering. So, before
@@ -329,6 +370,117 @@ request does not time out. That is fail closed, and a deployment that wants a bo
 | `AUDIT_RETENTION_DELETE_FAILED` | A purge could not delete an expired segment. |
 | `AUDIT_RETENTION_FAILED` | Any other purge failure. A purge that fails stops, logs the error and counts the matching metric. |
 
+## The keyed chain
+
+The chain described so far is plain SHA-256. Since 0.8 an operator can opt in to
+a keyed chain, in which each record's hash is an HMAC-SHA256 under a key of the
+operator's own. It is off by default, and nothing about the unkeyed chain
+changes if it stays off. The configuration properties, their startup refusals
+and the key-length and key-separation rules are in
+[Configuration](configuration.md#keyed-audit-chain); this section says what the
+keyed chain gives and what it does not, and how the verifier is told about it.
+
+**What it adds.** Someone who can write the audit file but does not hold the key
+cannot recompute the hashes after an edit, so a changed or inserted record fails
+verification. That closes the specific attack described under
+[What this does and does not prove](#what-this-does-and-does-not-prove), where
+an unkeyed chain is recomputed after an edit.
+
+**What it does not add.** A keyed chain does not resist anyone who holds the
+key, the operator and the process that writes the file included. It does not
+detect truncation of the most recent records; that still needs
+[external checkpoints](#external-checkpoints) under custody separate from the
+audit file, and checkpoints are themselves unkeyed and unsigned. It is not
+tamper-proof, and it is not evidence against the operator. The audit key must
+differ from the pseudonymisation key (`AUDIT_KEY_REUSES_PSEUDONYMISATION_KEY`)
+and from the cluster and name keys, so that holding one does not give the
+other.
+
+### Current and retired keys
+
+The recorder signs with the current key (`dataprism.audit.hmac-key`) and never
+with a retired one. Each process boot is a new writer starting at `GENESIS`, so
+a key change takes effect at the next restart: the earlier writers' records
+remain in the files, written under the earlier key. A key that has been replaced
+is kept as a verification-only key under `dataprism.audit.retired-hmac-keys.<key-id>`.
+Retention verifies every expiring segment with the current key and every retired
+key, and with `allowUnkeyedWriters` off. A segment written under a key that is
+no longer configured does not verify and is not deleted, so keep a retired key
+configured until every segment written under it has been purged. Otherwise purge
+stops with `AUDIT_RETENTION_CHAIN_UNVERIFIED` and `auditIntegrity` health reports
+DOWN. A key id is a label for the key, not secret; key material is only ever a
+reference in configuration and is never printed by the verifier.
+
+### Verifying a keyed chain
+
+The audit file does not record whether it is keyed, and a line carries no key
+id. The verifier is told by its caller, with one `--hmac-key-file` per key:
+
+```sh
+java -cp <classpath> io.github.aindriub.dataprism.audit.verify.AuditChainVerifierCli \
+    /path/to/audit-directory --checkpoints /path/to/checkpoints.jsonl \
+    --hmac-key-file /secure/current.key --hmac-key-file /secure/retired-2026.key
+```
+
+A key file has two lines: the key id, then the base64 key, at least 32 bytes
+once decoded. Key ids must be distinct. A file that cannot be read, is
+malformed or repeats an id exits 1 and names the flag, never the contents. Give
+the current key and every retired key whose records are still on disk.
+
+With keys, each writer is verified under whichever supplied key reproduces its
+hashes, and the report adds a line `verified under key id: <id>` for it. A writer
+that verifies under none of the keys is a break (exit 2). A writer that verifies
+only as an unkeyed chain is also a break, because that is exactly the shape a
+forger without the key produces; the break message says so. Without any
+`--hmac-key-file`, the verifier replays the chain as unkeyed, so a keyed file
+reports every writer as broken: the verifier cannot tell a keyed chain from a
+tampered unkeyed one unless it is given the key.
+
+A keyed run prints the shared scope caveats without the unkeyed paragraph, and
+a line beginning `KEYED CHAIN:` stating that a keyed chain resists a writer who
+lacks the key, not anyone who holds it. Two edges of that output are worth
+knowing:
+
+- The `KEYED CHAIN:` line is printed only after the verifier has read the audit
+  path and produced a report. When the audit path cannot be read (exit 1) it is
+  not printed; the run prints only the scope caveats, so do not read its absence
+  as a statement about the chain.
+- A writer the verifier could not hash any record of, for example a lone record
+  that does not start at `GENESIS`, carries no key label: no key verified it, so
+  the report gives no `verified under key id` line for it, and its structural
+  finding stands as reported.
+
+### Moving from an existing unkeyed log
+
+Turning the keyed chain on does not rewrite anything. Records already written
+stay as written, unkeyed, and are written by earlier writers. What follows from
+that:
+
+- Keyed retention refuses those writers. It verifies with `allowUnkeyedWriters`
+  off, so an expired segment whose writer verifies only as unkeyed is a break to
+  it. Purge stops at the oldest such segment with
+  `AUDIT_RETENTION_CHAIN_UNVERIFIED`, deletes neither it nor any later expired
+  segment, and `auditIntegrity` health reports DOWN. Nothing is silently skipped
+  and nothing is deleted.
+- The old trail is therefore preserved and verified separately. Before the cut-over,
+  verify it with the verifier given no key, and keep a copy of the files and of the
+  checkpoint file under custody. A directory that mixes unkeyed and keyed writers
+  can be read in one run with the keys and `--allow-unkeyed-writers`: the unkeyed
+  writers are then reported as verified as an unkeyed chain only, and a line
+  `UNKEYED WRITERS ALLOWED: <n> writer(s) verified only as an unkeyed chain,
+  which anyone able to write the file can forge.` says how many. That flag is a
+  concession, not a proof: it gives those writers the unkeyed chain's limits.
+- Data Prism has no purge for a mixed directory. Whether to keep the old files
+  in place, move them out or delete them once the retention period has passed is
+  the operator's decision, and deleting them is a deletion of audit evidence.
+  Starting the keyed chain in a new `dataprism.audit.directory` keeps the keyed
+  purge away from unkeyed writers; the old directory is then outside Data
+  Prism's purge and the operator's to manage.
+
+A single-file sink (`file-path`) has no retention, so the same mixed file is
+verified in one run with the keys and `--allow-unkeyed-writers`, with the same
+caveat on the unkeyed writers.
+
 ## The offline verifier
 
 `AuditChainVerifierCli` replays each writer's chain from a copy of this file
@@ -359,6 +511,21 @@ java -cp <classpath> io.github.aindriub.dataprism.audit.verify.AuditChainVerifie
 
 or `--help` for a shorter summary.
 
+### Options
+
+| Argument | Meaning |
+|---|---|
+| `<audit-log-file>` | A single audit file, or a directory of segments (see [Directory mode](#directory-mode)). |
+| `--checkpoints <file>` | A checkpoint file, to detect truncation back past a checkpoint and to accept retention anchors; see [External checkpoints](#external-checkpoints). |
+| `--min-retention <ISO-8601 period>` | The shortest retention an anchor may stand for. The default is `P6M`; pass your own if you run purge with the below-minimum override. |
+| `--hmac-key-file <path>` | Repeatable. A key file for a keyed chain: two lines, the key id then the base64 key. See [Verifying a keyed chain](#verifying-a-keyed-chain). |
+| `--allow-unkeyed-writers` | With keys, tolerate writers that verify only as unkeyed chains and report them, instead of treating them as breaks. With no keys it marks each intact writer as verified unkeyed. |
+| `--help` | Prints usage, the exit codes and the limitation text. |
+
+The `accept-crash-line` subcommand records a confirmed crash line for retention
+after a purge refused; it takes `--hmac-key-file` and `--allow-unkeyed-writers`
+as above, and `--help` describes it in full.
+
 The verifier class moved in 0.6.0: before that release it sat directly in the
 `audit` package (the class name is unchanged), and the old name no longer
 exists (no forwarding class).
@@ -373,6 +540,7 @@ exists (no forwarding class).
 | 3 | Possibly-in-flight tail — the final record has no terminating newline; not a break. Only reported when nothing scored higher: a run with both a break and an in-flight tail exits 2, and a run with both a structural anomaly and an in-flight tail exits 4 (precedence is break, then anomaly, then in-flight tail). |
 | 4 | Structural anomaly — an interrupted-write fragment, a sink-contract duplicate-sequence violation, or a writer's chain not starting at `GENESIS` immediately after another structural anomaly, which offers plausible (never certain) context for the missing head. A writer's chain not starting at `GENESIS` in any other position is a break, exit code 2, not this. Never returned together with exit code 2. |
 | 5 | Checkpoint mismatch — only with `--checkpoints`: a writer's last surviving sequence is lower than its highest checkpointed sequence (`TRUNCATED_BEFORE_CHECKPOINT`), or a writer has a checkpoint past sequence 0 and no surviving records (`MISSING_WRITER`). Each is named per writer. Returned only when no break was found, and takes precedence over 3 and 4. A record whose hash differs from the checkpointed head at the same sequence is a break, exit 2. |
+| 6 | `accept-crash-line` refused — a condition did not hold and nothing was written. Not returned by a verification run. |
 
 ### What a run actually looks like
 
@@ -805,8 +973,11 @@ writer's chain as after it, not as separate breaks, at exit code 2.
   a record and then simply recompute every hash that follows it — the
   resulting chain verifies perfectly, because nothing about an unkeyed hash
   stops whoever holds write access from recomputing it. Resisting that needs
-  a keyed MAC (a secret the adversary does not also have), which this release
-  does not build, or a checkpoint file the adversary cannot also rewrite.
+  a keyed MAC (a secret the adversary does not also have), or a checkpoint
+  file the adversary cannot also rewrite. A [keyed chain](#the-keyed-chain) is
+  available since 0.8 as an opt-in, and is off by default; it does not resist
+  someone who holds the key, so an unkeyed chain resists no one who can write
+  the file, and a keyed chain resists no one who also holds the key.
 - **Durable append-only-ness is an operator responsibility, not something
   this class enforces.** `FileAuditSink` opens the file with `O_APPEND`
   semantics; it does not configure WORM storage, an object-lock policy, or
@@ -855,7 +1026,9 @@ exits 4, not 0, but restore LF line endings before relying on it.
 
 Given a directory instead of a file, the verifier reads every
 `audit-YYYY-MM-DD.log` segment in date order as one stream and replays it as
-usual. A non-final segment ending in a torn write is given the same `\r\n`
+usual. A day capped by size has indexed segments (`audit-YYYY-MM-DD.0001.log`,
+and so on; see [Size-capped segments](#size-capped-segments)), read in index
+order after that day's `audit-YYYY-MM-DD.log`. A non-final segment ending in a torn write is given the same `\r\n`
 terminator a resumed writer writes, and is reported as an
 interrupted-write fragment rather than fused with the next segment's first
 record. Byte offsets in a directory report are offsets into that concatenation.

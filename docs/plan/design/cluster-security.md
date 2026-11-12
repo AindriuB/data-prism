@@ -174,12 +174,12 @@ makes every reader of it wait the timeout and then be refused with
 
 | | |
 |---|---|
-| Key | `all`, `tool:<name>`, or `<scope id>` NUL `paused` |
-| Value | `Boolean.TRUE`; presence means paused |
+| Key | `dataprism.oversight.s1`: one sealed pause-document entry under a keyed name (task 223); the names inside it are keyed too. `dataprism.oversight`: only the fence entry `all`, which 228 keeps for a 0.7 member |
+| Value | The pause document, sealed and leased (task 228); in the fence map, `Boolean.TRUE` |
 | Lifetime | Never evicted, no TTL |
-| **Read** | Which tools and scopes are paused |
-| **Write** | Pause anything: deny service |
-| **Delete** | **Lift a pause.** `HazelcastOversightState.resume*` is exactly a delete, so an attacker's delete is indistinguishable from a resume |
+| **Read** | Nothing useful: the document is sealed and its names are keyed |
+| **Write** | A forged or replayed document is not accepted. |
+| **Delete** | Cannot lift a pause: an absent or stale document means everything is paused, which denies service |
 
 ### 1.5 `dataprism.approval`
 

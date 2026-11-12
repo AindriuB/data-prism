@@ -365,6 +365,8 @@ all of these is in `design-review.md` under the section named.
   system to operate and a hop on every lookup. Accepted consequence: without
   isolation, anyone who can reach the member port can read raw subject ids from
   map keys.
+  *Amended 2026-10-23 for 1.0: see the entry "1.0 supports multiple instances
+  on a trusted network only" below. Isolation is still the deployer's job.*
 - **2026-10-07 — Jackson 2 stays on Spring Boot 4 (D-139-A); Boot 3 users stay
   on 0.4.x (D-139-B).** Boot 4 defaults to Jackson 3, but the scrubbing engine
   is a Jackson module registered on one `ObjectMapper` and a second Jackson
@@ -579,6 +581,9 @@ all of these is in `design-review.md` under the section named.
   third-party verification would need the key, which also lets its holder
   forge. Tamper evidence rests on the unkeyed hash chain plus external
   checkpoints (task 97), with the checkpoints held under separate custody.
+  *Partly reversed by D-1.0-4 (imported 2026-10-15, kept 2026-10-19, built for
+  0.8.0 by tasks 206, 207 and 211 between 2026-10-23 and 2026-11-04): see the entry "An optional keyed audit chain" below. The
+  operator-threat reasoning above stands.*
 - *The next seven entries (D-070-1 to D-070-7) are dated by the owner decision
   of 2026-10-09, not by the day each landed; the tasks that built them landed
   between 2026-10-09 and 2026-10-19.*
@@ -684,3 +689,69 @@ all of these is in `design-review.md` under the section named.
   or skipped release only over-counts until the sweep. D-0.7-HZ-3 (owner,
   2026-10-20): `CLUSTER_LOCK_TIMEOUT` and `CLUSTER_OPERATION_REFUSED` reach
   callers on every path, including re-identification and the operator API.
+- **2026-10-15 imported, 2026-10-19 reconciled — the 1.0 data-protection
+  decisions (D-1.0-1 to D-1.0-7).** The 2026-10-15 decisions are the D-1.0-*
+  family in the task briefs PR #129 imported on that date, written before the
+  0.7 plan existed. The 2026-10-19 reconciliation
+  (`docs/plan/reconciliation-2026-10-19.md`) kept some, replaced some and
+  rescheduled one, and the two dates are not interchangeable. Kept as imported:
+  D-1.0-1 (a case-authoriser SPI with an explicit token-trusted fallback) and
+  D-1.0-4 (an optional keyed audit chain with its own key and no protection
+  against a key holder). Replaced: the owner chose the approved sealed-state
+  cluster design on 2026-10-19, which resolves D-1.0-3 and D-1.0-7 in its favour
+  (encrypted re-identification values, separate cluster and name keys) and
+  supersedes D-1.0-2's isolation-only interpretation; the original text of
+  D-1.0-2 is not kept in the current plan. Rescheduled: D-1.0-5's "ships in
+  1.0" became "available by 1.0", so the 1.0 controls (case authorisation and
+  the client allowlist, the keyed audit chain and segment cap, free-text
+  recognisers) ship in 0.8.0, before the 0.9 freeze, and 1.0 adds the stability
+  commitment rather than those features (owner confirmation, 2026-10-19).
+  Nothing here was an implementation claim at the time; the Outcomes of the
+  tasks that built each control are the record of what shipped. The
+  2026-10-23 entry below amends the cluster part again.
+- **2026-10-23 — An optional keyed audit chain: D-1.0-4 partly reverses the
+  2026-09-23 rejection of keying (206, 207, 211).** D-1.0-4 was imported on
+  2026-10-15 and kept by the 2026-10-19 reconciliation; it was built for 0.8.0 by task 206 (2026-10-23),
+  task 207 (2026-10-28) and task 211 (2026-11-04), and 0.8.0 is unreleased. The chain can now be
+  HMAC-SHA256 under a key of the operator's choosing, off by default. What
+  reverses is only the rejection of offering a keyed chain at all: a keyed chain
+  does resist a writer who lacks the key, which the unkeyed SHA-256 chain never
+  could. What stands is the operator-threat reasoning in the 2026-09-23 entry:
+  the key lives in the operator's own process, so a keyed chain does not resist
+  the operator or anyone else who holds the key, and verifying it needs the
+  key, which also lets its holder forge. The design accepts those limits
+  instead of denying them. The key is a reference resolved at startup, never a
+  value in configuration; it must be at least 32 bytes and must differ from the
+  pseudonymisation key (`AUDIT_KEY_REUSES_PSEUDONYMISATION_KEY`) and the cluster
+  and name keys; the file does not record that it is keyed, so the verifier is
+  told by its caller; retired keys are verification-only. Tamper evidence against truncation still rests on checkpoints under separate
+  custody, and the unkeyed chain still does not resist the operator. Cost:
+  turning the key on does not rewrite old records, so keyed retention refuses
+  writers that were written unkeyed (`allowUnkeyedWriters` is off); see
+  `docs/audit.md`, "Moving from an existing unkeyed log".
+- **2026-10-23 — 1.0 supports multiple instances on a trusted network only
+  (owner decision (b); amends D-RM-1 (a)).** D-RM-1 (a) said 1.0 supports
+  multiple instances, with cluster security designed in 0.7 and built in 0.8.
+  After the sealed-state design was split into briefs, the owner chose to ship
+  1.0 for networks the operator controls and to move cluster security for
+  untrusted networks past 1.0. The sealed-state design stays the path for those
+  networks; it is not what 1.0 ships, and "isolation-only" is no longer the
+  claim either. What 1.0 does on a cluster: member cards and the sentinel (a
+  wrong key refuses to start, and an unverified member stops service under
+  `refuse`), the sealed, sequenced and leased pause document, sealed identity and
+  re-identification entries under the current cluster key only, keyed map and
+  lock names, and startup guardrails (a joining member must declare
+  `dataprism.hazelcast.trusted-network: true` and listen on a private
+  interface, on the Spring and plain-Java paths). What it does not do:
+  approvals and counters are plain values that anyone who can reach the member
+  port can read and write, and the trusted-network declaration is the
+  operator's assertion that only Data Prism members can reach that port, not
+  something the code infers or enforces. Whether a cluster is safe to run on
+  depends on that network isolation, which the guardrail asks about and does
+  not establish.
+  Deferred past 1.0: sealing approvals and counters, rolling cluster-key
+  rotation (until then a cluster-key change is a planned full restart), the
+  shared link-attempt limiter, the Spring binding of the remaining
+  cluster-security properties, and adversarial verification across real
+  servers. The full sealed-state claim is therefore not made for 1.0. See `docs/plan/PLAN.md`,
+  "After 1.0: untrusted-network clusters".

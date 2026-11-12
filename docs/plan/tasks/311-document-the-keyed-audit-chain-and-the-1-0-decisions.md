@@ -58,3 +58,9 @@ Split from 213 on 2026-11-12 (owner agreement of that day: 213 becomes four para
 - 239-8 (`docs/audit.md:330`, retention fallback codes): a 261 review leftover in PLAN.md, untasked.
 - The audit-forgery follow-ups under PLAN.md "Untasked security follow-ups" (archive:206, archive:229-231): code, not docs.
 - `docs/data-protection.md` (214), code, `docs/configuration.md`, version cuts and publication.
+
+## Attempt 1 — failed
+
+Verified at cc005580a11c6a2064646487d0d05a24b482148e: tester PASS (docs-site, scope, additions-only, no-compliance-wording); reviewer REQUEST CHANGES. Code review (CLEAN) raised the same point as a P3.
+
+- docs/architecture.md:712-714 and the pointer at :584 date the keyed chain as "shipped in 0.8 on 2026-10-23 (206, 207, 211)". Only 206 landed on 2026-10-23; 207 landed on 2026-10-28 and 211 (the configuration the record describes: key reference resolved at startup, retired keys, `AUDIT_KEY_REUSES_PSEUDONYMISATION_KEY`) on 2026-11-04 (HISTORY-INDEX.md:37, :39, :40). 0.8.0 is unreleased. Fix: say it was built by 206 (2026-10-23), 207 (2026-10-28) and 211 (2026-11-04) for 0.8.0, and do not say "shipped". Additions-only still holds: these are lines this task added.
