@@ -306,3 +306,9 @@ the session cell "answers the next request"; AC10 sent `initialize`, `notificati
 `tools/list` over one raw keep-alive socket and asserted the `tools/list` answer (EOF on `origin/main`); the
 known-flakes row said the guard "keeps the connection open". Replaced because Tomcat 11.0.27 closes the
 connection after any 400 and a servlet cannot override it (Attempt 2).
+
+## Review round 2 — findings
+
+Reviewed HEAD: 842b1a575df95b131d4d8d7e8026730130355e5c
+
+- [STYLE] data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/HttpInboundGuard.java:116 — The corrected Javadoc says the guard reads at most "the limit plus 8191 bytes". The real bound is the limit plus 8192: the check at :126 is `total > limit`, so `total` can equal `limit` exactly and the loop still makes one more full read. route: implementer. rule: docs/conventions.md:191-198. (Round-1 finding 3 carried over.)
