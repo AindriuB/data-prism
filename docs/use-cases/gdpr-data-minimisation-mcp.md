@@ -75,8 +75,9 @@ deployment against either one.
   reference (`dataprism.privacy.hmac-key`) and refuses startup if it cannot
   be resolved. [`docs/configuration.md`](../configuration.md) describes only
   that reference/pinning contract; supplying the key via a provider,
-  protecting it, and rotating it are the operator's job, and this release
-  does not document a rotation procedure.
+  protecting it, and rotating it are the operator's job. The procedures for
+  every key, and what each change costs, are in
+  [`docs/key-rotation.md`](../key-rotation.md).
 - **Retention** of source data, pseudonym mappings and any audit trail kept.
 - **Deciding what is classified as what** — which fields are personal data,
   which are sensitive, and which profile and rules apply to them — is a

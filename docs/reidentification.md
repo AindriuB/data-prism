@@ -105,6 +105,10 @@ is written to the reverse map.
   miss, plus a WARN log line ("identity cache unavailable").
 - The reverse map holds subject ids only, keyed by scope, namespace and pseudonym, and the entry ends
   with its scope.
+- **A cluster-key or name-key change empties the index.** Both are planned full restarts, and the index lives only
+  in the cluster's memory. Pseudonyms issued before the restart can no longer be re-identified; an entry returns only
+  if the same subject is read again in a scope that is still open. A change of the pseudonymisation key also ends
+  re-identification of earlier pseudonyms in practice. See [Rotating keys](key-rotation.md#the-cluster-key).
 
 ## The operator HTTP surface
 
@@ -208,4 +212,5 @@ TLS in front of it, and keep the port off any network an MCP client can reach. R
 chunked body is read only up to the limit.
 
 The surface is off by default. `server.json` and the image now declare the operator variables and
-port. Using the operator surface end to end in the Compose quickstart is not yet done.
+port. The Compose quickstart walks the surface end to end in
+[Re-identify a pseudonym](quickstart.md#re-identify-a-pseudonym).
