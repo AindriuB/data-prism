@@ -113,7 +113,7 @@ final class HttpInboundGuard extends HttpServlet {
 
     /**
      * The body, or {@code null} when it is longer than the limit. Reads in 8192-byte chunks and stops at
-     * the first chunk that takes the total past the limit, so it can read up to the limit plus 8191 bytes.
+     * the first chunk that takes the total past the limit, so it can read up to the limit plus 8192 bytes.
      */
     private byte[] readBounded(HttpServletRequest request) throws IOException {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
