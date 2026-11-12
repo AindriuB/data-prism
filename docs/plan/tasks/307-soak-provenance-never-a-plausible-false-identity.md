@@ -41,3 +41,25 @@ The soak harness records which build each container ran. Several paths can still
 
 ## Out of scope
 Part B runs; the other 243 Lows (they stay in PLAN.md); the `load-test/pom.xml` enforcer regex; `docker/multi-instance/**`.
+
+## Review round 1 — findings
+
+Reviewed HEAD aa06388589569656d72acfdf8eb3ffa56752398d.
+
+- [P2] load-test/soak/build-images.sh:55 — `dirty` is computed against the `HEAD` of line 55, but the `commit` label is read at line 26, before the snapshot copy (`tar`, line 35). A commit landing between the two gives a plausible-false identity: old SHA with `dirty=no`. Same race class the dirty-flag item and AC5 close.
+  route: implementer — capture the full HEAD sha once at line 26 and diff-index against that sha, not symbolic `HEAD`; the `commit` label can stay its short form.
+  input: worktree with an uncommitted tracked edit E, HEAD=A. Start `SOAK_ALLOW_DIRTY=1 build-images.sh` (or without the flag); during the snapshot copy, `git commit -am` so HEAD=B contains E. Line 26 recorded commit=A; snapshot (with E) matches B, diff-index returns 0, `dirty=no`. Images and stamp claim `commit=A dirty=no` with content that is not A's; without the flag the refusal is skipped too.
+- [STYLE] load-test/soak/common.sh:43 — comment line is 204 characters; every other comment line in the file wraps at ≤120 (neighbours :42, :44 and origin/main common.sh:42-44).
+
+## Review round 2 — findings
+
+Reviewed HEAD 639ef4b96fc02766e339d894be070a8ea55ef695. Round 1's P2 and STYLE are fixed.
+
+- [STYLE] load-test/soak/build-images.sh:45 — the round 1 fix lengthened this comment line to 169 characters; it is the only comment line in the file over 120. Wrap it at ≤120 like lines 44 and 46.
+
+## Review round 3 — findings (owner review of PR #254, round 1)
+
+Reviewed HEAD cbbcf9d9dec83b34b5c1630251cfa34e2c920904. Only the two Mediums are in this round; the owner's Lows and Nit (254-3 to 254-10) are follow-ups for /record.
+
+- 254-1 (Medium) load-test/soak/build-images.sh:39 — the hash group returns only the mode pipeline's exit status; a failing content `shasum` (for example a dangling symlink) still yields a 64-character hash, so reuse can pick an image with other content. Fix: fail on each pipeline separately (temp files, or `|| exit 1` inside the group).
+- 254-2 (Medium) load-test/soak/build-images.sh:56 — the throwaway-index `git add` inherits repository config; with `core.fileMode=false` executables stage as 644, so a clean tree is always dirty and refused. Fix: pass `-c core.fileMode=true -c core.autocrlf=false` to that add.
