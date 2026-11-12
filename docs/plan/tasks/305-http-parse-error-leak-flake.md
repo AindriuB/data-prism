@@ -1,4 +1,4 @@
-# 305 — Refuse a malformed HTTP `tools/call` cleanly without ending the connection
+# 305 — Refuse a malformed HTTP `tools/call` cleanly without ending the MCP session
 
 **Repo:** .
 **Depends on:** none
@@ -21,6 +21,12 @@
 - PR #264 review round 1: 264-1 (Medium) settled by the guard route below, since the guard cannot sit behind
   `transportProvider()` (the record component and the registration bean are typed to the SDK class, whose
   constructor is private). 264-2 (Low) settled by bounding the goal to named cases.
+- Owner, 2026-11-12, verbatim: "Yes, keep 400". Keep 400 with JSON-RPC -32602 (-32600 for guard faults). The
+  connection may close, but the close must be clean and declared. Reason: one unambiguous `Connection: close`
+  stops the client reusing the socket, which fixes the flake; it also removes the stack-trace leak and the 500,
+  and leaves the MCP session intact. Tomcat 11.0.27 closes after a 400 by design (see Attempt 2). 304's
+  "refused without ending the session" is read as the MCP session (`Mcp-Session-Id`), not the TCP connection,
+  as A to D already behave.
 
 **Review:** this changes fail-closed behaviour on the request path. It is not a small change: full review
 (code-reviewer, adversarial and regression passes), whatever the line count.
@@ -40,9 +46,11 @@
 
 ## Goal
 A `tools/call` whose params have the wrong type (case E: `arguments` is a string) gets HTTP 500, a serialised
-`McpError` with a full `stackTrace`, and a closed keep-alive connection (see Attempt 1). Make exactly these
-cases clean JSON-RPC refusals that leave the connection and session usable: `tools/call` params that do not
-convert to `CallToolRequest`, and `initialize` params that do not convert to `InitializeRequest`. Also remove
+`McpError` with a full `stackTrace`, and a keep-alive connection closed under both `Connection: keep-alive`
+and `Connection: close` (see Attempt 1). A malformed message is refused without ending the MCP session. Make
+exactly these cases clean JSON-RPC refusals, closed cleanly with one declared `Connection: close`, after which
+the MCP session stays usable on a new connection: `tools/call` params that do not convert to
+`CallToolRequest`, and `initialize` params that do not convert to `InitializeRequest`. Also remove
 the serialised stack trace from the SDK's transport refusals (cases A to D and F).
 
 ## Approach
@@ -55,7 +63,8 @@ the serialised stack trace from the SDK's transport refusals (cases A to D and F
     SDK is given, not a re-implementation.
   - On a failed conversion it answers 400 `application/json` with
     `{"jsonrpc":"2.0","id":<echoed id>,"error":{"code":-32602,"message":<constant>}}`, logs one constant line
-    (no client content, no exception), and sets no `Connection` header.
+    (no client content, no exception), and adds no `Connection` header of its own: the only one is the
+  `Connection: close` Tomcat sets for a 400.
   - Everything else is forwarded unchanged, including bodies it cannot parse (the SDK refuses those).
   - Any exception inside the guard refuses with 400/-32600 and never forwards.
   - `init`, `destroy` and the servlet config delegate to the SDK servlet.
@@ -75,9 +84,9 @@ the serialised stack trace from the SDK's transport refusals (cases A to D and F
 ## Agreed refusal
 | Case | Status | Body | Connection | Session |
 |---|---|---|---|---|
-| E, `tools/call` params type error | 400, by the guard | JSON-RPC envelope, request `id`, `"code":-32602` | no `Connection: close`; socket stays open | answers the next request |
-| E, `initialize` capabilities string | 400, by the guard | JSON-RPC envelope, request `id`, `"code":-32602` | as above | as above |
-| A to D, F (SDK transport refusals) | 400, unchanged | JSON-RPC envelope, id echoed or null, `"code":-32600` | as above | as above |
+| E, `tools/call` params type error | 400, by the guard | JSON-RPC envelope, request `id`, `"code":-32602` | exactly one Connection header, `close`; no `keep-alive` | same `Mcp-Session-Id` answers the next request on a new connection |
+| E, `initialize` capabilities string | 400, by the guard | JSON-RPC envelope, request `id`, `"code":-32602` | exactly one Connection header, `close`; no `keep-alive` | as above |
+| A to D, F (SDK transport refusals) | 400, unchanged | JSON-RPC envelope, id echoed or null, `"code":-32600` | exactly one Connection header, `close`; no `keep-alive` | as above |
 No body in any row holds `stackTrace`, `"cause"`, a Java class name (`io.modelcontextprotocol.`, `org.apache.`,
 `java.`, `jdk.`) or the sentinel.
 
@@ -113,10 +122,15 @@ No body in any row holds `stackTrace`, `"cause"`, a Java class name (`io.modelco
 - [ ] AC8 *Superseded by AC9 to AC20.*
 - [ ] AC9 Case E (`tools/call`) returns the first row of the refusal table. The captured log for the case holds
   no sentinel, no stack trace and no `asyncComplete()` line, because the guard refuses before the SDK is reached.
-- [ ] AC10 A test in `HttpParseErrorLeakTest`, on a Tomcat mounting `servlet()`, sends `initialize`,
-  `notifications/initialized`, case E and `tools/list` over one raw `Socket` to `127.0.0.1` (one keep-alive
-  HTTP/1.1 connection), and asserts the `tools/list` answer is 200 with `get_entity_context`. It fails on
-  `origin/main` (EOF) and passes with the fix. Its SSE answers show `startAsync()` works through the wrapper.
+- [ ] AC10 Two tests in `HttpParseErrorLeakTest`, on a Tomcat mounting `servlet()`:
+  - Raw socket (kept, assertions changed): `initialize` and `notifications/initialized`, then case E over a raw
+    `Socket` to `127.0.0.1`. Case E answers 400 with the JSON-RPC body and exactly one Connection header,
+    `close`, with no `keep-alive` token anywhere in the headers. Then, on a new connection with the same
+    `Mcp-Session-Id`, `tools/list` answers 200 with `get_entity_context`. Its SSE answers show `startAsync()`
+    works through the wrapper.
+  - Forced reuse: with the JDK HttpClient, the next request after a case-E refusal succeeds.
+  Both fail on `origin/main`, where the 500 carries both `Connection: keep-alive` and `Connection: close`, and
+  pass with the fix.
 - [ ] AC11 `refused` asserts, for every case (A to D, E `tools/call`, F, E `initialize` capabilities): status
   400; a JSON-RPC envelope (`"jsonrpc":"2.0"`, the id echoed or null, code `-32…`); no `stackTrace`; no
   `"cause"`; no Java class name; no sentinel.
@@ -184,6 +198,7 @@ No body in any row holds `stackTrace`, `"cause"`, a Java class name (`io.modelco
 - The SDK DEBUG residual (304, `:78`) and the WARN lines PLAN lists as 304 residuals.
 - Changing `McpHttpEndToEndTest` or `AuditSinkFailureAbortsResponseTest`, or `ToolInputHttpTest` beyond `:208`.
 - Editing `known-flakes.md`; running two `mvn` processes at once in the same worktree.
+- Keeping the TCP connection open after a 4xx (Tomcat drops it by design).
 
 ## Proposed known-flakes row (for the scribe at /record)
 Replace the status cell of the `HttpParseErrorLeakTest.toolCallArgumentsString` row with:
@@ -193,8 +208,9 @@ Replace the status cell of the `HttpParseErrorLeakTest.toolCallArgumentsString` 
 of that socket was the only racy part. Reproduced deterministically over one raw socket (EOF on the next
 request). Fix: `HttpInboundGuard` in data-prism-mcp, mounted via `HttpTransport.servlet()`, answers 400 with a
 `-32602` JSON-RPC error before the SDK is reached and keeps the connection open; the content-free mapper no
-longer serialises a stack trace in any SDK error body. No SDK upgrade. The raw-socket test fails on the base and
-passes after. Direct `transportProvider()` mounts still get the 500 and the close (accepted residual). The 404
+longer serialises a stack trace in any SDK error body. The 400 carries exactly one `Connection: close` (Tomcat
+closes after a 400 by design), so the client no longer reuses the dead socket; the MCP session survives on a
+new connection. No SDK upgrade. The raw-socket and forced-reuse tests fail on the base and pass after. Direct `transportProvider()` mounts still get the 500 and the close (accepted residual). The 404
 variant at `refused:152` stays `open` and is not explained by this."
 
 ## Attempt 1 — outcome (b), stopped for owner
@@ -217,6 +233,19 @@ variant at `refused:152` stays `open` and is not explained by this."
 - The local 404 variant at `refused:152` (the first `initialize`) is NOT explained by this. Keep it out of
   305's scope; it is a follow-up.
 
+## Attempt 2 — blocked, stopped for owner
+- Tomcat 11.0.27's `Http11Processor.statusDropsConnection(int)` returns true for 400, 408, 411, 413, 414, 500,
+  501 and 503 and forces keepAlive=false. The implementer checked this in the bytecode and observed it on the
+  wire.
+- The guard's clean 400/-32602 arrives with `Content-Length: 75` and `Connection: close`, and Tomcat closes the
+  socket. A servlet cannot override this.
+- The SDK's existing A to D 400 refusals already behave the same way.
+- The old flake came from the 500 sending both `Connection: keep-alive` and `Connection: close`, which let the
+  JDK HttpClient sometimes reuse a dead socket.
+- The SDK request-size limit exists: `DEFAULT_REQUEST_MAX_SIZE` = 16 MiB, mirrored as
+  `HttpInboundGuard.SDK_REQUEST_MAX_SIZE`.
+- Resolved by the owner's "Yes, keep 400" (Decisions).
+
 
 ## Appendix: superseded
 Agents: do not read this section.
@@ -238,3 +267,11 @@ and report"; Owns included `pom.xml` (`mcp.version` only) and made `HttpInboundG
 covered "any other param-type error on the same path". Replaced because the record component and the
 registration bean are typed to the SDK class, whose constructor is private (264-1), and the goal named no
 case beyond E (264-2).
+
+Second amendment (2026-11-12, replaced after Attempt 2 by "Yes, keep 400"): title "without ending the
+connection"; the goal asked for refusals "that leave the connection and session usable"; the guard "sets no
+`Connection` header"; every refusal row's Connection cell was "no `Connection: close`; socket stays open" and
+the session cell "answers the next request"; AC10 sent `initialize`, `notifications/initialized`, case E and
+`tools/list` over one raw keep-alive socket and asserted the `tools/list` answer (EOF on `origin/main`); the
+known-flakes row said the guard "keeps the connection open". Replaced because Tomcat 11.0.27 closes the
+connection after any 400 and a servlet cannot override it (Attempt 2).
