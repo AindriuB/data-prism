@@ -45,6 +45,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `dataprism.json-sources.config-location` is never split at commas, and may now be a list of locations
   (`DUPLICATE_JSON_SOURCE` for a source named in two files).
 
+- A Hazelcast cluster upgraded from 0.7 needs a full, non-rolling restart: stop every 0.7 member before any 0.8 member
+  starts. A 0.8 member that finds an entry in a pre-0.8 map refuses with `UNSEALED_CLUSTER_STATE` (a 0.7 scope pause, with
+  `LEGACY_OVERSIGHT_STATE`), and the compatibility mode is withdrawn. The cluster state is cached data and is fetched
+  again: pending approvals are lost and must be requested again, and the re-identification index starts empty. Every map
+  name now ends in `.s1`. Each serving 0.8 member writes the best-effort fence entry `all` = `TRUE` in `dataprism.oversight`
+  so a joining 0.7 member reads everything as paused; it does not stop that member joining. See `docs/migration-0.8.md`.
+- `dataprism.limits.scope-read-budget` is still 100 but counts source reads, so a subject gets about 12 calls that ask
+  eight sources, not 100. New defaults: `request-timeout` `PT10S` and `scope-total-read-budget` 50,000.
+- A `tcp-ip` or `kubernetes` member now needs `dataprism.hazelcast.trusted-network: true`, your assertion that only Data
+  Prism members can reach the member port (it is not inferred from a private address), and a private
+  `dataprism.hazelcast.member.interface` that is set, bounded and valid (`MISSING_TRUSTED_NETWORK`,
+  `MISSING_MEMBER_INTERFACE`, `UNBOUNDED_MEMBER_INTERFACE`, `INVALID_CLUSTER_INTERFACE`, `PUBLIC_MEMBER_INTERFACE`,
+  `INVALID_TRUSTED_RANGE`). Before: no `trusted-network`, and an unset interface bound every interface. After:
+  `trusted-network: true` and `member.interface: "10.0.*.*"`. In plain Java, declare it with
+  `ClusterSecuritySettings.defaults().withTrustedNetwork(true, ranges, false)` passed to `PrivacyCluster.embedded`, which
+  has the same refusals; before, `PrivacyCluster.embedded(membership, true)`.
+- A `tcp-ip` or `kubernetes` member needs a cluster key and a name key (`dataprism.hazelcast.security.*`); a wrong key
+  refuses to start with `CLUSTER_KEY_MISMATCH`, and a key given as `provider-reference` is refused with
+  `MISSING_KEY_PROVIDER` unless a reviewed resolver is supplied. A cluster-key or name-key change is a planned full
+  restart. `PrivacyCluster.using()` refuses an instance with `UNSAFE_HAZELCAST_SERIALIZATION` unless it has
+  `requiredSerializationFilter()`, a non-empty Management Center `trustedInterfaces`, phone-home off, no memcache, REST
+  `HEALTH_CHECK` only, and no Jet or user-code deployment. `PrivacyCluster.close()` stops only an instance it started.
+- The `ClusterMembership` record's last component changed from `Optional<String> interfaceAddress` to
+  `String interfaceAddressOrNull` (`null` when unset). Before: `new ClusterMembership("prod", join, 5701,
+  Optional.of("10.0.*.*"))`; after: `new ClusterMembership("prod", join, 5701, "10.0.*.*")`. The `interfaceAddress()`
+  accessor still returns an `Optional`.
+- Startup refuses with `MISSING_CASE_AUTHORIZER` or `MISSING_CLIENT_ALLOWLIST` unless a bean or the setting supplies one;
+  two beans of one type fail with `NoUniqueBeanDefinitionException` unless one is `@Primary`. `AuthorizationService` and
+  `ScopeResolver` gain a required fourth constructor argument, a `ClientAllowlist` and a `CaseAuthorizer`
+  (`ClientAllowlist.unrestricted()` and `CaseAuthorizer.tokenTrusted()` keep the old behaviour).
+- `ClusterSecurityStatus` gains the components `pauseFresh` and `pauseAgeSeconds` and the reason `PAUSE_NOT_FRESH`: a
+  deconstruction pattern over the old four components, and an exhaustive `switch` over `Reason`, no longer compile. The
+  four-argument constructor is kept. The type was added after 0.7.1, so no released API breaks.
+- The public constructor `SensitivePatternValidator(SensitiveDataScanner)` is removed. `new SensitivePatternValidator(scanner)`
+  becomes `new SensitivePatternValidator(scanner, List.of())`; the no-argument constructor still compiles.
+
 ### Added
 
 - `AuditChainVerifierCli accept-crash-line <audit-directory> --checkpoints <anchor-store-file> --segment <name> --offset <n> --sha256 <hex>` (exit code 6 on refusal, see `--help`). Use it after a purge refuses with `AUDIT_RETENTION_CHAIN_UNVERIFIED` because a crash left a line that parses but was never hashed, and an investigation finds a crash line, not tampering. It appends one `CRASH_LINE_ACCEPTED` checkpoint to the anchor store, and purge then tolerates that exact line (segment, offset and the SHA-256 of its bytes) and nothing else. No audit file is changed. The checks do not prove a crash; your investigation decides, so accept a line only after confirming a known crash or power loss of that instance at that time. Someone who can write the audit directory can plant a line that passes every check in order to get it accepted. Stop the server first, run the command as the account that owns the anchor store, and re-run purge until it refuses only at the crash line's day (finish a partly deleted day first). The command refuses, writing nothing, when a `BOOT`, `PERIODIC` or `SHUTDOWN` checkpoint shows the writer got past the line (a power loss on a disk that does not honour fsync can trigger this; extend retention by hand), and when the store holds no `BOOT` for the line's instance, which in a deployment with a checkpoint sink is a strong sign of tampering. Only deployments with no checkpoint sink, and instances that ran before the store existed, should pass `--no-boot-checkpoint`, after investigating; it waives that one check, the waiver is recorded in the acceptance (`bootWaived`), and every later CLI verify run given `--checkpoints` prints a `NOTICE` for it (a program calling `verify()` directly does not see it). These checks refuse a line whose own evidence contradicts the store or the keys; they do not defend against someone who can write the audit directory. In a keyed deployment pass `--hmac-key-file`. The command reports whether the line's own hash recomputes: `KEYED_MATCH <i>` (the 1-based position of the matching key), `UNKEYED_MATCH`, `NO_MATCH_LOOKS_CUT` (looks like a cut or an edit), `NO_UNKEYED_MATCH` (no key given; the line looks cut if the deployment is unkeyed) and `UNKEYED_ONLY_FORGER_SHAPE` (the shape a forger without the key produces; refused). Apart from that refusal the report does not decide acceptance. An anchor store that contains an acceptance cannot be read by 0.7.x or earlier: a 0.7.x verifier stops with an unreadable checkpoint file, and a server rolled back to 0.7.x fails closed, whenever it has an expired day to purge, with `AUDIT_RETENTION_CHAIN_UNVERIFIED: could not read the earlier retention anchors`.
@@ -63,6 +99,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `INVALID_CHAINABLE_FIELD`.
 - `docs/operations.md`, a draft operations guide for running against many sources, and a startup refusal index in
   `docs/configuration.md` that documents the shipped codes no page listed.
+- `PrivacyCluster.servingInstance()`: Data Prism's cluster-backed stores use it, and it refuses with
+  `CLUSTER_OPERATION_REFUSED` while the member is not serving. `instance()` is unchanged and ungated. A store of your own
+  should move to `servingInstance()` to be refused with them.
+- The `CaseAuthorizer` SPI (`CaseAccessRequest`), `ClientAllowlist.unrestricted()` and `of(Set)`, and the
+  `FreeTextRecogniser` interface with `new SensitivePatternValidator(scanner, recognisers)`, the violation codes
+  `FREE_TEXT_RECOGNISED` and `FREE_TEXT_RECOGNISER_FAILED`, and `DataClassification.FREE_TEXT` (`DEFAULT` redacts,
+  `STRICT` removes).
+- An optional keyed audit chain, HMAC-SHA256 under `dataprism.audit.hmac-key`, with verification-only
+  `dataprism.audit.retired-hmac-keys.<key-id>`, `dataprism.audit.segment-max-size` (at least 1MB, needs `directory`),
+  the verifier flags `--hmac-key-file` and `--allow-unkeyed-writers`, and the startup refusals
+  `AUDIT_HMAC_REQUIRES_HASH_CHAINED`, `AUDIT_RETIRED_KEYS_REQUIRE_HMAC_KEY`, `MISSING_AUDIT_HMAC_KEY_REFERENCE`,
+  `DUPLICATE_AUDIT_KEY_ID`, `AUDIT_HMAC_KEY_UNRESOLVED`, `AUDIT_HMAC_KEY_TOO_SHORT`,
+  `AUDIT_KEY_REUSES_PSEUDONYMISATION_KEY`, `AUDIT_RECORDER_REPLACED_WITH_HMAC_KEY`,
+  `AUDIT_SEGMENT_SIZE_REQUIRES_DIRECTORY` and `INVALID_AUDIT_SEGMENT_SIZE`. Off by default.
+- `docs/key-rotation.md`, one procedure for each key and what a change costs.
+
+### Changed
+
+- The scope pause is one sealed, leased document in `dataprism.oversight.s1`; an absent or stale one means everything is
+  paused. `endScope` is refused with `OVERSIGHT_UNAVAILABLE` until the first document exists (about 30 seconds after a
+  full start), and a pause past 8,176 elements other than `all` is refused with `CLUSTER_OPERATION_REFUSED`. A joined
+  member without a valid card after a 30-second grace stops every instance serving and sets readiness `DOWN` under the
+  default `refuse`. A member that starts or rejoins can answer `CLUSTER_LOCK_TIMEOUT` briefly after a peer's write.
+- A joining member refuses links and page links without a `ClusterWideLinkAttemptLimiter`
+  (`MISSING_SHARED_LINK_LIMITER`); none ships, and sharing one across members is deferred.
+- With an audit key set, retention verifies with the current and retired keys and `allowUnkeyedWriters=false`, so
+  segments written unkeyed stop the purge with `AUDIT_RETENTION_CHAIN_UNVERIFIED` once they expire. `CLUSTER_KEY_SHARED`
+  and `NAME_KEY_SHARED` also cover the audit keys.
+- A pseudonymisation-key change takes effect on the first call after restart; in a cluster the identity cache is not
+  keyed by key id, so a rolling restart mixes pseudonyms for one subject. The audit event does not record the key id.
 
 ### Fixed
 

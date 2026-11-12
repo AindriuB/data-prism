@@ -70,3 +70,11 @@ One migration page and one `[Unreleased]` changelog section tell an operator and
 - Every page owned by 310 to 313; `docs/data-protection.md` (214), code, `docs/configuration.md`.
 - 239-11 to 239-13 and 239-21 (PLAN.md, 261's review leftovers in these files): not earmarked for 213; untasked, except where AC2 already requires the same content.
 - The 0.8.0 release-cut obligations in PLAN.md (advisories, published-image reruns, 263 Part B); version cuts and publication.
+
+## Review round 1 — findings
+
+Reviewed HEAD: 3c9348c288835baad874269473c8f1eb4b239e9c
+
+- [P2] docs/migration-0.8.md:403-406 and CHANGELOG.md:103-104 — Both files leave out that the public constructor `SensitivePatternValidator(SensitiveDataScanner)` was removed. They file the recogniser change under Added only, and say just the no-arg constructor "still compiles".
+  route: implementer — AC2 requires coverage of "all changed public constructors". Documenting this break changes no specified behaviour. 313's `Facts for 314` list (PR #257) missed it too, and the task says handed-over facts are to be checked, not copied.
+  input: integrator code that compiled against v0.7.1, `new SensitivePatternValidator(myScanner)`. The constructor exists at v0.7.1 `data-prism-validation/.../SensitivePatternValidator.java:43`. Built against 0.8 it no longer compiles: at 3c9348c2 `SensitivePatternValidator.java:51,59` has only `()` and `(SensitiveDataScanner, List<FreeTextRecogniser>)`. Task 208 (commit 6e1f9217, after v0.7.1) removed it. The migration page has no Breaking entry and no before/after for it. Suggested before/after: `new SensitivePatternValidator(scanner)` becomes `new SensitivePatternValidator(scanner, List.of())`.
