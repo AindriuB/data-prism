@@ -1,5 +1,34 @@
 # 213 — Document the 0.8 controls, key rotation and migration
 
+> **Retired 2026-11-12, not built. Superseded by 310, 311, 312, 313 and 314** (owner agreement of 2026-11-12: split into parallel docs tasks with disjoint Owns, plus one integrating task that alone writes the migration page and the changelog). Not executable; the brief below is kept as history. Every criterion below now lives in exactly one new task, counted in order from the first checkbox:
+>
+> | 213 criterion | New home |
+> |---|---|
+> | 1 every claim matches merged code | rule in every task ("Rules for every claim") |
+> | 2 pseudonymisation-key procedure | 310 AC1 |
+> | 3 separate key procedures | 310 AC2 |
+> | 4 OD-215-1 (a) cutover and read budget | 314 AC1 |
+> | 5 cluster procedure, map formats | 310 AC3 |
+> | 6 audit keys, CLI, segments, transition | 311 AC1 |
+> | 7 limits and D-1.0-4 | 311 AC2 |
+> | 8 architecture records | 311 AC3 |
+> | 9 case authorisation, allowlist, FREE_TEXT, recognisers, depth cap | 313 AC1 |
+> | 10 `extending.md` loading and constructors | 313 AC2 |
+> | 11 migration and changelog cover all changes | 314 AC2 |
+> | 12 rotation link; `audit-*.log` segments | 310 AC4 |
+> | 13 `member.interface` | split by file: 312 AC2 (`multiple-instances.md`), 314 AC3 (`migration-0.8.md`) |
+> | 14 `ClusterMembership` interface type | 314 AC4 |
+> | 15 verbatim opening and the 1.0 lists | 312 AC1 |
+> | 16 `eu-ai-act.md` paragraph | 312 AC5 |
+> | 17 `servingInstance()` | 314 AC5 |
+> | 18 `trusted-network` wording, NetworkPolicy, Compose | split by file: 312 AC3 (`multiple-instances.md`), 314 AC6 (`migration-0.8.md`) |
+> | 19 the guardrail as what it is | 312 AC4; its "no page calls the cluster secured or protected" clause is also a rule in every task |
+> | 20 trusted-network Breaking entry | 314 AC7 |
+> | 21 "supports", never "compliant" | rule in every task |
+> | 22 docs-site checks | last AC of every task |
+>
+> The PLAN.md follow-ups earmarked for 213 are assigned in the Context of the task that owns the file.
+
 Renumbered from 198 on 2026-10-19. Reconciled with the pre-0.9 freeze; see `docs/plan/reconciliation-2026-10-19.md`.
 
 **Repo:** `.`
