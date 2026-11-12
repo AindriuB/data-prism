@@ -41,3 +41,12 @@ The soak harness records which build each container ran. Several paths can still
 
 ## Out of scope
 Part B runs; the other 243 Lows (they stay in PLAN.md); the `load-test/pom.xml` enforcer regex; `docker/multi-instance/**`.
+
+## Review round 1 — findings
+
+Reviewed HEAD aa06388589569656d72acfdf8eb3ffa56752398d.
+
+- [P2] load-test/soak/build-images.sh:55 — `dirty` is computed against the `HEAD` of line 55, but the `commit` label is read at line 26, before the snapshot copy (`tar`, line 35). A commit landing between the two gives a plausible-false identity: old SHA with `dirty=no`. Same race class the dirty-flag item and AC5 close.
+  route: implementer — capture the full HEAD sha once at line 26 and diff-index against that sha, not symbolic `HEAD`; the `commit` label can stay its short form.
+  input: worktree with an uncommitted tracked edit E, HEAD=A. Start `SOAK_ALLOW_DIRTY=1 build-images.sh` (or without the flag); during the snapshot copy, `git commit -am` so HEAD=B contains E. Line 26 recorded commit=A; snapshot (with E) matches B, diff-index returns 0, `dirty=no`. Images and stamp claim `commit=A dirty=no` with content that is not A's; without the flag the refusal is skipped too.
+- [STYLE] load-test/soak/common.sh:43 — comment line is 204 characters; every other comment line in the file wraps at ≤120 (neighbours :42, :44 and origin/main common.sh:42-44).
