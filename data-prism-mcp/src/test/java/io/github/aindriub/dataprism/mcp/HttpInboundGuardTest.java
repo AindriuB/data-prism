@@ -168,6 +168,23 @@ class HttpInboundGuardTest {
     }
 
     @Test
+    @DisplayName("tools/call and initialize with params absent or null: 400 / -32602, the SDK never invoked")
+    void absentOrNullParamsRefused() throws Exception {
+        String[] bodies = {
+            "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\"}",
+            "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":null}",
+            "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"initialize\"}",
+            "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"initialize\",\"params\":null}"};
+        for (String body : bodies) {
+            Recording sdk = new Recording();
+            Exchange exchange = new Exchange();
+            run(new HttpInboundGuard(sdk, JSON, 4096), post(body), exchange.response);
+            assertThat(sdk.calls).as(body).isZero();
+            assertRefusal(exchange, -32602, "4");
+        }
+    }
+
+    @Test
     @DisplayName("an id that is neither a number nor a string is answered as null")
     void structuredIdIsNull() throws Exception {
         Recording sdk = new Recording();

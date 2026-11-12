@@ -128,6 +128,13 @@ class HttpParseErrorLeakTest {
                 + "\"version\":\"1\"}}}", false);
     }
 
+    @Test
+    @DisplayName("E: tools/call with params null, and initialize with params absent")
+    void paramsAbsentOrNull() throws Exception {
+        refused("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":null}", false);
+        refused("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"initialize\"}", false);
+    }
+
     private static final String CASE_E = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\","
             + "\"params\":{\"name\":\"get_entity_context\",\"arguments\":\"" + SENTINEL + "\"}}";
     private static final String TOOLS_LIST = "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\"}";

@@ -363,8 +363,9 @@ public final class DataPrismMcpServer {
 
         /**
          * The servlet to mount: the transport provider behind {@link HttpInboundGuard}, which refuses a
-         * {@code tools/call} or {@code initialize} whose params have the wrong type with a clean 400 that
-         * leaves the connection open. Mounting {@link #transportProvider()} directly skips the guard.
+         * {@code tools/call} or {@code initialize} whose params are absent, null or of the wrong type with a
+         * clean 400 and a single {@code Connection: close}; the MCP session stays usable on a new connection.
+         * Mounting {@link #transportProvider()} directly skips the guard.
          * Each call returns a new wrapper over the same provider; mount one.
          */
         public HttpServlet servlet() {

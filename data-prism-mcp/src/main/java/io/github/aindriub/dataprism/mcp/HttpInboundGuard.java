@@ -28,7 +28,7 @@ import java.util.Objects;
 
 /**
  * Wraps the SDK's streamable HTTP servlet and refuses, itself, a {@code tools/call} or {@code initialize}
- * whose params do not convert to the SDK's request type.
+ * whose params are absent, null or do not convert to the SDK's request type.
  *
  * <p>Under SDK 2.1.0 such a message makes the SDK's handler throw before its error handling is attached;
  * the transport then answers 500 with a serialised exception and closes the connection. Here the body of a
@@ -111,7 +111,10 @@ final class HttpInboundGuard extends HttpServlet {
         delegate.service((ServletRequest) new ReplayedRequest(request, body), (ServletResponse) response);
     }
 
-    /** The body, or {@code null} when it is longer than the limit. Never reads more than the limit plus one. */
+    /**
+     * The body, or {@code null} when it is longer than the limit. Reads in 8192-byte chunks and stops at
+     * the first chunk that takes the total past the limit, so it can read up to the limit plus 8191 bytes.
+     */
     private byte[] readBounded(HttpServletRequest request) throws IOException {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         byte[] chunk = new byte[8192];
@@ -142,10 +145,14 @@ final class HttpInboundGuard extends HttpServlet {
             return new Object[] {0, null};
         }
         try {
-            if ("tools/call".equals(method)) {
-                mapper.convertValue(message.get("params"), McpSchema.CallToolRequest.class);
-            } else if ("initialize".equals(method)) {
-                mapper.convertValue(message.get("params"), McpSchema.InitializeRequest.class);
+            // absent or null params convert to null, which the SDK then dereferences: refuse them too
+            if ("tools/call".equals(method)
+                    && mapper.convertValue(message.get("params"), McpSchema.CallToolRequest.class) == null) {
+                return new Object[] {INVALID_PARAMS, message.get("id")};
+            }
+            if ("initialize".equals(method)
+                    && mapper.convertValue(message.get("params"), McpSchema.InitializeRequest.class) == null) {
+                return new Object[] {INVALID_PARAMS, message.get("id")};
             }
         } catch (RuntimeException e) {
             return new Object[] {INVALID_PARAMS, message.get("id")};
