@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -145,9 +146,10 @@ class StdioParseErrorLeakTest {
         StringBuffer stderr = new StringBuffer();
         List<String> stdout = new java.util.concurrent.CopyOnWriteArrayList<>();
         BlockingQueue<String> responses = new LinkedBlockingQueue<>();
-        AtomicReference<IOException> readFailure = new AtomicReference<>();
-        Thread errReader = new Thread(() -> drain(process.getErrorStream(), stderr, null, null, readFailure));
-        Thread outReader = new Thread(() -> drain(process.getInputStream(), new StringBuffer(), responses, stdout, readFailure));
+        AtomicReference<Throwable> readFailure = new AtomicReference<>();
+        AtomicInteger endsOfStream = new AtomicInteger();
+        Thread errReader = new Thread(() -> drain(process.getErrorStream(), stderr, null, null, readFailure, endsOfStream));
+        Thread outReader = new Thread(() -> drain(process.getInputStream(), new StringBuffer(), responses, stdout, readFailure, endsOfStream));
         errReader.setDaemon(true);
         outReader.setDaemon(true);
         errReader.start();
@@ -163,13 +165,18 @@ class StdioParseErrorLeakTest {
             in.flush();
             awaitResponse(responses, "\"id\":99", stdout, stderr);
             in.close();
+            if (!process.waitFor(10, TimeUnit.SECONDS)) {
+                throw new AssertionError("the child did not exit by itself within 10s of stdin closing; stderr:\n" + stderr);
+            }
+            assertThat(process.exitValue()).as("the child's exit status after stdin closed").isZero();
         } finally {
+            // cleanup only: on the normal path the child has already exited
             process.toHandle().destroy();
             if (!process.waitFor(10, TimeUnit.SECONDS)) {
                 process.destroyForcibly().waitFor(10, TimeUnit.SECONDS);
             }
         }
-        joinToEndOfStream(errReader, outReader, readFailure);
+        joinToEndOfStream(errReader, outReader, readFailure, endsOfStream);
         return new Result(List.copyOf(stdout), stderr.toString());
     }
 
@@ -190,7 +197,7 @@ class StdioParseErrorLeakTest {
     }
 
     private static void drain(InputStream stream, StringBuffer into, BlockingQueue<String> queue,
-            List<String> lines, AtomicReference<IOException> failure) {
+            List<String> lines, AtomicReference<Throwable> failure, AtomicInteger endsOfStream) {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
@@ -202,24 +209,29 @@ class StdioParseErrorLeakTest {
                     queue.add(line);
                 }
             }
-        } catch (IOException e) {
-            failure.compareAndSet(null, e);
+            endsOfStream.incrementAndGet();
+        } catch (Throwable t) {
+            failure.compareAndSet(null, t);
         }
     }
 
     /**
-     * Waits for both readers to reach end of stream and fails if either ended on an IOException: a
+     * Waits for both readers to reach end of stream and fails unless both returned null from readLine with no Throwable: a
      * leak check must never pass on output that was not fully read.
      */
     private static void joinToEndOfStream(Thread errReader, Thread outReader,
-            AtomicReference<IOException> readFailure) throws InterruptedException {
+            AtomicReference<Throwable> readFailure, AtomicInteger endsOfStream) throws InterruptedException {
         errReader.join(5000);
         outReader.join(5000);
         if (errReader.isAlive() || outReader.isAlive()) {
             throw new AssertionError("child output readers did not reach end of stream");
         }
         if (readFailure.get() != null) {
-            throw new AssertionError("child output ended on an IOException, so it was not fully read", readFailure.get());
+            throw new AssertionError("a child output reader ended on " + readFailure.get().getClass().getName()
+                    + ", so the output was not fully read", readFailure.get());
+        }
+        if (endsOfStream.get() != 2) {
+            throw new AssertionError("child output readers did not both reach end of stream (readLine returned null)");
         }
     }
 }
