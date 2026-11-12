@@ -42,7 +42,8 @@ hash="$(cd "$snap" && {
 [ "${#hash}" -eq 64 ] || { echo "refused: could not hash the snapshot" >&2; exit 1; }
 tag="${hash:0:12}"
 # Dirty: the snapshot as copied, staged into a throwaway index (objects go to a throwaway directory that borrows the
-# repository's), compared with the tree of the HEAD read before the copy (a commit landing mid-build cannot hide an edit). 0 = same, 1 = differs, anything else = refuse.
+# repository's), compared with the tree of the HEAD read before the copy
+# (a commit landing mid-build cannot hide an edit). 0 = same, 1 = differs, anything else = refuse.
 git_dir="$(git_ok rev-parse --absolute-git-dir)" && common_dir="$(cd "$repo_root" && cd "$(git rev-parse --git-common-dir)" && pwd)" \
   || { echo "refused: git could not locate the repository" >&2; exit 1; }
 scratch="$(mktemp -d)"
