@@ -128,10 +128,15 @@ class HttpParseErrorLeakTest {
                 + "\"version\":\"1\"}}}", false);
     }
 
+    private static final String CASE_E = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\","
+            + "\"params\":{\"name\":\"get_entity_context\",\"arguments\":\"" + SENTINEL + "\"}}";
+    private static final String TOOLS_LIST = "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\"}";
+
     @Test
-    @DisplayName("E: the connection stays open and the session answers the next request after a type error")
-    void keepAliveSurvivesTypeError() throws Exception {
+    @DisplayName("E: a type error closes the connection once, declared, and the session answers on a new one")
+    void typeErrorClosesCleanlyAndSessionSurvives() throws Exception {
         int port = start();
+        String session;
         try (java.net.Socket socket = new java.net.Socket("127.0.0.1", port)) {
             socket.setSoTimeout(30_000);
             java.io.OutputStream out = socket.getOutputStream();
@@ -139,19 +144,47 @@ class HttpParseErrorLeakTest {
 
             String[] init = rawPost(out, in, null, INITIALIZE);
             assertThat(init[0]).isEqualTo("200");
-            String session = init[1];
+            session = init[1];
             assertThat(rawPost(out, in, session, "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}")[0])
                     .isEqualTo("202");
-            String[] bad = rawPost(out, in, session, "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\","
-                    + "\"params\":{\"name\":\"get_entity_context\",\"arguments\":\"" + SENTINEL + "\"}}");
-            String[] list = rawPost(out, in, session, "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\"}");
+            String[] bad = rawPost(out, in, session, CASE_E);
+            assertThat(bad[0]).isEqualTo("400");
+            assertThat(bad[2]).contains("\"jsonrpc\":\"2.0\"").contains("\"id\":2").contains("\"code\":-32602");
+            // Exactly one Connection header, close, and no keep-alive token anywhere in the headers.
+            assertThat(bad[3].toLowerCase(java.util.Locale.ROOT).lines()
+                    .filter(h -> h.startsWith("connection:")).toList()).containsExactly("connection: close");
+            assertThat(bad[3].toLowerCase(java.util.Locale.ROOT)).doesNotContain("keep-alive");
+        }
+        try (java.net.Socket socket = new java.net.Socket("127.0.0.1", port)) {
+            socket.setSoTimeout(30_000);
+            String[] list = rawPost(socket.getOutputStream(), new java.io.BufferedInputStream(socket.getInputStream()),
+                    session, TOOLS_LIST);
             assertThat(list[0]).isEqualTo("200");
             assertThat(list[2]).contains("get_entity_context");
-            assertThat(bad[0]).isEqualTo("400");
         }
     }
 
-    /** One HTTP/1.1 request on an open socket; returns {status, Mcp-Session-Id or null, body}. */
+    @Test
+    @DisplayName("E: a pooled HTTP/1.1 client reuses nothing dead after a type error")
+    void pooledClientSucceedsAfterTypeError() throws Exception {
+        int port = start();
+        HttpClient http = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1)
+                .sslContext(explicitSslContext()).build();
+        URI uri = URI.create("http://127.0.0.1:" + port + "/mcp");
+        HttpResponse<String> init = post(http, uri, null, INITIALIZE);
+        assertThat(init.statusCode()).isEqualTo(200);
+        String session = init.headers().firstValue("Mcp-Session-Id").orElseThrow();
+        post(http, uri, session, "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}");
+
+        HttpResponse<String> bad = post(http, uri, session, CASE_E);
+        assertThat(bad.statusCode()).isEqualTo(400);
+        assertThat(bad.headers().allValues("Connection")).doesNotContain("keep-alive");
+        HttpResponse<String> list = post(http, uri, session, TOOLS_LIST);
+        assertThat(list.statusCode()).isEqualTo(200);
+        assertThat(list.body()).contains("get_entity_context");
+    }
+
+    /** One HTTP/1.1 request on an open socket; returns {status, Mcp-Session-Id or null, body, raw headers}. */
     private static String[] rawPost(java.io.OutputStream out, java.io.InputStream in, String session, String body)
             throws Exception {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
@@ -170,9 +203,11 @@ class HttpParseErrorLeakTest {
             throw new java.io.EOFException("the server closed the connection before answering");
         }
         String sessionId = null;
+        StringBuilder headers = new StringBuilder();
         int length = -1;
         boolean chunked = false;
         for (String header = line(in); header != null && !header.isEmpty(); header = line(in)) {
+            headers.append(header).append('\n');
             String lower = header.toLowerCase(java.util.Locale.ROOT);
             if (lower.startsWith("mcp-session-id:")) {
                 sessionId = header.substring(header.indexOf(':') + 1).trim();
@@ -193,7 +228,7 @@ class HttpParseErrorLeakTest {
         } else if (length > 0) {
             payload.write(in.readNBytes(length));
         }
-        return new String[] {status.split(" ")[1], sessionId, payload.toString(StandardCharsets.UTF_8)};
+        return new String[] {status.split(" ")[1], sessionId, payload.toString(StandardCharsets.UTF_8), headers.toString()};
     }
 
     private static String line(java.io.InputStream in) throws java.io.IOException {
