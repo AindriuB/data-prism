@@ -116,6 +116,7 @@ plugins:
           - extending.md
           - audit.md
           - log-shipping.md
+          - key-rotation.md
           - reidentification.md
           - eu-ai-act.md
           - architecture.md
@@ -187,6 +188,7 @@ nav:
       - extending.md
       - audit.md
       - log-shipping.md
+      - key-rotation.md
       - reidentification.md
       - eu-ai-act.md
       - architecture.md

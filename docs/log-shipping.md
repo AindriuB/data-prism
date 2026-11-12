@@ -23,8 +23,10 @@ falls behind or restarts loses nothing, because the file is still there.
 
 ## What is the record, and what is a copy
 
-- The native hash-chained segments (`audit-YYYY-MM-DD.log`) are the verifiable
-  record. Verify them with the [offline verifier](audit.md#the-offline-verifier).
+- The native hash-chained segments (`audit-YYYY-MM-DD.log`, and
+  `audit-YYYY-MM-DD.NNNN.log` once `dataprism.audit.segment-max-size` is set) are
+  the verifiable record. A glob of `audit-*.log` matches both forms, which is
+  why the shipper must never be pointed at this directory. Verify them with the [offline verifier](audit.md#the-offline-verifier).
   Do not ship or tail them.
 - The `.ndjson` projection is a copy for search. It is not chained and nothing
   verifies it. Point shippers at the projection directory only. See

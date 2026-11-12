@@ -8,8 +8,8 @@ description: A draft guide to running Data Prism against many sources, with link
 !!! warning "Draft"
     This is a first, draft operations guide, written for 0.8. It says what to size, review and watch when one
     deployment reaches many sources, enables links, or runs more than one instance. It is not complete: the
-    batch and bulk tools, and the key-rotation procedures, arrive with later releases and pages, and this page will
-    change as they do. Where it points to another page for the rule, that page is the rule.
+    batch and bulk tools arrive with later releases and pages, and this page will
+    change as they do. The key-rotation procedures are in [Rotating keys](key-rotation.md). Where it points to another page for the rule, that page is the rule.
 
 ## Running more than one instance
 
@@ -133,8 +133,7 @@ provider entry). Removing it from memory only is not retirement: any copy that s
 deployment file still verifies, and can still be used to forge a link that names the retired key id. A key id that
 this member no longer holds is refused as `LINK_UNKNOWN_KEY` and counted by the failed-attempt limiter. The rotation
 procedure, in two phases so that a rolling restart never produces a link that a member cannot verify, is written
-up with the 1.0 controls in the key-rotation guide, which this page will link when it is published; do not retire a
-key by improvisation in the meantime.
+up in [Rotating keys](key-rotation.md#link-keys); do not retire a key by improvisation.
 
 ## What to watch
 
