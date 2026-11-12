@@ -79,8 +79,9 @@ The procedure:
 4. Generate the new key and give it a new id, and store it where the deployment reads its keys. Do not touch the old
    key.
 5. Set `dataprism.privacy.hmac-key.key-id` and its environment variable (or provider reference) to the new key.
-6. Restart. For a deployment with `topology: embedded`, stop every member before starting any, and follow the
-   cluster steps in [the cluster key](#the-cluster-key) for the order. A rolling restart is not a safe way to change
+6. Restart. For a deployment with `topology: embedded`, stop every member before starting any, and use only
+   the stop-all, then start-all order of [the cluster key](#the-cluster-key) (its steps 3 and 5). Do not generate or
+   change a cluster key or a name key, and do not destroy either; they stay as they are. A rolling restart is not a safe way to change
    this key: members on the new key and members on the old key, sharing one identity cache, give different answers for
    the same subject. A full stop empties the identity cache, which the new key then refills, and empties the
    re-identification index, so pseudonyms issued before the change can no longer be re-identified. There is no
@@ -252,9 +253,21 @@ renames existing entries. The member cards also carry a check value for the name
 id with other bytes is judged unverified.
 
 The loss is the same as the cluster key's, including the re-identification index: after the restart, a pseudonym
-issued before it can no longer be re-identified. Use the cluster procedure above, changing
-`dataprism.hazelcast.security.name-key.key-id` and its variable instead of, or together with, the cluster key. If you
-change both, do it in one window, with one full stop. Do not run members on different name keys.
+issued before it can no longer be re-identified. To change only the name key, follow the steps of the cluster
+procedure above with the name key in the place of the cluster key:
+
+1. Choose a window and tell the people who approve and re-identify (cluster step 1).
+2. Generate the new name key and give it a new id with no dot in it, distinct from every other key's id. Store it where
+   the deployment reads its keys.
+3. Stop every member (cluster step 3).
+4. Set `dataprism.hazelcast.security.name-key.key-id` and its environment variable to the new name key on every member.
+   Leave the cluster key exactly as it is: do not generate a new one, and do not destroy it. The members still need it to
+   open the cluster's sentinel and entries, and a member that cannot resolve it fails to start.
+5. Start every member and check `clusterSecurity` as in cluster step 6.
+6. Destroy the old name key only. The cluster key stays in use.
+
+If you change both keys, do it in one window with one full stop, following the cluster procedure and setting both
+key ids in its step 4. Do not run members on different name keys.
 
 ## Link keys
 
