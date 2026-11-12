@@ -29,6 +29,13 @@
   as A to D already behave.
 - Owner, 2026-11-12, verbatim: "Yes, extend Owns". Owns gains the 9 bean-inventory golden files, limited to
   the `dataPrismMcpServlet` line in each (see Attempt 3).
+- Owner, 2026-11-12, verbatim: "Yes, refuse them". `tools/call` and `initialize` requests whose `params` are
+  absent or JSON `null` count as a failed conversion: the guard answers 400 with JSON-RPC -32602 (same id echo,
+  no `Connection` header of its own). Reason: `convertValue(null, X)` returns null, so the guard forwards them,
+  and SDK 2.1.0 then dereferences null synchronously (`McpAsyncServer` toolsCallRequestHandler
+  `callToolRequest.name()`; `DefaultMcpStreamableServerSessionFactory.startSession`
+  `initializeRequest.capabilities()`), giving the same 500 / asyncComplete / close as case E. For `initialize`
+  the body also contains an `io.modelcontextprotocol.` class name. `params: {}` is unaffected.
 
 **Review:** this changes fail-closed behaviour on the request path. It is not a small change: full review
 (code-reviewer, adversarial and regression passes), whatever the line count.
@@ -55,7 +62,8 @@ A `tools/call` whose params have the wrong type (case E: `arguments` is a string
 and `Connection: close` (see Attempt 1). A malformed message is refused without ending the MCP session. Make
 exactly these cases clean JSON-RPC refusals, closed cleanly with one declared `Connection: close`, after which
 the MCP session stays usable on a new connection: `tools/call` params that do not convert to
-`CallToolRequest`, and `initialize` params that do not convert to `InitializeRequest`. Also remove
+`CallToolRequest`, `initialize` params that do not convert to `InitializeRequest`, and `tools/call` or
+`initialize` with `params` absent or JSON `null` (owner, "Yes, refuse them"). Also remove
 the serialised stack trace from the SDK's transport refusals (cases A to D and F).
 
 ## Approach
@@ -91,6 +99,7 @@ the serialised stack trace from the SDK's transport refusals (cases A to D and F
 |---|---|---|---|---|
 | E, `tools/call` params type error | 400, by the guard | JSON-RPC envelope, request `id`, `"code":-32602` | exactly one Connection header, `close`; no `keep-alive` | same `Mcp-Session-Id` answers the next request on a new connection |
 | E, `initialize` capabilities string | 400, by the guard | JSON-RPC envelope, request `id`, `"code":-32602` | exactly one Connection header, `close`; no `keep-alive` | as above |
+| `tools/call` or `initialize`, `params` absent or `null` | 400, by the guard | JSON-RPC envelope, request `id`, `"code":-32602` | exactly one Connection header, `close`; no `keep-alive` | as above |
 | A to D, F (SDK transport refusals) | 400, unchanged | JSON-RPC envelope, id echoed or null, `"code":-32600` | exactly one Connection header, `close`; no `keep-alive` | as above |
 No body in any row holds `stackTrace`, `"cause"`, a Java class name (`io.modelcontextprotocol.`, `org.apache.`,
 `java.`, `jdk.`) or the sentinel.
@@ -158,15 +167,18 @@ No body in any row holds `stackTrace`, `"cause"`, a Java class name (`io.modelco
   body read) gives 400/-32600 and the SDK servlet is never invoked.
 - [ ] AC20 `McpTransportWiring` registers `transport.servlet()` in a `ServletRegistrationBean<HttpServlet>`
   with `asyncSupported` true; `DataPrismAutoConfigurationTest` passes unchanged.
+- [ ] AC21 `tools/call` and `initialize` with `params` absent, and each with `params: null`, return 400 with
+  `"code":-32602` and the envelope rules of AC11. Shown by an `HttpInboundGuardTest` case (the SDK servlet is
+  not invoked) and one `HttpParseErrorLeakTest` case, each red before the change and green after (PR body).
 
 ## Checks
-- `leak-class` test — AC3, AC6, AC9, AC10, AC11
+- `leak-class` test — AC3, AC6, AC9, AC10, AC11, AC21
   run: `mvn -q -pl data-prism-integration-tests -am test -Dtest=HttpParseErrorLeakTest -Dsurefire.failIfNoSpecifiedTests=false`
   report: `data-prism-integration-tests/target/surefire-reports/TEST-*HttpParseErrorLeakTest.xml`
   min-passing: 10  max-skipped: 0
 - `class-repeat` command — AC6
   run: `for i in $(seq 20); do mvn -q -pl data-prism-integration-tests -am test -Dtest=HttpParseErrorLeakTest -Dsurefire.failIfNoSpecifiedTests=false || exit 1; done`
-- `mcp-module` test — AC16, AC17, AC18, AC19
+- `mcp-module` test — AC16, AC17, AC18, AC19, AC21
   run: `mvn -q -pl data-prism-mcp -am test`
   report: `data-prism-mcp/target/surefire-reports/TEST-*.xml`
   min-passing: the count on `origin/main` plus the new tests  max-skipped: 0
@@ -212,9 +224,9 @@ Replace the status cell of the `HttpParseErrorLeakTest.toolCallArgumentsString` 
 `McpError` and stack trace, send `Connection: close`, and close the keep-alive socket; the JDK client's reuse
 of that socket was the only racy part. Reproduced deterministically over one raw socket (EOF on the next
 request). Fix: `HttpInboundGuard` in data-prism-mcp, mounted via `HttpTransport.servlet()`, answers 400 with a
-`-32602` JSON-RPC error before the SDK is reached and keeps the connection open; the content-free mapper no
-longer serialises a stack trace in any SDK error body. The 400 carries exactly one `Connection: close` (Tomcat
-closes after a 400 by design), so the client no longer reuses the dead socket; the MCP session survives on a
+`-32602` JSON-RPC error before the SDK is reached, a clean refusal with a single `Connection: close`; the
+content-free mapper no longer serialises a stack trace in any SDK error body. Because that one `Connection: close`
+is unambiguous (Tomcat closes after a 400 by design), the client no longer reuses the dead socket; the MCP session survives on a
 new connection. No SDK upgrade. The raw-socket and forced-reuse tests fail on the base and pass after. Direct `transportProvider()` mounts still get the 500 and the close (accepted residual). The 404
 variant at `refused:152` stays `open` and is not explained by this."
 
@@ -261,6 +273,10 @@ variant at `refused:152` stays `open` and is not explained by this."
 - Resolved by the owner's "Yes, extend Owns" (Decisions): the 9 files join Owns, limited to the
   `dataPrismMcpServlet` line in each, and the `scope` check admits them.
 
+## Review round 1 — findings
+- [P2] data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/HttpInboundGuard.java:144-149 — Guard treats absent/`null` params as convertible (`convertValue(null, X)` returns null), so the SDK still crashes on them. Settled by the owner decision "Yes, refuse them" (see AC21). route: implementer.
+- [STYLE] data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/DataPrismMcpServer.java:366-367 — The `servlet()` Javadoc says the guard's 400 "leaves the connection open". The opposite was observed (Attempt 2; AC10 asserts `Connection: close`). route: implementer. rule: docs/conventions.md:191-198.
+- [STYLE] data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/HttpInboundGuard.java:114 — The Javadoc says "Never reads more than the limit plus one", but the loop at :121-125 reads 8192-byte chunks and checks after each read, so it can read up to limit + 8192. Correct the comment. route: implementer. rule: docs/conventions.md:191-198.
 
 ## Appendix: superseded
 Agents: do not read this section.
