@@ -1842,8 +1842,13 @@ class MemberCardTest {
             state.pauseTool("p");
             assertThat(state.document().heldDigest()).as("the pause moved the held digest").isNotEqualTo(atStart);
             release.countDown();
-            assertThat(Fixture.await(30, () -> state.document().heldDigest().equals(cardOf(wrappers[0]).pauseDigest())))
-                    .as("the card reaches the held digest").isTrue();
+            assertThat(Fixture.await(30, () -> {
+                if (state.document().heldDigest().equals(cardOf(wrappers[0]).pauseDigest())) {
+                    return true;
+                }
+                cards.submitPass();
+                return false;
+            })).as("the card reaches the held digest").isTrue();
         } finally {
             release.countDown();
             writer.join();
@@ -1864,11 +1869,18 @@ class MemberCardTest {
         try {
             state.pauseTool("p");
             assertThat(state.toolPaused("p")).isTrue();
-            // A card may still be the one built before the pause landed (a digest the document held earlier); the
-            // card must reach the held digest, which is read inside the wait.
+            // A card may still be the one built before the pause landed (a digest the document held earlier). If the
+            // pause's pass found that write in flight it writes nothing and leaves the mark for the next pass, which
+            // this fixture's one-hour tick never runs; so each poll submits that pass, as the one-second production
+            // tick does. The card must then reach the held digest, which is read inside the wait.
+            MemberCards cards = wrappers[0].memberCards().orElseThrow();
             assertThat(Fixture.await(30, () -> {
                 PauseDocument.Digest card = cardOf(wrappers[0]).pauseDigest();
-                return card != null && card.equals(state.document().heldDigest());
+                if (card != null && card.equals(state.document().heldDigest())) {
+                    return true;
+                }
+                cards.submitPass();
+                return false;
             })).as("the next card carries the document's digest").isTrue();
             assertThat(cardOf(wrappers[0]).pauseDigest()).isEqualTo(state.document().heldDigest());
         } finally {
