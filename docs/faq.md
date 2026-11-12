@@ -47,7 +47,13 @@ source that answered is refused, or when the final check over the assembled
 response finds a match. This scan first runs in the Spring starter, the
 packaged server and the configured-JSON-sources mode in 0.7.0: through 0.6.x
 only the raw-value check was registered there, so a scan-shaped value in a
-`@NonSensitive` field passed. See [Migrating to 0.7.0](migration-0.7.md). This is shape-based matching for a fixed
+`@NonSensitive` field passed. See [Migrating to 0.7.0](migration-0.7.md). The scan reads at most 16 levels of nesting
+and a character budget (262,144 characters by default); a response nested deeper, or larger, than that cannot be
+examined in full, so the validator fails closed and refuses it with `RESPONSE_TOO_LARGE_TO_SCAN` rather than
+passing the part it did not read. From 0.8 a deployment can add its own check for free text, a
+`FreeTextRecogniser`, which can only add refusals: see
+[Add a free-text recogniser](extending.md#add-a-free-text-recogniser). A model field classified `FREE_TEXT` is
+redacted under the `DEFAULT` profile and removed under `STRICT`. Without a recogniser, this is shape-based matching for a fixed
 list of formats, not open-ended named-entity recognition, so it will not
 catch, for example, a bare name typed into a note; the repository does not
 document a reason for that scope beyond it being what shipped. The check
