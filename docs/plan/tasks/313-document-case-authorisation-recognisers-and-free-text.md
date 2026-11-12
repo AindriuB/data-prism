@@ -61,3 +61,12 @@ An integrator can load a `CaseAuthorizer` and supply a recogniser from the docs 
 - The startup warning for a source name over 128 characters (code; PLAN.md:142).
 - 239-10, 239-12 (tools half), 239-17 to 239-20 and 239-22 (PLAN.md, 261's review leftovers in these pages), `tools.md:120` "unclassified values dropped", and `faq.md:68-70, :125-126`: not earmarked for 213; untasked.
 - `docs/data-protection.md` (214), code, `docs/configuration.md`, version cuts and publication.
+
+## Review round 1 — findings
+
+Reviewed HEAD 58858e37fd328ba750e4d92449778fb30c222755. Owner decision 2026-11-12: the three P3s below are fixed in this round because each leaves the new docs wrong; the two NOTEs are follow-ups.
+
+- [STYLE] docs/extending.md:1011-1012 — the new recogniser section cites internal plan ids "(task 209)", "(task 208)"; no user page does that (docs/faq.md:47-49 states the same fact without one). Drop the ids, keep the release versions.
+- [P3] docs/faq.md:41 — "at any depth up to a size budget" contradicts the new faq.md:50 ("at most 16 levels of nesting"); SensitiveDataScanner MAX_DEPTH=16 refuses deeper responses. Correct line 41.
+- [P3] docs/faq.md:52 — "refuses it with `RESPONSE_TOO_LARGE_TO_SCAN`" implies the client gets that code; the client sees `refused: VALIDATION_FAILED at $` (DefaultContextOrchestrator.java:377, :593-594), and `RESPONSE_TOO_LARGE_TO_SCAN` is the violation code only. Say which is which, as the new tools.md FREE_TEXT rows do.
+- [P3] docs/extending.md, the `CaseAuthorizerExtensionAutoConfiguration` example — the `@Bean` method takes a `CaseAssignments` parameter that nothing in the jar or the server supplies; dropped on loader.path as shown, startup fails with `NoSuchBeanDefinitionException`. Make the example construct its lookup itself, or show the bean.
