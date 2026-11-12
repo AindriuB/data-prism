@@ -23,6 +23,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Heading (grep this exact string) |
 |---|---|---|
+| 2026-11-12 | 310, 311, 312, 313 | `## 2026-11-12 — 310, 311, 312 and 313: the 0.8 docs for key rotation, the keyed audit chain, the cluster's seals and trust, and case authorisation` |
 | 2026-11-12 | 307 | `## 2026-11-12 — 307: soak provenance records the truth or says unknown and refuses` |
 | 2026-11-12 | 309-F1 | `## 2026-11-12 — 309-F1: stdio leak tests require end of stream and the child's own exit` |
 | 2026-11-11 | 263 | `## 2026-11-11 — 263 Part A: soak scaffolding for the 0.8 core, single node and three-member cluster` |
