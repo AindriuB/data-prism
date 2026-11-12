@@ -1660,6 +1660,11 @@ class HazelcastOversightTest {
             m.addIntruder();
             assertThat(MemberCardTest.Fixture.await(30, () -> m.instances.get(0).getCluster().getMembers().size() == 3))
                     .isTrue();
+            // The grace clock starts at the first look that sees the intruder; make that look happen before the advance
+            // rather than rely on the asynchronous membership-event look having run.
+            tickCardsAndWait(second, "second");
+            assertThat(m.peers(0).unverifiedCount()).as("wrapper 2 has seen the intruder before the clock advances")
+                    .isEqualTo(1);
             m.advance(MemberCardTest.GRACE.plusSeconds(1));
             tickCardsAndWait(second, "second");
             tickCardsAndWait(second, "second");
