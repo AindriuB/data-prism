@@ -1759,8 +1759,10 @@ class MemberCardTest {
         MemberCards.Declarations declarations = MemberCards.declarationsIfAny(instance);
         assertThat(declarations.live).isEmpty();
         assertThat(declarations.clocks()).as("the tentative record is cleared").isNull();
-        assertThat(declarations.writeOutstanding() || Fixture.await(30, () -> !declarations.writeOutstanding()))
-                .isTrue();
+        // The injected error ends the start after the card write was attached; that write clears the flag when it
+        // completes. Wait for that, so the later wrapper starts with no write outstanding and its own write stamps it.
+        assertThat(Fixture.await(30, () -> !declarations.writeOutstanding()))
+                .as("the abandoned start's card write has completed").isTrue();
 
         PrivacyCluster later = PrivacyCluster.using(instance, false, Duration.ofMinutes(1), TestMembers.KEYS,
                 settings, environment);
@@ -1817,6 +1819,43 @@ class MemberCardTest {
 
     @Test
     @Timeout(240)
+    void aCardBuiltBeforeAPauseLandsIsFollowedByACardWithTheDigestOfTheDocumentAfterIt() throws Exception {
+        PrivacyCluster[] wrappers = twoWrappers();
+        MemberCards cards = wrappers[0].memberCards().orElseThrow();
+        HazelcastOversightState state = new HazelcastOversightState(wrappers[0]);
+        java.util.concurrent.CountDownLatch built = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        PauseDocument.Digest atStart = state.document().heldDigest();
+        // Holds a card built from the document as it is before the pause, until the pause has landed.
+        cards.afterCardBuilt = () -> {
+            built.countDown();
+            try {
+                release.await(10, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        };
+        Thread writer = new Thread(cards::publishNow);
+        writer.start();
+        try {
+            assertThat(built.await(30, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            state.pauseTool("p");
+            assertThat(state.document().heldDigest()).as("the pause moved the held digest").isNotEqualTo(atStart);
+            release.countDown();
+            assertThat(Fixture.await(30, () -> state.document().heldDigest().equals(cardOf(wrappers[0]).pauseDigest())))
+                    .as("the card reaches the held digest").isTrue();
+        } finally {
+            release.countDown();
+            writer.join();
+            cards.afterCardBuilt = () -> { };
+            state.close();
+            wrappers[1].close();
+            wrappers[0].close();
+        }
+    }
+
+    @Test
+    @Timeout(240)
     void aCardCarriesTheNoDocumentMarkerUntilAMainDocumentExistsThenTheDigestOfWhatItHolds() {
         PrivacyCluster[] wrappers = twoWrappers();
         assertThat(cardOf(wrappers[0]).pauseDigest()).as("no HazelcastOversightState yet").isNull();
@@ -1825,8 +1864,12 @@ class MemberCardTest {
         try {
             state.pauseTool("p");
             assertThat(state.toolPaused("p")).isTrue();
-            assertThat(Fixture.await(30, () -> cardOf(wrappers[0]).pauseDigest() != null))
-                    .as("the next card carries the document's digest").isTrue();
+            // A card may still be the one built before the pause landed (a digest the document held earlier); the
+            // card must reach the held digest, which is read inside the wait.
+            assertThat(Fixture.await(30, () -> {
+                PauseDocument.Digest card = cardOf(wrappers[0]).pauseDigest();
+                return card != null && card.equals(state.document().heldDigest());
+            })).as("the next card carries the document's digest").isTrue();
             assertThat(cardOf(wrappers[0]).pauseDigest()).isEqualTo(state.document().heldDigest());
         } finally {
             state.close();
