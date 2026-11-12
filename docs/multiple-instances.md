@@ -594,8 +594,9 @@ carries no personal data and is derived from nothing). The token is stored in th
 entry, in the id claim (the entry key and the token) and in the pending slot's owner (the scope
 and the token). Every release, removal, withdrawal, undo, takeover, sweep and merge compares the
 whole token, so a clean-up that belongs to one creation of an id cannot touch a later creation of
-the same id in the same scope, even when the two requests are identical. The principal, the
-approval id and the scope stay in clear in these maps, as before.
+the same id in the same scope, even when the two requests are identical. Pending entries
+hold approval ids, their expiries and the scope in clear. Claims hold nothing in clear: only
+the keyed name of their approval entry and the random token.
 
 **When an approval is usable.** An approval is usable by `find`, `findPending`, `approve`,
 `reject` and `consumeApproved` only while the claim for its id names its entry key and its token.
@@ -619,9 +620,10 @@ latest writer), a release by an entry that does not own the slot, and a heal tha
 sides disagreeing on the owner (the slot then has no owner and stays until it expires). None of
 those removes a slot early.
 
-**Retention.** The id claim and the requester's pending entry carry the principal, the
-approval id and the scope in clear, so they must not outlive the approvals they guard by
-much, and they must never be dropped early. The two are handled differently.
+**Retention.** The requester's pending entry holds approval ids, their expiries and the
+scope in clear, and the id claim holds only the keyed name of its approval entry and a random
+token, so they must not outlive the approvals they guard by much, and they must never be
+dropped early. The two are handled differently.
 
 - A claim has **no TTL and depends on no clock**. It is valid if and only if the approval entry it
   names still exists. A claim whose entry is gone (expired, scope ended, or its creator died before
