@@ -17,8 +17,10 @@ to join the instances, and what Data Prism does not do for you.
     port can read and write the approvals and the counters, including forging
     an approval and resetting read budgets and rate limits. The pause
     document, the identity entries and the re-identification entries are
-    sealed, which makes tampering with them detectable and ineffective but does
-    not stop anyone reaching the port. Isolating the member port is the
+    sealed, so a forged entry fails verification and never changes a returned
+    value. Sealing does not stop deletion: a deleted re-identification entry is
+    lost for good, and a deleted or overwritten pause document pauses everything,
+    which denies service. Sealing does not stop anyone reaching the port. Isolating the member port is the
     deployer's job, covered in [Network isolation](#network-isolation-is-your-responsibility).
 
 ## When you need it
@@ -69,8 +71,8 @@ verification rest on a cluster key and a name key that every member holds.
   current key only. Key rotation is deferred, so a change of cluster key is a
   planned full restart that empties both maps, and pseudonyms issued before it
   can no longer be re-identified.
-- **Not sealed: approvals and counters.** Approvals, their id claims and pending
-  slots, and the budget and caller-rate counters are plain. Anyone who can reach
+- **Not sealed: approvals and counters.** Approvals, their id claims, pending
+  slots and consumed tombstones, and the budget and caller-rate counters are plain. Anyone who can reach
   the member port can read and write them. Their map keys are keyed names, so a
   reader learns no scope or subject from a key, but the values are readable.
 - **Required on `tcp-ip` and `kubernetes`:**
@@ -108,27 +110,33 @@ backup. Maps are not written to disk and have no `MapStore`.
 | `dataprism.identity.s1` | Cached synthetic values. Recomputable, so losing it costs CPU only | Yes, values are envelopes | 1 |
 | `dataprism.reidentification.s1` | Pseudonym to subject, only with re-identification enabled. A store, not a cache | Yes, values are envelopes | 1 |
 | `dataprism.oversight.s1` | The pause document: one entry that holds every pause. Never evicted | Yes, signed and leased | 1 |
-| `dataprism.oversight` | One fence entry, `all`, that keeps a 0.7 member from joining. It holds no pause | No | 1 |
+| `dataprism.oversight` | The pre-0.8 map. Each serving 0.8 member writes one fence entry, `all`, on a best-effort basis, so a 0.7 member that joins reads everything as paused. It does not stop a 0.7 member joining, and anyone on the network can delete the entry until a member writes it again. It is the one literal key, not a keyed name. Never evicted | No | 1 |
 | `dataprism.membercard.s1` | One sealed card per member, and the cluster's sentinel | Yes | 1 |
 | `dataprism.budget.s1` | Per-subject read counts and reservations | No | 1 |
-| `dataprism.approval` | Approval requests, each until its expiry, each with the random token of the creation that wrote it | No | 1 |
-| `dataprism.approval.id` | One claim per approval id, which keeps an id unique across scopes. It names the approval entry and the token of the creation that made it. A claim has no TTL and is valid while the approval entry it names exists; a swept or taken-over claim goes once that entry is gone. No eviction | No | 1 |
-| `dataprism.approval.pending` | Per (kind, requester): the ids of their pending approvals with their expiries and the owner of each (the scope and the token of the creation that reserved the slot), which the pending cap counts. Changed only by an entry processor. No TTL and no eviction; a periodic sweep removes ids long past their expiry | No | 1 |
+| `dataprism.approval.s1` | Approval requests, each until its expiry, each with the random token of the creation that wrote it | No | 1 |
+| `dataprism.approval.id.s1` | One claim per approval id, which keeps an id unique across scopes. It names the approval entry and the token of the creation that made it. A claim has no TTL and is valid while the approval entry it names exists; a swept or taken-over claim goes once that entry is gone. No eviction | No | 1 |
+| `dataprism.approval.pending.s1` | Per (kind, requester): the ids of their pending approvals with their expiries and the owner of each (the scope and the token of the creation that reserved the slot), which the pending cap counts. Changed only by an entry processor. No TTL and no eviction; a periodic sweep removes ids long past their expiry | No | 1 |
+| `dataprism.approval.consumed.s1` | One tombstone per approval that was used, so a used approval stays used after its entry is gone. No size eviction; entries leave by TTL | No | 1 |
 | `dataprism.callerrate.s1` | Per-caller fixed-window request counts. No eviction | No | 1 |
 
-Every map key is a keyed name (an HMAC under the name key), so a key reveals
-neither a scope nor a subject. The values of the first three sealed maps and the
+Every map key except the fence entry's `all` is a keyed name (an HMAC under the
+name key), so a key reveals neither a scope nor a subject. The values of the first three sealed maps and the
 member cards are authenticated under the cluster key. The values of the
-unsealed maps are plain, and the approval, claim and pending entries carry the
-principal, the approval id and the scope in clear.
+unsealed maps are plain. An approval entry holds the whole encoded request:
+the approval id, kind, requester principal and client id, scope, tool, binding
+fingerprint, namespace, the synthetic value (the pseudonym), the free-text
+purpose, the case id, the timestamps, the status and the approver. Claim and
+pending entries carry the principal, the approval id and the scope. Anyone who
+can reach the member port reads all of it, and no subject id is among it.
 
 The other maps evict least-recently-used entries beyond 100,000 per member.
-The pause document, the member cards and `dataprism.callerrate.s1` are never
-evicted: an evicted counter resets a caller's window, and a missing pause
+The pause document, the fence map `dataprism.oversight`, the member cards and
+`dataprism.callerrate.s1` are never evicted: an evicted counter resets a caller's window, and a missing pause
 document means everything is paused, so a pause is never lost by eviction.
-`dataprism.approval.id` and `dataprism.approval.pending` are never evicted
-either, because an evicted claim lets an id be used twice and an evicted pending
-set lets a requester pass the cap.
+`dataprism.approval.id.s1`, `dataprism.approval.pending.s1` and
+`dataprism.approval.consumed.s1` are never evicted either, because an evicted
+claim lets an id be used twice, an evicted pending set lets a requester pass the
+cap and an evicted tombstone lets a used approval be used again.
 
 ## Configuration
 
@@ -372,11 +380,14 @@ these settings on and refuses the rest; `using()` can only check them.
 
 ### Keys and snapshots
 
-The starter's environment resolver resolves `environment-variable` references
-only, and it exists only when `dataprism.privacy.hmac-key.environment-variable`
-is set. A cluster key or a name key given as `provider-reference` is refused with
-`MISSING_KEY_PROVIDER` unless you supply a reviewed `HmacKeyReferenceResolver`
-extension that resolves it.
+The environment-variable resolver belongs to the packaged server
+(`ServerIntegrationsConfiguration`), and it exists only when
+`dataprism.privacy.hmac-key.environment-variable` is set. The starter and the
+autoconfigure module define no `HmacKeyReferenceResolver` bean, so with the
+starter alone an `environment-variable` reference is not resolved and startup
+refuses. Supply a reviewed `HmacKeyReferenceResolver` bean. In the packaged
+server, a cluster key or a name key given as `provider-reference` is refused with
+`MISSING_KEY_PROVIDER` unless you supply such an extension that resolves it.
 
 Never restore one snapshot of a running process, container or virtual machine
 more than once. A member seals each entry with a nonce counter, and every restored
@@ -567,8 +578,8 @@ of any number of callers racing on any members, exactly one succeeds. Hazelcast'
 locks give no such guarantee under split brain, so correctness does not rest on
 them; they only bound the wait.
 
-An approval id is claimed by `putIfAbsent` in `dataprism.approval.id`, and the pending
-cap is one entry processor on the requester's entry in `dataprism.approval.pending`. A
+An approval id is claimed by `putIfAbsent` in `dataprism.approval.id.s1`, and the pending
+cap is one entry processor on the requester's entry in `dataprism.approval.pending.s1`. A
 creation claims the id (taking over a claim whose entry is gone), then reserves the cap (each pending id records the owner of the slot), then checks it still holds the claim, inserts the approval and checks again, and undoes in
 reverse order when a step fails. An undo that fails can leave an id unusable, or a
 requester over-counted, until the approval expires; it never under-counts, with the clock tolerance stated under Retention below. An approval
@@ -699,6 +710,6 @@ every use as well.
 
 A `PrivacyCluster` you build yourself with `PrivacyCluster.using(instance)` gets
 none of these map settings: not the merge policy, not the quorum and not the
-no-eviction setting of `dataprism.approval.id` and `dataprism.approval.pending`.
+no-eviction setting of `dataprism.approval.id.s1` and `dataprism.approval.pending.s1`.
 Configure them on the instance, or accept the defaults above. `PrivacyCluster.embedded(Config)`
 adds the merge policy but, unless you pass a minimum, not the quorum.
