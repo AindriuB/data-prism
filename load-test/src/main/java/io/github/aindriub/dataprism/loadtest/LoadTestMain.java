@@ -124,11 +124,22 @@ public final class LoadTestMain {
         LoadDriver.Run run = new LoadDriver(target.baseUrl(), credentials, scenario).run();
         // The members' build is read when the result is written, not taken from the environment: what ran at the end
         // of the run, or "unknown". The commit and dirty flag below are this driver's own checkout.
-        String memberBuild = boundedOutput(List.of("bash",
-                repoRoot.resolve("load-test/soak/member-image-id.sh").toString()), Duration.ofSeconds(30));
+        String memberBuild = memberBuild(target.baseUrl(), () -> boundedOutput(List.of("bash",
+                repoRoot.resolve("load-test/soak/member-image-id.sh").toString()), Duration.ofSeconds(30)));
         Path file = ResultWriter.write(resultsDir, scenario, startedAt, git(repoRoot, "rev-parse", "HEAD"),
                 !git(repoRoot, "status", "--porcelain").isBlank(), run, memberBuild);
         System.out.println("wrote " + file);
+    }
+
+    /**
+     * The members' build, read only when the target is the local overlay (a loopback origin): the containers the
+     * script reads are the local ones, so for any other target their identity says nothing about what was driven.
+     * Then it is {@code "unrecorded"}, never a local build presented as the target's.
+     */
+    static String memberBuild(String baseUrl, java.util.function.Supplier<String> overlayRead) {
+        String host = java.net.URI.create(baseUrl).getHost();
+        boolean overlay = host != null && (host.equals("localhost") || host.equals("127.0.0.1") || host.equals("[::1]"));
+        return overlay ? overlayRead.get() : "unrecorded";
     }
 
     private static String git(Path repoRoot, String... arguments) {

@@ -18,11 +18,11 @@ What is here, and what is not. Running the soaks is the owner's job on a dedicat
 ## The build rule and provenance
 
 Build first, then bring up from the stamp. `build-images.sh` snapshots the checkout (`git ls-files -co
---exclude-standard`, so ignored paths never enter), hashes the snapshot's paths and contents, and builds the four
+--exclude-standard`, so ignored paths never enter), hashes the snapshot's paths, contents and file modes, and builds the four
 data-prism images (server, issuer, fixtures, certs-init) once with their existing Dockerfiles, tagged
-`data-prism-soak-<image>:<12 hex of the hash>`. A tag that exists is reused (same content). It writes
+`data-prism-soak-<image>:<12 hex of the hash>`. A tag that exists is reused (same content); its commit and dirty labels are rewritten, with a label-only layer, when they are not this run's. It writes
 `load-test/results/soak-images.stamp` (git-ignored): the tag, the four image IDs, the hash, the commit and `dirty`.
-A snapshot that differs from HEAD is refused unless `SOAK_ALLOW_DIRTY=1` (the images are then labelled `dirty=yes`);
+`dirty` is derived from the copied snapshot compared with HEAD, so an edit after a status read and a `--skip-worktree` file both count. A snapshot that differs from HEAD is refused unless `SOAK_ALLOW_DIRTY=1` (the images are then labelled `dirty=yes`);
 a git failure also refuses. The overlay has no `build:` and uses `pull_policy: never`; `lb` is pinned by digest.
 Nothing builds or pulls on `up`, on a recreate, or inside a measured window.
 
@@ -34,16 +34,17 @@ SOAK_IMAGE_TAG="$(grep ^tag= load-test/results/soak-images.stamp | cut -d= -f2)"
 ```
 
 The scripts' `dc` takes the tag from the stamp (never from your shell), refuses when the stamp is missing, a tag's
-image ID differs from it, a running container is not on the stamp's image, or the running-container lookup fails
+image ID differs from it, a running or stopped container is not on the stamp's image, or the running-container lookup fails
 (`docker ps` errors), and passes `--no-build --pull never` to `up`.
 
 Which build ran is recorded, not assumed. Every fault, probe and capture script writes, at its start and again on
 exit (after any recreate), one line per container (server-a/b/c, cert-init, issuer, fixtures):
 `<12 hex of the image ID> source=<hash12> commit=<short SHA> dirty=<yes|no>`, read from the running container and
 its image labels. A start/end mismatch, or a running image ID that is not the stamp's, is printed as a `FINDING`.
-`absent` means the service has no container; `unknown` means docker failed or a label was unreadable. The driver's
+`absent` means the service has no container; `unknown` means docker failed or a label was unreadable; a lookup that failed is a `FINDING`, and the script refuses at its start and exits non-zero at its end, never skipping it as absent. A fault script's `resolving_class_count` prints `unknown`, never 0, when the log read fails. The driver's
 target-mode result runs `member-image-id.sh` when it writes and records its output as `memberBuild` (`unknown` when
-the script fails, for instance with docker unavailable); the `commit` and `workingTreeDirty` beside it are the
+the script fails, for instance with docker unavailable; `unrecorded` when the target is not a loopback origin, since the
+containers the script reads are the local overlay's); the `commit` and `workingTreeDirty` beside it are the
 driver's own checkout. Three identities joined with ` + ` mean the members run different builds, which is a finding.
 
 Every script writes counts and findings only, to `load-test/results/<name>-summary.txt`

@@ -6,9 +6,12 @@
 #   - The snapshot is `git ls-files -co --exclude-standard` (tracked and untracked-not-ignored files; a tracked
 #     file deleted from the tree is skipped), copied to a temporary directory. Ignored paths (target/, results/,
 #     captures) never enter the build context.
-#   - The hash is over every file's path and contents. The tag is data-prism-soak-<image>:<first 12 hex>.
-#   - A tag that already exists is reused (same hash, same content); its source-hash label is checked.
-#   - Commit and dirty (the snapshot differs from HEAD) go on every image as labels. A dirty snapshot is refused
+#   - The hash is over every file's path, contents and file mode. The tag is data-prism-soak-<image>:<first 12 hex>.
+#   - A tag that already exists is reused (same hash, same content); its source-hash label is checked, and its
+#     commit and dirty labels are rewritten (a label-only layer, no content change) when they are not this run's.
+#   - Commit and dirty go on every image as labels. Dirty is derived from the COPIED snapshot compared with HEAD
+#     (not from `git status` beforehand), so an edit made after a status read, or a --skip-worktree file, counts.
+#     A dirty snapshot is refused
 #     unless SOAK_ALLOW_DIRTY=1; the labels then still say dirty=yes. A git failure refuses.
 #   - The stamp (git-ignored results dir) holds the tag, the four image IDs, the hash, the commit and dirty.
 # Prints counts and identities only, no path of the host.
@@ -21,12 +24,6 @@ stamp="$results_dir/soak-images.stamp"
 
 git_ok() { git -C "$repo_root" "$@"; }
 commit="$(git_ok rev-parse --short HEAD)" || { echo "refused: git could not name HEAD" >&2; exit 1; }
-status="$(git_ok status --porcelain --untracked-files=all)" || { echo "refused: git status failed" >&2; exit 1; }
-dirty=no; [ -z "$status" ] || dirty=yes
-if [ "$dirty" = yes ] && [ "${SOAK_ALLOW_DIRTY:-}" != 1 ]; then
-  echo "refused: the working tree differs from HEAD (commit first, or set SOAK_ALLOW_DIRTY=1; the images are then labelled dirty=yes)" >&2
-  exit 1
-fi
 files="$(mktemp)"; snap="$(mktemp -d)"
 trap 'rm -rf "$files" "$snap"' EXIT
 git_ok ls-files -z -co --exclude-standard > "$files.all" || { echo "refused: git ls-files failed" >&2; exit 1; }
@@ -36,9 +33,31 @@ while IFS= read -r -d '' f; do
 done < "$files.all"
 rm -f "$files.all"
 tar -C "$repo_root" --null -T "$files" -cf - | tar -C "$snap" -xf -
-hash="$(cd "$snap" && find . \( -type f -o -type l \) -print0 | LC_ALL=C sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1)"
+if stat -c %a / >/dev/null 2>&1; then modefmt=(-c '%a %n'); else modefmt=(-f '%Lp %N'); fi
+hash="$(cd "$snap" && {
+  find . \( -type f -o -type l \) -print0 | LC_ALL=C sort -z | xargs -0 shasum -a 256
+  find . \( -type f -o -type l \) -print0 | LC_ALL=C sort -z | xargs -0 stat "${modefmt[@]}"
+} | shasum -a 256 | cut -d' ' -f1)"
 [ "${#hash}" -eq 64 ] || { echo "refused: could not hash the snapshot" >&2; exit 1; }
 tag="${hash:0:12}"
+# Dirty: the snapshot as copied, staged into a throwaway index (objects go to a throwaway directory that borrows the
+# repository's), compared with HEAD's tree. 0 = same, 1 = differs, anything else = refuse.
+git_dir="$(git_ok rev-parse --absolute-git-dir)" && common_dir="$(cd "$repo_root" && cd "$(git rev-parse --git-common-dir)" && pwd)" \
+  || { echo "refused: git could not locate the repository" >&2; exit 1; }
+scratch="$(mktemp -d)"
+trap 'rm -rf "$files" "$snap" "$scratch"' EXIT
+snap_git() {
+  GIT_DIR="$git_dir" GIT_WORK_TREE="$snap" GIT_INDEX_FILE="$scratch/index" GIT_OBJECT_DIRECTORY="$scratch/objects" \
+    GIT_ALTERNATE_OBJECT_DIRECTORIES="$common_dir/objects" git "$@"
+}
+mkdir -p "$scratch/objects"
+snap_git add -A -f . >/dev/null 2>&1 || { echo "refused: could not stage the snapshot to compare it with HEAD" >&2; exit 1; }
+rc=0; snap_git diff-index --cached --quiet HEAD -- || rc=$?
+case "$rc" in 0) dirty=no ;; 1) dirty=yes ;; *) echo "refused: could not compare the snapshot with HEAD" >&2; exit 1 ;; esac
+if [ "$dirty" = yes ] && [ "${SOAK_ALLOW_DIRTY:-}" != 1 ]; then
+  echo "refused: the snapshot differs from HEAD (commit first, or set SOAK_ALLOW_DIRTY=1; the images are then labelled dirty=yes)" >&2
+  exit 1
+fi
 echo "snapshot: source=$tag commit=$commit dirty=$dirty files=$(tr -cd '\0' < "$files" | wc -c | tr -d ' ')"
 
 images=(server issuer fixtures certs-init)
@@ -51,7 +70,16 @@ for img in "${images[@]}"; do
   have="$(docker image inspect --format "{{index .Config.Labels \"$label_key.source-hash\"}}" "$ref" 2>/dev/null || true)"
   if [ -n "$have" ]; then
     [ "$have" = "$hash" ] || { echo "refused: $ref exists with a different source hash" >&2; exit 1; }
-    echo "reuse $ref"
+    have_commit="$(docker image inspect --format "{{index .Config.Labels \"$label_key.commit\"}}" "$ref" 2>/dev/null || true)"
+    have_dirty="$(docker image inspect --format "{{index .Config.Labels \"$label_key.dirty\"}}" "$ref" 2>/dev/null || true)"
+    if [ "$have_commit" = "$commit" ] && [ "$have_dirty" = "$dirty" ]; then
+      echo "reuse $ref"
+    else
+      echo "reuse $ref (labels rewritten: commit and dirty are this snapshot's)"
+      printf 'FROM %s\n' "$ref" | docker build -q -f - \
+        --label "$label_key.source-hash=$hash" --label "$label_key.commit=$commit" --label "$label_key.dirty=$dirty" \
+        -t "$ref" "$scratch" >/dev/null || { echo "refused: could not relabel $ref" >&2; exit 1; }
+    fi
   else
     echo "build $ref"
     docker build -q -f "$snap/docker/$img/Dockerfile" \

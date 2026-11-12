@@ -39,15 +39,15 @@ stamp_check() {
   done
 }
 
-# running_match_check: 0 when every RUNNING data-prism container's image ID is the stamp's for its service (and when
-# nothing runs). A rebuild with different content while the overlay runs makes it fail, so a recreate cannot swap a
+# running_match_check: 0 when every data-prism container's image ID, RUNNING OR STOPPED, is the stamp's for its
+# service (and when none exists). A stopped member is compared too: `up` would start it on the new build. A rebuild with different content while the overlay runs makes it fail, so a recreate cannot swap a
 # member's build inside a measured window; nothing is touched.
 running_match_check() {
   local m img id cid run bad=0
   for m in "${containers[@]}"; do
     case "$m" in server-*) img=server ;; cert-init) img=certs-init ;; *) img="$m" ;; esac
-    if ! cid="$(docker ps -q --filter "label=com.docker.compose.project=$project" --filter "label=com.docker.compose.service=$m" 2>/dev/null)"; then
-      echo "refused: cannot tell whether $m is running (docker ps failed); not assuming it is not" >&2
+    if ! cid="$(docker ps -aq --filter "label=com.docker.compose.project=$project" --filter "label=com.docker.compose.service=$m" 2>/dev/null)"; then
+      echo "refused: cannot tell whether $m exists (docker ps failed); not assuming it does not" >&2
       bad=1
       continue
     fi
@@ -56,7 +56,7 @@ running_match_check() {
     run="$(docker inspect --format '{{.Image}}' "$cid" 2>/dev/null)" || run=""
     id="$(stamp_get "image.$img")"
     if [ -z "$run" ] || [ "$run" != "$id" ]; then
-      echo "refused: running $m is not the stamp's image ($img); the stamp changed since bring-up. Rebuild the original content, or bring the overlay down first" >&2
+      echo "refused: $m (running or stopped) is not the stamp's image ($img); the stamp changed since bring-up. Rebuild the original content, or bring the overlay down first" >&2
       bad=1
     fi
   done
@@ -101,11 +101,15 @@ container_identity() {
   printf '%s source=%s commit=%s dirty=%s' "${id:0:12}" "${2:0:12}" "$3" "$4"
 }
 
-# running_image_id <service>: the full image ID of the container, "" when absent or unreadable.
+# running_image_id <service>: the full image ID of the service's container (running or stopped). Prints nothing and
+# returns 0 only when the container is really absent; prints "unknown" and returns 1 when docker fails.
 running_image_id() {
   local cid
-  cid="$(docker ps -aq --filter "label=com.docker.compose.project=$project" --filter "label=com.docker.compose.service=$1" 2>/dev/null | head -n 1)" || return 0
-  [ -z "$cid" ] || docker inspect --format '{{.Image}}' "$cid" 2>/dev/null || true
+  cid="$(docker ps -aq --filter "label=com.docker.compose.project=$project" --filter "label=com.docker.compose.service=$1" 2>/dev/null)" \
+    || { printf unknown; return 1; }
+  cid="${cid%%$'\n'*}"
+  [ -n "$cid" ] || return 0
+  docker inspect --format '{{.Image}}' "$cid" 2>/dev/null || { printf unknown; return 1; }
 }
 
 # provenance_lines: one line per container, in the form of container_identity.
@@ -120,26 +124,28 @@ soak_run_exit() {
   local c rc=$?
   trap - EXIT
   for c in "${soak_exit_cmds[@]+"${soak_exit_cmds[@]}"}"; do eval "$c" || true; done
-  provenance_end
+  provenance_end || { [ "$rc" -ne 0 ] || rc=1; }
   exit "$rc"
 }
 provenance_begin() {
   soak_summary="$1"
   soak_start_lines="$(provenance_lines)"
   printf '%s\n' "$soak_start_lines" | sed 's/^image /start image /' | tee -a "$soak_summary"
-  provenance_stamp_check start
+  provenance_stamp_check start || { echo "refused: a container's image could not be read at the start; the identity is unknown" >&2; exit 1; }
   trap soak_run_exit EXIT
 }
-# provenance_stamp_check <when>: a finding for every container whose running image ID differs from the stamp.
+# provenance_stamp_check <when>: a finding for every container whose image ID differs from the stamp. A container
+# that is really absent is skipped; one whose lookup failed is "unknown", a finding, and the return is 1.
 provenance_stamp_check() {
-  local m img id run
+  local m img id run bad=0
   for m in "${containers[@]}"; do
     case "$m" in server-*) img=server ;; cert-init) img=certs-init ;; *) img="$m" ;; esac
-    run="$(running_image_id "$m")"
+    run="$(running_image_id "$m")" || { note "$soak_summary" "FINDING ($1): $m: unknown (the container lookup failed)"; bad=1; continue; }
     [ -n "$run" ] || continue
     id="$(stamp_get "image.$img")"
     [ -n "$id" ] && [ "$run" = "$id" ] || note "$soak_summary" "FINDING ($1): $m runs an image that is not the stamp's ($img)"
   done
+  return "$bad"
 }
 provenance_end() {
   [ -n "$soak_summary" ] || return 0
@@ -217,4 +223,9 @@ require_keys() {
 
 # Fail-closed marker for the 221 criterion: count log lines of one member that say a class is not
 # allowed to resolve. Prints a number only.
-resolving_class_count() { dc logs --no-log-prefix "$1" 2>/dev/null | grep -c 'Resolving class .* is not allowed' || true; }
+# On a log read that fails it prints "unknown" and returns 1, never 0.
+resolving_class_count() {
+  local logs
+  logs="$(dc logs --no-log-prefix "$1" 2>/dev/null)" || { printf unknown; return 1; }
+  printf '%s' "$(printf '%s\n' "$logs" | grep -c 'Resolving class .* is not allowed' || true)"
+}

@@ -23,4 +23,14 @@ class LoadTestMainTest {
         assertThat(arguments.repoRoot().toString()).isEqualTo("/r");
         assertThat(arguments.resultsDir().toString()).isEqualTo("/o");
     }
+
+    @Test
+    void memberBuildIsUnrecordedWhenTheTargetIsNotTheLocalOverlay() {
+        assertThat(LoadTestMain.memberBuild("https://target.example.test", () -> "feed source=ab commit=c dirty=no"))
+                .isEqualTo("unrecorded");
+        assertThat(LoadTestMain.memberBuild("http://10.1.2.3:8080", () -> "x")).isEqualTo("unrecorded");
+        assertThat(LoadTestMain.memberBuild("http://127.0.0.1:8080", () -> "feed source=ab commit=c dirty=no"))
+                .isEqualTo("feed source=ab commit=c dirty=no");
+        assertThat(LoadTestMain.memberBuild("http://localhost:8080", () -> "unknown")).isEqualTo("unknown");
+    }
 }
