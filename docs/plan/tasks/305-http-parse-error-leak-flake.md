@@ -36,6 +36,10 @@
   `callToolRequest.name()`; `DefaultMcpStreamableServerSessionFactory.startSession`
   `initializeRequest.capabilities()`), giving the same 500 / asyncComplete / close as case E. For `initialize`
   the body also contains an `io.modelcontextprotocol.` class name. `params: {}` is unaffected.
+- Owner, 2026-11-12, verbatim: "Yes, extend Owns". Owns gains `DataPrismAutoConfigurationTest.java`, limited to
+  adding an assertion that the `dataPrismMcpServlet` registration's servlet is the `HttpInboundGuard` (AC22).
+  Reason: the review of PR #267 found that reverting `McpTransportWiring` to `transportProvider()` still leaves
+  every test green, because the golden files record only the declared type.
 
 **Review:** this changes fail-closed behaviour on the request path. It is not a small change: full review
 (code-reviewer, adversarial and regression passes), whatever the line count.
@@ -49,6 +53,8 @@
 - data-prism-spring-boot-autoconfigure/src/test/resources/bean-inventory/{default,cluster,hash-chained,
   hash-chained-json,oversight,pass-through-identity,reidentification,slf4j-sink,bean-methods}.txt
   (the `dataPrismMcpServlet` line in each only)
+- data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/DataPrismAutoConfigurationTest.java
+  (adding AC22's assertion only)
 - data-prism-mcp/src/test/java/io/github/aindriub/dataprism/mcp/HttpInboundGuardTest.java *(new)*
 - data-prism-mcp/src/test/java/io/github/aindriub/dataprism/mcp/DataPrismMcpServerTest.java
 - data-prism-mcp/src/test/java/io/github/aindriub/dataprism/mcp/ContentFreeMcpJsonMapperTest.java
@@ -70,7 +76,8 @@ the serialised stack trace from the SDK's transport refusals (cases A to D and F
 - **`HttpInboundGuard`**, package-private, `extends HttpServlet`, in `data-prism-mcp`. It wraps the SDK servlet.
   - It buffers the request body, capped at the SDK's own request-size limit (find where the SDK sets it and
     cite it in the PR body; if the SDK has none, stop and report). It replays the body to the SDK servlet
-    through an `HttpServletRequestWrapper`. A body over the cap is refused (400/-32600), never forwarded.
+    through an `HttpServletRequestWrapper`. A body over the cap is refused (400/-32600), never forwarded; a
+    declared `Content-Length` over the cap is refused before any read (AC23).
   - For `tools/call` it checks that params convert to `McpSchema.CallToolRequest`; for `initialize`, to
     `McpSchema.InitializeRequest`. It uses the SDK's own conversions through the same content-free mapper the
     SDK is given, not a re-implementation.
@@ -166,10 +173,17 @@ No body in any row holds `stackTrace`, `"cause"`, a Java class name (`io.modelco
 - [ ] AC19 An `HttpInboundGuardTest` case: an exception inside the guard (e.g. a throwing mapper or a failing
   body read) gives 400/-32600 and the SDK servlet is never invoked.
 - [ ] AC20 `McpTransportWiring` registers `transport.servlet()` in a `ServletRegistrationBean<HttpServlet>`
-  with `asyncSupported` true; `DataPrismAutoConfigurationTest` passes unchanged.
+  with `asyncSupported` true; `DataPrismAutoConfigurationTest` passes with no existing assertion changed (AC22
+  only adds one).
 - [ ] AC21 `tools/call` and `initialize` with `params` absent, and each with `params: null`, return 400 with
   `"code":-32602` and the envelope rules of AC11. Shown by an `HttpInboundGuardTest` case (the SDK servlet is
   not invoked) and one `HttpParseErrorLeakTest` case, each red before the change and green after (PR body).
+- [ ] AC22 `DataPrismAutoConfigurationTest` asserts that the servlet in the `dataPrismMcpServlet` registration is
+  an `HttpInboundGuard`. The PR body shows it failing when `McpTransportWiring` registers `transportProvider()`
+  and passing with the fix.
+- [ ] AC23 (267-1) When `getContentLengthLong()` is greater than the limit, the guard refuses at once with
+  400/-32600, never calls `getInputStream`, and never forwards. An `HttpInboundGuardTest` case asserts that
+  `getInputStream` is not called. Chunked bodies and bodies of unknown length (`-1`) keep the bounded read.
 
 ## Checks
 - `leak-class` test — AC3, AC6, AC9, AC10, AC11, AC21
@@ -178,11 +192,11 @@ No body in any row holds `stackTrace`, `"cause"`, a Java class name (`io.modelco
   min-passing: 10  max-skipped: 0
 - `class-repeat` command — AC6
   run: `for i in $(seq 20); do mvn -q -pl data-prism-integration-tests -am test -Dtest=HttpParseErrorLeakTest -Dsurefire.failIfNoSpecifiedTests=false || exit 1; done`
-- `mcp-module` test — AC16, AC17, AC18, AC19, AC21
+- `mcp-module` test — AC16, AC17, AC18, AC19, AC21, AC23
   run: `mvn -q -pl data-prism-mcp -am test`
   report: `data-prism-mcp/target/surefire-reports/TEST-*.xml`
   min-passing: the count on `origin/main` plus the new tests  max-skipped: 0
-- `autoconfigure-module` test — AC20
+- `autoconfigure-module` test — AC20, AC22
   run: `mvn -q -pl data-prism-spring-boot-autoconfigure -am test`
   report: `data-prism-spring-boot-autoconfigure/target/surefire-reports/TEST-*.xml`
   min-passing: the count on `origin/main`  max-skipped: 0
@@ -195,7 +209,7 @@ No body in any row holds `stackTrace`, `"cause"`, a Java class name (`io.modelco
 - `no-pom` command — AC15
   run: `git diff --exit-code origin/main...HEAD -- pom.xml`
 - `scope` command — Owns
-  run: `git diff --name-only origin/main...HEAD | grep -v -e '^data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/\(DataPrismMcpServer\|ContentFreeMcpJsonMapper\|HttpInboundGuard\)\.java$' -e '^data-prism-mcp/src/test/java/io/github/aindriub/dataprism/mcp/\(DataPrismMcpServerTest\|ContentFreeMcpJsonMapperTest\|HttpInboundGuardTest\)\.java$' -e '^data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/McpTransportWiring\.java$' -e '^data-prism-spring-boot-autoconfigure/src/test/resources/bean-inventory/\(default\|cluster\|hash-chained\|hash-chained-json\|oversight\|pass-through-identity\|reidentification\|slf4j-sink\|bean-methods\)\.txt$' -e '^data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/http/\(HttpParseErrorLeakTest\|ToolInputHttpTest\)\.java$' | (! grep .)`
+  run: `git diff --name-only origin/main...HEAD | grep -v -e '^data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/\(DataPrismMcpServer\|ContentFreeMcpJsonMapper\|HttpInboundGuard\)\.java$' -e '^data-prism-mcp/src/test/java/io/github/aindriub/dataprism/mcp/\(DataPrismMcpServerTest\|ContentFreeMcpJsonMapperTest\|HttpInboundGuardTest\)\.java$' -e '^data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/McpTransportWiring\.java$' -e '^data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/DataPrismAutoConfigurationTest\.java$' -e '^data-prism-spring-boot-autoconfigure/src/test/resources/bean-inventory/\(default\|cluster\|hash-chained\|hash-chained-json\|oversight\|pass-through-identity\|reidentification\|slf4j-sink\|bean-methods\)\.txt$' -e '^data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/http/\(HttpParseErrorLeakTest\|ToolInputHttpTest\)\.java$' | (! grep .)`
 - `fail-closed-and-evidence` read — AC1, AC2, AC3, AC5, AC9, AC12, AC14, AC15, AC20
   how: reviewer reads the product diff for any path where a guard failure, an over-cap body or an
   undecidable message is forwarded; any path that builds a tool result outside `ToolCalls`; any log line
@@ -207,7 +221,8 @@ No body in any row holds `stackTrace`, `"cause"`, a Java class name (`io.modelco
 - The 404 at `refused:152` on the first `initialize` (the `localhost` versus `127.0.0.1` lead). Attempt 1 does
   not explain it. It is a follow-up; the existing tests' `localhost` URI stays as it is.
 - The residual mounts listed above: `CorrelationConfigurationTest`, `AuditEntityTypesConfigurationTest`,
-  `FactoryEntityTypesDeliveryTest` and `DataPrismAutoConfigurationTest` are not changed.
+  `FactoryEntityTypesDeliveryTest` are not changed; `DataPrismAutoConfigurationTest` changes only by AC22's
+  added assertion.
 - The `HttpTransport` record's component types; removing or renaming `transportProvider()`.
 - An SDK upgrade or any `pom.xml` change.
 - Param-type errors on methods other than `tools/call` and `initialize`.
@@ -312,3 +327,20 @@ connection after any 400 and a servlet cannot override it (Attempt 2).
 Reviewed HEAD: 842b1a575df95b131d4d8d7e8026730130355e5c
 
 - [STYLE] data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/HttpInboundGuard.java:116 — The corrected Javadoc says the guard reads at most "the limit plus 8191 bytes". The real bound is the limit plus 8192: the check at :126 is `total > limit`, so `total` can equal `limit` exactly and the loop still makes one more full read. route: implementer. rule: docs/conventions.md:191-198. (Round-1 finding 3 carried over.)
+
+## Review round 3 — findings (external review of PR #267)
+
+- [Medium] 267-1 data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/HttpInboundGuard.java:93 — Buffers up to 16 MiB + 8 KiB even when Content-Length already exceeds the cap; the SDK answered 413 having read nothing. Fix: refuse at once when getContentLengthLong() > limit; test that getInputStream is never called. (AC23) route: implementer.
+- [Medium] 267-2 data-prism-spring-boot-autoconfigure/.../McpTransportWiring.java:124 — Reverting to transportProvider() keeps every test green; the golden files record only the declared type. Fix: assert that dataPrismMcpServlet's servlet is the guard. (AC22) route: implementer.
+
+## Follow-ups (from PR #267 review)
+
+- 267-3: servlet() throws for an integrator-built HttpTransport with an unhelpful message, and Residuals does not mention it.
+- 267-4: the guard refuses before the SDK's 503/415/404 checks, and answers id-less tools/call notifications with 400 where the SDK gives 202.
+- 267-5: every POST is parsed twice, and peak heap is about 2x near the cap.
+- 267-6: the forced-reuse test neither forces nor detects reuse.
+- 267-7: untested: the multi-chunk limit, an invalid charset, ReplayedRequest getReader, and the servlet() throw path.
+- 267-8: inline java.net, java.io and Locale names in HttpParseErrorLeakTest.
+- 267-9: multi-behaviour tests in HttpInboundGuardTest.
+- 267-10: classify returns Object[] where it should return a Verdict record.
+- 267-11: the servlet() Javadoc presents Tomcat's close-after-400 as the guard's own behaviour.
