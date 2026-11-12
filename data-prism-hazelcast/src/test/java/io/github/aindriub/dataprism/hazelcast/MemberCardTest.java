@@ -1759,8 +1759,10 @@ class MemberCardTest {
         MemberCards.Declarations declarations = MemberCards.declarationsIfAny(instance);
         assertThat(declarations.live).isEmpty();
         assertThat(declarations.clocks()).as("the tentative record is cleared").isNull();
-        assertThat(declarations.writeOutstanding() || Fixture.await(30, () -> !declarations.writeOutstanding()))
-                .isTrue();
+        // The injected error ends the start after the card write was attached; that write clears the flag when it
+        // completes. Wait for that, so the later wrapper starts with no write outstanding and its own write stamps it.
+        assertThat(Fixture.await(30, () -> !declarations.writeOutstanding()))
+                .as("the abandoned start's card write has completed").isTrue();
 
         PrivacyCluster later = PrivacyCluster.using(instance, false, Duration.ofMinutes(1), TestMembers.KEYS,
                 settings, environment);
@@ -1817,6 +1819,48 @@ class MemberCardTest {
 
     @Test
     @Timeout(240)
+    void aCardBuiltBeforeAPauseLandsIsFollowedByACardWithTheDigestOfTheDocumentAfterIt() throws Exception {
+        PrivacyCluster[] wrappers = twoWrappers();
+        MemberCards cards = wrappers[0].memberCards().orElseThrow();
+        HazelcastOversightState state = new HazelcastOversightState(wrappers[0]);
+        CountDownLatch built = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        PauseDocument.Digest atStart = state.document().heldDigest();
+        // Holds a card built from the document as it is before the pause, until the pause has landed.
+        cards.afterCardBuilt = () -> {
+            built.countDown();
+            try {
+                release.await(10, TimeUnit.SECONDS);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        };
+        Thread writer = new Thread(cards::publishNow);
+        writer.start();
+        try {
+            assertThat(built.await(30, TimeUnit.SECONDS)).isTrue();
+            state.pauseTool("p");
+            assertThat(state.document().heldDigest()).as("the pause moved the held digest").isNotEqualTo(atStart);
+            release.countDown();
+            assertThat(Fixture.await(30, () -> {
+                if (state.document().heldDigest().equals(cardOf(wrappers[0]).pauseDigest())) {
+                    return true;
+                }
+                cards.submitPass();
+                return false;
+            })).as("the card reaches the held digest").isTrue();
+        } finally {
+            release.countDown();
+            writer.join();
+            cards.afterCardBuilt = () -> { };
+            state.close();
+            wrappers[1].close();
+            wrappers[0].close();
+        }
+    }
+
+    @Test
+    @Timeout(240)
     void aCardCarriesTheNoDocumentMarkerUntilAMainDocumentExistsThenTheDigestOfWhatItHolds() {
         PrivacyCluster[] wrappers = twoWrappers();
         assertThat(cardOf(wrappers[0]).pauseDigest()).as("no HazelcastOversightState yet").isNull();
@@ -1825,8 +1869,19 @@ class MemberCardTest {
         try {
             state.pauseTool("p");
             assertThat(state.toolPaused("p")).isTrue();
-            assertThat(Fixture.await(30, () -> cardOf(wrappers[0]).pauseDigest() != null))
-                    .as("the next card carries the document's digest").isTrue();
+            // A card may still be the one built before the pause landed (a digest the document held earlier). If the
+            // pause's pass found that write in flight it writes nothing and leaves the mark for the next pass, which
+            // this fixture's one-hour tick never runs; so each poll submits that pass, as the one-second production
+            // tick does. The card must then reach the held digest, which is read inside the wait.
+            MemberCards cards = wrappers[0].memberCards().orElseThrow();
+            assertThat(Fixture.await(30, () -> {
+                PauseDocument.Digest card = cardOf(wrappers[0]).pauseDigest();
+                if (card != null && card.equals(state.document().heldDigest())) {
+                    return true;
+                }
+                cards.submitPass();
+                return false;
+            })).as("the next card carries the document's digest").isTrue();
             assertThat(cardOf(wrappers[0]).pauseDigest()).isEqualTo(state.document().heldDigest());
         } finally {
             state.close();

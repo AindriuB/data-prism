@@ -94,3 +94,11 @@ out whether the test or the product is wrong, prove it, and fix that one. Do not
   exactly that.
 - Task 302's logger pin and any non-Hazelcast module.
 - Running two `mvn` processes at once in the same worktree (298 found that contention, not a defect).
+
+## Review round 1 — findings
+
+Reviewed HEAD: af18a377d150f036436fcbcbb1c26e7180b4b5d9
+
+- [STYLE] data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/MemberCardTest.java:1826 — The new test `aCardBuiltBeforeAPauseLandsIsFollowedByACardWithTheDigestOfTheDocumentAfterIt` writes out the full package name for `CountDownLatch` and `TimeUnit` (lines 1826, 1827, 1833, 1841). The file already imports both types.
+  route: implementer — use the simple names `CountDownLatch` and `TimeUnit`.
+  rule: imports at MemberCardTest.java:46 and :49. The neighbouring tests use the simple names, e.g. `CountDownLatch entered = new CountDownLatch(1);` at :591 and :1271. The file writes a full package name only for types it does not import (:2226, :2358, :2779).
