@@ -119,10 +119,11 @@ call answers `AUDIT_UNAVAILABLE` while its denial record cannot be written
 (since 0.7.1). That is an availability trade the deployer must plan for, for
 example by monitoring the checkpoint file's storage.
 
-With a shared cluster, losing the owner and backup of a pause flag together
-reopens the paused path, and cluster member traffic is not encrypted, so the
-deployer must isolate it. Both are described in
-[Running multiple instances](multiple-instances.md#failure-behaviour).
+With a shared cluster, the pause is sealed and the members are verified, and
+identity and re-identification entries are sealed, but approvals and counters
+are not, and member traffic is not encrypted. A cluster is supported on a trusted
+network only, which the deployer must isolate. The detail is in
+[Running multiple instances](multiple-instances.md#what-a-cluster-seals-verifies-and-leaves-open).
 
 **What remains the deployer's responsibility.** Deciding who the oversight people
 are, training them, and giving them the authority to pause and to decline. Deciding
