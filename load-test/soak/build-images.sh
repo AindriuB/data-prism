@@ -23,7 +23,8 @@ mkdir -p "$results_dir"
 stamp="$results_dir/soak-images.stamp"
 
 git_ok() { git -C "$repo_root" "$@"; }
-commit="$(git_ok rev-parse --short HEAD)" || { echo "refused: git could not name HEAD" >&2; exit 1; }
+full_sha="$(git_ok rev-parse HEAD)" || { echo "refused: git could not name HEAD" >&2; exit 1; }
+commit="$(git_ok rev-parse --short "$full_sha")" || { echo "refused: git could not name HEAD" >&2; exit 1; }
 files="$(mktemp)"; snap="$(mktemp -d)"
 trap 'rm -rf "$files" "$snap"' EXIT
 git_ok ls-files -z -co --exclude-standard > "$files.all" || { echo "refused: git ls-files failed" >&2; exit 1; }
@@ -41,7 +42,7 @@ hash="$(cd "$snap" && {
 [ "${#hash}" -eq 64 ] || { echo "refused: could not hash the snapshot" >&2; exit 1; }
 tag="${hash:0:12}"
 # Dirty: the snapshot as copied, staged into a throwaway index (objects go to a throwaway directory that borrows the
-# repository's), compared with HEAD's tree. 0 = same, 1 = differs, anything else = refuse.
+# repository's), compared with the tree of the HEAD read before the copy (a commit landing mid-build cannot hide an edit). 0 = same, 1 = differs, anything else = refuse.
 git_dir="$(git_ok rev-parse --absolute-git-dir)" && common_dir="$(cd "$repo_root" && cd "$(git rev-parse --git-common-dir)" && pwd)" \
   || { echo "refused: git could not locate the repository" >&2; exit 1; }
 scratch="$(mktemp -d)"
@@ -52,7 +53,7 @@ snap_git() {
 }
 mkdir -p "$scratch/objects"
 snap_git add -A -f . >/dev/null 2>&1 || { echo "refused: could not stage the snapshot to compare it with HEAD" >&2; exit 1; }
-rc=0; snap_git diff-index --cached --quiet HEAD -- || rc=$?
+rc=0; snap_git diff-index --cached --quiet "$full_sha" -- || rc=$?
 case "$rc" in 0) dirty=no ;; 1) dirty=yes ;; *) echo "refused: could not compare the snapshot with HEAD" >&2; exit 1 ;; esac
 if [ "$dirty" = yes ] && [ "${SOAK_ALLOW_DIRTY:-}" != 1 ]; then
   echo "refused: the snapshot differs from HEAD (commit first, or set SOAK_ALLOW_DIRTY=1; the images are then labelled dirty=yes)" >&2

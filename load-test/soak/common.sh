@@ -40,7 +40,8 @@ stamp_check() {
 }
 
 # running_match_check: 0 when every data-prism container's image ID, RUNNING OR STOPPED, is the stamp's for its
-# service (and when none exists). A stopped member is compared too: `up` would start it on the new build. A rebuild with different content while the overlay runs makes it fail, so a recreate cannot swap a
+# service (and when none exists). A stopped member is compared too: `up` would start it on the new build.
+# A rebuild with different content while the overlay runs makes it fail, so a recreate cannot swap a
 # member's build inside a measured window; nothing is touched.
 running_match_check() {
   local m img id cid run bad=0
