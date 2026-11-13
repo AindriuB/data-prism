@@ -10,9 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Known gap in 0.7.x and earlier, closed in 0.8.0: on a source record, a `@JsonProperty` rename that swaps two components' names, or a class-level serializer that writes one component's value under another component's name, could release a sensitive value under the policy of a `@NonSensitive` field. Every release up to and including 0.7.1 is affected. 0.8.0 fixes this by construction: the engine reads each record component itself and writes it under its own name, and startup refuses Jackson annotations on source models. There is no 0.7.x patch; upgrade to 0.8.0.
+- No MCP HTTP error body carries a stack trace or a `cause` any more, on every mount, guarded or not: `ContentFreeMcpJsonMapper` writes any `Throwable` as a JSON-RPC error with no `stackTrace` and no `cause`. Before, a malformed `tools/call` made the SDK answer with a serialised exception and its stack trace.
 
 ### Breaking
 
+- A `tools/call` or `initialize` over MCP HTTP whose `params` are absent, `null` or of the wrong type now gets HTTP 400 with JSON-RPC error `-32602` and the request id, where 0.7.x answered 500 with `-32603`. The MCP session stays usable: the next request with the same `Mcp-Session-Id` is answered on a new connection. A request body over the SDK's 16 MiB limit is now refused with 400 and `-32600`, where the SDK answered 413; a declared `Content-Length` over the limit is refused before the body is read, and a body without one is read in 8192-byte chunks until it passes the limit. `HttpTransport.servlet()` returns the servlet that does this, and the auto-configuration mounts it. A servlet that mounts `HttpTransport.transportProvider()` directly is not guarded: it keeps the 500 for these cases (without a stack trace) and the SDK's 413. Mount `HttpTransport.servlet()`, which works only on a transport built by `DataPrismMcpServer.streamableHttp`. See `docs/migration-0.8.md`.
 - `ValueTokenSource.available()` now defaults to `false` (it was `true`). A custom
   `ValueTokenSource` that hashes and tokenizes must override it to return `true`;
   until it does, a model describing HASH or TOKENIZE fields omits them and says the
@@ -75,9 +77,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   two beans of one type fail with `NoUniqueBeanDefinitionException` unless one is `@Primary`. `AuthorizationService` and
   `ScopeResolver` gain a required fourth constructor argument, a `ClientAllowlist` and a `CaseAuthorizer`
   (`ClientAllowlist.unrestricted()` and `CaseAuthorizer.tokenTrusted()` keep the old behaviour).
-- `ClusterSecurityStatus` gains the components `pauseFresh` and `pauseAgeSeconds` and the reason `PAUSE_NOT_FRESH`: a
-  deconstruction pattern over the old four components, and an exhaustive `switch` over `Reason`, no longer compile. The
-  four-argument constructor is kept. The type was added after 0.7.1, so no released API breaks.
 - The public constructor `SensitivePatternValidator(SensitiveDataScanner)` is removed. `new SensitivePatternValidator(scanner)`
   becomes `new SensitivePatternValidator(scanner, List.of())`; the no-argument constructor still compiles.
 
@@ -117,6 +116,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `ClusterSecurityStatus` gains the components `pauseFresh` and `pauseAgeSeconds` and the reason `PAUSE_NOT_FRESH`: a
+  deconstruction pattern over the old four components, and an exhaustive `switch` over `Reason`, no longer compile. The
+  four-argument constructor is kept. The type was added after 0.7.1, so no released API breaks.
 - The scope pause is one sealed, leased document in `dataprism.oversight.s1`; an absent or stale one means everything is
   paused. `endScope` is refused with `OVERSIGHT_UNAVAILABLE` until the first document exists (about 30 seconds after a
   full start), and a pause past 8,176 elements other than `all` is refused with `CLUSTER_OPERATION_REFUSED`. A joined
