@@ -13,6 +13,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.health.contributor.HealthIndicator;
+import org.springframework.boot.health.contributor.Health;
 import org.springframework.boot.health.contributor.Status;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
@@ -90,6 +91,77 @@ class AuditIntegrityHealthTest {
                     assertThat(health.health().getStatus()).isEqualTo(Status.UP);
                     assertThat(health.health().getDetails()).isEmpty();
                 });
+    }
+
+    /** Tampers a seeded segment, renames it to {@code name}, boots, and returns the health detail. */
+    private static java.util.Map<String, Object> detailsAfterPurgeOf(Path dir, String name) throws Exception {
+        Path audit = dir.resolve("segments");
+        Path seeded = seedTampered(audit);
+        Files.move(seeded, audit.resolve(name));
+        java.util.concurrent.atomic.AtomicReference<java.util.Map<String, Object>> out =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        new WebApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
+                .withUserConfiguration(Integrations.class)
+                .withAllowBeanDefinitionOverriding(true)
+                .withBean(Clock.class, () -> Clock.fixed(NOW, ZoneOffset.UTC))
+                .withPropertyValues(AuditRetentionConfigurationTest.valid())
+                .withPropertyValues("dataprism.audit.sink=hash-chained", "dataprism.audit.directory=" + audit,
+                        "dataprism.audit.checkpoint.file-path=" + dir.resolve("cp.jsonl"))
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    out.set(context.getBean("auditIntegrityHealthIndicator", HealthIndicator.class)
+                            .health().getDetails());
+                });
+        return out.get();
+    }
+
+    @Test
+    void a_size_capped_segment_names_its_date(@TempDir Path dir) throws Exception {
+        assertThat(detailsAfterPurgeOf(dir, "audit-2025-01-10.0002.log")).containsOnly(
+                java.util.Map.entry("code", "AUDIT_RETENTION_CHAIN_UNVERIFIED"),
+                java.util.Map.entry("segmentDate", "2025-01-10"));
+    }
+
+    /**
+     * Boots on an empty audit directory named {@code name}, then removes it, so the next purge fails with a
+     * message that names only {@code name} ("could not list ..."), and returns the health status and detail.
+     */
+    private static Health healthAfterListFailureNaming(Path dir, String name) throws Exception {
+        Path audit = dir.resolve(name);
+        java.util.concurrent.atomic.AtomicReference<Health> out =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        new WebApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
+                .withUserConfiguration(Integrations.class)
+                .withAllowBeanDefinitionOverriding(true)
+                .withBean(Clock.class, () -> Clock.fixed(NOW, ZoneOffset.UTC))
+                .withPropertyValues(AuditRetentionConfigurationTest.valid())
+                .withPropertyValues("dataprism.audit.sink=hash-chained", "dataprism.audit.directory=" + audit,
+                        "dataprism.audit.checkpoint.file-path=" + dir.resolve("cp.jsonl"))
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    try (var walk = Files.walk(audit)) {
+                        walk.sorted(java.util.Comparator.reverseOrder()).forEach(f -> f.toFile().delete());
+                    }
+                    context.getBean(AuditMaintenance.class).purge();
+                    out.set(context.getBean("auditIntegrityHealthIndicator", HealthIndicator.class).health());
+                });
+        return out.get();
+    }
+
+    @Test
+    void an_index_that_is_not_four_digits_names_no_date(@TempDir Path dir) throws Exception {
+        var health = healthAfterListFailureNaming(dir, "audit-2025-01-10.12.log");
+        assertThat(health.getStatus()).isEqualTo(Status.DOWN);
+        assertThat(health.getDetails()).containsOnly(java.util.Map.entry("code", "AUDIT_RETENTION_ANCHOR_FAILED"));
+    }
+
+    @Test
+    void an_index_of_0000_names_no_date(@TempDir Path dir) throws Exception {
+        var health = healthAfterListFailureNaming(dir, "audit-2025-01-10.0000.log");
+        assertThat(health.getStatus()).isEqualTo(Status.DOWN);
+        assertThat(health.getDetails()).containsOnly(java.util.Map.entry("code", "AUDIT_RETENTION_ANCHOR_FAILED"));
     }
 
     @Test
