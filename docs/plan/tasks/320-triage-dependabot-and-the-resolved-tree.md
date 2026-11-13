@@ -75,39 +75,102 @@ Pillow 13.0.0 installed in a scratch venv (Pillow 13 needs Python 3.10 or later;
 offers 11.3). They wrote to a scratch copy of `docs-site`, so no image in the repo changed.
 
 ### Resolved runtime tree (AC2)
-`./mvnw -B dependency:list -DincludeScope=runtime` on the branch. It resolved every module through
-`data-prism-quickstart-issuer` except `data-prism-quickstart-extension`, which fails resolving its
-unpublished test-scope sibling jars from Central at 0.7.0. That module is not published and is not in the
-server image. Each Maven block is unlabelled, so the list below is the union of `compile` and `runtime`
-coordinates for the 13 published modules (annotations through `-spring-boot-starter`) plus
-`data-prism-server`, with project-internal artifacts removed. 66 third-party coordinates. Each was queried
-with `securityVulnerabilities(ecosystem: MAVEN, package: ...)` for its resolved version and matched against
-`vulnerableVersionRange`. **Result: none for all 66.**
+Attempt 2. `./mvnw -B dependency:list -DincludeScope=runtime -pl <the 14 modules>` on the branch (the 13
+published modules, annotations through `-spring-boot-starter`, plus `data-prism-server`). Each Maven block
+is unlabelled, so this is the union of `compile` and `runtime` coordinates, project-internal artifacts
+removed. The unpublished `data-prism-integration-tests`, `-quickstart-*` modules are excluded
+(`data-prism-quickstart-extension` also cannot resolve its unpublished test siblings from Central at 0.7.0).
 
-| Group | Resolved version | Advisories |
-|---|---|---|
-| spring-boot (autoconfigure, http-converter, jackson, security, servlet, tomcat, validation, web-server, webmvc, oauth2-resource-server, and the `-starter*` set) | 4.1.1 | none |
-| spring-framework (aop, beans, context, core, expression, web, webmvc) | 7.0.9 | none |
-| spring-security (config, core, crypto, oauth2-core, oauth2-jose, oauth2-resource-server, web) | 7.1.1 | none |
-| tools.jackson (jackson-core, jackson-databind, jackson-dataformat-yaml) | 3.1.8 | none |
-| com.fasterxml.jackson.core:jackson-annotations | 2.21 | none |
-| tomcat-embed (core, el, websocket) | 11.0.27 | none |
-| com.hazelcast:hazelcast | 5.7.0 | none |
-| com.nimbusds:nimbus-jose-jwt | 10.10 | none |
-| io.modelcontextprotocol.sdk (mcp-core, mcp-json-jackson3) | 2.1.0 | none |
-| com.networknt:json-schema-validator | 3.0.6 | none |
-| ch.qos.logback (classic, core) | 1.5.38 | none |
-| slf4j (api, jul-to-slf4j) | 2.0.18 | none |
-| log4j (api, to-slf4j) | 2.25.5 | none |
-| io.projectreactor:reactor-core | 3.8.7 | none |
-| io.micrometer (commons, observation) | 1.17.1 | none |
-| org.hibernate.validator:hibernate-validator | 9.1.3.Final | none |
-| org.yaml:snakeyaml / org.snakeyaml:snakeyaml-engine | 2.6 / 3.0.1 | none |
-| commons-logging 1.3.6, classmate 1.7.3, itu 1.14.0, jboss-logging 3.6.3.Final, jspecify 1.0.1, reactive-streams 1.0.4, jakarta.annotation-api 3.0.0, jakarta.validation-api 3.1.1 | as stated | none |
+**76 third-party coordinates.** Attempt 1 listed 66; it missed 10 that arrive through
+`spring-boot-starter-actuator` (optional in some modules, compile in the server): micrometer-core,
+micrometer-jakarta9, HdrHistogram and seven Spring Boot actuator and micrometer artifacts. All are now checked.
 
-Caveat: the range matcher is a small script (scratchpad, not committed); it was spot-checked on four
-known in/out-of-range cases. The advisory database lists older ranges for several of these packages, and
-none cover the resolved versions. The tomcat 11.0.27 and jackson 3.1.8 overrides stay as they are.
+Each coordinate was queried with `securityVulnerabilities(ecosystem: MAVEN, package: "<g:a>")`, paging with
+`first:100` and `pageInfo.endCursor` until `hasNextPage` was false (no first-page cap; 66 + 10 coordinates,
+774 advisory-range records returned in total). Every record's `vulnerableVersionRange` was matched against
+the resolved version. **Result: none for all 76.** The advisory database lists older ranges for
+several (tomcat-embed-core, spring-web, jackson, snakeyaml); none cover the resolved versions (for example
+tomcat-embed-core 11.0.27 sits above every 11.0.x range returned).
+
+- `ch.qos.logback:logback-classic:1.5.38`: none
+- `ch.qos.logback:logback-core:1.5.38`: none
+- `com.ethlo.time:itu:1.14.0`: none
+- `com.fasterxml.jackson.core:jackson-annotations:2.21`: none
+- `com.fasterxml:classmate:1.7.3`: none
+- `com.hazelcast:hazelcast:5.7.0`: none
+- `com.networknt:json-schema-validator:3.0.6`: none
+- `com.nimbusds:nimbus-jose-jwt:10.10`: none
+- `commons-logging:commons-logging:1.3.6`: none
+- `io.micrometer:micrometer-commons:1.17.1`: none
+- `io.micrometer:micrometer-core:1.17.1`: none
+- `io.micrometer:micrometer-jakarta9:1.17.1`: none
+- `io.micrometer:micrometer-observation:1.17.1`: none
+- `io.modelcontextprotocol.sdk:mcp-core:2.1.0`: none
+- `io.modelcontextprotocol.sdk:mcp-json-jackson3:2.1.0`: none
+- `io.projectreactor:reactor-core:3.8.7`: none
+- `jakarta.annotation:jakarta.annotation-api:3.0.0`: none
+- `jakarta.validation:jakarta.validation-api:3.1.1`: none
+- `org.apache.logging.log4j:log4j-api:2.25.5`: none
+- `org.apache.logging.log4j:log4j-to-slf4j:2.25.5`: none
+- `org.apache.tomcat.embed:tomcat-embed-core:11.0.27`: none
+- `org.apache.tomcat.embed:tomcat-embed-el:11.0.27`: none
+- `org.apache.tomcat.embed:tomcat-embed-websocket:11.0.27`: none
+- `org.hdrhistogram:HdrHistogram:2.2.2`: none
+- `org.hibernate.validator:hibernate-validator:9.1.3.Final`: none
+- `org.jboss.logging:jboss-logging:3.6.3.Final`: none
+- `org.jspecify:jspecify:1.0.1`: none
+- `org.reactivestreams:reactive-streams:1.0.4`: none
+- `org.slf4j:jul-to-slf4j:2.0.18`: none
+- `org.slf4j:slf4j-api:2.0.18`: none
+- `org.snakeyaml:snakeyaml-engine:3.0.1`: none
+- `org.springframework.boot:spring-boot-actuator-autoconfigure:4.1.1`: none
+- `org.springframework.boot:spring-boot-actuator:4.1.1`: none
+- `org.springframework.boot:spring-boot-autoconfigure:4.1.1`: none
+- `org.springframework.boot:spring-boot-health:4.1.1`: none
+- `org.springframework.boot:spring-boot-http-converter:4.1.1`: none
+- `org.springframework.boot:spring-boot-jackson:4.1.1`: none
+- `org.springframework.boot:spring-boot-micrometer-metrics:4.1.1`: none
+- `org.springframework.boot:spring-boot-micrometer-observation:4.1.1`: none
+- `org.springframework.boot:spring-boot-security-oauth2-resource-server:4.1.1`: none
+- `org.springframework.boot:spring-boot-security:4.1.1`: none
+- `org.springframework.boot:spring-boot-servlet:4.1.1`: none
+- `org.springframework.boot:spring-boot-starter-actuator:4.1.1`: none
+- `org.springframework.boot:spring-boot-starter-jackson:4.1.1`: none
+- `org.springframework.boot:spring-boot-starter-logging:4.1.1`: none
+- `org.springframework.boot:spring-boot-starter-micrometer-metrics:4.1.1`: none
+- `org.springframework.boot:spring-boot-starter-oauth2-resource-server:4.1.1`: none
+- `org.springframework.boot:spring-boot-starter-security:4.1.1`: none
+- `org.springframework.boot:spring-boot-starter-tomcat-runtime:4.1.1`: none
+- `org.springframework.boot:spring-boot-starter-tomcat:4.1.1`: none
+- `org.springframework.boot:spring-boot-starter-validation:4.1.1`: none
+- `org.springframework.boot:spring-boot-starter-webmvc:4.1.1`: none
+- `org.springframework.boot:spring-boot-starter:4.1.1`: none
+- `org.springframework.boot:spring-boot-tomcat:4.1.1`: none
+- `org.springframework.boot:spring-boot-validation:4.1.1`: none
+- `org.springframework.boot:spring-boot-web-server:4.1.1`: none
+- `org.springframework.boot:spring-boot-webmvc:4.1.1`: none
+- `org.springframework.boot:spring-boot:4.1.1`: none
+- `org.springframework.security:spring-security-config:7.1.1`: none
+- `org.springframework.security:spring-security-core:7.1.1`: none
+- `org.springframework.security:spring-security-crypto:7.1.1`: none
+- `org.springframework.security:spring-security-oauth2-core:7.1.1`: none
+- `org.springframework.security:spring-security-oauth2-jose:7.1.1`: none
+- `org.springframework.security:spring-security-oauth2-resource-server:7.1.1`: none
+- `org.springframework.security:spring-security-web:7.1.1`: none
+- `org.springframework:spring-aop:7.0.9`: none
+- `org.springframework:spring-beans:7.0.9`: none
+- `org.springframework:spring-context:7.0.9`: none
+- `org.springframework:spring-core:7.0.9`: none
+- `org.springframework:spring-expression:7.0.9`: none
+- `org.springframework:spring-web:7.0.9`: none
+- `org.springframework:spring-webmvc:7.0.9`: none
+- `org.yaml:snakeyaml:2.6`: none
+- `tools.jackson.core:jackson-core:3.1.8`: none
+- `tools.jackson.core:jackson-databind:3.1.8`: none
+- `tools.jackson.dataformat:jackson-dataformat-yaml:3.1.8`: none
+
+Caveat: the range matcher is a small script (scratchpad, not committed), spot-checked on known in and
+out-of-range cases. The tomcat 11.0.27 and jackson 3.1.8 overrides stay as they are.
 
 ### Dependabot PRs and alerts (AC3)
 
