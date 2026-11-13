@@ -200,6 +200,108 @@ class HttpInboundGuardTest {
     }
 
     @Test
+    @DisplayName("a declared Content-Length equal to the limit is not refused before the read")
+    void declaredLengthAtLimitIsRead() throws Exception {
+        byte[] atLimit = VALID_CALL.getBytes(StandardCharsets.UTF_8);
+        Recording sdk = new Recording();
+        HttpServletRequest request = post(atLimit);
+        when(request.getContentLengthLong()).thenReturn((long) atLimit.length);
+        run(new HttpInboundGuard(sdk, JSON, atLimit.length), request, new Exchange().response);
+        assertThat(sdk.calls).isEqualTo(1);
+        assertThat(sdk.body).isEqualTo(atLimit);
+    }
+
+    @Test
+    @DisplayName("an unknown Content-Length of -1 with a small valid body is forwarded")
+    void unknownLengthIsForwarded() throws Exception {
+        Recording sdk = new Recording();
+        HttpServletRequest request = post(VALID_CALL);
+        when(request.getContentLengthLong()).thenReturn(-1L);
+        run(new HttpInboundGuard(sdk, JSON, 4096), request, new Exchange().response);
+        assertThat(sdk.calls).isEqualTo(1);
+        assertThat(sdk.body).isEqualTo(VALID_CALL.getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    @DisplayName("a body over the limit that arrives in several reads is refused")
+    void bodyOverLimitInSeveralReadsIsRefused() throws Exception {
+        byte[] body = new byte[30];
+        java.util.Arrays.fill(body, (byte) 'x');
+        ByteArrayInputStream source = new ByteArrayInputStream(body);
+        ServletInputStream trickle = new ServletInputStream() {
+            @Override
+            public int read() {
+                return source.read();
+            }
+
+            @Override
+            public int read(byte[] target, int offset, int length) {
+                return source.read(target, offset, Math.min(length, 5));
+            }
+
+            @Override
+            public boolean isFinished() {
+                return source.available() == 0;
+            }
+
+            @Override
+            public boolean isReady() {
+                return true;
+            }
+
+            @Override
+            public void setReadListener(ReadListener listener) {
+            }
+        };
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getMethod()).thenReturn("POST");
+        when(request.getInputStream()).thenReturn(trickle);
+        Recording sdk = new Recording();
+        Exchange exchange = new Exchange();
+        run(new HttpInboundGuard(sdk, JSON, 12), request, exchange.response);
+        assertThat(sdk.calls).isZero();
+        assertRefusal(exchange, -32600, "null");
+    }
+
+    @Test
+    @DisplayName("a request with an unsupported charset is a guard fault: 400 / -32600, the SDK never invoked")
+    void unsupportedCharsetIsRefused() throws Exception {
+        Recording sdk = new Recording();
+        Exchange exchange = new Exchange();
+        HttpServletRequest request = post(VALID_CALL);
+        when(request.getCharacterEncoding()).thenReturn("no-such-charset");
+        run(new HttpInboundGuard(sdk, JSON, 4096), request, exchange.response);
+        assertThat(sdk.calls).isZero();
+        assertRefusal(exchange, -32600, "null");
+    }
+
+    @Test
+    @DisplayName("the replayed request's reader returns the buffered body")
+    void replayedReaderReturnsBody() throws Exception {
+        String body = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}";
+        String[] read = new String[1];
+        HttpServlet reading = new HttpServlet() {
+            @Override
+            public void service(ServletRequest request, ServletResponse response) throws IOException {
+                read[0] = ((HttpServletRequest) request).getReader().readLine();
+            }
+        };
+        run(new HttpInboundGuard(reading, JSON, 4096), post(body), new Exchange().response);
+        assertThat(read[0]).isEqualTo(body);
+    }
+
+    @Test
+    @DisplayName("servlet() on a transport not built by streamableHttp throws, naming the factory")
+    void servletOnForeignTransportThrows() {
+        DataPrismMcpServer.HttpTransport foreign = new DataPrismMcpServer.HttpTransport(null, null);
+        org.assertj.core.api.Assertions.assertThatThrownBy(foreign::servlet)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("DataPrismMcpServer.streamableHttp")
+                .hasMessageContaining("transportProvider()")
+                .hasMessageContaining("unguarded");
+    }
+
+    @Test
     @DisplayName("an id that is neither a number nor a string is answered as null")
     void structuredIdIsNull() throws Exception {
         Recording sdk = new Recording();
