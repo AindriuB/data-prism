@@ -926,6 +926,11 @@ are checked. The allowlist is an access check on the caller's client id. It does
 endpoint a client sends output to, or where data goes afterwards: enforcing that belongs to a gateway or egress
 control outside Data Prism.
 
+The allowlist is compared by value. Two `ClientAllowlist` instances built from the same set of ids are equal, and the
+check that refuses a bypass (`CLIENT_ALLOWLIST_BYPASSED`) tests value equality, not identity: an
+`AuthorizationService` built with an equal allowlist passes, one built with a different set is refused. A
+`CaseAuthorizer` is compared by identity, so it must be the bean itself.
+
 Two beans of either type fail startup with Spring's own `NoUniqueBeanDefinitionException` unless one is
 `@Primary`. A bean that is injected but never used, because an application `ScopeResolver` or
 `AuthorizationService` was built around another authorizer or allowlist, is refused with
@@ -976,11 +981,15 @@ public interface FreeTextRecogniser {
 }
 ```
 
-It is called for every string value and every property name, because a map key can carry data as readily as a
+It is called for every non-blank string value and every property name, because a map key can carry data as readily as a
 value can. Return an empty set when you recognise nothing, and the classifications you recognised otherwise;
 never return `null`. A recogniser can only add refusals: a non-empty result withholds the source or response with
 `FREE_TEXT_RECOGNISED`, and nothing it returns relaxes another validator's refusal. It is given only the value,
 never the privacy context or the path. Values that are the scope's own pseudonyms are not passed to it.
+
+Each call receives one scalar value on its own, as a string, or one property name. It never receives an object, an
+array or a neighbouring field, so a recogniser cannot use the rest of the record as context: a name in one field and
+an identifier in another reach it as two separate calls.
 
 In a Spring deployment, declare each recogniser as a bean. They run in `@Order` order (lowest first):
 

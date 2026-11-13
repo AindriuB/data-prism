@@ -25,7 +25,7 @@ final class AuditMaintenance implements AutoCloseable {
     private static final Duration FIRST_CHECKPOINT_AFTER = Duration.ofSeconds(10);
 
     private static final Pattern CODE = Pattern.compile("^([A-Z][A-Z_]+):");
-    private static final Pattern SEGMENT = Pattern.compile("audit-(\\d{4}-\\d{2}-\\d{2})\\.log");
+    private static final Pattern SEGMENT = Pattern.compile("audit-(\\d{4}-\\d{2}-\\d{2})(?:\\.(?!0000)\\d{4})?\\.log");
 
     /** A failed purge's code and, when the failure names a segment, its date. */
     private record Failure(String code, String segmentDate) { }

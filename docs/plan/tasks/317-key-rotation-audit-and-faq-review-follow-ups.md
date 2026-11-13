@@ -56,3 +56,11 @@ them before 0.8.0 so the released pages say what the code does. Wording fixes on
 - The faq "Is it production-ready?" answer and every version literal (321).
 - `docs/tools.md` and the `follow`/`_links` captures (306).
 - Any page in 316's Owns.
+
+## Review round 1 — findings
+
+Reviewed HEAD: 2a3b793a118d261f38121e5f5e4550412a8a21bf
+
+- [P2] docs/faq.md:52 — The new clause "`RESPONSE_TOO_LARGE_TO_SCAN`, which is recorded in the audit trail" is false. The audit trail records the refusal code `VALIDATION_FAILED`: decision `DENY:VALIDATION_FAILED` (DefaultContextOrchestrator.java:499-506, from `refused.code()`), source status `REFUSED:VALIDATION_FAILED` (:593). `AuditEvent` (AuditEvent.java:43-68) has no field carrying the violation code; docs/audit.md:276 agrees. The violation code appears only in the exception message (DefaultContextOrchestrator.java:379, :596). route: implementer — drop the audit claim or state only what the code shows.
+- [P2] docs/extending.md:930-931 — "a `ScopeResolver` or `AuthorizationService` built with an equal allowlist passes" is wrong. `ScopeResolver` holds no allowlist; its constructor takes a `CaseAuthorizer` (ScopeResolver.java:50-56). Only `AuthorizationService` takes a `ClientAllowlist` (AuthorizationService.java:24-39), and the `CLIENT_ALLOWLIST_BYPASSED` check runs only over `AuthorizationService` beans (SecurityWiring.java:123). route: implementer — remove "`ScopeResolver` or".
+- [P2] docs/key-rotation.md:28-31 — The rewritten id-clash bullet dropped the old scope "For the cluster keys". Under "Rules for every key" it now implies `KEY_CHECK_MISMATCH` catches a reused id with new bytes for any key; key check values are published only for the cluster keys and the name key (MemberCards.java:789-791, :837). It also keeps "is judged unverified", but a key check mismatch makes the whole cluster stop serving (MemberCards.java:1313-1315; ClusterSecurityStatus.java:81). route: implementer — restore the cluster-key/name-key scope and state the not-serving consequence.

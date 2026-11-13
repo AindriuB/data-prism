@@ -16,7 +16,7 @@ not judge whether a deployment's key management meets any legal duty.
 | Audit key | `dataprism.audit.hmac-key`, `retired-hmac-keys` | Keys the audit hash chain | A restart, keeping the old key for verification. See [the audit key](#the-audit-key) |
 | Cluster key | `dataprism.hazelcast.security.cluster-key` | Seals the cluster's identity and re-identification entries, member cards and sentinel | A planned full restart that loses the cluster's state. See [the cluster key](#the-cluster-key) |
 | Name key | `dataprism.hazelcast.security.name-key` | Derives every map key and lock key in the cluster | A planned full restart that loses the cluster's state. See [the name key](#the-name-key) |
-| Link keys | `dataprism.links.key-id`, `dataprism.links.keys` | Seals links and page links | Two phases, which a rolling restart can follow. See [link keys](#link-keys) |
+| Link keys | `dataprism.links.key-id`, `dataprism.links.keys` | Seals links and page links | Two phases, then retirement; a rolling restart can follow them. See [link keys](#link-keys) |
 
 ## Rules for every key
 
@@ -25,9 +25,10 @@ not judge whether a deployment's key management meets any legal duty.
   repository, your configuration files and your logs.
 - Every key is at least 32 bytes. Generate each one on its own from a source of randomness. Never derive one key from
   another: the name key is never derived from the pseudonymisation key, and no key is derived from the cluster key.
-- Give every key an id that you have not used before, including for a replacement of the same kind. A new key under an
-  old id is a different key that carries a name other members already know. For the cluster keys a member whose key
-  check value differs from another's for an id both hold is judged unverified (`KEY_CHECK_MISMATCH`).
+- Give every key an id that you have not used before, including for a replacement of the same kind. Putting new bytes
+  under an old id is not a rotation: other members still know the id as the old key. For the cluster keys and the name key, a member whose key check
+  value for an id differs from another member's for the same id makes the cluster stop serving (`KEY_CHECK_MISMATCH`). The
+  cluster keys and the name key must also have ids that differ from one another (`DUPLICATE_CLUSTER_KEY_ID`).
 - The startup checks refuse a key that shares an id or its bytes with another kind: the cluster and name keys are
   compared with the pseudonymisation, audit and link keys (`CLUSTER_KEY_SHARED`, `NAME_KEY_SHARED`), a link key with
   the pseudonymisation key (`LINK_KEY_SHARED`), and an audit key with the pseudonymisation key
@@ -87,8 +88,10 @@ The procedure:
    re-identification index, so pseudonyms issued before the change can no longer be re-identified. There is no
    approved alternative to the index, and this page does not describe one.
 7. Check that new calls return pseudonyms under the new key. A subject that was read before and after the change
-   should now show a different pseudonym, and the `dataprism.identity.collision` counter should not rise; a rise
-   means members are disagreeing about the key.
+   should now show a different pseudonym, and the `dataprism.identity.collision` counter should not rise. The counter
+   counts cached identities for a live scope that disagree with what the generator now derives, so a rise means the
+   key, the algorithm version or the vocabulary differs from what produced the cache, for example a member still
+   running on the old key.
 8. Keep the old key, under its old id, in the key store (see the next section).
 
 New scopes need nothing further: every scope that starts after the restart uses the new key from its first call.
@@ -144,14 +147,16 @@ The procedure:
    ```
 
    Each writer must verify under exactly one of the keys. A writer that verifies under none is a break. The
-   verifier prints the key id a writer verified under. See [the offline verifier](audit.md#the-offline-verifier).
+   verifier prints `verified under key id:` for each writer. Check that the writers from before the change show the
+   old key id and the writers started after it show the new one. See [the offline verifier](audit.md#the-offline-verifier).
 5. Keep the old key's file with the segments it covers. Offline verification of an old segment needs it.
 6. Keep the retired key configured until every segment written under it has been purged. Retention verifies expiring
    segments with the current key and every retired key and does not delete a segment written under any other key.
    If the old key is gone first, the purge stops and the `auditIntegrity` health contributor reports `DOWN` with
-   `AUDIT_RETENTION_CHAIN_UNVERIFIED`. The oldest segment under the old key can be purged after the retention
-   period (`dataprism.audit.retention`, six months by default) from the day of the change.
-7. When the last such segment has been purged, remove the retired entry and destroy the old key.
+   `AUDIT_RETENTION_CHAIN_UNVERIFIED`. The newest segment under the old key is the last one the old key is
+   needed for. It was written on the day of the change, and it can be purged once the retention period
+   (`dataprism.audit.retention`, six months by default) has passed from that day.
+7. When that newest segment has been purged, remove the retired entry and destroy the old key.
 
 Two cautions. First, switching a directory that already holds unkeyed segments to a keyed chain leaves those
 segments unpurgeable by the built-in retention, because retention does not delete a segment from a writer that
@@ -243,8 +248,8 @@ is the reset a rolling upgrade would produce. The 0.7 state is not copied and is
 `dataprism.hazelcast.security.name-key` is a key of its own. It derives every map key and lock key in the cluster
 (an HMAC under a subkey of it), so that no subject id, principal, approval id or pseudonym appears in a key. It is
 never derived from the pseudonymisation key or from a cluster key, and the startup checks refuse a name key that
-shares an id or its bytes with a cluster, pseudonymisation, audit or link key (`NAME_KEY_SHARED`, and
-`DUPLICATE_CLUSTER_KEY_ID` for an id clash).
+shares an id or its bytes with a cluster, pseudonymisation, audit or link key (`NAME_KEY_SHARED`). A name key whose
+id equals a cluster key's id is refused separately, as `DUPLICATE_CLUSTER_KEY_ID`.
 
 **Changing the name key is a planned full restart with state loss, exactly as for the cluster key.** A changed name
 key gives every entry a different key, so the entries a member wrote earlier are unreachable by one that holds the new
@@ -266,8 +271,10 @@ procedure above with the name key in the place of the cluster key:
 5. Start every member and check `clusterSecurity` as in cluster step 6.
 6. Destroy the old name key only. The cluster key stays in use.
 
-If you change both keys, do it in one window with one full stop, following the cluster procedure and setting both
-key ids in its step 4. Do not run members on different name keys.
+If you change both keys, do it in one window with one full stop. Follow the cluster procedure, with two differences:
+in its step 2 generate both keys, each with a new id that differs from the other's, and in its step 4 set both
+`cluster-key.key-id` and `name-key.key-id` (and their variables) instead of keeping the name key unchanged. In step 7
+destroy both old keys. Do not run members on different name keys.
 
 ## Link keys
 
@@ -277,7 +284,8 @@ it, so a member opens a link by looking up that id. A key id is 1 to 16 characte
 `-`. Page links need a link key even while links are off. A link key must differ from the pseudonymisation, cluster
 and name keys.
 
-The rotation has two phases, so that a rolling restart never produces a link that some member cannot verify.
+The rotation has two phases, then a retirement, so that a rolling restart never produces a link that some member
+cannot verify.
 
 1. **Phase 1: hold the new key everywhere.** Generate the new key and add it to `dataprism.links.keys` with its
    reference, leaving `dataprism.links.key-id` on the old key. Restart every member, one at a time if you like.
@@ -287,7 +295,7 @@ The rotation has two phases, so that a rolling restart never produces a link tha
 2. **Phase 2: seal with it.** Set `dataprism.links.key-id` to the new key and keep the old key in `keys`. Restart
    the members, one at a time if you like. A member already sealing with the new key produces links that every other
    member can open, because phase 1 put the key on every member. Links sealed under the old key still verify.
-3. **Phase 3: retire the old key.** Wait until every link sealed under the old key has expired. That is the longer of
+3. **Retirement.** Wait until every link sealed under the old key has expired. That is the longer of
    `dataprism.links.lifetime` and `dataprism.paging.lifetime` after the last member stopped sealing with the old key;
    with `lifetime: scope`, a link lasts up to its scope's expiry. Then remove the old key from `keys`, restart, and
    **destroy the old key in the key store**. Removing it from memory only is not retirement: a copy that survives in
