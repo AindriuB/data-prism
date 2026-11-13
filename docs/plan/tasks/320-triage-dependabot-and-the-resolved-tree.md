@@ -62,3 +62,61 @@ fixes, and prove whether any runtime dependency of a published artifact carries 
 - Merging or closing any Dependabot PR, or dismissing an alert (owner actions; the Outcome recommends).
 - Adding a scanner to CI or a pip/load-test entry to `dependabot.yml` (0.8 backlog, 0.9).
 - Removing the `jackson-bom` override; the project `<version>` (321).
+
+## Outcome
+
+Run 2026-11-13 on `origin/main` d79f6973. No `pom.xml` change (AC4): the resolved tree has no advisory.
+
+### Alerts (AC1)
+Re-counted: 116 open alerts (10 critical, 70 high, 36 medium), all Pillow, only in the two manifests
+(`docs-site/logo/requirements.txt`, `docs-site/social-card/requirements.txt`). Both now pin `Pillow==13.0.0`,
+which is the first patched version. `make_favicon.py` and `make_card.py` each exited 0 under Python 3.12 with
+Pillow 13.0.0 installed in a scratch venv (Pillow 13 needs Python 3.10 or later; the macOS system 3.9 only
+offers 11.3). They wrote to a scratch copy of `docs-site`, so no image in the repo changed.
+
+### Resolved runtime tree (AC2)
+`./mvnw -B dependency:list -DincludeScope=runtime` on the branch. It resolved every module through
+`data-prism-quickstart-issuer` except `data-prism-quickstart-extension`, which fails resolving its
+unpublished test-scope sibling jars from Central at 0.7.0. That module is not published and is not in the
+server image. Each Maven block is unlabelled, so the list below is the union of `compile` and `runtime`
+coordinates for the 13 published modules (annotations through `-spring-boot-starter`) plus
+`data-prism-server`, with project-internal artifacts removed. 66 third-party coordinates. Each was queried
+with `securityVulnerabilities(ecosystem: MAVEN, package: ...)` for its resolved version and matched against
+`vulnerableVersionRange`. **Result: none for all 66.**
+
+| Group | Resolved version | Advisories |
+|---|---|---|
+| spring-boot (autoconfigure, http-converter, jackson, security, servlet, tomcat, validation, web-server, webmvc, oauth2-resource-server, and the `-starter*` set) | 4.1.1 | none |
+| spring-framework (aop, beans, context, core, expression, web, webmvc) | 7.0.9 | none |
+| spring-security (config, core, crypto, oauth2-core, oauth2-jose, oauth2-resource-server, web) | 7.1.1 | none |
+| tools.jackson (jackson-core, jackson-databind, jackson-dataformat-yaml) | 3.1.8 | none |
+| com.fasterxml.jackson.core:jackson-annotations | 2.21 | none |
+| tomcat-embed (core, el, websocket) | 11.0.27 | none |
+| com.hazelcast:hazelcast | 5.7.0 | none |
+| com.nimbusds:nimbus-jose-jwt | 10.10 | none |
+| io.modelcontextprotocol.sdk (mcp-core, mcp-json-jackson3) | 2.1.0 | none |
+| com.networknt:json-schema-validator | 3.0.6 | none |
+| ch.qos.logback (classic, core) | 1.5.38 | none |
+| slf4j (api, jul-to-slf4j) | 2.0.18 | none |
+| log4j (api, to-slf4j) | 2.25.5 | none |
+| io.projectreactor:reactor-core | 3.8.7 | none |
+| io.micrometer (commons, observation) | 1.17.1 | none |
+| org.hibernate.validator:hibernate-validator | 9.1.3.Final | none |
+| org.yaml:snakeyaml / org.snakeyaml:snakeyaml-engine | 2.6 / 3.0.1 | none |
+| commons-logging 1.3.6, classmate 1.7.3, itu 1.14.0, jboss-logging 3.6.3.Final, jspecify 1.0.1, reactive-streams 1.0.4, jakarta.annotation-api 3.0.0, jakarta.validation-api 3.1.1 | as stated | none |
+
+Caveat: the range matcher is a small script (scratchpad, not committed); it was spot-checked on four
+known in/out-of-range cases. The advisory database lists older ranges for several of these packages, and
+none cover the resolved versions. The tomcat 11.0.27 and jackson 3.1.8 overrides stay as they are.
+
+### Dependabot PRs and alerts (AC3)
+
+| Item | Recommendation | Reason |
+|---|---|---|
+| 116 Pillow alerts (both manifests) | Auto-close on merge of this PR; do not dismiss | The pin is 13.0.0, the first patched version, so the alerts resolve themselves. |
+| #246 (Pillow, logo) | Close as superseded by this branch | Same one-line change. |
+| #148 (Pillow, social-card) | Close as superseded by this branch | Same one-line change. |
+| #245 (docs-site pip group, 5 updates) | Defer to 0.9, or merge after this PR with a rebase | Overlaps the same two Pillow lines, so it conflicts. mkdocs-material 9.8.1 and pymdown-extensions bumps are docs-site only and untested here; mkdocs-material is announced end-of-life 2027-05-05. |
+| #244 (github-actions group, 4 updates) | Defer to 0.9 | Pinned actions in release workflows (setup-java, setup-python, docker/login, cosign-installer): do not change the release path in the cut. Checks skipped on the PR. |
+| #247 (load-test maven group, 8 updates) | Defer to 0.9 | Includes jackson-databind 3.3.0 and junit 6.1.3 (minor bumps), and the load-test pom is not shipped. CI green. |
+| #229 (root maven group, 8 updates) | Defer to 0.9 | Contains jackson-bom 3.1.8 to 3.3.0 (a minor bump, AC4 forbids it here), Boot 4.1.1 to 4.1.2, and plugin bumps. CI is red (`build (21)`, `build (25)`, `ci-gate`). Nothing in the resolved tree needs it for security. |
