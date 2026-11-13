@@ -344,3 +344,7 @@ Reviewed HEAD: 842b1a575df95b131d4d8d7e8026730130355e5c
 - 267-9: multi-behaviour tests in HttpInboundGuardTest.
 - 267-10: classify returns Object[] where it should return a Verdict record.
 - 267-11: the servlet() Javadoc presents Tomcat's close-after-400 as the guard's own behaviour.
+
+## Outcome
+
+Landed on `main` as PR #267 (`6eda6319`), verified PASS and APPROVE at `974e3c8411b7e3c7c9e2bafc686af4d0030db745` (2026-11-13). Outcome (b), a product defect: under SDK 2.1.0 a `tools/call` with string `arguments` got a 500 carrying a serialised stack trace and a closed keep-alive socket, which is what the next request saw as `no bytes`. `HttpInboundGuard` now wraps the SDK servlet (body buffered to the 16 MiB SDK cap, over-length declared bodies refused unread) and answers non-convertible `tools/call` and `initialize` params with 400 and -32602 before the SDK is reached; `ContentFreeMcpJsonMapper` removes `stackTrace` and `cause` from every SDK error body. The plan amendments (PR #264, `bad5fad2`) and the owner decisions are recorded above. Accepted residual: a direct `transportProvider()` mount bypasses the guard. The 404 variant at `refused:152` is not explained. Follow-ups 267-3 to 267-11 are in `PLAN.md`.

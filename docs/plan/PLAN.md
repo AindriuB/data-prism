@@ -109,7 +109,7 @@ Owner decisions that change behaviour and belong in `docs/migration-0.8.md`: the
 
 ##### Follow-ups carried from landed waves
 
-Lows and Nits found in review that no task has absorbed. For waves 5 to 11 and the older review rounds of PR #154 and PR #163, only items that name a task still open (213, 214, 255, 260, 261, 263, 273 to 283, 303, 304) are kept here; the rest are in the archive at the lines named in each group (`archive/PLAN-2026-11-10.md`). Bullets that name another wave's task keep that task's number.
+Lows and Nits found in review that no task has absorbed. For waves 5 to 11 and the older review rounds of PR #154 and PR #163, only items that name a task still open (213, 214, 255, 260, 261, 263, 273 to 283, 304) are kept here; the rest are in the archive at the lines named in each group (`archive/PLAN-2026-11-10.md`). Bullets that name another wave's task keep that task's number.
 
 Waves 5 and 6 (`archive/PLAN-2026-11-10.md:204-260`; waves 7 to 11 are at 270-352):
 
@@ -141,8 +141,6 @@ Follow-ups from wave 7, each belonging to the task named (Lows unless said other
 - Audit-sink interrupt bug: done as task 297 (PR #214, 2026-11-06; kept as history). Related, recorded in wave 6: 208's recognisers do not restore the interrupt flag, to protect the audit sink; 297 removed that reason, so see the wave-8 follow-up that reconsiders it.
 - 213: an operator page on `CLUSTER_LOCK_TIMEOUT` during scale-out. A member that starts or rejoins can refuse tool calls for about one tick interval after a peer's write, and a start-up card write waits up to Hazelcast's 5 s backup timeout.
 - 213 (and a startup warning): source names over 128 characters. Document the limit and add a startup warning for a name that will not fit the `targetSources` schema.
-- 303: fix two `MemberCardTest` flakes (the pause-digest test at :1830 and the later-wrapper start test at :1767); they fail PR builds unrelated to Hazelcast (CI runs 42684474153, 42689565210).
-- 305: diagnose and fix the HttpParseErrorLeakTest tools/call flake (filed 2026-11-10; not yet in a wave)
 - Keep client-echoed `method`, `id` and `protocolVersion` out of the MCP SDK's WARN lines (stdio and HTTP), and the `roots/list_changed` WARN and ERROR lines that log client-returned roots. Residual of 304, found in PR #232's review.
 - 261 and 213: the "Design-doc facts" lines of `tasks/retired/228-signed-leased-pause-document.md` marked "For 213" and "261" are still owed to those tasks, including `ClusterSecurityStatus` gaining two components and `Reason.PAUSE_NOT_FRESH`.
 - 287 and 260: both task files now carry a note that 228 inserted `CLUSTER_SETTINGS_MISMATCH` into `PrivacyClusterRefusal`.
@@ -480,6 +478,22 @@ Follow-ups found in review, none yet scheduled:
 
 - Task 194: defence in depth. Each leak validator should also redact the keys flagged by the other. `RefusalPaths.redact` covers it today.
 - For task 201 (from 193): the `docs/configuration.md` wording of `dataprism.limits.max-response-size` (already in 201's brief); and the per-source `REFUSED:RESPONSE_TOO_LARGE` direction of OD-B18 changes what 193 built, for the 0.9 migration notes.
+
+### Flake fixes 303/305/308 follow-ups
+
+Landed 2026-11-13 (PRs #266, #267, #265; records in `HISTORY-INDEX.md`). Open items from their reviews:
+
+- 264-4: the 305 guard refuses before the SDK's own checks (same as 267-4).
+- 264-5: other handlers that convert params synchronously keep the 500.
+- 267-3 to 267-11: listed in `tasks/retired/305-http-parse-error-leak-flake.md`, "Follow-ups (from PR #267 review)".
+- Content-Length test gap (round-3 P3): the `HttpInboundGuardTest` `post()` helper never stubs `getContentLengthLong`, so mutating `>` to `>=`, or refusing on -1, would pass.
+- Move `GUARD_MAPPERS` inside the `HttpTransport` record.
+- 303 reviewer suggestion: the new deterministic test never asserts the card was stale before release (`MemberCardTest` ~:1841).
+- 303 reviewer note: `aSecondWrapperUsesTheSameMainDocument...` (:1901) has the same weak `pauseDigest() != null` wait.
+- 263-1 (Low): follow-up (e) under wave 14b, about "Shared state" in `docs/multiple-instances.md` saying raw subject ids, names no line; cite it or drop it.
+- The 404 variant of the 305 flake (`refused:152`) is unexplained; the `known-flakes.md` row stays `open`.
+- Direct `transportProvider()` mounts bypass the guard (accepted residual; four tests and any integrator). Check the external demo project.
+- Docs: CHANGELOG `[Unreleased]` may need a line for the 305 behaviour change. A malformed `tools/call` or `initialize` now gets 400 with -32602, and no MCP HTTP error body carries a stack trace.
 
 ### Contract register successor tasks (0.8 and 0.9 follow-ups, from task 200)
 
