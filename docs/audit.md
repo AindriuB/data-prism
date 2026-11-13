@@ -372,7 +372,7 @@ request does not time out. That is fail closed, and a deployment that wants a bo
 
 ## The keyed chain
 
-The chain described so far is plain SHA-256. Since 0.8 an operator can opt in to
+The chain described so far is plain SHA-256. In 0.8.0 an operator can opt in to
 a keyed chain, in which each record's hash is an HMAC-SHA256 under a key of the
 operator's own. It is off by default, and nothing about the unkeyed chain
 changes if it stays off. The configuration properties, their startup refusals
@@ -975,7 +975,7 @@ writer's chain as after it, not as separate breaks, at exit code 2.
   stops whoever holds write access from recomputing it. Resisting that needs
   a keyed MAC (a secret the adversary does not also have), or a checkpoint
   file the adversary cannot also rewrite. A [keyed chain](#the-keyed-chain) is
-  available since 0.8 as an opt-in, and is off by default; it does not resist
+  available in 0.8.0 as an opt-in, and is off by default; it does not resist
   someone who holds the key, so an unkeyed chain resists no one who can write
   the file, and a keyed chain resists no one who also holds the key.
 - **Durable append-only-ness is an operator responsibility, not something

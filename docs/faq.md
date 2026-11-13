@@ -38,8 +38,8 @@ Only for a fixed set of identifier shapes, not general PII detection: a
 fail-closed validator scans every response — including free-text fields such
 as a note — for values that look like an IBAN, a payment card number, an
 Irish PPSN, a US Social Security Number, an email address, an international
-phone number, a JWT, or a known API-key prefix, to a depth and size budget (below), and refuses the response if it finds one that is not already one of
-the scope's own emitted pseudonyms. It reads property names as well as values,
+phone number, a JWT, or a known API-key prefix, to a depth and size budget (below), and refuses the response if it
+finds one that is not already one of the scope's own emitted pseudonyms. It reads property names as well as values,
 so a map keyed by an email address is refused too. A source whose record is
 refused is withheld and marked `REFUSED`; the call is refused when every
 source that answered is refused, or when the final check over the assembled
@@ -49,11 +49,13 @@ only the raw-value check was registered there, so a scan-shaped value in a
 `@NonSensitive` field passed. See [Migrating to 0.7.0](migration-0.7.md). The scan reads at most 16 levels of nesting
 and a character budget (262,144 characters by default); a response nested deeper, or larger, than that cannot be
 examined in full, so the validator fails closed rather than passing the part it did not read. The violation code is
-`RESPONSE_TOO_LARGE_TO_SCAN`; the client sees `refused: VALIDATION_FAILED at $`. From 0.8 a deployment can add its own check for free text, a
+`RESPONSE_TOO_LARGE_TO_SCAN`; the audit trail records the refusal as `VALIDATION_FAILED`, and the client receives only
+`refused: VALIDATION_FAILED at $`. The scan skips an empty or all-whitespace string, because it has nothing to
+match. From 0.8 a deployment can add its own check for free text, a
 `FreeTextRecogniser`, which can only add refusals: see
 [Add a free-text recogniser](extending.md#add-a-free-text-recogniser). A model field classified `FREE_TEXT` is
-redacted under the `DEFAULT` profile and removed under `STRICT`. Without a recogniser, this is shape-based matching for a fixed
-list of formats, not open-ended named-entity recognition, so it will not
+redacted under the `DEFAULT` profile and removed under `STRICT`. Without a recogniser, this is shape-based matching
+for a fixed list of formats, not open-ended named-entity recognition, so it will not
 catch, for example, a bare name typed into a note; the repository does not
 document a reason for that scope beyond it being what shipped. The check
 allows the scope's own pseudonyms through a per-scope allowlist, because
