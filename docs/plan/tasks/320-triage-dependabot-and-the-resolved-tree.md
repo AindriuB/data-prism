@@ -120,3 +120,8 @@ none cover the resolved versions. The tomcat 11.0.27 and jackson 3.1.8 overrides
 | #244 (github-actions group, 4 updates) | Defer to 0.9 | Pinned actions in release workflows (setup-java, setup-python, docker/login, cosign-installer): do not change the release path in the cut. Checks skipped on the PR. |
 | #247 (load-test maven group, 8 updates) | Defer to 0.9 | Includes jackson-databind 3.3.0 and junit 6.1.3 (minor bumps), and the load-test pom is not shipped. CI green. |
 | #229 (root maven group, 8 updates) | Defer to 0.9 | Contains jackson-bom 3.1.8 to 3.3.0 (a minor bump, AC4 forbids it here), Boot 4.1.1 to 4.1.2, and plugin bumps. CI is red (`build (21)`, `build (25)`, `ci-gate`). Nothing in the resolved tree needs it for security. |
+
+## Attempt 1 — failed
+
+Verified HEAD: 36a6c32f963d266c1c05668ca3a4d9d3a2633c61. reviewer: REQUEST CHANGES on AC2.
+- AC2 — the Outcome table groups coordinates and does not list every one: the "`-starter*` set" (about 9 artifacts, inferred from the stated total of 66) and the base `spring-boot` jar are never named, and the PR #272 body does not include the `dependency:list` output the read check compares against. The 66-coordinate list and the "no advisory" claim therefore cannot be checked. Fix: list every runtime coordinate (groupId:artifactId:version) by name in the Outcome (or the PR body), so each can be matched against the advisory database.
