@@ -92,6 +92,46 @@ class AuditIntegrityHealthTest {
                 });
     }
 
+    /** Tampers a seeded segment, renames it to {@code name}, boots, and returns the health detail. */
+    private static java.util.Map<String, Object> detailsAfterPurgeOf(Path dir, String name) throws Exception {
+        Path audit = dir.resolve("segments");
+        Path seeded = seedTampered(audit);
+        Files.move(seeded, audit.resolve(name));
+        java.util.concurrent.atomic.AtomicReference<java.util.Map<String, Object>> out =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        new WebApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
+                .withUserConfiguration(Integrations.class)
+                .withAllowBeanDefinitionOverriding(true)
+                .withBean(Clock.class, () -> Clock.fixed(NOW, ZoneOffset.UTC))
+                .withPropertyValues(AuditRetentionConfigurationTest.valid())
+                .withPropertyValues("dataprism.audit.sink=hash-chained", "dataprism.audit.directory=" + audit,
+                        "dataprism.audit.checkpoint.file-path=" + dir.resolve("cp.jsonl"))
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    out.set(context.getBean("auditIntegrityHealthIndicator", HealthIndicator.class)
+                            .health().getDetails());
+                });
+        return out.get();
+    }
+
+    @Test
+    void a_size_capped_segment_names_its_date(@TempDir Path dir) throws Exception {
+        assertThat(detailsAfterPurgeOf(dir, "audit-2025-01-10.0002.log")).containsOnly(
+                java.util.Map.entry("code", "AUDIT_RETENTION_CHAIN_UNVERIFIED"),
+                java.util.Map.entry("segmentDate", "2025-01-10"));
+    }
+
+    @Test
+    void an_index_that_is_not_four_digits_names_no_date(@TempDir Path dir) throws Exception {
+        assertThat(detailsAfterPurgeOf(dir, "audit-2025-01-10.12.log")).doesNotContainKey("segmentDate");
+    }
+
+    @Test
+    void an_index_of_0000_names_no_date(@TempDir Path dir) throws Exception {
+        assertThat(detailsAfterPurgeOf(dir, "audit-2025-01-10.0000.log")).doesNotContainKey("segmentDate");
+    }
+
     @Test
     void without_spring_boot_health_on_the_classpath_there_is_no_health_indicator_bean(@TempDir Path dir) {
         new WebApplicationContextRunner()
