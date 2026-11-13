@@ -469,3 +469,14 @@ When `PLAN.md` was cut to open work, every line of the cut text that records an 
 
 - `archive:2902` Cut 0.3.1 for GHCR and the MCP Registry only — the owner decided Maven
 - `archive:2964` Accepted 2026-09-25: listed at
+
+## Owner decisions of 2026-11-13 (0.8.0 pre-cut, after wave 1)
+
+- **D1: File Count.** Before task 321 publishes, check the Maven Central File Count. Release at most once a month. The owner checks the count on 2026-11-13 and 321 is gated on it. This settles option (c) of the open File Count item in `PLAN.md` for the 0.8.0 cut (cadence, not a module merge).
+- **D2: Soak timing.** Run the soak (task 263 Part B, owner-run) on the release PR's merge commit, before the tag, so the evidence describes the commit that ships.
+- **D3: Dependabot.** Close #246 and #148 (done; superseded by #272, Pillow 13.0.0). Defer #245, #244, #247 and #229 to 0.9: they change the release workflows, docs tooling and minor versions of Jackson and Boot, none of which the resolved tree needs for security (task 320 Outcome).
+- **D4: Task 306** (links-enabled capture fixture) moves to 0.9.0.
+- **D5: Findings 252-1 and 252-2** (`ExampleApplication` EOF and `closeGracefully` handling) are deferred to 0.9.
+- **D6: External demo project.** Switch it to `servlet()`, or retire it. A 0.9 follow-up, not a 0.8 blocker. Reason: a direct `transportProvider()` mount bypasses the HTTP inbound guard (accepted residual).
+- **D7: Task 317 AC6** is accepted in its by-value reading (the allowlist note says compared by value); no further round.
+- **Flake acceptance.** The `FreePorts` "no free loopback ports" failure under parallel local builds is accepted as a local-only flake; see `known-flakes.md`.

@@ -47,6 +47,8 @@ Design facts found for the 0.7 planner (2026-10-09) are in `archive/PLAN-2026-11
 
 Central warned on 2026-10-22 that the organisation reached its monthly File Count publishing limit; the grace period ends 2026-11-08. On 2026-11-04 the owner moved the choice (check the plan or limit in the portal, publish fewer modules, or release at most once a month) to the 0.8.0 release cut. The owner does not expect wave 8 to finish before 2026-11-08 and can defer the release, so the cut, not an earlier task, decides.
 
+Decided 2026-11-13 (D1): before task 321 publishes, check the Central File Count; release at most once a month. The owner checks the count on 2026-11-13, and 321 is gated on the result.
+
 ##### Open (owner, deferred 2026-10-23): merge small modules to cut published artifacts
 
 The owner has asked to record the options and return to this later; nothing is decided. This is the architect's assessment of 2026-10-23, and it bears on the File Count item above.
@@ -83,6 +85,8 @@ Waves 1 to 12 have landed (the table below carries one row for waves 1 to 11 and
 | 13 | 260 (landed 2026-11-10, PR #240), 261 (landed 2026-11-10, PR #239), 263 Part A (landed 2026-11-11, PR #243, `95cfee34`; Part B, the owner-run soak, stays open as a 0.8.0 release-cut obligation below and `tasks/263-*.md` is now its contract). Filed 2026-11-10: 306 (links-enabled capture fixture for `follow` and `_links`, unscheduled; `tasks/306-links-enabled-capture-fixture.md`). Filed 2026-11-11 from PR #243: 307 (soak provenance; landed 2026-11-12, PR #254, `64af8265`; follow-ups under "307 follow-ups"), 308 (HazelcastOversightTest grace-race test fix), 309 (stdio leak-test teardown; landed 2026-11-11, PR #249, `8c41a1f1`; its review follow-ups are under "309 follow-ups"), 309-F1 (stdio reader end-of-stream and child-exit checks; landed 2026-11-12, PR #252, `4059d4bd`; follow-ups under "309-F1 follow-ups") |
 | 14a | 310 (key-rotation guide, PR #260, `1036a6c0`), 311 (audit and architecture, PR #259, `4001d053`), 312 (multiple-instances, eu-ai-act, cluster-security, PR #258, `3a4ea595`), 313 (extending, tools, faq, PR #257, `52781007`): done 2026-11-12. 213 was split into these and 314 (`tasks/retired/213-*.md`) |
 | 14b | 314 (0.8 migration notes and changelog, PR #262, `703528ae`): done 2026-11-12 (`tasks/retired/314-*.md`) |
+| 0.8.0 wave 1 | 315 (PR #270), 316 (PR #271), 320 (PR #272), 317 (PR #273), 319 (PR #274), 318 (PR #275): landed 2026-11-13 (`tasks/retired/`; record in `HISTORY-INDEX.md`). Dependabot #246 and #148 closed as superseded by #272 |
+| 0.8.0 wave 2 | 321 (cut 0.8.0; no brief filed). **Gated on D1 and D2** (`DECISIONS.md`, 2026-11-13): the owner checks the Maven Central File Count first, and runs the soak on the release PR's merge commit before the tag. Release at most once a month |
 | 15 (0.9) | 273, 274 (0.9 starter onboarding, filed 2026-10-23; see "0.9 starter onboarding plan" below. 273's OD-273-3 (a) mechanism, rewritten 2026-10-26, is in `tasks/273-default-low-stakes-settings-and-derive-from-spring.md`; the pre-cut row is `archive/PLAN-2026-11-10.md:155`) |
 | 16 (0.9) | 275, 277 |
 | 17 (0.9) | 276 (moved from 16 on 2026-10-24: it now adds `MISSING_MCP_SECURITY`, so it follows 275 on `freeze/codes.txt`) |
@@ -98,9 +102,9 @@ Obligations for the 0.8.0 release cut (no brief filed yet; whoever files it copi
 
 - The obligations marked done on 2026-10-27, 11-06, 11-07 and 11-09 (tasks 210, 299, 300, 301, 302) were met and moved verbatim to `archive/PLAN-2026-11-10-wave-13a.md`. Still live from them: the 0.8.0 CHANGELOG and 213's docs must say that startup refuses with `MISSING_CASE_AUTHORIZER` or `MISSING_CLIENT_ALLOWLIST` unless configured.
 - Re-run 262's clean-checkout `docker compose up` against the published 0.8.0 images, not the local build overlay (coordinator decision 2026-10-23). 262 has merged (PR #182); the cut also reruns the `docs/quickstart.md` walkthrough capture and `docker/smoke/reidentification-smoke.sh` with `SMOKE_IMAGES=published`.
-- Decide the Sonatype Central File Count choice (owner decision 2026-11-04; see the open item near the top). The grace period ends 2026-11-08; the release can be deferred.
-- 263 Part B, the owner-run soak: run the 0.8 core on one node (8 hours) and on a three-member trusted-network cluster (4 hours), with the faults, startup probes, captures and `LinkTimingSoakTest`, and record the evidence in `docs/plan/perf/soak-0.8.md`. Part A (the scaffolding) landed in PR #243; `tasks/263-*.md` is the Part B contract and 263 is not retired until Part B is recorded. It must run from a clean committed snapshot: `build-images.sh` refuses a dirty tree without `SOAK_ALLOW_DIRTY`, and evidence runs never set it. The hostile-member run needs `TAMPER_FLOOD_CMD`, `HEALTH_PATH` and `HEALTH_BEARER`, and the clock-skew run needs `FAKETIME_LIB`. `load-test/pom.xml` no longer needs a manual `dataprism.version` bump (`run.sh` passes it).
-- Triage the Dependabot report on the default branch before the cut: a push on 2026-11-11 reported 116 vulnerabilities (10 critical). This is on top of the two GHSA advisories listed below; Dependabot cannot see BOM-managed versions (see the 0.8 backlog), so also read the resolved tree.
+- Decide the Sonatype Central File Count choice (owner decision 2026-11-04; see the open item near the top). The grace period ends 2026-11-08; the release can be deferred. **D1 (2026-11-13): check the count before 321 publishes; release at most once a month; 321 is gated on the owner's check.**
+- 263 Part B, the owner-run soak: run the 0.8 core on one node (8 hours) and on a three-member trusted-network cluster (4 hours), with the faults, startup probes, captures and `LinkTimingSoakTest`, and record the evidence in `docs/plan/perf/soak-0.8.md`. Part A (the scaffolding) landed in PR #243; `tasks/263-*.md` is the Part B contract and 263 is not retired until Part B is recorded. It must run from a clean committed snapshot: `build-images.sh` refuses a dirty tree without `SOAK_ALLOW_DIRTY`, and evidence runs never set it. The hostile-member run needs `TAMPER_FLOOD_CMD`, `HEALTH_PATH` and `HEALTH_BEARER`, and the clock-skew run needs `FAKETIME_LIB`. `load-test/pom.xml` no longer needs a manual `dataprism.version` bump (`run.sh` passes it). **D2 (2026-11-13): run it on the release PR's merge commit, before the tag.**
+- Triage the Dependabot report on the default branch before the cut: a push on 2026-11-11 reported 116 vulnerabilities (10 critical). This is on top of the two GHSA advisories listed below; Dependabot cannot see BOM-managed versions (see the 0.8 backlog), so also read the resolved tree. **Done 2026-11-13 by task 320 (PR #272): Pillow pinned to 13.0.0 in both manifests, which clears the 116 alerts on merge; the resolved runtime tree (76 coordinates) has no advisory; #246 and #148 closed as superseded. #245, #244, #247 and #229 deferred to 0.9 (D3). Dependabot #276 (pip group, 4 updates) is open and untriaged.**
 - Publish the 0.7.x security advisory with the release (draft GHSA-hcfg-rxg3-mgw6, not published; owner decision 2026-11-06: no 0.7.2). Publish it alongside the GHSA-f94h-6mxv-c957 update below.
 - Keep `compose.yaml` and `docker/multi-instance/kubernetes.yaml` on the version-literal list, and confirm that no image reference is older than the released version.
 - Update the GitHub security advisory GHSA-f94h-6mxv-c957 with the patched version 0.8.0, and with the affected range and workaround as OD-290-2 (b) records (OD-290-2 (b), decided 2026-10-27: every release through 0.7.1 is affected, there is no workaround, and the fix is 0.8.0; 270 and its Outcome no longer exist, so there is no per-tag proof to cite). The advisory was drafted on 2026-10-23, ahead of the release (owner decision H1 (a)). The 0.8.0 release-cut brief owns this, when it is filed; 261 does not. Owner decision OD-270-2 (a), 2026-10-23, stands. Owner decision 4 below: the name-swap leak is a known-gap note in the 0.8.0 CHANGELOG only.
@@ -265,7 +269,7 @@ Second external review round on PR #163 (Lows and Nits; none scheduled, each fol
 Open items from the external reviews, none blocking. The review text is not on GitHub; it comes from the owner's pasted reviews and the task files (`tasks/retired/260-*.md`, `tasks/retired/261-*.md`).
 
 - 213 owns the `FREE_TEXT_RECOGNISED`, `FREE_TEXT_RECOGNISER_FAILED` and `PAUSE_DOCUMENT_*` codes: they are in task 260's `codes.txt` and on no user page until 213 documents the FREE_TEXT actions and the pause document. `NOT_PENDING` is internal (mapped to `APPROVAL_NOT_PENDING`); `INVALID_SOURCE_NAME` is 0.9.
-- 306: captured `follow` and `_links` examples need a links-enabled fixture (successor to the 261 deferral).
+- 306: captured `follow` and `_links` examples need a links-enabled fixture (successor to the 261 deferral). Moved to 0.9.0 (D4, 2026-11-13).
 - 240-6: a reverse SPI check would freeze the 11 public types that are not in register 7.1 (for example `Chainable`, `LinkAttemptLimiter`, `ClusterWideLinkAttemptLimiter`). The register section 7.1 must list those types first; the register is outside 260's Owns.
 - 240-8 (Low, `codes.txt:157`): wrong surfaces: `INVALID_TOKEN_REQUEST` is the demo issuer, `EXPIRED` never reaches a client, `PAUSE_DOCUMENT_*` are log prefixes, verifier verdicts are marked not-a-code. Fix: relabel each.
 - 240-9 (Low, `MapNamesFreezeTest.java:5`): unused imports `IOException` and `Arrays`. Fix: remove them.
@@ -329,8 +333,8 @@ Owner review round 1, "Looks good", nothing Medium or above. Paths are under `da
 
 Owner reviews of PR #251 (the plan) and PR #252 (the change), both "Looks good", nothing Medium or above. 252 paths are under `data-prism-integration-tests/src/`.
 
-- 252-1 (Low, **owner to place**; wanted before 0.8.0 if the fixture server is part of the release story): `main/java/io/github/aindriub/dataprism/example/ExampleApplication.java:88`. EOF is seen on raw stdin, before the guard and the SDK have drained queued lines, so `closeGracefully` drops replies to a piped client's last lines, including a final line with no newline. Fix: signal end of input after the guard finishes, or when the SDK session ends, not on the raw read. This probably needs a `data-prism-mcp` hook, so it needs its own task. It affects agent clients through `run-fixture-server.sh`.
-- 252-2 (Low, **owner to place**; same release note as 252-1): `ExampleApplication.java:89`. If `closeGracefully` throws, `System.exit` is skipped and non-daemon SDK threads keep the JVM up. Fix: `try { closeOnce.run(); } finally { System.exit(...); }`.
+- 252-1 (Low, **owner to place**; wanted before 0.8.0 if the fixture server is part of the release story): `main/java/io/github/aindriub/dataprism/example/ExampleApplication.java:88`. EOF is seen on raw stdin, before the guard and the SDK have drained queued lines, so `closeGracefully` drops replies to a piped client's last lines, including a final line with no newline. Fix: signal end of input after the guard finishes, or when the SDK session ends, not on the raw read. This probably needs a `data-prism-mcp` hook, so it needs its own task. It affects agent clients through `run-fixture-server.sh`. **Deferred to 0.9 (D5, 2026-11-13).**
+- 252-2 (Low, **owner to place**; same release note as 252-1): `ExampleApplication.java:89`. If `closeGracefully` throws, `System.exit` is skipped and non-daemon SDK threads keep the JVM up. Fix: `try { closeOnce.run(); } finally { System.exit(...); }`. **Deferred to 0.9 (D5, 2026-11-13).**
 - 252-3 (Low): the AC5 evidence in the PR #252 body quotes no failure message. Quote the `doesNotContain(SENTINEL)` failure for one case.
 - 252-4 (Nit): move the nested `EndOfInputSignal` type after the methods in `ExampleApplication`.
 - 252-5 (Nit): name the 10 s child-exit limit as a constant (`test/java/io/github/aindriub/dataprism/example/StdioParseErrorLeakTest.java:168`, `StdioSdkLogPinTest.java:101`).
@@ -492,8 +496,22 @@ Landed 2026-11-13 (PRs #266, #267, #265; records in `HISTORY-INDEX.md`). Open it
 - 303 reviewer note: `aSecondWrapperUsesTheSameMainDocument...` (:1901) has the same weak `pauseDigest() != null` wait.
 - 263-1 (Low): follow-up (e) under wave 14b, about "Shared state" in `docs/multiple-instances.md` saying raw subject ids, names no line; cite it or drop it.
 - The 404 variant of the 305 flake (`refused:152`) is unexplained; the `known-flakes.md` row stays `open`.
-- Direct `transportProvider()` mounts bypass the guard (accepted residual; four tests and any integrator). Check the external demo project.
-- Docs: CHANGELOG `[Unreleased]` may need a line for the 305 behaviour change. A malformed `tools/call` or `initialize` now gets 400 with -32602, and no MCP HTTP error body carries a stack trace.
+- Direct `transportProvider()` mounts bypass the guard (accepted residual; four tests and any integrator). Check the external demo project. **D6 (2026-11-13): switch the external demo project to `servlet()`, or retire it; a 0.9 follow-up, not a 0.8 blocker.**
+- Docs: CHANGELOG `[Unreleased]` may need a line for the 305 behaviour change. A malformed `tools/call` or `initialize` now gets 400 with -32602, and no MCP HTTP error body carries a stack trace. **Done by 315 (PR #270).**
+
+### 0.8.0 wave 1 follow-ups (315 to 320, PRs #270 to #275, 2026-11-13)
+
+All Lows and Nits; none blocks 321. Task ids refer to `tasks/retired/`.
+
+- 315: add a `FREE_TEXT` Breaking line to the CHANGELOG; the `FREE_TEXT` example and the runtime-failure note.
+- 316: the `:142-149` citation on the page; T4 omits the cold-start gate.
+- 317: the key-rotation line wrap (`key-rotation.md:29-30`, `:151`); "From 0.8" in `faq.md`; `extending.md:984` says only "non-blank string". AC6 is accepted in its by-value reading (D7).
+- 318: inline fully qualified names; one long message line.
+- 319: the test depends on the "could not list" wording; inline fully qualified names; duplicated set-up.
+- 320: Pillow 13 needs Python 3.11 or later, but the Outcome says 3.10; the #244/#245 row wording; the generator READMEs.
+- Integration tests: make `PiiLogScanTest` and `McpHttpEndToEndTest` robust under `-Dtest=`, which overrides the surefire default-test and link-scans split at `data-prism-integration-tests/pom.xml:113-149`. Local only; CI is unaffected.
+- PR #269 Lows: stale #268 references; the 321 nothing-published check; the `test -z` greps; 315's "stack" check.
+- Dependabot #276 (pip group, 4 updates) is open and untriaged. #245, #244, #247 and #229 are deferred to 0.9 (D3).
 
 ### Contract register successor tasks (0.8 and 0.9 follow-ups, from task 200)
 
@@ -568,213 +586,7 @@ deprecated it for removal since 4.0.0.
 The "Found" lists from v0.3.0 wave 1 and tasks 81, 84, 82, 77 and 69 (2026-09-22 and 2026-09-23) moved verbatim to `archive/PLAN-2026-11-12-wave-14a.md` (block 1). Read them before touching the files they name.
 
 
-Found on task 75 (per-boot audit chain identity), merged 2026-09-23. Neither
-blocks the merge; the owner has not yet decided whether to schedule the
-first item.
-
-- `AuditChainVerifier` classifies any field-count-mismatch line anywhere in a
-  file as `INTERRUPTED_WRITE_FRAGMENT` ("not tampering", exit 4). That means a
-  file that is not an audit file at all — e.g. raw Slf4j log output pointed
-  at the verifier by mistake — reads as a benign structural anomaly rather
-  than as an alarm. Not filed as a task; unscheduled pending an owner
-  decision on whether it is worth a task post-0.3.0.
-- Two reviewer suggestions not taken, recorded rather than acted on:
-  `AuditRecorderTest`'s `INSTANCE_ID_SHAPE`/`AuditChainVerifierTest`'s
-  `SEQ_SHAPE` preconditions use `find` semantics (a substring search), where
-  `matches` (a whole-string match) would pin the shape more tightly; and the
-  `seq` field's `/\d+` suffix relies on the whole-line word-boundary fallback
-  scan rather than being pinned by the field-shape regex itself. Neither is a
-  known false negative today — recorded so a future tightening pass has
-  somewhere to start rather than rediscovering both from scratch.
-
-Found on task 66 (audit chain verifier CLI), merged 2026-09-23. Neither
-blocks the merge.
-
-10. `AuditChainVerifierCli.java:38` — the `EXIT_STRUCTURAL_ANOMALY` javadoc
-    still reads "a known non-tampering structural anomaly", the exact
-    phrasing the printed `--help` text dropped at attempt 3 for asserting
-    benignity it could not support. Source-only, invisible to a compliance
-    reader, but the same claim living on in a comment. Task 72 (merged
-    2026-09-23) touched this file but not this line — still open. File it
-    separately.
-11. Process note, not code: attempt records appended to a task file in the
-    main checkout are not visible in a worktree created earlier, because the
-    worktree holds its own copy from its branch point. Task 66's worktree was
-    created before its attempt-1/2/3 sections were written, and an
-    implementer working from the worktree read a stale task file — a note in
-    the file itself had to say "read this from the main checkout" to route
-    around it. Future briefs should restate defects inline rather than
-    relying on the task file being current inside a worktree, or write
-    records into the worktree too.
-
-Found on task 60 (nested JSON catalogues), merged 2026-09-22. None blocks the
-merge; pick any up only if a future task already owns the file.
-
-10. `ConfiguredJsonNestedCatalogueOrdinalDeterminismTest` asserts with
-    `contains("Slot1")`, which also matches `Slot10`-`Slot15`; harmless at
-    three catalogues today, but an exact suffix match would be tighter.
-11. The reserved-prefix refusal (a `nonSensitive:` reason beginning with the
-    nested-pointer token) is asserted only for a top-level field; a case
-    inside a nested catalogue would pin both call sites.
-12. The null-nested-object passthrough has no named test — a tester verified
-    it with a throwaway and deleted it.
-
-Found during `/verify` on task 58, 2026-09-22. Does not block anything; polish,
-not a defect.
-
-- `docs/protect-your-own-api.md:132, :157, :337, :351` — four verification/curl
-  fences follow foreground processes without naming a terminal, unlike the
-  server section, which says "a third terminal". A reader must infer a spare
-  shell; no wrong output can result.
-
-Found during `/verify` on tasks 53, 54, 55, 56, 57, 2026-09-21. None blocks
-anything already merged; the first is the most important of the six.
-
-- ~~**(53's review, most important.)** The new `IdentityResolver` bean is
-  placed on a nested `@Import`ed static configuration class, which keeps it
-  outside `AutoConfiguredBeanClassificationTest`'s reflection sweep.~~
-  **Resolved 2026-09-22 by task 68** — see v0.3.0 wave 1 above and
-  `docs/plan/HISTORY.md` (grep `v0.3.0 wave 1`).
-- (54's review.) The subset relaxation lost a property nobody has restored:
-  `dataprism.sources` was also the operator's allow-list, and any
-  `DataSourceAdapter` bean on the classpath is now implicitly approved
-  without appearing anywhere an operator reviewed. Not a fail-closed
-  breach — the reviewer could not construct a misconfiguration the subset
-  test lets through that exact match caught — but a real weakening of the
-  reviewed-adapter posture. Owner-scheduled narrow fix: exclude exactly the
-  names the JSON-catalogue mechanism supplies, via a marker or
-  catalogue-names bean visible to both `data-prism-connectors-rest` and
-  `data-prism-spring-boot-autoconfigure`. Task 54's own summary described
-  the change as guarantee-preserving, which was stronger than warranted —
-  do not repeat that framing.
-- (55's review, for whoever merges 55.) `compose.yaml:12-13`'s comment
-  contradicts itself — it says images are "tagged at the reactor version
-  (or `QUICKSTART_IMAGE_TAG`, default `latest`)" but the default resolves
-  to `latest`, never the reactor version. Also: four unguarded `--load`
-  builds in `publish-image.yml` have no consumer, costing three extra Maven
-  builds per arch on every plain tag push as a build-breakage smoke test
-  only; and a tag pushed ahead of a pom bump fails at `COPY
-  ...-${VERSION}.jar` with a raw buildx error rather than the guard's named
-  message (fails closed, cosmetic).
-- (56's re-review.) `run.sh:68-71` takes the first `data:` frame; if the
-  server ever emits a progress or log notification before the result,
-  fields come back empty and the demo fails with "missing an expected
-  field" rather than parsing the frame whose id is 2. Not reachable against
-  today's server and it fails closed, so a robustness nit rather than a
-  defect. Also `mcp-handshake.sh:44` hardcodes `clientInfo.name` to
-  `quickstart-demo`, so the smoke test now identifies itself as the demo in
-  server-side logs.
-- (57's review.) `ConfigurationRefusalMessageIT.java:133-138` reads process
-  output only after `waitFor`, so a startup log exceeding the ~64KB OS pipe
-  buffer would deadlock until the 20s timeout. Latent, not live.
-- (minor, from 54's review.) `DataPrismContractValidatorTest.java:47` and
-  `:78` have byte-identical bodies — one behaviour asserted twice under two
-  names. That file also sits outside task 54's declared `Owns` list, but it
-  was compelled by the acceptance criterion and collides with nothing, so
-  this is recorded rather than treated as a violation.
-
-Found by the reviewer during `/verify` on task 47, 2026-09-17. Neither is
-reachable today; pick either up only if a future task already owns the file.
-
-- `PiiLogScanTest`'s `EXCLUDED_FIXTURE_FIELDS` is consulted only for the
-  top-level fixture record's own components, not for a nested type's. An
-  exclusion keyed on a nested type (e.g. `DeliveryDto`) would be silently
-  ignored — accepted by whatever registers it, applied to nothing — with no
-  signal to whoever wrote it. Not reachable today because no nested type
-  currently needs an exclusion.
-- A `null` leaf in a fixture record would enter the derived banned-value set
-  as the literal string `"null"`, which would almost certainly false-positive
-  against ordinary log prose (`if (result == null) log.warn(...)` and
-  similar are common). No fixture is null today, so this has not fired.
-
-Found during `/verify` on task 41, 2026-09-17. Does not block anything; not
-picked up by task 41 because moving the version bump's own criterion is a
-different-shaped change than making one.
-
-- Nothing asserts on the MCP `serverInfo` handshake version string
-  (`DataPrismMcpServer.java:86,127`). It is the one value every MCP client
-  reads on `initialize`, and today it is corroborated only indirectly by
-  packaging tests that check jar paths, not the string a client actually
-  sees. A future version bump could leave it stale and every existing check
-  would still pass.
-
-Found during `/verify` on task 35, 2026-09-16. Neither blocks anything; the
-reviewer judged both safe to leave rather than fold into 35's scope.
-
-- `dataprism.transport.mode=stdio` now refusing unconditionally
-  (`DataPrismAutoConfiguration`'s `dataPrismStdioTransportRefused`) makes
-  `dataprism.transport.fixture-development=true` unreachable everywhere in
-  the Spring surface. `ConfiguredJsonSourcesInitializer`'s plaintext-loopback
-  relaxation and `DataPrismContractValidator`'s zero-source early return are
-  consequently dead-in-effect paths — still executed, still pinned by tests,
-  but reachable by no live configuration.
-- `data-prism-connectors-rest`'s own `fixture-development` read is dead code
-  for the same reason.
-
-Found during `/verify` on task 31, 2026-09-15. Neither blocks anything; pick
-either up only if a future task already owns the file.
-
-- An application that registers its own `FieldMetadataResolver` bean
-  silently suppresses the descriptor wiring: the shipped bean is
-  `@ConditionalOnMissingBean`, so a set `dataprism.privacy.descriptor-file`
-  is then never read or validated, and startup succeeds without warning.
-  The reviewer scoped the fix to a successor task rather than folding it
-  into task 31, because closing it means guarding a `REPLACEABLE` extension
-  point, a different-shaped change than wiring the property was.
-- A descriptor file containing only a YAML document marker (`---` with no
-  `models:` key) makes `ModelDescriptors` throw a `NullPointerException`
-  rather than return a named refusal code. Startup still fails closed, so
-  the fail-closed invariant holds, but `docs/conventions.md` expects a
-  stable code for every refusal, not an incidental `NullPointerException`.
-
-Found during `/verify` on tasks 28 and 29, 2026-09-15. Neither blocks
-anything; pick either up only if a future task already owns the file.
-
-- `StrictYamlTest`'s comment claims the old inlined `enumValue` logic was
-  never invoked with `null`. The reviewer showed that is false: four call
-  sites in `PrivacyProfiles` and `ModelDescriptors` do call it with `null`.
-  `StrictYaml.enumValue`'s behaviour is correct either way — only the
-  comment's stated justification is wrong, and `docs/conventions.md`
-  forbids a comment asserting a state nobody established.
-- `JsonTreeScrubbingEngineTest`'s new cross-field test, added to exercise the
-  `OwnerScope` record, duplicates an existing assertion on the same fixture
-  and does not exercise a nested parent scope as intended. The record's
-  behaviour under real nesting remains unproven by a dedicated test.
-
-Found during `/verify` on task 20, 2026-09-15. None blocks anything; pick any
-of them up only if a future task already owns the file.
-
-- `ConfiguredJsonSourcesAutoConfiguration` hand-copies
-  `DefaultContextOrchestrator`'s construction from
-  `DataPrismAutoConfiguration.java:233-241` rather than sharing it, so it is
-  invisible to task 22's classification sweep, which scopes to
-  `DataPrismAutoConfiguration.class.getDeclaredMethods()`. A future hardening
-  of the base orchestrator's assembly will not reach a deployment with this
-  jar on its loader path. The architect's recommendation: have the connector
-  contribute a composed `ScrubbingEngine` bean instead, which would also let
-  it drop its `data-prism-orchestration` dependency.
-- `SourceValues.java:33-47` and `DefaultContextOrchestrator.java:234` resolve
-  `FieldMetadata` by `record.getClass()`, which the shared
-  `ConfiguredJsonPayload` wrapper defeats, so the orchestrator's own
-  prohibited-value computation returns an empty or wrong set for configured
-  sources. `ConfiguredJsonScrubbingEngine` independently closes that gap and
-  fails closed, but the root assumption is wrong and lives in
-  `core`/`orchestration`, not in the connector.
-- `connectorsAreLeaves` only forbids INBOUND edges into
-  `..dataprism.connectors..`; it does not constrain a connector's own
-  outbound dependencies. `docs/architecture.md` declares the row
-  `connectors-rest | core |`, which `data-prism-connectors-rest/pom.xml` now
-  contradicts by depending on `validation` and `orchestration`, with nothing
-  able to fail the build over it. The architecture document states a
-  boundary no rule enforces.
-- `ConfiguredJsonSourcesInitializer` never checks `dataprism.transport.mode`
-  itself, relying on other modules to refuse. Fail-closed today, but it
-  holds no independent opinion on transport mode.
-- A catalogue source name containing `_` or uppercase now makes `Binder.bind`
-  throw `InvalidConfigurationPropertyNameException` where `getProperty`
-  previously returned null. It still fails closed, but the message names
-  neither the source nor the cause; only blankness is validated at
-  `ConfiguredJsonSources.java:104`.
+The "Found" lists from tasks 75, 66, 60, 58, 53 to 57, 47, 41, 35, 31, 28, 29 and 20 (2026-09-15 to 2026-09-23) moved verbatim to `archive/PLAN-2026-11-13-wave-1-0.8.0.md` (block 1). Read them before touching the files they name.
 
 Found during `/verify` on tasks 21-24, 18 and 25 (2026-09-14): moved verbatim to `archive/PLAN-2026-11-11-wave-13b.md` (block 2). None blocked anything and no open task owns those files.
 
