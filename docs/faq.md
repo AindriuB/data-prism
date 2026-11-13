@@ -49,7 +49,7 @@ only the raw-value check was registered there, so a scan-shaped value in a
 `@NonSensitive` field passed. See [Migrating to 0.7.0](migration-0.7.md). The scan reads at most 16 levels of nesting
 and a character budget (262,144 characters by default); a response nested deeper, or larger, than that cannot be
 examined in full, so the validator fails closed rather than passing the part it did not read. The violation code is
-`RESPONSE_TOO_LARGE_TO_SCAN`, which is recorded in the audit trail; the client receives only
+`RESPONSE_TOO_LARGE_TO_SCAN`; the audit trail records the refusal as `VALIDATION_FAILED`, and the client receives only
 `refused: VALIDATION_FAILED at $`. The scan skips an empty or all-whitespace string, because it has nothing to
 match. From 0.8 a deployment can add its own check for free text, a
 `FreeTextRecogniser`, which can only add refusals: see

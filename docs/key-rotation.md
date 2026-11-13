@@ -26,8 +26,8 @@ not judge whether a deployment's key management meets any legal duty.
 - Every key is at least 32 bytes. Generate each one on its own from a source of randomness. Never derive one key from
   another: the name key is never derived from the pseudonymisation key, and no key is derived from the cluster key.
 - Give every key an id that you have not used before, including for a replacement of the same kind. Putting new bytes
-  under an old id is not a rotation: other members still know the id as the old key, and a member whose key check
-  value for an id differs from another member's for the same id is judged unverified (`KEY_CHECK_MISMATCH`). The
+  under an old id is not a rotation: other members still know the id as the old key. For the cluster keys and the name key, a member whose key check
+  value for an id differs from another member's for the same id makes the cluster stop serving (`KEY_CHECK_MISMATCH`). The
   cluster keys and the name key must also have ids that differ from one another (`DUPLICATE_CLUSTER_KEY_ID`).
 - The startup checks refuse a key that shares an id or its bytes with another kind: the cluster and name keys are
   compared with the pseudonymisation, audit and link keys (`CLUSTER_KEY_SHARED`, `NAME_KEY_SHARED`), a link key with

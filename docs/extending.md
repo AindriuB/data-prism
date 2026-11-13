@@ -927,7 +927,7 @@ endpoint a client sends output to, or where data goes afterwards: enforcing that
 control outside Data Prism.
 
 The allowlist is compared by value. Two `ClientAllowlist` instances built from the same set of ids are equal, and the
-check that refuses a bypass (`CLIENT_ALLOWLIST_BYPASSED`) tests value equality, not identity: a `ScopeResolver` or
+check that refuses a bypass (`CLIENT_ALLOWLIST_BYPASSED`) tests value equality, not identity: an
 `AuthorizationService` built with an equal allowlist passes, one built with a different set is refused. A
 `CaseAuthorizer` is compared by identity, so it must be the bean itself.
 
