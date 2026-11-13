@@ -10,7 +10,7 @@
 - docs/audit.md
 - docs/architecture.md
 - docs/faq.md *(the lines at about :41 and :52 only)*
-- docs/extending.md *(the "## Add a free-text recogniser" section, from :967, and the client-allowlist section only)*
+- docs/extending.md *(the "## Add a free-text recogniser" section, from :967, and the "## Authorise cases and restrict clients" section, from :885, only)*
 
 ## Goal
 The wave 14a reviews left wording findings on these pages that the owner did not fix in the round. Close
@@ -38,8 +38,8 @@ them before 0.8.0 so the released pages say what the code does. Wording fixes on
   unless it is a table row or a URL.
 - [ ] AC5 (313) The recogniser section says a recogniser is handed one scalar value at a time, citing the
   call site in the PR body.
-- [ ] AC6 (313) The allowlist-by-value note the 313 review asked for is on the page that documents the client
-  allowlist; the PR body quotes the finding.
+- [ ] AC6 (313) The allowlist-by-value note the 313 review asked for is in the `## Authorise cases and restrict clients`
+  section of `docs/extending.md`; the PR body quotes the finding.
 
 ## Checks
 - `docs-site` command — AC1 to AC6

@@ -32,7 +32,7 @@ fixes, and prove whether any runtime dependency of a published artifact carries 
 - Credentials: never read `~/.m2/settings*.xml`, `~/.gnupg` or any token file.
 
 ## Acceptance
-- [ ] AC1 Both requirements files pin `Pillow==13.0.0` (or the lowest version that clears every open alert),
+- [ ] AC1 Both requirements files pin exactly `Pillow==13.0.0`,
   and `make_favicon.py` and `make_card.py` each run to exit 0 in a scratch venv with that pin, writing to a
   scratch directory. No committed image changes.
 - [ ] AC2 The Outcome lists the runtime coordinates (`compile` and `runtime` scope) of every module published
