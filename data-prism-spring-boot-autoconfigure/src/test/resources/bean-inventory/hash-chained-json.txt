@@ -37,7 +37,7 @@ dataPrismJsonAuditProjection | io.github.aindriub.dataprism.spring.boot.JsonProj
 dataPrismJsonAuditProjectionPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
 dataPrismLinkLimiterPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
 dataPrismLinkPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
-dataPrismMcpServlet | org.springframework.boot.web.servlet.ServletRegistrationBean<io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider>
+dataPrismMcpServlet | org.springframework.boot.web.servlet.ServletRegistrationBean<jakarta.servlet.http.HttpServlet>
 dataPrismMcpSyncServer | io.modelcontextprotocol.server.McpSyncServer
 dataPrismMcpTransportPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
 dataPrismOrchestrationOptions | io.github.aindriub.dataprism.orchestration.OrchestrationOptions

@@ -98,6 +98,8 @@ class DataPrismAutoConfigurationTest {
                             ServletRegistrationBean.class);
                     assertThat(servlet.getUrlMappings()).containsExactly("/protected-mcp");
                     assertThat(servlet.isAsyncSupported()).isTrue();
+                    // HttpInboundGuard is package-private in the mcp module, so it is matched by name.
+                    assertThat(servlet.getServlet().getClass().getSimpleName()).isEqualTo("HttpInboundGuard");
                 });
     }
     /**

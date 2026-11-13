@@ -2,6 +2,7 @@ package io.github.aindriub.dataprism.mcp;
 
 import io.modelcontextprotocol.json.TypeRef;
 import io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper;
+import io.modelcontextprotocol.spec.McpError;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -85,5 +86,25 @@ class ContentFreeMcpJsonMapperTest {
         assertThatThrownBy(() -> mapper.convertValue(value, new TypeRef<List<Integer>>() { }))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage(ContentFreeMcpJsonMapper.CONVERT_FAILED).hasNoCause();
+    }
+
+    @Test
+    @DisplayName("a Throwable is written as a bare JSON-RPC error: no stackTrace, no cause, no class name")
+    void throwablesAreWrittenWithoutTrace() throws Exception {
+        McpError error = McpError.builder(-32600).message("Invalid message format: Failed to convert value").build();
+        error.initCause(new IllegalStateException(SENTINEL));
+        String expected = "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32600,\"message\":"
+                + "\"Invalid message format: Failed to convert value\"}}";
+        assertThat(mapper.writeValueAsString(error)).isEqualTo(expected);
+        assertThat(new String(mapper.writeValueAsBytes(error), StandardCharsets.UTF_8)).isEqualTo(expected);
+
+        String other = mapper.writeValueAsString(new IllegalStateException(SENTINEL, error));
+        assertThat(other).isEqualTo("{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32603,\"message\":"
+                + "\"Internal error\"}}");
+        for (String text : new String[] {mapper.writeValueAsString(error), other}) {
+            assertThat(text).doesNotContain("stackTrace").doesNotContain("cause").doesNotContain("io.modelcontext")
+                    .doesNotContain("java.").doesNotContain(SENTINEL);
+        }
+        assertThat(mapper.writeValueAsString(Map.of("k", "v"))).isEqualTo("{\"k\":\"v\"}");
     }
 }

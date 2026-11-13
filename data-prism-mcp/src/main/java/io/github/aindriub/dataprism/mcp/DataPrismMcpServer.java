@@ -22,14 +22,18 @@ import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.spec.McpServerTransportProvider;
 import io.modelcontextprotocol.spec.McpStreamableServerTransportProvider;
 
+import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 
 import java.io.InputStream;
 import java.time.Clock;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Objects;
+import java.util.WeakHashMap;
 
 /**
  * Wires the MCP surface onto the pipeline.
@@ -268,9 +272,10 @@ public final class DataPrismMcpServer {
 
         Wiring wiring = Wiring.of(orchestrator, authorizationService, scopeResolver, metrics, audit, clock,
                 null, options, catalog, pageMaxLength, linksEnabled);
+        ContentFreeMcpJsonMapper contentFree = new ContentFreeMcpJsonMapper(wiring.json());
         HttpServletStreamableServerTransportProvider transport = HttpServletStreamableServerTransportProvider
                 .builder()
-                .jsonMapper(new ContentFreeMcpJsonMapper(wiring.json()))
+                .jsonMapper(contentFree)
                 .contextExtractor(contextExtractor)
                 .mcpEndpoint(endpointPath)
                 // SDK 2.1.0 sweeps idle sessions on a non-daemon thread that closeGracefully never
@@ -280,7 +285,9 @@ public final class DataPrismMcpServer {
 
         McpSyncServer server = syncServer(wiring, transport);
 
-        return new HttpTransport(server, transport);
+        HttpTransport http = new HttpTransport(server, transport);
+        GUARD_MAPPERS.put(transport, contentFree);
+        return http;
     }
 
     /**
@@ -353,7 +360,29 @@ public final class DataPrismMcpServer {
      * has no handle back to the {@code HttpServlet} that feeds it.
      */
     public record HttpTransport(McpSyncServer server, HttpServletStreamableServerTransportProvider transportProvider) {
+
+        /**
+         * The servlet to mount: the transport provider behind {@link HttpInboundGuard}, which refuses a
+         * {@code tools/call} or {@code initialize} whose params are absent, null or of the wrong type with a
+         * clean 400 and a single {@code Connection: close}; the MCP session stays usable on a new connection.
+         * Mounting {@link #transportProvider()} directly skips the guard.
+         * Each call returns a new wrapper over the same provider; mount one.
+         */
+        public HttpServlet servlet() {
+            McpJsonMapper mapper = GUARD_MAPPERS.get(transportProvider);
+            if (mapper == null) {
+                throw new IllegalStateException("not built by DataPrismMcpServer.streamableHttp");
+            }
+            return new HttpInboundGuard(transportProvider, mapper, HttpInboundGuard.SDK_REQUEST_MAX_SIZE);
+        }
     }
+
+    /**
+     * The mapper each HTTP provider was given, by provider identity and weakly keyed, since the provider
+     * does not expose it and the record's components do not change.
+     */
+    private static final Map<HttpServletStreamableServerTransportProvider, McpJsonMapper> GUARD_MAPPERS =
+            Collections.synchronizedMap(new WeakHashMap<>());
 
     /** The build's {@code project.version}, from a Maven-filtered resource; {@code "unknown"} if unreadable. */
     private static final String VERSION = readVersion();
