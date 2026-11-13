@@ -23,6 +23,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Heading (grep this exact string) |
 |---|---|---|
+| 2026-11-13 | 315, 316, 317, 318, 319, 320 | `## 2026-11-13 — 315 to 320: 0.8.0 pre-cut wave 1, the HTTP guard documented and its contract stated, review items closed, Dependabot triaged` (0.8.0 wave 1) |
 | 2026-11-13 | 303, 305, 308 | `## 2026-11-13 — 303, 305 and 308: three CI flakes closed, one of them a product fix` |
 | 2026-11-12 | 314 | `## 2026-11-12 — 314: the 0.8 migration notes and changelog` |
 | 2026-11-12 | 310, 311, 312, 313 | `## 2026-11-12 — 310, 311, 312 and 313: the 0.8 docs for key rotation, the keyed audit chain, the cluster's seals and trust, and case authorisation` |

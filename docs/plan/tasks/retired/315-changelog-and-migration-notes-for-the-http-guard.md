@@ -70,3 +70,7 @@ unguarded. Add those lines, and close the 14b review items that sit in these two
 - The `MISSING_CASE_AUTHORIZER` line: it is already at CHANGELOG.md:74; 321 checks it.
 - Any code, including the `servlet()` message and Javadoc (318).
 - 14b (d), the load-test `SKIPPED_OVER_LIMIT` list (deferred, 322); 14b (e) (316).
+
+## Outcome
+
+Landed 2026-11-13, PR #270, merge `15ac9c8f`, verified at `160dee55`. `CHANGELOG.md` `[Unreleased]` and `docs/migration-0.8.md` now state the HTTP inbound guard behaviour (400 with `-32602` for a malformed MCP request, no stack trace in any MCP HTTP error body) and that a direct `transportProvider()` mount is unguarded. Tester PASS, reviewer APPROVE. Follow-ups are in `PLAN.md` under "0.8.0 wave 1 follow-ups".

@@ -188,3 +188,5 @@ out-of-range cases. The tomcat 11.0.27 and jackson 3.1.8 overrides stay as they 
 
 Verified HEAD: 36a6c32f963d266c1c05668ca3a4d9d3a2633c61. reviewer: REQUEST CHANGES on AC2.
 - AC2 — the Outcome table groups coordinates and does not list every one: the "`-starter*` set" (about 9 artifacts, inferred from the stated total of 66) and the base `spring-boot` jar are never named, and the PR #272 body does not include the `dependency:list` output the read check compares against. The 66-coordinate list and the "no advisory" claim therefore cannot be checked. Fix: list every runtime coordinate (groupId:artifactId:version) by name in the Outcome (or the PR body), so each can be matched against the advisory database.
+
+Merged 2026-11-13, PR #272, merge `3b60cf9a`, verified at `f95f04dd` (tester PASS, reviewer APPROVE on the second attempt; Attempt 1 below failed review on AC2 and was fixed by listing all 76 coordinates). Dependabot #246 and #148 were closed as superseded by this PR. Correction: Pillow 13 needs Python 3.11 or later, not 3.10 as stated above (see `PLAN.md` follow-ups).

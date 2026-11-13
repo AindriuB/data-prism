@@ -66,3 +66,7 @@ No behaviour change.
 - Moving `GUARD_MAPPERS`, `classify`'s `Object[]` (267-10), check order (267-4), double parse (267-5),
   `HttpParseErrorLeakTest` (267-6, 267-8), splitting existing tests (267-9): deferred to 0.9 (322).
 - Any change to what the guard refuses or forwards.
+
+## Outcome
+
+Landed 2026-11-13, PR #275, merge `c2d99ddc`, verified at `fd362c28`. `HttpTransport.servlet()` Javadoc no longer credits the guard with Tomcat's close-after-400 and its failure message tells an integrator what to do; `HttpInboundGuardTest` gained tests that fail if the size cap regresses. No behaviour change. Tester PASS, reviewer APPROVE. Follow-ups are in `PLAN.md`.
