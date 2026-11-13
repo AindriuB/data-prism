@@ -1,7 +1,7 @@
 # 306 — A links-enabled capture fixture, and captured `follow` and `_links` examples
 
 **Repo:** `.`
-**Release:** 0.8.0 if cheap, otherwise 0.9.0 (docs-only gap; no behaviour depends on it)
+**Release:** 0.9.0 (decided at 0.8.0 planning, 2026-11-13: not in 0.8.0. It is a docs-only gap that `docs/tools.md` already states honestly; no behaviour depends on it; and its Owns is still unfixed and needs an implementer and a scribe, so it is not cheap)
 **Executor:** `implementer` for the fixture, then `scribe` for the captures
 **Depends on:** 255 (links and `follow` wired), 261 (the tool reference that carries the uncaptured shapes)
 **Wave:** unscheduled (filed 2026-11-10 at /record for 260 and 261)
