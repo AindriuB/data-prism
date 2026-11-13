@@ -364,14 +364,18 @@ public final class DataPrismMcpServer {
         /**
          * The servlet to mount: the transport provider behind {@link HttpInboundGuard}, which refuses a
          * {@code tools/call} or {@code initialize} whose params are absent, null or of the wrong type with a
-         * clean 400 and a single {@code Connection: close}; the MCP session stays usable on a new connection.
+         * clean 400 from the guard. The {@code Connection: close} on that response is not the guard's: the
+         * servlet container closes the connection after a 400. The MCP session stays usable on a new connection.
          * Mounting {@link #transportProvider()} directly skips the guard.
+         *
+         * <p>Works only on a transport built by {@code DataPrismMcpServer.streamableHttp}; on any other
+         * {@code HttpTransport} it throws {@link IllegalStateException}.
          * Each call returns a new wrapper over the same provider; mount one.
          */
         public HttpServlet servlet() {
             McpJsonMapper mapper = GUARD_MAPPERS.get(transportProvider);
             if (mapper == null) {
-                throw new IllegalStateException("not built by DataPrismMcpServer.streamableHttp");
+                throw new IllegalStateException("not built by DataPrismMcpServer.streamableHttp: build the transport with it; a directly mounted transportProvider() is unguarded");
             }
             return new HttpInboundGuard(transportProvider, mapper, HttpInboundGuard.SDK_REQUEST_MAX_SIZE);
         }
