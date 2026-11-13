@@ -64,6 +64,12 @@ verification rest on a cluster key and a name key that every member holds.
   instance stops serving and readiness goes `DOWN` until that member leaves.
   Data Prism cannot evict it: this is detection and failing closed, not
   prevention. [Operations](operations.md) describes the readiness contributor.
+  Only members are verified. A Hazelcast client has no member card and is not
+  verified as anything: a client with the cluster name can connect to the member
+  port, read, write, delete and lock any map entry, but without the cluster key it
+  cannot forge a sealed entry that is accepted. It can delete one: a deleted
+  re-identification entry is lost for good, and a deleted pause document makes the
+  oversight check answer `OVERSIGHT_UNAVAILABLE`.
 - **Sealed: identity and re-identification entries.** Their values are
   envelopes under the cluster key. Subject ids appear in the cluster only inside
   those envelopes, and a forged entry never changes a returned value. A deleted
@@ -116,7 +122,7 @@ backup. Maps are not written to disk and have no `MapStore`.
 | `dataprism.approval.s1` | Approval requests, each until its expiry, each with the random token of the creation that wrote it | No | 1 |
 | `dataprism.approval.id.s1` | One claim per approval id, which keeps an id unique across scopes. It names the approval entry and the token of the creation that made it. A claim has no TTL and is valid while the approval entry it names exists; a swept or taken-over claim goes once that entry is gone. No eviction | No | 1 |
 | `dataprism.approval.pending.s1` | Per (kind, requester): the ids of their pending approvals with their expiries and the owner of each (the scope and the token of the creation that reserved the slot), which the pending cap counts. Changed only by an entry processor. No TTL and no eviction; a periodic sweep removes ids long past their expiry | No | 1 |
-| `dataprism.approval.consumed.s1` | Reserved for one tombstone per used approval, which is deferred work (task 224). The map exists and is never evicted, and nothing writes to it in 0.8; it has no TTL. A used approval is kept used only by the `CONSUMED` status on its approval entry | No | 1 |
+| `dataprism.approval.consumed.s1` | Reserved for one tombstone per used approval, which is deferred work (task 224). The map is configured and never evicted, and nothing writes to it in 0.8; it has no TTL. A used approval is kept used only by the `CONSUMED` status on its approval entry | No | 1 |
 | `dataprism.callerrate.s1` | Per-caller fixed-window request counts. No eviction | No | 1 |
 
 Every map key except the fence entry's `all` is a keyed name (an HMAC under the
@@ -506,10 +512,16 @@ over the cap, through.
 - The pending sweep and the claim sweep only take locks they get at once, and skip
   the others until the next interval.
 
-Writes to the identity and re-identification caches, the budget and oversight
-entries and the pause flags that `endScope` deletes take no lock of their own,
-but a lock someone else holds on one of their keys still blocks them; those are
-not bounded yet.
+`endScope` deletes the scope's identity, re-identification and budget entries
+under a bounded lock per key, on one shared deadline, then tombstones the
+scope's pauses in the pause document as its last step; it deletes no pause flags
+(`ScopeIdentityIndex.java:142-149` and `:170`). Ordinary writes to the identity and
+re-identification caches, and a budget reserve, release or subject update, also
+take their key's lock first, bounded by `lock-timeout`. If someone else holds that
+lock, the call is refused with `CLUSTER_LOCK_TIMEOUT` once the wait ends; it does
+not hang. One budget write is the exception: once a scope has a total, a read's
+add to that total takes no lock and waits, without a bound, on a lock someone
+else holds on the total's key (`HazelcastScopeBudget.java:180-189`).
 
 If Hazelcast rejects a lock or its lease, or an id-claim or pending-count
 operation fails, the call is refused with `CLUSTER_OPERATION_REFUSED`. The
