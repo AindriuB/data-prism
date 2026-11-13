@@ -44,7 +44,8 @@ with the hash of the one before it, per writer, and an offline verifier replays
 the chain. External `BOOT`, `PERIODIC`, `SHUTDOWN` and `RETENTION_ANCHOR`
 checkpoints, written to a separate file, let the verifier report a truncated
 tail or a missing boot (exit 5). This is tamper *evidence*, not tamper
-prevention. The chain is unkeyed. Someone who can write the audit file can
+prevention. The chain is unkeyed by default; a keyed chain is an opt-in in 0.8.0 (see
+[The durable audit chain](audit.md)). Someone who can write the audit file can
 recompute the chain after an edit, so the evidence only holds if the checkpoint
 file is held under separate custody from the audit files. It does not resist an
 operator who controls both. The reasoning is in the 2026-09-23 entry in
@@ -119,7 +120,9 @@ call answers `AUDIT_UNAVAILABLE` while its denial record cannot be written
 (since 0.7.1). That is an availability trade the deployer must plan for, for
 example by monitoring the checkpoint file's storage.
 
-With a shared cluster, the pause is sealed and the members are verified, and
+With a shared cluster, the pause is sealed and the members are verified (a Hazelcast client is
+not a member and is not verified; it cannot forge a sealed entry, but it can
+read, write, delete and lock any map entry, including deleting sealed ones), and
 identity and re-identification entries are sealed, but approvals and counters
 are not, and member traffic is not encrypted. A cluster is supported on a trusted
 network only, which the deployer must isolate. The detail is in

@@ -362,6 +362,20 @@ new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.INVESTIGATION, Clie
 new ScopeResolver(version, Duration.ofHours(8), purposeValidator, CaseAuthorizer.tokenTrusted());
 ```
 
+## Breaking: malformed MCP HTTP requests are refused with 400 by a guard
+
+A `tools/call` or `initialize` whose `params` are absent, `null` or of the wrong type is now refused with HTTP 400, the
+JSON-RPC error `-32602` and the request id. In 0.7.x it was answered 500 with `-32603`. The MCP session stays usable: the
+next request with the same `Mcp-Session-Id` is answered on a new connection. A request body over the SDK's 16 MiB limit
+is refused with 400 and `-32600`, where the SDK answered 413; a declared `Content-Length` over the limit is refused
+before the body is read. A client that matched the old 500 or 413 must change. No MCP HTTP error body carries a
+stack trace or a `cause` any more, on any mount.
+
+The guard is `HttpTransport.servlet()`, and the auto-configuration already mounts it. **A servlet that mounts
+`HttpTransport.transportProvider()` directly is not guarded:** it keeps the 500 for these cases (without a stack trace)
+and the SDK's 413. Mount `HttpTransport.servlet()` instead. It works only on a transport built by
+`DataPrismMcpServer.streamableHttp`; on any other it throws `IllegalStateException`.
+
 ## Added: `PrivacyCluster.servingInstance()`
 
 Data Prism's own cluster-backed stores now reach Hazelcast through `PrivacyCluster.servingInstance()`. It returns the
@@ -398,10 +412,28 @@ not break a released API.
   `ClusterWideLinkAttemptLimiter` (`MISSING_SHARED_LINK_LIMITER`), and none ships in 0.8, so `list_sources` answers on one
   page there. Sharing the limiter across members (task 264) is deferred and is not part of this release.
 
-## Added: free-text recognisers
+## Breaking: `SensitivePatternValidator(SensitiveDataScanner)` is removed
 
-**Breaking:** the public constructor `SensitivePatternValidator(SensitiveDataScanner)` is removed. Before:
-`new SensitivePatternValidator(scanner)`. After: `new SensitivePatternValidator(scanner, List.of())`.
+The public constructor `SensitivePatternValidator(SensitiveDataScanner)` is removed. Before:
+`new SensitivePatternValidator(scanner)`. After: `new SensitivePatternValidator(scanner, List.of())`. The no-argument
+constructor still compiles.
+
+## Breaking: `DataClassification.FREE_TEXT` breaks an exhaustive `switch`
+
+`DataClassification.FREE_TEXT` is a new constant in an enum released in 0.7.1. A `switch` expression over
+`DataClassification` that names every constant and has no `default` no longer compiles, and a `switch` statement
+without a `default` skips `FREE_TEXT` silently. Name the constant, or add a `default` that fails closed:
+
+```java
+// 0.7.x: every constant named, no default
+// 0.8.0: also handle FREE_TEXT, and keep a default that refuses
+String handling = switch (classification) {
+    case FREE_TEXT -> "redact";
+    default -> throw new IllegalStateException("unhandled classification");
+};
+```
+
+## Added: free-text recognisers
 
 A `FreeTextRecogniser` bean (`Set<DataClassification> recognise(String)`) lets you add your own recognition of free
 text. The Spring bean collects them in `@Order`. In plain Java, `new SensitivePatternValidator()` still compiles and has
