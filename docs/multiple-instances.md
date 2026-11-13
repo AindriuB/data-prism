@@ -516,9 +516,12 @@ over the cap, through.
 under a bounded lock per key, on one shared deadline, then tombstones the
 scope's pauses in the pause document as its last step; it deletes no pause flags
 (`ScopeIdentityIndex.java:142-149` and `:170`). Ordinary writes to the identity and
-re-identification caches and the budget entries also take their key's lock first,
-bounded by `lock-timeout`. If someone else holds that lock, the call is refused
-with `CLUSTER_LOCK_TIMEOUT` once the wait ends; it does not hang.
+re-identification caches, and a budget reserve, release or subject update, also
+take their key's lock first, bounded by `lock-timeout`. If someone else holds that
+lock, the call is refused with `CLUSTER_LOCK_TIMEOUT` once the wait ends; it does
+not hang. One budget write is the exception: once a scope has a total, a read's
+add to that total takes no lock and waits, without a bound, on a lock someone
+else holds on the total's key (`HazelcastScopeBudget.java:180-189`).
 
 If Hazelcast rejects a lock or its lease, or an id-claim or pending-count
 operation fails, the call is refused with `CLUSTER_OPERATION_REFUSED`. The
