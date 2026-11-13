@@ -49,3 +49,9 @@ them the date is dropped, or a later plain segment's date is reported instead. M
 ## Out of scope
 - Reusing `SegmentedFileAuditSink.segmentDate` on a parsed path (a larger change; the message is free text).
 - What the health detail exposes, and any metric.
+
+## Review round 1 — findings
+
+Reviewed HEAD: 1ab4b7c2ceed92f086f1eb3ab90e485a821b2fcd
+
+- [P2] data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/AuditIntegrityHealthTest.java:126-133 — The two AC4 tests (`an_index_that_is_not_four_digits_names_no_date`, `an_index_of_0000_names_no_date`) pass without exercising the pattern; they would pass with the old pattern or a loose `(?:\.\d+)?`. Renaming the tampered seed to `audit-2025-01-10.12.log` or `.0000.log` makes `AuditRetention.purge` skip it (`SegmentedFileAuditSink.segmentDate`, SEGMENT_NAME at SegmentedFileAuditSink.java:38-39; AuditRetention.java:182-185), so nothing fails and health is UP with empty details; `doesNotContainKey("segmentDate")` passes whatever `AuditMaintenance.SEGMENT` is, and neither test asserts DOWN. route: implementer — make each test drive a purge failure whose message names only that file and assert health DOWN with the expected code and no `segmentDate`. If that is impossible without a main-code change beyond the `SEGMENT` literal (AC5), stop and report BLOCKED: spec change.
