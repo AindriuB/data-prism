@@ -34,3 +34,7 @@
 
 ## Out of scope
 Any product code (`MemberCards.java`); other tests; editing `known-flakes.md`; two `mvn` processes at once in one worktree.
+
+## Outcome
+
+Landed on `main` as PR #265 (`bb0cf984`), verified PASS and APPROVE at `4fa579ee20c0aa06bd802834211091e9e1cd0e5d` (2026-11-13). The test now runs `tickCardsAndWait(second, "second")` and asserts `unverifiedCount()==1` before it advances the clock, so the grace clock has started when the advance lands. Only `HazelcastOversightTest.java` changed; no assertion was loosened and no retry or sleep was added. A forced hold on the wrapper's executor failed the base and passed the fix; 20 consecutive class runs passed. The owner accepted a separate `no free loopback ports` failure seen in the local 20x repeat as unrelated (see `known-flakes.md`).
