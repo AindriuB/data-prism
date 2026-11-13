@@ -66,8 +66,10 @@ verification rest on a cluster key and a name key that every member holds.
   prevention. [Operations](operations.md) describes the readiness contributor.
   Only members are verified. A Hazelcast client has no member card and is not
   verified as anything: a client with the cluster name can connect to the member
-  port and read or write the unsealed maps, but without the cluster key it cannot
-  forge a sealed entry that is accepted.
+  port, read, write, delete and lock any map entry, but without the cluster key it
+  cannot forge a sealed entry that is accepted. It can delete one: a deleted
+  re-identification entry is lost for good, and a deleted pause document makes the
+  oversight check answer `OVERSIGHT_UNAVAILABLE`.
 - **Sealed: identity and re-identification entries.** Their values are
   envelopes under the cluster key. Subject ids appear in the cluster only inside
   those envelopes, and a forged entry never changes a returned value. A deleted
@@ -514,9 +516,9 @@ over the cap, through.
 under a bounded lock per key, on one shared deadline, then tombstones the
 scope's pauses in the pause document as its last step; it deletes no pause flags
 (`ScopeIdentityIndex.java:142-149` and `:170`). Ordinary writes to the identity and
-re-identification caches and the budget entries take no lock of their own, but a
-lock someone else holds on one of their keys still blocks them; those are not
-bounded yet.
+re-identification caches and the budget entries also take their key's lock first,
+bounded by `lock-timeout`. If someone else holds that lock, the call is refused
+with `CLUSTER_LOCK_TIMEOUT` once the wait ends; it does not hang.
 
 If Hazelcast rejects a lock or its lease, or an id-claim or pending-count
 operation fails, the call is refused with `CLUSTER_OPERATION_REFUSED`. The

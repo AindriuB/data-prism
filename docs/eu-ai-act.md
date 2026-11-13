@@ -122,7 +122,7 @@ example by monitoring the checkpoint file's storage.
 
 With a shared cluster, the pause is sealed and the members are verified (a Hazelcast client is
 not a member and is not verified; it cannot forge a sealed entry, but it can
-read and write the unsealed maps), and
+read, write, delete and lock any map entry, including deleting sealed ones), and
 identity and re-identification entries are sealed, but approvals and counters
 are not, and member traffic is not encrypted. A cluster is supported on a trusted
 network only, which the deployer must isolate. The detail is in
