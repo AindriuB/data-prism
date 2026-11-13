@@ -102,3 +102,7 @@ Reviewed HEAD: af18a377d150f036436fcbcbb1c26e7180b4b5d9
 - [STYLE] data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/MemberCardTest.java:1826 — The new test `aCardBuiltBeforeAPauseLandsIsFollowedByACardWithTheDigestOfTheDocumentAfterIt` writes out the full package name for `CountDownLatch` and `TimeUnit` (lines 1826, 1827, 1833, 1841). The file already imports both types.
   route: implementer — use the simple names `CountDownLatch` and `TimeUnit`.
   rule: imports at MemberCardTest.java:46 and :49. The neighbouring tests use the simple names, e.g. `CountDownLatch entered = new CountDownLatch(1);` at :591 and :1271. The file writes a full package name only for types it does not import (:2226, :2358, :2779).
+
+## Outcome
+
+Landed on `main` as PR #266 (`3492b092`), verified PASS and APPROVE at `59f1698f9d9f7d00276f7b19cefd414b132eba7f` (2026-11-13). Both flakes were test defects (outcome a); `data-prism-hazelcast/src/main` is unchanged. The pause-digest test now waits until the card digest equals the held digest, submitting a pass on each poll, because the fixture's one-hour tick never runs the pass a pause leaves behind. The later-wrapper start test now waits for `!writeOutstanding()` instead of a short-circuiting `||` that skipped the wait. A new deterministic test, `aCardBuiltBeforeAPauseLandsIsFollowedByACardWithTheDigestOfTheDocumentAfterIt`, holds the first card build to reproduce the first flake. Open reviewer notes are in `PLAN.md`.
