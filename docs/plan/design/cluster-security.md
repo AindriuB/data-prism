@@ -178,7 +178,8 @@ makes every reader of it wait the timeout and then be refused with
 | Value | The pause document, sealed and leased (task 228); in the fence map, `Boolean.TRUE` |
 | Lifetime | Never evicted, no TTL |
 | **Read** | Nothing useful: the document is sealed and its names are keyed |
-| **Write** | A forged or replayed document is not accepted. |
+| **Write** | A forged document is not accepted. A write that replaces the document with garbage, or a delete, leaves no authentic document, so every instance refuses with `OVERSIGHT_UNAVAILABLE` until a member writes a new one: a denial of service, not a lifted pause. A replay of an older authentic document is accepted only inside the lease (T4) |
+| **Fence entry** | `all` in the unsealed `dataprism.oversight` is a plain `Boolean.TRUE`, not sealed. Anyone who can reach the member port can delete it, and a 0.7 member's `resumeAll` does too; until a 0.8 member re-asserts it (within half a pause lease) a late 0.7 member does not read the cluster as paused (4.8) |
 | **Delete** | Cannot lift a pause: an absent or stale document means everything is paused, which denies service |
 
 ### 1.5 `dataprism.approval`
