@@ -22,7 +22,7 @@ jobs:
       # fails here rather than in a consumer's build. 25 is the version the
       # images and the release toolchain run on. The compiler is pinned to
       # --release 21 on both legs.
-      - uses: actions/setup-java@v6.1.0
+      - uses: actions/setup-java@v6.2.0
         with:
           java-version: ${{ matrix.java }}
           distribution: temurin
