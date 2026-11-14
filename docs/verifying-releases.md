@@ -15,7 +15,7 @@ check that what you run is what the project built:
 | SBOM files | the GitHub Release page and Maven Central (the same files from 0.7.1) | build provenance |
 
 All commands below use placeholders in angle brackets. Replace `<version>`
-with the release version without the leading `v` (for example `0.7.0`).
+with the release version without the leading `v` (for example `0.8.0`).
 
 ## Maven Central artifacts
 

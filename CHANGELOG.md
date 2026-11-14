@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-14
+
 ### Security
 
 - Known gap in 0.7.x and earlier, closed in 0.8.0: on a source record, a `@JsonProperty` rename that swaps two components' names, or a class-level serializer that writes one component's value under another component's name, could release a sensitive value under the policy of a `@NonSensitive` field. Every release up to and including 0.7.1 is affected. 0.8.0 fixes this by construction: the engine reads each record component itself and writes it under its own name, and startup refuses Jackson annotations on source models. There is no 0.7.x patch; upgrade to 0.8.0.
@@ -1268,6 +1270,7 @@ First release: the walking skeleton and every slice through S9a.
 - An append-only audit sink with hash-chain verifier. The only audit sink in
   this release writes to a file and to SLF4J.
 
+[0.8.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.8.0
 [0.7.1]: https://github.com/AindriuB/data-prism/releases/tag/v0.7.1
 [0.7.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.7.0
 [0.6.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.6.0
