@@ -1,7 +1,7 @@
 # Soak of the 0.8 core, single node and three-member cluster (task 263, Part B)
 
 **Status: results recorded for the two load runs (AC2 and the AC4 100-source rows). Not passed as written.**
-Single node: AC2.5 fails, AC2.4 and AC2.6 are not verifiable. Three members: AC2.1, AC2.3 and AC2.4 are not
+Single node: AC2.5 passes under the amended criterion (owner, 2026-11-15), AC2.4 and AC2.6 are not verifiable. Three members: AC2.1, AC2.3 and AC2.4 are not
 verifiable. AC3, AC5, AC6, AC7, AC8 and AC10 were not run: each needs an input the owner supplies (the tamper-flood
 tool, the libfaketime build, the health bearer, new key material, a packet capture, an owner-issued pause). The
 500-source rows of AC4 were not run. Part A of task 263 built the scaffolding in `load-test/soak/`. A criterion that
@@ -49,7 +49,7 @@ A run passes only if every line holds.
 4. The budget counters equal the reads made.
 5. No privacy refusal other than those the scenario provoked: `SCOPE_READ_BUDGET` (the read budget, in both
    runs) and `LINK_INVALID` (the single-node run's invalid-link calls, whose refusal text the driver counts
-   under that code); none other. An `UNCLASSIFIED_ERROR` refusal fails the run.
+   under that code), and, amended by the owner on 2026-11-15, `SOURCE_NOT_AVAILABLE` on `describe_source` and targeted `get_entity_context`, from source labels held across a scope rotation (`CredentialRotation.java:40,52-62`, `ServerProcess.java:31,103`, `SourceAliasing.java:57-62`, `MixedCalls.java:119,128,163,176`; refused at `CatalogQueries.java:431` and `SourceSelection.java:62`); none other. An `UNCLASSIFIED_ERROR` refusal fails the run.
 6. No member logs "Resolving class ... is not allowed" at any point in any run (task 221). The count is
    zero.
 
@@ -164,12 +164,14 @@ Pass or fail against the AC2 criteria:
 | AC2.2 live threads, no upward trend over the last half | Pass. Hours 5 to 8: 45, 84 (hour 6), 44, 44. The hour-6 spike returned to 44 in hour 7. It falls in the window of the scope rotation, which is an inference from timing, not an observation of cause. |
 | AC2.3 no `FAILED` or `RESOLVER_FAILED` | Pass. Both 0 in `sourceStatusTotals`; no transport failure. |
 | AC2.4 budget counters equal the reads made | Not verifiable from the harness output. Neither the result file nor the console log carries a budget-counter or reads-made figure. This is not a pass; a successor is filed below. |
-| AC2.5 no refusal other than the scenario's | Fail as written. `SOURCE_NOT_AVAILABLE` appeared 19 times (9 in hour 6, 10 in hour 7), and the criterion allows only `SCOPE_READ_BUDGET` and `LINK_INVALID`. No `UNCLASSIFIED_ERROR` occurred. The 19 fall in the hours of the one scope rotation and the thread spike; the cause is not established here. |
+| AC2.5 no refusal other than the scenario's | Pass, criterion amended (owner, 2026-11-15). `SOURCE_NOT_AVAILABLE` appeared 19 times (9 in hour 6, 10 in hour 7); no `UNCLASSIFIED_ERROR` occurred. At about 6 h the driver rotates the scope as designed: the one token reissue and the one scope rotation are the same event (`CredentialRotation.java:40,52-62`, `ServerProcess.java:31,103`). Source labels are scope-local aliases (`SourceAliasing.java:57-62`), and the workers keep the labels from their last successful `list_sources` (`MixedCalls.java:119` targeted, `:128` describe, `:176` replaced only on success, `:163` a failure only clears `pageNext`), so after the rotation they send old-scope labels until the next successful `list_sources`. The server correctly refuses them (`CatalogQueries.java:431` for `describeSource`, `SourceSelection.java:62` for targeted context calls). The count of 19 is as recorded; the split by operation (hour 6 about 4 describe and 5 targeted) is inferred from the code at 78f326f1, not observed, because the raw result files were not kept. |
 | AC2.6 no "Resolving class ... is not allowed" | Not recorded for this run. The soak chain log counts it per cluster member only; no log line or file records a count for the single-node harness server. This is not a pass; a successor is filed below. |
 
-Run verdict: not passed. AC2.5 failed; AC2.4 and AC2.6 are not verifiable from what was recorded.
+Run verdict: not passed as written. AC2.5 passes under the amended criterion; AC2.4 and AC2.6 are not verifiable from what was recorded.
 
-One inconsistency in the interval rows, unexplained: hour 6 counts 9 `LINK_INVALID` refusals under `refusalsByCode` against 3 `invalidLink` calls refused, and the per-operation `refused` counts (describeSource 4, listSources 6) sum to 10 against 9 `SOURCE_NOT_AVAILABLE`. The totals in `refusalCodes` are used above.
+Owner decision 2026-11-15: no product defect found; the unverifiable criteria and the runs not made are 0.9 successors; the 0.8.0 tag may proceed on 78f326f1.
+
+One apparent inconsistency in the interval rows is explained, not a fault: hour 6 counts 9 `LINK_INVALID` refusals under `refusalsByCode` against 3 `invalidLink` calls refused, and the per-operation `refused` counts (describeSource 4, listSources 6) sum to 10 against 9 `SOURCE_NOT_AVAILABLE`. The comparison sets two different codes side by side. The 9 `LINK_INVALID` are 3 `invalidLink` plus 6 `listSources` calls that sent stale page links after the rotation, and hour-6 `SOURCE_NOT_AVAILABLE` is about 4 describe plus 5 targeted context calls (the split is inferred from the code at 78f326f1; the raw result files were not kept). The totals in `refusalCodes` are used above.
 
 
 ### Three members (at least 4 hours)
@@ -332,12 +334,12 @@ exists yet.
 
 | Failed or unverifiable criterion | Successor task |
 |---|---|
-| AC2.5, single node: 19 `SOURCE_NOT_AVAILABLE` refusals (hours 6 and 7, around the scope rotation and the thread spike); find the cause and either fix it or amend the criterion's list with a stated reason | To be filed |
+| Harness: clear the driver's held labels and links when the scope number changes, so the run proves AC2.5 instead of excusing it. Also keep the raw result JSON and the per-operation refusal codes. Target: 0.9 | To be filed |
 | AC2.4, both runs: the harness output carries no budget counter or reads-made figure, so the criterion cannot be checked; expose and record both | To be filed |
 | AC2.1, three members: heap after GC not measured (the member image has no `jcmd`); add a way to read member heap | To be filed |
 | AC2.3, three members: target mode writes no source statuses, so `FAILED` and `RESOLVER_FAILED` are not observable; record them in target mode | To be filed |
 | AC2.6, single node: no record of the "Resolving class ... is not allowed" count for the harness server; record it | To be filed |
-| Single-node hour-6 thread spike (44 or 45 to 84, back to 44), heap 2.7 MB above the rest; cause not established | To be filed |
+| Single-node hour-6 thread spike (44 or 45 to 84, back to 44), heap 2.7 MB above the rest; explained as an inference (the sample falls about 50 s into the fresh scope, while real reads, including the slow sources, are live); kept listed so a recorded per-call trace can confirm it | To be filed |
 | AC3, AC5, AC6, AC7, AC8, AC10 not run (inputs the owner supplies); AC4 500-source rows not run | To be filed |
 | Harness: make the overlay's cluster subnet configurable (a fixed subnet overlapped an existing host network) | To be filed |
 | Harness: add the pre-pull of the digest-pinned load-balancer image to the soak README (`up` runs with `--pull never`) | To be filed |
